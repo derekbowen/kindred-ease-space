@@ -93,7 +93,8 @@ function AppShell() {
                 <SidebarMenu>
                   {NAV.map((item) => {
                     const Icon = item.icon;
-                    const active = item.exact
+                    const exact = "exact" in item ? item.exact : false;
+                    const active = exact
                       ? location.pathname === item.to
                       : location.pathname.startsWith(item.to);
                     return (
