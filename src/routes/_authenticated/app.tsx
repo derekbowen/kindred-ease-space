@@ -1,0 +1,141 @@
+import { useEffect, useState } from "react";
+import { createFileRoute, Link, Outlet, useNavigate, useLocation } from "@tanstack/react-router";
+import {
+  LayoutDashboard,
+  FileText,
+  Search,
+  Users,
+  Settings,
+  CreditCard,
+  LogOut,
+  Sparkles,
+} from "lucide-react";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/integrations/supabase/client";
+import { getMe } from "@/lib/auth.functions";
+
+export const Route = createFileRoute("/_authenticated/app")({
+  component: AppShell,
+});
+
+const NAV = [
+  { to: "/app", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { to: "/app/content", label: "Content", icon: FileText },
+  { to: "/app/seo", label: "SEO", icon: Search },
+  { to: "/app/users-ops", label: "Users & Ops", icon: Users },
+  { to: "/app/billing", label: "Billing & Credits", icon: CreditCard },
+  { to: "/app/settings", label: "Settings", icon: Settings },
+] as const;
+
+function AppShell() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [me, setMe] = useState<Awaited<ReturnType<typeof getMe>> | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getMe()
+      .then(setMe)
+      .catch((e) => console.error("getMe failed", e))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Redirect to onboarding if user has no workspace yet
+  useEffect(() => {
+    if (loading || !me) return;
+    if (me.memberships.length === 0 && location.pathname !== "/app/onboarding") {
+      navigate({ to: "/app/onboarding" });
+    }
+  }, [loading, me, location.pathname, navigate]);
+
+  const onSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate({ to: "/login" });
+  };
+
+  const activeWorkspace = me?.memberships?.[0]?.workspaces;
+
+  return (
+    <SidebarProvider>
+      <div className="dark min-h-screen flex w-full bg-background text-foreground">
+        <Sidebar>
+          <SidebarHeader className="border-b border-sidebar-border">
+            <Link to="/app" className="px-2 py-3 flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-orange-500" />
+              <div className="text-sm">
+                <div className="font-bold tracking-tight">founders.click</div>
+                {activeWorkspace && (
+                  <div className="text-xs text-muted-foreground truncate max-w-[160px]">
+                    {activeWorkspace.name}
+                  </div>
+                )}
+              </div>
+            </Link>
+          </SidebarHeader>
+          <SidebarContent>
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {NAV.map((item) => {
+                    const Icon = item.icon;
+                    const exact = "exact" in item ? item.exact : false;
+                    const active = exact
+                      ? location.pathname === item.to
+                      : location.pathname.startsWith(item.to);
+                    return (
+                      <SidebarMenuItem key={item.to}>
+                        <SidebarMenuButton asChild isActive={active}>
+                          <Link to={item.to}>
+                            <Icon className="h-4 w-4" />
+                            <span>{item.label}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </SidebarContent>
+          <SidebarFooter className="border-t border-sidebar-border">
+            <div className="px-2 py-2 text-xs text-muted-foreground truncate">{me?.email}</div>
+            <Button variant="ghost" size="sm" onClick={onSignOut} className="justify-start">
+              <LogOut className="h-4 w-4 mr-2" /> Sign out
+            </Button>
+          </SidebarFooter>
+        </Sidebar>
+        <SidebarInset>
+          <header className="h-14 flex items-center gap-3 border-b border-border px-4">
+            <SidebarTrigger />
+            {activeWorkspace?.plan && (
+              <Badge variant="outline" className="capitalize">
+                {activeWorkspace.subscription_status === "trialing" ? "Trial" : activeWorkspace.plan}
+              </Badge>
+            )}
+            {activeWorkspace?.marketplace_domain && (
+              <span className="text-xs text-muted-foreground">{activeWorkspace.marketplace_domain}</span>
+            )}
+          </header>
+          <main className="flex-1 p-6 max-w-6xl w-full">
+            <Outlet />
+          </main>
+        </SidebarInset>
+      </div>
+    </SidebarProvider>
+  );
+}
