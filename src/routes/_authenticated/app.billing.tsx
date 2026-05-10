@@ -12,11 +12,12 @@ export const Route = createFileRoute("/_authenticated/app/billing")({
   component: BillingPage,
 });
 
-const TIERS = [
+type Tier = { key: "starter" | "pro" | "scale"; name: string; price: number; credits: number; featured?: boolean; features: string[] };
+const TIERS: Tier[] = [
   { key: "starter", name: "Starter", price: 99, credits: 500, features: ["AI Page Builder", "Bulk Editor", "GSC sync", "1 marketplace"] },
   { key: "pro", name: "Pro", price: 249, credits: 2500, featured: true, features: ["Everything in Starter", "Competitor Radar", "Rank Tracker", "Lead Inbox", "3 marketplaces"] },
   { key: "scale", name: "Scale", price: 599, credits: 10000, features: ["Everything in Pro", "IG Lead Hunter", "Email Verify", "SEO Coach AI", "Unlimited marketplaces"] },
-] as const;
+];
 
 function BillingPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
