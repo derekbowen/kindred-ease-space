@@ -37,7 +37,7 @@ export const createWorkspace = createServerFn({ method: "POST" })
         name: data.name,
         marketplace_domain: domain,
         owner_user_id: userId,
-        plan: "trial",
+        plan: "starter",
         subscription_status: "trialing",
         trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
       })
