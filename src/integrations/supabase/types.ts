@@ -1045,6 +1045,91 @@ export type Database = {
           },
         ]
       }
+      credit_balances: {
+        Row: {
+          balance: number
+          created_at: string
+          cycle_resets_at: string | null
+          lifetime_granted: number
+          lifetime_spent: number
+          monthly_allowance: number
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          balance?: number
+          created_at?: string
+          cycle_resets_at?: string | null
+          lifetime_granted?: number
+          lifetime_spent?: number
+          monthly_allowance?: number
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          balance?: number
+          created_at?: string
+          cycle_resets_at?: string | null
+          lifetime_granted?: number
+          lifetime_spent?: number
+          monthly_allowance?: number
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_balances_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: true
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      credit_ledger: {
+        Row: {
+          ai_model: string | null
+          created_at: string
+          delta: number
+          id: string
+          metadata: Json | null
+          reason: string
+          ref_id: string | null
+          ref_type: string | null
+          workspace_id: string
+        }
+        Insert: {
+          ai_model?: string | null
+          created_at?: string
+          delta: number
+          id?: string
+          metadata?: Json | null
+          reason: string
+          ref_id?: string | null
+          ref_type?: string | null
+          workspace_id: string
+        }
+        Update: {
+          ai_model?: string | null
+          created_at?: string
+          delta?: number
+          id?: string
+          metadata?: Json | null
+          reason?: string
+          ref_id?: string | null
+          ref_type?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_ledger_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customer_subscriptions: {
         Row: {
           cancel_at_period_end: boolean
@@ -3446,6 +3531,18 @@ export type Database = {
         }[]
       }
       current_workspace_id_by_host: { Args: { _host: string }; Returns: string }
+      deduct_credits: {
+        Args: {
+          _ai_model?: string
+          _amount: number
+          _metadata?: Json
+          _reason: string
+          _ref_id?: string
+          _ref_type?: string
+          _workspace_id: string
+        }
+        Returns: number
+      }
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
@@ -3455,6 +3552,17 @@ export type Database = {
         Returns: number
       }
       generate_certificate_uid: { Args: never; Returns: string }
+      grant_credits: {
+        Args: {
+          _amount: number
+          _metadata?: Json
+          _reason: string
+          _ref_id?: string
+          _ref_type?: string
+          _workspace_id: string
+        }
+        Returns: number
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
