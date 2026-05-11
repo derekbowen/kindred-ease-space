@@ -39,6 +39,7 @@ import { Route as ApiPublicHooksSyncSharetribeRouteImport } from './routes/api/p
 import { Route as ApiPublicHooksCanonicalAuditRouteImport } from './routes/api/public/hooks/canonical-audit'
 import { Route as AuthenticatedAppSettingsDomainsRouteImport } from './routes/_authenticated/app.settings.domains'
 import { Route as AuthenticatedAppSettingsApiKeysRouteImport } from './routes/_authenticated/app.settings.api-keys'
+import { Route as AuthenticatedAppSettingsAiRouteImport } from './routes/_authenticated/app.settings.ai'
 import { Route as AuthenticatedAppSeoSitemapRouteImport } from './routes/_authenticated/app.seo.sitemap'
 import { Route as AuthenticatedAppSeoScrapeImportRouteImport } from './routes/_authenticated/app.seo.scrape-import'
 import { Route as AuthenticatedAppSeoRankTrackerRouteImport } from './routes/_authenticated/app.seo.rank-tracker'
@@ -237,6 +238,12 @@ const AuthenticatedAppSettingsApiKeysRoute =
   AuthenticatedAppSettingsApiKeysRouteImport.update({
     id: '/api-keys',
     path: '/api-keys',
+    getParentRoute: () => AuthenticatedAppSettingsRoute,
+  } as any)
+const AuthenticatedAppSettingsAiRoute =
+  AuthenticatedAppSettingsAiRouteImport.update({
+    id: '/ai',
+    path: '/ai',
     getParentRoute: () => AuthenticatedAppSettingsRoute,
   } as any)
 const AuthenticatedAppSeoSitemapRoute =
@@ -562,6 +569,7 @@ export interface FileRoutesByFullPath {
   '/app/seo/rank-tracker': typeof AuthenticatedAppSeoRankTrackerRoute
   '/app/seo/scrape-import': typeof AuthenticatedAppSeoScrapeImportRoute
   '/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
+  '/app/settings/ai': typeof AuthenticatedAppSettingsAiRoute
   '/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
   '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
@@ -634,6 +642,7 @@ export interface FileRoutesByTo {
   '/app/seo/rank-tracker': typeof AuthenticatedAppSeoRankTrackerRoute
   '/app/seo/scrape-import': typeof AuthenticatedAppSeoScrapeImportRoute
   '/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
+  '/app/settings/ai': typeof AuthenticatedAppSettingsAiRoute
   '/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
   '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
@@ -710,6 +719,7 @@ export interface FileRoutesById {
   '/_authenticated/app/seo/rank-tracker': typeof AuthenticatedAppSeoRankTrackerRoute
   '/_authenticated/app/seo/scrape-import': typeof AuthenticatedAppSeoScrapeImportRoute
   '/_authenticated/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
+  '/_authenticated/app/settings/ai': typeof AuthenticatedAppSettingsAiRoute
   '/_authenticated/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
   '/_authenticated/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
@@ -786,6 +796,7 @@ export interface FileRouteTypes {
     | '/app/seo/rank-tracker'
     | '/app/seo/scrape-import'
     | '/app/seo/sitemap'
+    | '/app/settings/ai'
     | '/app/settings/api-keys'
     | '/app/settings/domains'
     | '/api/public/hooks/canonical-audit'
@@ -858,6 +869,7 @@ export interface FileRouteTypes {
     | '/app/seo/rank-tracker'
     | '/app/seo/scrape-import'
     | '/app/seo/sitemap'
+    | '/app/settings/ai'
     | '/app/settings/api-keys'
     | '/app/settings/domains'
     | '/api/public/hooks/canonical-audit'
@@ -933,6 +945,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/seo/rank-tracker'
     | '/_authenticated/app/seo/scrape-import'
     | '/_authenticated/app/seo/sitemap'
+    | '/_authenticated/app/settings/ai'
     | '/_authenticated/app/settings/api-keys'
     | '/_authenticated/app/settings/domains'
     | '/api/public/hooks/canonical-audit'
@@ -1172,6 +1185,13 @@ declare module '@tanstack/react-router' {
       path: '/api-keys'
       fullPath: '/app/settings/api-keys'
       preLoaderRoute: typeof AuthenticatedAppSettingsApiKeysRouteImport
+      parentRoute: typeof AuthenticatedAppSettingsRoute
+    }
+    '/_authenticated/app/settings/ai': {
+      id: '/_authenticated/app/settings/ai'
+      path: '/ai'
+      fullPath: '/app/settings/ai'
+      preLoaderRoute: typeof AuthenticatedAppSettingsAiRouteImport
       parentRoute: typeof AuthenticatedAppSettingsRoute
     }
     '/_authenticated/app/seo/sitemap': {
@@ -1496,6 +1516,7 @@ const AuthenticatedAppPagesRouteWithChildren =
   )
 
 interface AuthenticatedAppSettingsRouteChildren {
+  AuthenticatedAppSettingsAiRoute: typeof AuthenticatedAppSettingsAiRoute
   AuthenticatedAppSettingsApiKeysRoute: typeof AuthenticatedAppSettingsApiKeysRoute
   AuthenticatedAppSettingsDomainsRoute: typeof AuthenticatedAppSettingsDomainsRoute
   AuthenticatedAppSettingsIntegrationsSharetribeRoute: typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
@@ -1503,6 +1524,7 @@ interface AuthenticatedAppSettingsRouteChildren {
 
 const AuthenticatedAppSettingsRouteChildren: AuthenticatedAppSettingsRouteChildren =
   {
+    AuthenticatedAppSettingsAiRoute: AuthenticatedAppSettingsAiRoute,
     AuthenticatedAppSettingsApiKeysRoute: AuthenticatedAppSettingsApiKeysRoute,
     AuthenticatedAppSettingsDomainsRoute: AuthenticatedAppSettingsDomainsRoute,
     AuthenticatedAppSettingsIntegrationsSharetribeRoute:

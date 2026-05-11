@@ -96,6 +96,8 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: "/app/billing", label: "Billing & Plans", icon: CreditCard },
       { to: "/app/settings", label: "Workspace Settings", icon: Settings },
+      { to: "/app/settings/ai", label: "AI Providers", icon: Sparkles },
+      { to: "/app/settings/api-keys", label: "API Keys", icon: Plug },
       { to: "/app/settings/integrations/sharetribe", label: "Sharetribe", icon: Plug },
     ],
   },

@@ -14,6 +14,65 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_usage_log: {
+        Row: {
+          completion_tokens: number
+          cost_usd_micros: number
+          created_at: string
+          error: string | null
+          feature: string | null
+          id: number
+          model: string
+          prompt_tokens: number
+          provider: string
+          status: string
+          total_tokens: number
+          used_byok: boolean
+          user_id: string | null
+          workspace_id: string
+        }
+        Insert: {
+          completion_tokens?: number
+          cost_usd_micros?: number
+          created_at?: string
+          error?: string | null
+          feature?: string | null
+          id?: number
+          model: string
+          prompt_tokens?: number
+          provider: string
+          status?: string
+          total_tokens?: number
+          used_byok?: boolean
+          user_id?: string | null
+          workspace_id: string
+        }
+        Update: {
+          completion_tokens?: number
+          cost_usd_micros?: number
+          created_at?: string
+          error?: string | null
+          feature?: string | null
+          id?: number
+          model?: string
+          prompt_tokens?: number
+          provider?: string
+          status?: string
+          total_tokens?: number
+          used_byok?: boolean
+          user_id?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_usage_log_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       amenities: {
         Row: {
           created_at: string
@@ -3780,6 +3839,59 @@ export type Database = {
           },
         ]
       }
+      tenant_ai_credentials: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          default_models: Json
+          id: string
+          last_error: string | null
+          last_four: string
+          last_tested_at: string | null
+          provider: string
+          status: string
+          updated_at: string
+          vault_secret_id: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          default_models?: Json
+          id?: string
+          last_error?: string | null
+          last_four: string
+          last_tested_at?: string | null
+          provider: string
+          status?: string
+          updated_at?: string
+          vault_secret_id: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          default_models?: Json
+          id?: string
+          last_error?: string | null
+          last_four?: string
+          last_tested_at?: string | null
+          provider?: string
+          status?: string
+          updated_at?: string
+          vault_secret_id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_ai_credentials_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenant_integrations: {
         Row: {
           client_id: string
@@ -4055,6 +4167,35 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      workspace_ai_quota: {
+        Row: {
+          lifetime_platform_used: number
+          platform_credits_remaining: number
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          lifetime_platform_used?: number
+          platform_credits_remaining?: number
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          lifetime_platform_used?: number
+          platform_credits_remaining?: number
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_ai_quota_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: true
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       workspace_domains: {
         Row: {
@@ -4333,6 +4474,10 @@ export type Database = {
       }
     }
     Functions: {
+      consume_platform_ai_credit: {
+        Args: { _workspace_id: string }
+        Returns: number
+      }
       count_providers_by_category: {
         Args: never
         Returns: {
@@ -4427,8 +4572,26 @@ export type Database = {
           read_ct: number
         }[]
       }
+      tenant_delete_ai_credential: {
+        Args: { _provider: string; _workspace_id: string }
+        Returns: boolean
+      }
+      tenant_get_ai_credential: {
+        Args: { _provider: string; _workspace_id: string }
+        Returns: string
+      }
       tenant_get_integration_secret: {
         Args: { _workspace_id: string }
+        Returns: string
+      }
+      tenant_set_ai_credential: {
+        Args: {
+          _api_key: string
+          _default_models?: Json
+          _last_four: string
+          _provider: string
+          _workspace_id: string
+        }
         Returns: string
       }
       tenant_set_integration_secret: {
