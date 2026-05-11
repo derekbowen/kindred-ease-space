@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { MarkdownRenderer } from "@/components/help/MarkdownRenderer";
+import { SeoPreviewPanel } from "@/components/help/SeoPreviewPanel";
 import {
   adminGetArticle,
   adminUpsertArticle,
