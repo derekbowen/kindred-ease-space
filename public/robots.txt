@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /app/
+Disallow: /login
+Disallow: /signup
+Disallow: /reset-password
+
+Sitemap: https://founders.click/sitemap.xml
