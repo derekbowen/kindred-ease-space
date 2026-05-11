@@ -105,3 +105,47 @@ export const getWorkspaceOverview = createServerFn({ method: "GET" })
       },
     };
   });
+
+export const updateWorkspaceBranding = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data) =>
+    z
+      .object({
+        workspaceId: z.string().uuid(),
+        brandName: z.string().trim().max(60).nullable().optional(),
+        brandColor: z
+          .string()
+          .trim()
+          .regex(/^#[0-9a-fA-F]{6}$/, "Use a hex color like #1e90ff")
+          .nullable()
+          .optional(),
+        logoUrl: z.string().url().max(500).nullable().optional(),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+
+    const { data: isOwner } = await supabaseAdmin.rpc("is_workspace_owner", {
+      _workspace_id: data.workspaceId,
+      _user_id: userId,
+    });
+    if (!isOwner) throw new Error("Not allowed");
+
+    const patch: Record<string, string | null> = {};
+    if (data.brandName !== undefined) patch.brand_name = data.brandName || null;
+    if (data.brandColor !== undefined) patch.brand_color = data.brandColor || null;
+    if (data.logoUrl !== undefined) patch.logo_url = data.logoUrl || null;
+
+    const { error } = await supabaseAdmin
+      .from("workspaces")
+      .update(patch)
+      .eq("id", data.workspaceId);
+
+    if (error) {
+      console.error("[updateWorkspaceBranding] update error", error);
+      throw new Error("Failed to update branding. Please try again.");
+    }
+
+    return { ok: true };
+  });
