@@ -21,6 +21,7 @@ import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAppSeoCoachRouteImport } from './routes/_authenticated/app.seo-coach'
 import { Route as AuthenticatedAppOnboardingRouteImport } from './routes/_authenticated/app.onboarding'
 import { Route as AuthenticatedAppBillingRouteImport } from './routes/_authenticated/app.billing'
+import { Route as AuthenticatedAppSettingsApiKeysRouteImport } from './routes/_authenticated/app.settings.api-keys'
 import { Route as AuthenticatedAppSeoSitemapRouteImport } from './routes/_authenticated/app.seo.sitemap'
 import { Route as AuthenticatedAppSeoScrapeImportRouteImport } from './routes/_authenticated/app.seo.scrape-import'
 import { Route as AuthenticatedAppSeoRankTrackerRouteImport } from './routes/_authenticated/app.seo.rank-tracker'
@@ -119,6 +120,12 @@ const AuthenticatedAppBillingRoute = AuthenticatedAppBillingRouteImport.update({
   path: '/billing',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
+const AuthenticatedAppSettingsApiKeysRoute =
+  AuthenticatedAppSettingsApiKeysRouteImport.update({
+    id: '/api-keys',
+    path: '/api-keys',
+    getParentRoute: () => AuthenticatedAppSettingsRoute,
+  } as any)
 const AuthenticatedAppSeoSitemapRoute =
   AuthenticatedAppSeoSitemapRouteImport.update({
     id: '/seo/sitemap',
@@ -340,7 +347,7 @@ export interface FileRoutesByFullPath {
   '/app/billing': typeof AuthenticatedAppBillingRoute
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
-  '/app/settings': typeof AuthenticatedAppSettingsRoute
+  '/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
   '/app/': typeof AuthenticatedAppIndexRoute
   '/app/content/blog': typeof AuthenticatedAppContentBlogRoute
   '/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
@@ -377,6 +384,7 @@ export interface FileRoutesByFullPath {
   '/app/seo/rank-tracker': typeof AuthenticatedAppSeoRankTrackerRoute
   '/app/seo/scrape-import': typeof AuthenticatedAppSeoScrapeImportRoute
   '/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
+  '/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -387,7 +395,7 @@ export interface FileRoutesByTo {
   '/app/billing': typeof AuthenticatedAppBillingRoute
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
-  '/app/settings': typeof AuthenticatedAppSettingsRoute
+  '/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
   '/app': typeof AuthenticatedAppIndexRoute
   '/app/content/blog': typeof AuthenticatedAppContentBlogRoute
   '/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
@@ -424,6 +432,7 @@ export interface FileRoutesByTo {
   '/app/seo/rank-tracker': typeof AuthenticatedAppSeoRankTrackerRoute
   '/app/seo/scrape-import': typeof AuthenticatedAppSeoScrapeImportRoute
   '/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
+  '/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -437,7 +446,7 @@ export interface FileRoutesById {
   '/_authenticated/app/billing': typeof AuthenticatedAppBillingRoute
   '/_authenticated/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/_authenticated/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
-  '/_authenticated/app/settings': typeof AuthenticatedAppSettingsRoute
+  '/_authenticated/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
   '/_authenticated/app/content/blog': typeof AuthenticatedAppContentBlogRoute
   '/_authenticated/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
@@ -474,6 +483,7 @@ export interface FileRoutesById {
   '/_authenticated/app/seo/rank-tracker': typeof AuthenticatedAppSeoRankTrackerRoute
   '/_authenticated/app/seo/scrape-import': typeof AuthenticatedAppSeoScrapeImportRoute
   '/_authenticated/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
+  '/_authenticated/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -524,6 +534,7 @@ export interface FileRouteTypes {
     | '/app/seo/rank-tracker'
     | '/app/seo/scrape-import'
     | '/app/seo/sitemap'
+    | '/app/settings/api-keys'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -571,6 +582,7 @@ export interface FileRouteTypes {
     | '/app/seo/rank-tracker'
     | '/app/seo/scrape-import'
     | '/app/seo/sitemap'
+    | '/app/settings/api-keys'
   id:
     | '__root__'
     | '/'
@@ -620,6 +632,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/seo/rank-tracker'
     | '/_authenticated/app/seo/scrape-import'
     | '/_authenticated/app/seo/sitemap'
+    | '/_authenticated/app/settings/api-keys'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -716,6 +729,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app/billing'
       preLoaderRoute: typeof AuthenticatedAppBillingRouteImport
       parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/settings/api-keys': {
+      id: '/_authenticated/app/settings/api-keys'
+      path: '/api-keys'
+      fullPath: '/app/settings/api-keys'
+      preLoaderRoute: typeof AuthenticatedAppSettingsApiKeysRouteImport
+      parentRoute: typeof AuthenticatedAppSettingsRoute
     }
     '/_authenticated/app/seo/sitemap': {
       id: '/_authenticated/app/seo/sitemap'
@@ -965,11 +985,25 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AuthenticatedAppSettingsRouteChildren {
+  AuthenticatedAppSettingsApiKeysRoute: typeof AuthenticatedAppSettingsApiKeysRoute
+}
+
+const AuthenticatedAppSettingsRouteChildren: AuthenticatedAppSettingsRouteChildren =
+  {
+    AuthenticatedAppSettingsApiKeysRoute: AuthenticatedAppSettingsApiKeysRoute,
+  }
+
+const AuthenticatedAppSettingsRouteWithChildren =
+  AuthenticatedAppSettingsRoute._addFileChildren(
+    AuthenticatedAppSettingsRouteChildren,
+  )
+
 interface AuthenticatedAppRouteChildren {
   AuthenticatedAppBillingRoute: typeof AuthenticatedAppBillingRoute
   AuthenticatedAppOnboardingRoute: typeof AuthenticatedAppOnboardingRoute
   AuthenticatedAppSeoCoachRoute: typeof AuthenticatedAppSeoCoachRoute
-  AuthenticatedAppSettingsRoute: typeof AuthenticatedAppSettingsRoute
+  AuthenticatedAppSettingsRoute: typeof AuthenticatedAppSettingsRouteWithChildren
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
   AuthenticatedAppContentBlogRoute: typeof AuthenticatedAppContentBlogRoute
   AuthenticatedAppContentBulkEditorRoute: typeof AuthenticatedAppContentBulkEditorRoute
@@ -1012,7 +1046,7 @@ const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppBillingRoute: AuthenticatedAppBillingRoute,
   AuthenticatedAppOnboardingRoute: AuthenticatedAppOnboardingRoute,
   AuthenticatedAppSeoCoachRoute: AuthenticatedAppSeoCoachRoute,
-  AuthenticatedAppSettingsRoute: AuthenticatedAppSettingsRoute,
+  AuthenticatedAppSettingsRoute: AuthenticatedAppSettingsRouteWithChildren,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
   AuthenticatedAppContentBlogRoute: AuthenticatedAppContentBlogRoute,
   AuthenticatedAppContentBulkEditorRoute:
