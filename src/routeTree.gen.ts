@@ -18,6 +18,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
 import { Route as ApiPublicSitemapByHostRouteImport } from './routes/api/public/sitemap-by-host'
+import { Route as ApiPublicDomainTokenRouteImport } from './routes/api/public/domain-token'
 import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated/app.settings'
 import { Route as AuthenticatedAppSeoCoachRouteImport } from './routes/_authenticated/app.seo-coach'
 import { Route as AuthenticatedAppOnboardingRouteImport } from './routes/_authenticated/app.onboarding'
@@ -102,6 +103,11 @@ const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
 const ApiPublicSitemapByHostRoute = ApiPublicSitemapByHostRouteImport.update({
   id: '/api/public/sitemap-by-host',
   path: '/api/public/sitemap-by-host',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicDomainTokenRoute = ApiPublicDomainTokenRouteImport.update({
+  id: '/api/public/domain-token',
+  path: '/api/public/domain-token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAppSettingsRoute =
@@ -361,6 +367,7 @@ export interface FileRoutesByFullPath {
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
+  '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/app/': typeof AuthenticatedAppIndexRoute
   '/app/content/blog': typeof AuthenticatedAppContentBlogRoute
@@ -411,6 +418,7 @@ export interface FileRoutesByTo {
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
+  '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/app': typeof AuthenticatedAppIndexRoute
   '/app/content/blog': typeof AuthenticatedAppContentBlogRoute
@@ -464,6 +472,7 @@ export interface FileRoutesById {
   '/_authenticated/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/_authenticated/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/_authenticated/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
+  '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
   '/_authenticated/app/content/blog': typeof AuthenticatedAppContentBlogRoute
@@ -517,6 +526,7 @@ export interface FileRouteTypes {
     | '/app/onboarding'
     | '/app/seo-coach'
     | '/app/settings'
+    | '/api/public/domain-token'
     | '/api/public/sitemap-by-host'
     | '/app/'
     | '/app/content/blog'
@@ -567,6 +577,7 @@ export interface FileRouteTypes {
     | '/app/onboarding'
     | '/app/seo-coach'
     | '/app/settings'
+    | '/api/public/domain-token'
     | '/api/public/sitemap-by-host'
     | '/app'
     | '/app/content/blog'
@@ -619,6 +630,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/onboarding'
     | '/_authenticated/app/seo-coach'
     | '/_authenticated/app/settings'
+    | '/api/public/domain-token'
     | '/api/public/sitemap-by-host'
     | '/_authenticated/app/'
     | '/_authenticated/app/content/blog'
@@ -667,6 +679,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  ApiPublicDomainTokenRoute: typeof ApiPublicDomainTokenRoute
   ApiPublicSitemapByHostRoute: typeof ApiPublicSitemapByHostRoute
 }
 
@@ -733,6 +746,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/sitemap-by-host'
       fullPath: '/api/public/sitemap-by-host'
       preLoaderRoute: typeof ApiPublicSitemapByHostRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/domain-token': {
+      id: '/api/public/domain-token'
+      path: '/api/public/domain-token'
+      fullPath: '/api/public/domain-token'
+      preLoaderRoute: typeof ApiPublicDomainTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/app/settings': {
@@ -1160,6 +1180,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  ApiPublicDomainTokenRoute: ApiPublicDomainTokenRoute,
   ApiPublicSitemapByHostRoute: ApiPublicSitemapByHostRoute,
 }
 export const routeTree = rootRouteImport
