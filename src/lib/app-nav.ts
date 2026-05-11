@@ -68,18 +68,6 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    label: "Content",
-    items: [
-      { to: "/app/content/quick-page-builder", label: "Quick Page Builder", icon: Sparkles },
-      { to: "/app/content/generate", label: "Generate Content", icon: FileText },
-      { to: "/app/content/migration", label: "Content Migration", icon: ArrowRightLeft },
-      { to: "/app/content/bulk-editor", label: "Bulk Page Editor", icon: Pencil },
-      { to: "/app/content/blog", label: "Blog Admin", icon: BookOpen },
-      { to: "/app/content/learning", label: "Learning Admin", icon: GraduationCap },
-      { to: "/app/content/city-heroes", label: "City Heroes", icon: Building2, internalOnly: true },
-    ],
-  },
-  {
     label: "SEO",
     items: [
       { to: "/app/seo/competitor-radar", label: "Competitor Radar", icon: Radar },
