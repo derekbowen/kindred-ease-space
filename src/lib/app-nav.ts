@@ -118,6 +118,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: "/app/admin/help/articles", label: "Help Articles", icon: BookOpen, internalOnly: true },
       { to: "/app/admin/help/categories", label: "Help Categories", icon: LayoutTemplate, internalOnly: true },
       { to: "/app/admin/help/feedback", label: "Help Feedback", icon: ThumbsUp, internalOnly: true },
+      { to: "/app/admin/help/tickets", label: "Help Tickets", icon: Inbox, internalOnly: true },
     ],
   },
 ];

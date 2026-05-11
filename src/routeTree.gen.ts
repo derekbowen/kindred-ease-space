@@ -80,6 +80,7 @@ import { Route as AuthenticatedAppContentBulkEditorRouteImport } from './routes/
 import { Route as AuthenticatedAppContentBlogRouteImport } from './routes/_authenticated/app.content.blog'
 import { Route as AuthenticatedAppSettingsIntegrationsSharetribeRouteImport } from './routes/_authenticated/app.settings.integrations.sharetribe'
 import { Route as AuthenticatedAppPagesIdEditRouteImport } from './routes/_authenticated/app.pages.$id.edit'
+import { Route as AuthenticatedAppAdminHelpTicketsRouteImport } from './routes/_authenticated/app.admin.help.tickets'
 import { Route as AuthenticatedAppAdminHelpFeedbackRouteImport } from './routes/_authenticated/app.admin.help.feedback'
 import { Route as AuthenticatedAppAdminHelpCategoriesRouteImport } from './routes/_authenticated/app.admin.help.categories'
 import { Route as AuthenticatedAppAdminHelpArticlesRouteImport } from './routes/_authenticated/app.admin.help.articles'
@@ -487,6 +488,12 @@ const AuthenticatedAppPagesIdEditRoute =
     path: '/$id/edit',
     getParentRoute: () => AuthenticatedAppPagesRoute,
   } as any)
+const AuthenticatedAppAdminHelpTicketsRoute =
+  AuthenticatedAppAdminHelpTicketsRouteImport.update({
+    id: '/admin/help/tickets',
+    path: '/admin/help/tickets',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
 const AuthenticatedAppAdminHelpFeedbackRoute =
   AuthenticatedAppAdminHelpFeedbackRouteImport.update({
     id: '/admin/help/feedback',
@@ -584,6 +591,7 @@ export interface FileRoutesByFullPath {
   '/app/admin/help/articles': typeof AuthenticatedAppAdminHelpArticlesRouteWithChildren
   '/app/admin/help/categories': typeof AuthenticatedAppAdminHelpCategoriesRoute
   '/app/admin/help/feedback': typeof AuthenticatedAppAdminHelpFeedbackRoute
+  '/app/admin/help/tickets': typeof AuthenticatedAppAdminHelpTicketsRoute
   '/app/pages/$id/edit': typeof AuthenticatedAppPagesIdEditRoute
   '/app/settings/integrations/sharetribe': typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
   '/app/admin/help/articles/$id': typeof AuthenticatedAppAdminHelpArticlesIdRoute
@@ -658,6 +666,7 @@ export interface FileRoutesByTo {
   '/app/admin/help/articles': typeof AuthenticatedAppAdminHelpArticlesRouteWithChildren
   '/app/admin/help/categories': typeof AuthenticatedAppAdminHelpCategoriesRoute
   '/app/admin/help/feedback': typeof AuthenticatedAppAdminHelpFeedbackRoute
+  '/app/admin/help/tickets': typeof AuthenticatedAppAdminHelpTicketsRoute
   '/app/pages/$id/edit': typeof AuthenticatedAppPagesIdEditRoute
   '/app/settings/integrations/sharetribe': typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
   '/app/admin/help/articles/$id': typeof AuthenticatedAppAdminHelpArticlesIdRoute
@@ -736,6 +745,7 @@ export interface FileRoutesById {
   '/_authenticated/app/admin/help/articles': typeof AuthenticatedAppAdminHelpArticlesRouteWithChildren
   '/_authenticated/app/admin/help/categories': typeof AuthenticatedAppAdminHelpCategoriesRoute
   '/_authenticated/app/admin/help/feedback': typeof AuthenticatedAppAdminHelpFeedbackRoute
+  '/_authenticated/app/admin/help/tickets': typeof AuthenticatedAppAdminHelpTicketsRoute
   '/_authenticated/app/pages/$id/edit': typeof AuthenticatedAppPagesIdEditRoute
   '/_authenticated/app/settings/integrations/sharetribe': typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
   '/_authenticated/app/admin/help/articles/$id': typeof AuthenticatedAppAdminHelpArticlesIdRoute
@@ -814,6 +824,7 @@ export interface FileRouteTypes {
     | '/app/admin/help/articles'
     | '/app/admin/help/categories'
     | '/app/admin/help/feedback'
+    | '/app/admin/help/tickets'
     | '/app/pages/$id/edit'
     | '/app/settings/integrations/sharetribe'
     | '/app/admin/help/articles/$id'
@@ -888,6 +899,7 @@ export interface FileRouteTypes {
     | '/app/admin/help/articles'
     | '/app/admin/help/categories'
     | '/app/admin/help/feedback'
+    | '/app/admin/help/tickets'
     | '/app/pages/$id/edit'
     | '/app/settings/integrations/sharetribe'
     | '/app/admin/help/articles/$id'
@@ -965,6 +977,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/admin/help/articles'
     | '/_authenticated/app/admin/help/categories'
     | '/_authenticated/app/admin/help/feedback'
+    | '/_authenticated/app/admin/help/tickets'
     | '/_authenticated/app/pages/$id/edit'
     | '/_authenticated/app/settings/integrations/sharetribe'
     | '/_authenticated/app/admin/help/articles/$id'
@@ -1487,6 +1500,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppPagesIdEditRouteImport
       parentRoute: typeof AuthenticatedAppPagesRoute
     }
+    '/_authenticated/app/admin/help/tickets': {
+      id: '/_authenticated/app/admin/help/tickets'
+      path: '/admin/help/tickets'
+      fullPath: '/app/admin/help/tickets'
+      preLoaderRoute: typeof AuthenticatedAppAdminHelpTicketsRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
     '/_authenticated/app/admin/help/feedback': {
       id: '/_authenticated/app/admin/help/feedback'
       path: '/admin/help/feedback'
@@ -1617,6 +1637,7 @@ interface AuthenticatedAppRouteChildren {
   AuthenticatedAppAdminHelpArticlesRoute: typeof AuthenticatedAppAdminHelpArticlesRouteWithChildren
   AuthenticatedAppAdminHelpCategoriesRoute: typeof AuthenticatedAppAdminHelpCategoriesRoute
   AuthenticatedAppAdminHelpFeedbackRoute: typeof AuthenticatedAppAdminHelpFeedbackRoute
+  AuthenticatedAppAdminHelpTicketsRoute: typeof AuthenticatedAppAdminHelpTicketsRoute
 }
 
 const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
@@ -1680,6 +1701,7 @@ const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
     AuthenticatedAppAdminHelpCategoriesRoute,
   AuthenticatedAppAdminHelpFeedbackRoute:
     AuthenticatedAppAdminHelpFeedbackRoute,
+  AuthenticatedAppAdminHelpTicketsRoute: AuthenticatedAppAdminHelpTicketsRoute,
 }
 
 const AuthenticatedAppRouteWithChildren =
