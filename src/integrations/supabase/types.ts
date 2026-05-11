@@ -1529,6 +1529,74 @@ export type Database = {
           },
         ]
       }
+      external_api_queue: {
+        Row: {
+          attempts: number
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          endpoint: string | null
+          error: string | null
+          id: string
+          max_attempts: number
+          payload: Json
+          priority: number
+          provider: string
+          response: Json | null
+          scheduled_at: string
+          started_at: string | null
+          status: Database["public"]["Enums"]["external_api_queue_status"]
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          attempts?: number
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          endpoint?: string | null
+          error?: string | null
+          id?: string
+          max_attempts?: number
+          payload?: Json
+          priority?: number
+          provider: string
+          response?: Json | null
+          scheduled_at?: string
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["external_api_queue_status"]
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          attempts?: number
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          endpoint?: string | null
+          error?: string | null
+          id?: string
+          max_attempts?: number
+          payload?: Json
+          priority?: number
+          provider?: string
+          response?: Json | null
+          scheduled_at?: string
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["external_api_queue_status"]
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_api_queue_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       feature_requests: {
         Row: {
           city: string | null
@@ -3543,6 +3611,44 @@ export type Database = {
           },
         ]
       }
+      workspace_secrets: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          key_name: string
+          updated_at: string
+          value: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          key_name: string
+          updated_at?: string
+          value: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          key_name?: string
+          updated_at?: string
+          value?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_secrets_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workspaces: {
         Row: {
           brand_color: string | null
@@ -3796,6 +3902,12 @@ export type Database = {
     Enums: {
       app_plan: "starter" | "growth" | "scale" | "enterprise"
       app_role: "admin" | "editor" | "user"
+      external_api_queue_status:
+        | "pending"
+        | "processing"
+        | "done"
+        | "error"
+        | "cancelled"
       subscription_status:
         | "trialing"
         | "active"
@@ -3935,6 +4047,13 @@ export const Constants = {
     Enums: {
       app_plan: ["starter", "growth", "scale", "enterprise"],
       app_role: ["admin", "editor", "user"],
+      external_api_queue_status: [
+        "pending",
+        "processing",
+        "done",
+        "error",
+        "cancelled",
+      ],
       subscription_status: [
         "trialing",
         "active",
