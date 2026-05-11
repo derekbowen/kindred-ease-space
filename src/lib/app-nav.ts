@@ -1,5 +1,6 @@
 import {
   LayoutDashboard,
+  MessagesSquare,
   FileText,
   Sparkles,
   ArrowRightLeft,
@@ -53,6 +54,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Overview",
     items: [
       { to: "/app", label: "Dashboard", icon: LayoutDashboard, exact: true },
+      { to: "/app/coach", label: "Coach", icon: MessagesSquare },
       { to: "/app/seo-coach", label: "SEO Coach", icon: Sparkles },
     ],
   },

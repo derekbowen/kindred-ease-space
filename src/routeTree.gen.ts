@@ -34,6 +34,7 @@ import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAppSeoCoachRouteImport } from './routes/_authenticated/app.seo-coach'
 import { Route as AuthenticatedAppPagesRouteImport } from './routes/_authenticated/app.pages'
 import { Route as AuthenticatedAppOnboardingRouteImport } from './routes/_authenticated/app.onboarding'
+import { Route as AuthenticatedAppCoachRouteImport } from './routes/_authenticated/app.coach'
 import { Route as AuthenticatedAppBillingRouteImport } from './routes/_authenticated/app.billing'
 import { Route as ApiPublicHooksSyncSharetribeRouteImport } from './routes/api/public/hooks/sync-sharetribe'
 import { Route as ApiPublicHooksCanonicalAuditRouteImport } from './routes/api/public/hooks/canonical-audit'
@@ -214,6 +215,11 @@ const AuthenticatedAppOnboardingRoute =
     path: '/onboarding',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
+const AuthenticatedAppCoachRoute = AuthenticatedAppCoachRouteImport.update({
+  id: '/coach',
+  path: '/coach',
+  getParentRoute: () => AuthenticatedAppRoute,
+} as any)
 const AuthenticatedAppBillingRoute = AuthenticatedAppBillingRouteImport.update({
   id: '/billing',
   path: '/billing',
@@ -543,6 +549,7 @@ export interface FileRoutesByFullPath {
   '/p/$slug': typeof PSlugRoute
   '/help/': typeof HelpIndexRoute
   '/app/billing': typeof AuthenticatedAppBillingRoute
+  '/app/coach': typeof AuthenticatedAppCoachRoute
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/app/pages': typeof AuthenticatedAppPagesRouteWithChildren
   '/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
@@ -619,6 +626,7 @@ export interface FileRoutesByTo {
   '/p/$slug': typeof PSlugRoute
   '/help': typeof HelpIndexRoute
   '/app/billing': typeof AuthenticatedAppBillingRoute
+  '/app/coach': typeof AuthenticatedAppCoachRoute
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/app/pages': typeof AuthenticatedAppPagesRouteWithChildren
   '/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
@@ -699,6 +707,7 @@ export interface FileRoutesById {
   '/p/$slug': typeof PSlugRoute
   '/help/': typeof HelpIndexRoute
   '/_authenticated/app/billing': typeof AuthenticatedAppBillingRoute
+  '/_authenticated/app/coach': typeof AuthenticatedAppCoachRoute
   '/_authenticated/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/_authenticated/app/pages': typeof AuthenticatedAppPagesRouteWithChildren
   '/_authenticated/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
@@ -779,6 +788,7 @@ export interface FileRouteTypes {
     | '/p/$slug'
     | '/help/'
     | '/app/billing'
+    | '/app/coach'
     | '/app/onboarding'
     | '/app/pages'
     | '/app/seo-coach'
@@ -855,6 +865,7 @@ export interface FileRouteTypes {
     | '/p/$slug'
     | '/help'
     | '/app/billing'
+    | '/app/coach'
     | '/app/onboarding'
     | '/app/pages'
     | '/app/seo-coach'
@@ -934,6 +945,7 @@ export interface FileRouteTypes {
     | '/p/$slug'
     | '/help/'
     | '/_authenticated/app/billing'
+    | '/_authenticated/app/coach'
     | '/_authenticated/app/onboarding'
     | '/_authenticated/app/pages'
     | '/_authenticated/app/seo-coach'
@@ -1189,6 +1201,13 @@ declare module '@tanstack/react-router' {
       path: '/onboarding'
       fullPath: '/app/onboarding'
       preLoaderRoute: typeof AuthenticatedAppOnboardingRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/coach': {
+      id: '/_authenticated/app/coach'
+      path: '/coach'
+      fullPath: '/app/coach'
+      preLoaderRoute: typeof AuthenticatedAppCoachRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
     '/_authenticated/app/billing': {
@@ -1613,6 +1632,7 @@ const AuthenticatedAppAdminHelpArticlesRouteWithChildren =
 
 interface AuthenticatedAppRouteChildren {
   AuthenticatedAppBillingRoute: typeof AuthenticatedAppBillingRoute
+  AuthenticatedAppCoachRoute: typeof AuthenticatedAppCoachRoute
   AuthenticatedAppOnboardingRoute: typeof AuthenticatedAppOnboardingRoute
   AuthenticatedAppPagesRoute: typeof AuthenticatedAppPagesRouteWithChildren
   AuthenticatedAppSeoCoachRoute: typeof AuthenticatedAppSeoCoachRoute
@@ -1663,6 +1683,7 @@ interface AuthenticatedAppRouteChildren {
 
 const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppBillingRoute: AuthenticatedAppBillingRoute,
+  AuthenticatedAppCoachRoute: AuthenticatedAppCoachRoute,
   AuthenticatedAppOnboardingRoute: AuthenticatedAppOnboardingRoute,
   AuthenticatedAppPagesRoute: AuthenticatedAppPagesRouteWithChildren,
   AuthenticatedAppSeoCoachRoute: AuthenticatedAppSeoCoachRoute,

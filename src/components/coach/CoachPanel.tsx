@@ -1,27 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Plus, Sparkles, Wrench, ChevronDown, ChevronRight, Loader2, AlertCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Send, Plus, Sparkles, Loader2, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   listConversations, createConversation, getMessages,
 } from "@/lib/coach.functions";
 import { SUGGESTED_PROMPTS } from "@/lib/coach-prompts";
+import { CoachMessage, type CoachMsg, type ToolCallShape } from "@/components/coach/CoachMessage";
 
-type Msg = {
-  id: string;
-  role: "user" | "assistant" | "tool" | "system";
-  content: string;
-  tool_calls?: Array<{ name: string; input: unknown; output: unknown }>;
-  isStreaming?: boolean;
-};
-
+type Msg = CoachMsg;
 type ToolEvent = { id: string; name: string; status: "running" | "done"; output?: unknown };
 
 export function CoachPanel({
@@ -217,11 +208,26 @@ export function CoachPanel({
               </div>
             )}
 
-            {messages.map((m) => <MessageBubble key={m.id} msg={m} />)}
+            {messages.map((m) => <CoachMessage key={m.id} msg={m} dense />)}
 
             {streaming && toolEvents.length > 0 && (
               <div className="space-y-1">
-                {toolEvents.map((t) => <ToolCard key={t.id} event={t} />)}
+                {toolEvents.map((t) => (
+                  <CoachMessage
+                    key={t.id}
+                    msg={{
+                      id: t.id,
+                      role: "tool",
+                      content: "",
+                      tool_calls: [{
+                        name: t.name,
+                        output: t.output,
+                        status: t.status,
+                      } as ToolCallShape],
+                    }}
+                    dense
+                  />
+                ))}
               </div>
             )}
 
@@ -254,57 +260,5 @@ export function CoachPanel({
         </div>
       </SheetContent>
     </Sheet>
-  );
-}
-
-function MessageBubble({ msg }: { msg: Msg }) {
-  if (msg.role === "user") {
-    return (
-      <div className="flex justify-end">
-        <div className="bg-primary text-primary-foreground rounded-lg px-3 py-2 text-sm max-w-[85%]">
-          {msg.content}
-        </div>
-      </div>
-    );
-  }
-  if (msg.role === "assistant") {
-    return (
-      <div className="space-y-2">
-        {msg.tool_calls && msg.tool_calls.length > 0 && (
-          <div className="space-y-1">
-            {msg.tool_calls.map((tc, i) => (
-              <ToolCard key={i} event={{ id: `${i}`, name: tc.name, status: "done", output: tc.output }} />
-            ))}
-          </div>
-        )}
-        <div className="prose prose-sm prose-invert max-w-none text-sm">
-          <ReactMarkdown>{msg.content || (msg.isStreaming ? "…" : "")}</ReactMarkdown>
-        </div>
-      </div>
-    );
-  }
-  return null;
-}
-
-function ToolCard({ event }: { event: ToolEvent }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="text-xs border border-border rounded-md bg-muted/30">
-      <button onClick={() => setOpen(!open)} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-muted/50">
-        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-        <Wrench className="h-3 w-3 text-muted-foreground" />
-        <span className="font-mono">{event.name}</span>
-        {event.status === "running" ? (
-          <Loader2 className="h-3 w-3 animate-spin ml-auto" />
-        ) : (
-          <Badge variant="secondary" className="ml-auto h-4 text-[10px]">done</Badge>
-        )}
-      </button>
-      {open && event.output !== undefined && (
-        <pre className="px-2 py-1 text-[10px] overflow-x-auto max-h-48 border-t border-border">
-          {JSON.stringify(event.output, null, 2)}
-        </pre>
-      )}
-    </div>
   );
 }
