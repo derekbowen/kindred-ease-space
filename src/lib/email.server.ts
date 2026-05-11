@@ -1,7 +1,66 @@
 // EmailIt API wrapper — server-only.
 // Docs: https://emailit.com/docs/api-reference/
 
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+
 const EMAILIT_API_URL = "https://api.emailit.com/v2/emails";
+
+// --- Template rendering -------------------------------------------------
+// Customizable templates live in the `email_templates` table. Each builder
+// below has a default subject/html/text. Admins can override any field via
+// the Email Templates admin page; placeholders like {{name}} are filled in
+// at send time. Unknown placeholders render as empty strings.
+
+export type RenderedEmail = { subject: string; html: string; text: string };
+
+function applyVars(tpl: string, vars: Record<string, string | undefined | null>) {
+  return tpl.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, k: string) => {
+    const v = vars[k];
+    return v == null ? "" : String(v);
+  });
+}
+
+const TEMPLATE_CACHE = new Map<string, { row: any; at: number }>();
+const CACHE_TTL_MS = 30_000;
+
+async function loadTemplateOverride(key: string): Promise<{
+  subject: string;
+  html: string;
+  text: string | null;
+  is_enabled: boolean;
+} | null> {
+  const cached = TEMPLATE_CACHE.get(key);
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.row;
+  try {
+    const { data } = await supabaseAdmin
+      .from("email_templates")
+      .select("subject,html,text,is_enabled")
+      .eq("key", key)
+      .maybeSingle();
+    TEMPLATE_CACHE.set(key, { row: data ?? null, at: Date.now() });
+    return (data as any) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearEmailTemplateCache(key?: string) {
+  if (key) TEMPLATE_CACHE.delete(key);
+  else TEMPLATE_CACHE.clear();
+}
+
+async function renderTemplate(
+  key: string,
+  defaults: { subject: string; html: string; text: string },
+  vars: Record<string, string | undefined | null>
+): Promise<RenderedEmail | null> {
+  const override = await loadTemplateOverride(key);
+  if (override && override.is_enabled === false) return null;
+  const subject = applyVars(override?.subject || defaults.subject, vars);
+  const html = applyVars(override?.html || defaults.html, vars);
+  const text = applyVars(override?.text || defaults.text, vars);
+  return { subject, html, text };
+}
 
 export interface SendEmailParams {
   to: string | string[];
