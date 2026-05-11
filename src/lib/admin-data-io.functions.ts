@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { assertWorkspaceMember } from "@/lib/admin-helpers.functions";
+import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
 import { z } from "zod";
 
 // Tables exposed to the admin data-io tool. All are workspace-scoped.
@@ -75,13 +75,14 @@ function coerceValue(raw: string): unknown {
 }
 
 // ---------- Server functions ----------
-const tableInput = z.object({ table: z.enum(TABLES) });
+const tableInput = z.object({ workspaceId: workspaceIdSchema, table: z.enum(TABLES) });
 
 export const exportTable = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => tableInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { workspaceId } = await assertWorkspaceMember((context as any).userId);
+    const workspaceId = data.workspaceId;
+    await assertWorkspaceMember(workspaceId, (context as any).userId);
 
     const all: Record<string, unknown>[] = [];
     const pageSize = 1000;
@@ -121,13 +122,15 @@ export const getImportSchema = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => tableInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { workspaceId } = await assertWorkspaceMember((context as any).userId);
+    const workspaceId = data.workspaceId;
+    await assertWorkspaceMember(workspaceId, (context as any).userId);
     const tableColumns = await getTableColumns(data.table, workspaceId);
     const conflictColumn = data.table === "content_plan" ? "slug" : "id";
     return { tableColumns, conflictColumn };
   });
 
 const importInput = z.object({
+  workspaceId: workspaceIdSchema,
   table: z.enum(TABLES),
   csv: z.string().min(1).max(25 * 1024 * 1024),
   mode: z.enum(["upsert", "insert"]).default("upsert"),
@@ -139,7 +142,8 @@ export const importTable = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => importInput.parse(d))
   .handler(async ({ data, context }) => {
-    const { workspaceId } = await assertWorkspaceMember((context as any).userId);
+    const workspaceId = data.workspaceId;
+    await assertWorkspaceMember(workspaceId, (context as any).userId);
     const parsed = parseCsv(data.csv);
     if (parsed.length < 2) throw new Error("CSV has no data rows");
     const header = parsed[0];
