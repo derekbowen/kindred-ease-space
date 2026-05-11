@@ -9,6 +9,11 @@ import {
 } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
+import { installServerFnAuthFetch } from "@/integrations/supabase/server-fn-fetch";
+
+if (typeof window !== "undefined") {
+  installServerFnAuthFetch();
+}
 
 function NotFoundComponent() {
   return (
