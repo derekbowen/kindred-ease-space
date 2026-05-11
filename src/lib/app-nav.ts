@@ -29,6 +29,8 @@ import {
   ClipboardCheck,
   HandCoins,
   Users,
+  Plug,
+  LayoutTemplate,
   type LucideIcon,
 } from "lucide-react";
 
@@ -56,6 +58,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Content",
     items: [
+      { to: "/app/pages", label: "Pages", icon: LayoutTemplate },
       { to: "/app/content/quick-page-builder", label: "Quick Page Builder", icon: Sparkles },
       { to: "/app/content/generate", label: "Generate Content", icon: FileText },
       { to: "/app/content/migration", label: "Content Migration", icon: ArrowRightLeft },
@@ -93,6 +96,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: "/app/billing", label: "Billing & Plans", icon: CreditCard },
       { to: "/app/settings", label: "Workspace Settings", icon: Settings },
+      { to: "/app/settings/integrations/sharetribe", label: "Sharetribe", icon: Plug },
     ],
   },
   {

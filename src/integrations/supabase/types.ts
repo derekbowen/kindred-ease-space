@@ -2342,6 +2342,39 @@ export type Database = {
           },
         ]
       }
+      page_templates: {
+        Row: {
+          config_schema: Json
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          preview_image_url: string | null
+          slug: string
+        }
+        Insert: {
+          config_schema: Json
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          preview_image_url?: string | null
+          slug: string
+        }
+        Update: {
+          config_schema?: Json
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          preview_image_url?: string | null
+          slug?: string
+        }
+        Relationships: []
+      }
       pool_waitlist: {
         Row: {
           city: string | null
@@ -3547,6 +3580,214 @@ export type Database = {
           },
         ]
       }
+      tenant_integrations: {
+        Row: {
+          client_id: string
+          client_secret_vault_id: string
+          created_at: string
+          id: string
+          last_sync_at: string | null
+          last_sync_error: string | null
+          last_sync_status: string | null
+          listings_count: number
+          marketplace_id: string
+          marketplace_url: string
+          provider: string
+          status: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          client_id: string
+          client_secret_vault_id: string
+          created_at?: string
+          id?: string
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          last_sync_status?: string | null
+          listings_count?: number
+          marketplace_id: string
+          marketplace_url: string
+          provider?: string
+          status?: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          client_id?: string
+          client_secret_vault_id?: string
+          created_at?: string
+          id?: string
+          last_sync_at?: string | null
+          last_sync_error?: string | null
+          last_sync_status?: string | null
+          listings_count?: number
+          marketplace_id?: string
+          marketplace_url?: string
+          provider?: string
+          status?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_integrations_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenant_listings: {
+        Row: {
+          author_id: string | null
+          author_name: string | null
+          category: string | null
+          city: string | null
+          country: string | null
+          custom_fields: Json
+          description: string | null
+          id: string
+          images: Json
+          lat: number | null
+          lng: number | null
+          marketplace_url: string
+          price_amount: number | null
+          price_currency: string | null
+          sharetribe_listing_id: string
+          slug: string
+          state: string | null
+          state_published: boolean
+          structured_data: Json | null
+          synced_at: string
+          title: string
+          workspace_id: string
+        }
+        Insert: {
+          author_id?: string | null
+          author_name?: string | null
+          category?: string | null
+          city?: string | null
+          country?: string | null
+          custom_fields?: Json
+          description?: string | null
+          id?: string
+          images?: Json
+          lat?: number | null
+          lng?: number | null
+          marketplace_url: string
+          price_amount?: number | null
+          price_currency?: string | null
+          sharetribe_listing_id: string
+          slug: string
+          state?: string | null
+          state_published?: boolean
+          structured_data?: Json | null
+          synced_at?: string
+          title: string
+          workspace_id: string
+        }
+        Update: {
+          author_id?: string | null
+          author_name?: string | null
+          category?: string | null
+          city?: string | null
+          country?: string | null
+          custom_fields?: Json
+          description?: string | null
+          id?: string
+          images?: Json
+          lat?: number | null
+          lng?: number | null
+          marketplace_url?: string
+          price_amount?: number | null
+          price_currency?: string | null
+          sharetribe_listing_id?: string
+          slug?: string
+          state?: string | null
+          state_published?: boolean
+          structured_data?: Json | null
+          synced_at?: string
+          title?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_listings_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenant_pages: {
+        Row: {
+          body_markdown: string | null
+          created_at: string
+          h1: string | null
+          id: string
+          listing_filter: Json
+          meta_description: string | null
+          published_at: string | null
+          slug: string
+          status: string
+          template_id: string
+          title: string
+          updated_at: string
+          variables: Json
+          workspace_id: string
+        }
+        Insert: {
+          body_markdown?: string | null
+          created_at?: string
+          h1?: string | null
+          id?: string
+          listing_filter?: Json
+          meta_description?: string | null
+          published_at?: string | null
+          slug: string
+          status?: string
+          template_id: string
+          title: string
+          updated_at?: string
+          variables?: Json
+          workspace_id: string
+        }
+        Update: {
+          body_markdown?: string | null
+          created_at?: string
+          h1?: string | null
+          id?: string
+          listing_filter?: Json
+          meta_description?: string | null
+          published_at?: string | null
+          slug?: string
+          status?: string
+          template_id?: string
+          title?: string
+          updated_at?: string
+          variables?: Json
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_pages_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "page_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_pages_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tracked_keywords: {
         Row: {
           created_at: string
@@ -3973,6 +4214,14 @@ export type Database = {
           msg_id: number
           read_ct: number
         }[]
+      }
+      tenant_get_integration_secret: {
+        Args: { _workspace_id: string }
+        Returns: string
+      }
+      tenant_set_integration_secret: {
+        Args: { _client_secret: string; _workspace_id: string }
+        Returns: string
       }
       verify_certificate: {
         Args: { _uid: string }

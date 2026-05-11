@@ -15,6 +15,7 @@ import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PSlugRouteImport } from './routes/p.$slug'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
 import { Route as ApiPublicSitemapByHostRouteImport } from './routes/api/public/sitemap-by-host'
@@ -22,8 +23,10 @@ import { Route as ApiPublicPageLookupRouteImport } from './routes/api/public/pag
 import { Route as ApiPublicDomainTokenRouteImport } from './routes/api/public/domain-token'
 import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated/app.settings'
 import { Route as AuthenticatedAppSeoCoachRouteImport } from './routes/_authenticated/app.seo-coach'
+import { Route as AuthenticatedAppPagesRouteImport } from './routes/_authenticated/app.pages'
 import { Route as AuthenticatedAppOnboardingRouteImport } from './routes/_authenticated/app.onboarding'
 import { Route as AuthenticatedAppBillingRouteImport } from './routes/_authenticated/app.billing'
+import { Route as ApiPublicHooksSyncSharetribeRouteImport } from './routes/api/public/hooks/sync-sharetribe'
 import { Route as ApiPublicHooksCanonicalAuditRouteImport } from './routes/api/public/hooks/canonical-audit'
 import { Route as AuthenticatedAppSettingsDomainsRouteImport } from './routes/_authenticated/app.settings.domains'
 import { Route as AuthenticatedAppSettingsApiKeysRouteImport } from './routes/_authenticated/app.settings.api-keys'
@@ -44,6 +47,8 @@ import { Route as AuthenticatedAppSeoCompetitorTrackerRouteImport } from './rout
 import { Route as AuthenticatedAppSeoCompetitorRadarRouteImport } from './routes/_authenticated/app.seo.competitor-radar'
 import { Route as AuthenticatedAppSeoClickReportRouteImport } from './routes/_authenticated/app.seo.click-report'
 import { Route as AuthenticatedAppSeoCanonicalAuditRouteImport } from './routes/_authenticated/app.seo.canonical-audit'
+import { Route as AuthenticatedAppPagesNewRouteImport } from './routes/_authenticated/app.pages.new'
+import { Route as AuthenticatedAppPagesBulkRouteImport } from './routes/_authenticated/app.pages.bulk'
 import { Route as AuthenticatedAppOpsSocialLeadHunterRouteImport } from './routes/_authenticated/app.ops.social-lead-hunter'
 import { Route as AuthenticatedAppOpsSiteFooterRouteImport } from './routes/_authenticated/app.ops.site-footer'
 import { Route as AuthenticatedAppOpsPlanRequestsRouteImport } from './routes/_authenticated/app.ops.plan-requests'
@@ -63,6 +68,8 @@ import { Route as AuthenticatedAppContentDataExportRouteImport } from './routes/
 import { Route as AuthenticatedAppContentCityHeroesRouteImport } from './routes/_authenticated/app.content.city-heroes'
 import { Route as AuthenticatedAppContentBulkEditorRouteImport } from './routes/_authenticated/app.content.bulk-editor'
 import { Route as AuthenticatedAppContentBlogRouteImport } from './routes/_authenticated/app.content.blog'
+import { Route as AuthenticatedAppSettingsIntegrationsSharetribeRouteImport } from './routes/_authenticated/app.settings.integrations.sharetribe'
+import { Route as AuthenticatedAppPagesIdEditRouteImport } from './routes/_authenticated/app.pages.$id.edit'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -91,6 +98,11 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PSlugRoute = PSlugRouteImport.update({
+  id: '/p/$slug',
+  path: '/p/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
@@ -130,6 +142,11 @@ const AuthenticatedAppSeoCoachRoute =
     path: '/seo-coach',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
+const AuthenticatedAppPagesRoute = AuthenticatedAppPagesRouteImport.update({
+  id: '/pages',
+  path: '/pages',
+  getParentRoute: () => AuthenticatedAppRoute,
+} as any)
 const AuthenticatedAppOnboardingRoute =
   AuthenticatedAppOnboardingRouteImport.update({
     id: '/onboarding',
@@ -141,6 +158,12 @@ const AuthenticatedAppBillingRoute = AuthenticatedAppBillingRouteImport.update({
   path: '/billing',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
+const ApiPublicHooksSyncSharetribeRoute =
+  ApiPublicHooksSyncSharetribeRouteImport.update({
+    id: '/api/public/hooks/sync-sharetribe',
+    path: '/api/public/hooks/sync-sharetribe',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksCanonicalAuditRoute =
   ApiPublicHooksCanonicalAuditRouteImport.update({
     id: '/api/public/hooks/canonical-audit',
@@ -261,6 +284,18 @@ const AuthenticatedAppSeoCanonicalAuditRoute =
     path: '/seo/canonical-audit',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
+const AuthenticatedAppPagesNewRoute =
+  AuthenticatedAppPagesNewRouteImport.update({
+    id: '/new',
+    path: '/new',
+    getParentRoute: () => AuthenticatedAppPagesRoute,
+  } as any)
+const AuthenticatedAppPagesBulkRoute =
+  AuthenticatedAppPagesBulkRouteImport.update({
+    id: '/bulk',
+    path: '/bulk',
+    getParentRoute: () => AuthenticatedAppPagesRoute,
+  } as any)
 const AuthenticatedAppOpsSocialLeadHunterRoute =
   AuthenticatedAppOpsSocialLeadHunterRouteImport.update({
     id: '/ops/social-lead-hunter',
@@ -375,6 +410,18 @@ const AuthenticatedAppContentBlogRoute =
     path: '/content/blog',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
+const AuthenticatedAppSettingsIntegrationsSharetribeRoute =
+  AuthenticatedAppSettingsIntegrationsSharetribeRouteImport.update({
+    id: '/integrations/sharetribe',
+    path: '/integrations/sharetribe',
+    getParentRoute: () => AuthenticatedAppSettingsRoute,
+  } as any)
+const AuthenticatedAppPagesIdEditRoute =
+  AuthenticatedAppPagesIdEditRouteImport.update({
+    id: '/$id/edit',
+    path: '/$id/edit',
+    getParentRoute: () => AuthenticatedAppPagesRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -383,8 +430,10 @@ export interface FileRoutesByFullPath {
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
+  '/p/$slug': typeof PSlugRoute
   '/app/billing': typeof AuthenticatedAppBillingRoute
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
+  '/app/pages': typeof AuthenticatedAppPagesRouteWithChildren
   '/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
@@ -410,6 +459,8 @@ export interface FileRoutesByFullPath {
   '/app/ops/plan-requests': typeof AuthenticatedAppOpsPlanRequestsRoute
   '/app/ops/site-footer': typeof AuthenticatedAppOpsSiteFooterRoute
   '/app/ops/social-lead-hunter': typeof AuthenticatedAppOpsSocialLeadHunterRoute
+  '/app/pages/bulk': typeof AuthenticatedAppPagesBulkRoute
+  '/app/pages/new': typeof AuthenticatedAppPagesNewRoute
   '/app/seo/canonical-audit': typeof AuthenticatedAppSeoCanonicalAuditRoute
   '/app/seo/click-report': typeof AuthenticatedAppSeoClickReportRoute
   '/app/seo/competitor-radar': typeof AuthenticatedAppSeoCompetitorRadarRoute
@@ -430,6 +481,9 @@ export interface FileRoutesByFullPath {
   '/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
   '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
+  '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
+  '/app/pages/$id/edit': typeof AuthenticatedAppPagesIdEditRoute
+  '/app/settings/integrations/sharetribe': typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -437,8 +491,10 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/p/$slug': typeof PSlugRoute
   '/app/billing': typeof AuthenticatedAppBillingRoute
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
+  '/app/pages': typeof AuthenticatedAppPagesRouteWithChildren
   '/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
@@ -464,6 +520,8 @@ export interface FileRoutesByTo {
   '/app/ops/plan-requests': typeof AuthenticatedAppOpsPlanRequestsRoute
   '/app/ops/site-footer': typeof AuthenticatedAppOpsSiteFooterRoute
   '/app/ops/social-lead-hunter': typeof AuthenticatedAppOpsSocialLeadHunterRoute
+  '/app/pages/bulk': typeof AuthenticatedAppPagesBulkRoute
+  '/app/pages/new': typeof AuthenticatedAppPagesNewRoute
   '/app/seo/canonical-audit': typeof AuthenticatedAppSeoCanonicalAuditRoute
   '/app/seo/click-report': typeof AuthenticatedAppSeoClickReportRoute
   '/app/seo/competitor-radar': typeof AuthenticatedAppSeoCompetitorRadarRoute
@@ -484,6 +542,9 @@ export interface FileRoutesByTo {
   '/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
   '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
+  '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
+  '/app/pages/$id/edit': typeof AuthenticatedAppPagesIdEditRoute
+  '/app/settings/integrations/sharetribe': typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -494,8 +555,10 @@ export interface FileRoutesById {
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
+  '/p/$slug': typeof PSlugRoute
   '/_authenticated/app/billing': typeof AuthenticatedAppBillingRoute
   '/_authenticated/app/onboarding': typeof AuthenticatedAppOnboardingRoute
+  '/_authenticated/app/pages': typeof AuthenticatedAppPagesRouteWithChildren
   '/_authenticated/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/_authenticated/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
@@ -521,6 +584,8 @@ export interface FileRoutesById {
   '/_authenticated/app/ops/plan-requests': typeof AuthenticatedAppOpsPlanRequestsRoute
   '/_authenticated/app/ops/site-footer': typeof AuthenticatedAppOpsSiteFooterRoute
   '/_authenticated/app/ops/social-lead-hunter': typeof AuthenticatedAppOpsSocialLeadHunterRoute
+  '/_authenticated/app/pages/bulk': typeof AuthenticatedAppPagesBulkRoute
+  '/_authenticated/app/pages/new': typeof AuthenticatedAppPagesNewRoute
   '/_authenticated/app/seo/canonical-audit': typeof AuthenticatedAppSeoCanonicalAuditRoute
   '/_authenticated/app/seo/click-report': typeof AuthenticatedAppSeoClickReportRoute
   '/_authenticated/app/seo/competitor-radar': typeof AuthenticatedAppSeoCompetitorRadarRoute
@@ -541,6 +606,9 @@ export interface FileRoutesById {
   '/_authenticated/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
   '/_authenticated/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
+  '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
+  '/_authenticated/app/pages/$id/edit': typeof AuthenticatedAppPagesIdEditRoute
+  '/_authenticated/app/settings/integrations/sharetribe': typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -551,8 +619,10 @@ export interface FileRouteTypes {
     | '/signup'
     | '/sitemap.xml'
     | '/app'
+    | '/p/$slug'
     | '/app/billing'
     | '/app/onboarding'
+    | '/app/pages'
     | '/app/seo-coach'
     | '/app/settings'
     | '/api/public/domain-token'
@@ -578,6 +648,8 @@ export interface FileRouteTypes {
     | '/app/ops/plan-requests'
     | '/app/ops/site-footer'
     | '/app/ops/social-lead-hunter'
+    | '/app/pages/bulk'
+    | '/app/pages/new'
     | '/app/seo/canonical-audit'
     | '/app/seo/click-report'
     | '/app/seo/competitor-radar'
@@ -598,6 +670,9 @@ export interface FileRouteTypes {
     | '/app/settings/api-keys'
     | '/app/settings/domains'
     | '/api/public/hooks/canonical-audit'
+    | '/api/public/hooks/sync-sharetribe'
+    | '/app/pages/$id/edit'
+    | '/app/settings/integrations/sharetribe'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -605,8 +680,10 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/sitemap.xml'
+    | '/p/$slug'
     | '/app/billing'
     | '/app/onboarding'
+    | '/app/pages'
     | '/app/seo-coach'
     | '/app/settings'
     | '/api/public/domain-token'
@@ -632,6 +709,8 @@ export interface FileRouteTypes {
     | '/app/ops/plan-requests'
     | '/app/ops/site-footer'
     | '/app/ops/social-lead-hunter'
+    | '/app/pages/bulk'
+    | '/app/pages/new'
     | '/app/seo/canonical-audit'
     | '/app/seo/click-report'
     | '/app/seo/competitor-radar'
@@ -652,6 +731,9 @@ export interface FileRouteTypes {
     | '/app/settings/api-keys'
     | '/app/settings/domains'
     | '/api/public/hooks/canonical-audit'
+    | '/api/public/hooks/sync-sharetribe'
+    | '/app/pages/$id/edit'
+    | '/app/settings/integrations/sharetribe'
   id:
     | '__root__'
     | '/'
@@ -661,8 +743,10 @@ export interface FileRouteTypes {
     | '/signup'
     | '/sitemap.xml'
     | '/_authenticated/app'
+    | '/p/$slug'
     | '/_authenticated/app/billing'
     | '/_authenticated/app/onboarding'
+    | '/_authenticated/app/pages'
     | '/_authenticated/app/seo-coach'
     | '/_authenticated/app/settings'
     | '/api/public/domain-token'
@@ -688,6 +772,8 @@ export interface FileRouteTypes {
     | '/_authenticated/app/ops/plan-requests'
     | '/_authenticated/app/ops/site-footer'
     | '/_authenticated/app/ops/social-lead-hunter'
+    | '/_authenticated/app/pages/bulk'
+    | '/_authenticated/app/pages/new'
     | '/_authenticated/app/seo/canonical-audit'
     | '/_authenticated/app/seo/click-report'
     | '/_authenticated/app/seo/competitor-radar'
@@ -708,6 +794,9 @@ export interface FileRouteTypes {
     | '/_authenticated/app/settings/api-keys'
     | '/_authenticated/app/settings/domains'
     | '/api/public/hooks/canonical-audit'
+    | '/api/public/hooks/sync-sharetribe'
+    | '/_authenticated/app/pages/$id/edit'
+    | '/_authenticated/app/settings/integrations/sharetribe'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -717,10 +806,12 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  PSlugRoute: typeof PSlugRoute
   ApiPublicDomainTokenRoute: typeof ApiPublicDomainTokenRoute
   ApiPublicPageLookupRoute: typeof ApiPublicPageLookupRoute
   ApiPublicSitemapByHostRoute: typeof ApiPublicSitemapByHostRoute
   ApiPublicHooksCanonicalAuditRoute: typeof ApiPublicHooksCanonicalAuditRoute
+  ApiPublicHooksSyncSharetribeRoute: typeof ApiPublicHooksSyncSharetribeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -765,6 +856,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/p/$slug': {
+      id: '/p/$slug'
+      path: '/p/$slug'
+      fullPath: '/p/$slug'
+      preLoaderRoute: typeof PSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/app': {
@@ -816,6 +914,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppSeoCoachRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/pages': {
+      id: '/_authenticated/app/pages'
+      path: '/pages'
+      fullPath: '/app/pages'
+      preLoaderRoute: typeof AuthenticatedAppPagesRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
     '/_authenticated/app/onboarding': {
       id: '/_authenticated/app/onboarding'
       path: '/onboarding'
@@ -829,6 +934,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app/billing'
       preLoaderRoute: typeof AuthenticatedAppBillingRouteImport
       parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/api/public/hooks/sync-sharetribe': {
+      id: '/api/public/hooks/sync-sharetribe'
+      path: '/api/public/hooks/sync-sharetribe'
+      fullPath: '/api/public/hooks/sync-sharetribe'
+      preLoaderRoute: typeof ApiPublicHooksSyncSharetribeRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/public/hooks/canonical-audit': {
       id: '/api/public/hooks/canonical-audit'
@@ -970,6 +1082,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppSeoCanonicalAuditRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/pages/new': {
+      id: '/_authenticated/app/pages/new'
+      path: '/new'
+      fullPath: '/app/pages/new'
+      preLoaderRoute: typeof AuthenticatedAppPagesNewRouteImport
+      parentRoute: typeof AuthenticatedAppPagesRoute
+    }
+    '/_authenticated/app/pages/bulk': {
+      id: '/_authenticated/app/pages/bulk'
+      path: '/bulk'
+      fullPath: '/app/pages/bulk'
+      preLoaderRoute: typeof AuthenticatedAppPagesBulkRouteImport
+      parentRoute: typeof AuthenticatedAppPagesRoute
+    }
     '/_authenticated/app/ops/social-lead-hunter': {
       id: '/_authenticated/app/ops/social-lead-hunter'
       path: '/ops/social-lead-hunter'
@@ -1103,18 +1229,52 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppContentBlogRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/settings/integrations/sharetribe': {
+      id: '/_authenticated/app/settings/integrations/sharetribe'
+      path: '/integrations/sharetribe'
+      fullPath: '/app/settings/integrations/sharetribe'
+      preLoaderRoute: typeof AuthenticatedAppSettingsIntegrationsSharetribeRouteImport
+      parentRoute: typeof AuthenticatedAppSettingsRoute
+    }
+    '/_authenticated/app/pages/$id/edit': {
+      id: '/_authenticated/app/pages/$id/edit'
+      path: '/$id/edit'
+      fullPath: '/app/pages/$id/edit'
+      preLoaderRoute: typeof AuthenticatedAppPagesIdEditRouteImport
+      parentRoute: typeof AuthenticatedAppPagesRoute
+    }
   }
 }
+
+interface AuthenticatedAppPagesRouteChildren {
+  AuthenticatedAppPagesBulkRoute: typeof AuthenticatedAppPagesBulkRoute
+  AuthenticatedAppPagesNewRoute: typeof AuthenticatedAppPagesNewRoute
+  AuthenticatedAppPagesIdEditRoute: typeof AuthenticatedAppPagesIdEditRoute
+}
+
+const AuthenticatedAppPagesRouteChildren: AuthenticatedAppPagesRouteChildren = {
+  AuthenticatedAppPagesBulkRoute: AuthenticatedAppPagesBulkRoute,
+  AuthenticatedAppPagesNewRoute: AuthenticatedAppPagesNewRoute,
+  AuthenticatedAppPagesIdEditRoute: AuthenticatedAppPagesIdEditRoute,
+}
+
+const AuthenticatedAppPagesRouteWithChildren =
+  AuthenticatedAppPagesRoute._addFileChildren(
+    AuthenticatedAppPagesRouteChildren,
+  )
 
 interface AuthenticatedAppSettingsRouteChildren {
   AuthenticatedAppSettingsApiKeysRoute: typeof AuthenticatedAppSettingsApiKeysRoute
   AuthenticatedAppSettingsDomainsRoute: typeof AuthenticatedAppSettingsDomainsRoute
+  AuthenticatedAppSettingsIntegrationsSharetribeRoute: typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
 }
 
 const AuthenticatedAppSettingsRouteChildren: AuthenticatedAppSettingsRouteChildren =
   {
     AuthenticatedAppSettingsApiKeysRoute: AuthenticatedAppSettingsApiKeysRoute,
     AuthenticatedAppSettingsDomainsRoute: AuthenticatedAppSettingsDomainsRoute,
+    AuthenticatedAppSettingsIntegrationsSharetribeRoute:
+      AuthenticatedAppSettingsIntegrationsSharetribeRoute,
   }
 
 const AuthenticatedAppSettingsRouteWithChildren =
@@ -1125,6 +1285,7 @@ const AuthenticatedAppSettingsRouteWithChildren =
 interface AuthenticatedAppRouteChildren {
   AuthenticatedAppBillingRoute: typeof AuthenticatedAppBillingRoute
   AuthenticatedAppOnboardingRoute: typeof AuthenticatedAppOnboardingRoute
+  AuthenticatedAppPagesRoute: typeof AuthenticatedAppPagesRouteWithChildren
   AuthenticatedAppSeoCoachRoute: typeof AuthenticatedAppSeoCoachRoute
   AuthenticatedAppSettingsRoute: typeof AuthenticatedAppSettingsRouteWithChildren
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
@@ -1169,6 +1330,7 @@ interface AuthenticatedAppRouteChildren {
 const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppBillingRoute: AuthenticatedAppBillingRoute,
   AuthenticatedAppOnboardingRoute: AuthenticatedAppOnboardingRoute,
+  AuthenticatedAppPagesRoute: AuthenticatedAppPagesRouteWithChildren,
   AuthenticatedAppSeoCoachRoute: AuthenticatedAppSeoCoachRoute,
   AuthenticatedAppSettingsRoute: AuthenticatedAppSettingsRouteWithChildren,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
@@ -1244,10 +1406,12 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  PSlugRoute: PSlugRoute,
   ApiPublicDomainTokenRoute: ApiPublicDomainTokenRoute,
   ApiPublicPageLookupRoute: ApiPublicPageLookupRoute,
   ApiPublicSitemapByHostRoute: ApiPublicSitemapByHostRoute,
   ApiPublicHooksCanonicalAuditRoute: ApiPublicHooksCanonicalAuditRoute,
+  ApiPublicHooksSyncSharetribeRoute: ApiPublicHooksSyncSharetribeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
