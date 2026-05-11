@@ -134,9 +134,7 @@ function Landing() {
         <Button asChild size="lg" className="mt-8"><Link to="/signup">Start your free trial</Link></Button>
       </section>
 
-      <footer className="border-t border-border py-8 text-center text-xs text-muted-foreground">
-        © {new Date().getFullYear()} founders.click
-      </footer>
+      <SiteFooter />
     </div>
   );
 }
