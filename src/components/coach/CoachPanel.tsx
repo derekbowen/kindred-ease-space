@@ -4,8 +4,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Plus, Sparkles, Loader2, AlertCircle, ExternalLink } from "lucide-react";
-import { Link } from "@tanstack/react-router";
+import { Send, Plus, Sparkles, Loader2, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   listConversations, createConversation, getMessages,
