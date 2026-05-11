@@ -161,7 +161,3 @@ function AppShell() {
     </SidebarProvider>
   );
 }
-      </div>
-    </SidebarProvider>
-  );
-}
