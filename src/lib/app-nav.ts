@@ -119,6 +119,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: "/app/admin/help/categories", label: "Help Categories", icon: LayoutTemplate, internalOnly: true },
       { to: "/app/admin/help/feedback", label: "Help Feedback", icon: ThumbsUp, internalOnly: true },
       { to: "/app/admin/help/tickets", label: "Help Tickets", icon: Inbox, internalOnly: true },
+      { to: "/app/admin/email-templates", label: "Email Templates", icon: Mail, internalOnly: true },
     ],
   },
 ];
