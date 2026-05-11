@@ -1742,57 +1742,128 @@ export type Database = {
           },
         ]
       }
+      help_article_feedback: {
+        Row: {
+          article_id: string
+          comment: string | null
+          created_at: string
+          id: string
+          is_helpful: boolean
+          session_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          article_id: string
+          comment?: string | null
+          created_at?: string
+          id?: string
+          is_helpful: boolean
+          session_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          article_id?: string
+          comment?: string | null
+          created_at?: string
+          id?: string
+          is_helpful?: boolean
+          session_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "help_article_feedback_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "help_articles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       help_articles: {
         Row: {
+          author_avatar_url: string | null
+          author_name: string | null
+          body_html: string | null
           category_slug: string
           content: string | null
           created_at: string
           excerpt: string | null
+          helpful_count: number
           id: string
           is_popular: boolean
           is_published: boolean
+          not_helpful_count: number
+          published_at: string | null
+          reading_time_minutes: number | null
+          related_article_ids: string[]
+          search_vector: unknown
           seo_description: string | null
           seo_title: string | null
           slug: string
           sort_order: number
+          status: string
+          tags: string[]
           title: string
           updated_at: string
           view_count: number
-          workspace_id: string
+          workspace_id: string | null
         }
         Insert: {
+          author_avatar_url?: string | null
+          author_name?: string | null
+          body_html?: string | null
           category_slug: string
           content?: string | null
           created_at?: string
           excerpt?: string | null
+          helpful_count?: number
           id?: string
           is_popular?: boolean
           is_published?: boolean
+          not_helpful_count?: number
+          published_at?: string | null
+          reading_time_minutes?: number | null
+          related_article_ids?: string[]
+          search_vector?: unknown
           seo_description?: string | null
           seo_title?: string | null
           slug: string
           sort_order?: number
+          status?: string
+          tags?: string[]
           title: string
           updated_at?: string
           view_count?: number
-          workspace_id: string
+          workspace_id?: string | null
         }
         Update: {
+          author_avatar_url?: string | null
+          author_name?: string | null
+          body_html?: string | null
           category_slug?: string
           content?: string | null
           created_at?: string
           excerpt?: string | null
+          helpful_count?: number
           id?: string
           is_popular?: boolean
           is_published?: boolean
+          not_helpful_count?: number
+          published_at?: string | null
+          reading_time_minutes?: number | null
+          related_article_ids?: string[]
+          search_vector?: unknown
           seo_description?: string | null
           seo_title?: string | null
           slug?: string
           sort_order?: number
+          status?: string
+          tags?: string[]
           title?: string
           updated_at?: string
           view_count?: number
-          workspace_id?: string
+          workspace_id?: string | null
         }
         Relationships: [
           {
@@ -1825,7 +1896,7 @@ export type Database = {
           slug: string
           sort_order: number
           updated_at: string
-          workspace_id: string
+          workspace_id: string | null
         }
         Insert: {
           created_at?: string
@@ -1840,7 +1911,7 @@ export type Database = {
           slug: string
           sort_order?: number
           updated_at?: string
-          workspace_id: string
+          workspace_id?: string | null
         }
         Update: {
           created_at?: string
@@ -1855,7 +1926,7 @@ export type Database = {
           slug?: string
           sort_order?: number
           updated_at?: string
-          workspace_id?: string
+          workspace_id?: string | null
         }
         Relationships: [
           {
@@ -1863,6 +1934,44 @@ export type Database = {
             columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      help_search_queries: {
+        Row: {
+          clicked_article_id: string | null
+          created_at: string
+          id: string
+          query: string
+          results_count: number | null
+          session_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          clicked_article_id?: string | null
+          created_at?: string
+          id?: string
+          query: string
+          results_count?: number | null
+          session_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          clicked_article_id?: string | null
+          created_at?: string
+          id?: string
+          query?: string
+          results_count?: number | null
+          session_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "help_search_queries_clicked_article_id_fkey"
+            columns: ["clicked_article_id"]
+            isOneToOne: false
+            referencedRelation: "help_articles"
             referencedColumns: ["id"]
           },
         ]
@@ -3437,6 +3546,62 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "subscriptions_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      support_tickets: {
+        Row: {
+          assigned_to: string | null
+          attachments: Json
+          category: string | null
+          created_at: string
+          email: string
+          id: string
+          message: string
+          name: string | null
+          priority: string
+          resolved_at: string | null
+          status: string
+          subject: string
+          workspace_id: string | null
+        }
+        Insert: {
+          assigned_to?: string | null
+          attachments?: Json
+          category?: string | null
+          created_at?: string
+          email: string
+          id?: string
+          message: string
+          name?: string | null
+          priority?: string
+          resolved_at?: string | null
+          status?: string
+          subject: string
+          workspace_id?: string | null
+        }
+        Update: {
+          assigned_to?: string | null
+          attachments?: Json
+          category?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          message?: string
+          name?: string | null
+          priority?: string
+          resolved_at?: string | null
+          status?: string
+          subject?: string
+          workspace_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_tickets_workspace_id_fkey"
             columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"
