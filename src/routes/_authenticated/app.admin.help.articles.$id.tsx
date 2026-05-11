@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { MarkdownRenderer } from "@/components/help/MarkdownRenderer";
+import { SeoPreviewPanel } from "@/components/help/SeoPreviewPanel";
 import {
   adminGetArticle,
   adminUpsertArticle,
@@ -53,6 +54,10 @@ function EditArticlePage() {
 
   const [form, setForm] = useState<ArticleForm | null>(null);
   const [cats, setCats] = useState<Awaited<ReturnType<typeof adminListCategories>>>([]);
+  const [meta, setMeta] = useState<{ published_at: string | null; updated_at: string | null }>({
+    published_at: null,
+    updated_at: null,
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -83,6 +88,7 @@ function EditArticlePage() {
           tags: (a.tags ?? []).join(", "),
           author_name: a.author_name ?? "",
         });
+        setMeta({ published_at: a.published_at ?? null, updated_at: a.updated_at ?? null });
       })
       .catch((e) => toast.error("Failed to load", { description: String(String(e)) }))
       .finally(() => setLoading(false));
@@ -202,6 +208,7 @@ function EditArticlePage() {
             <TabsList>
               <TabsTrigger value="write">Write</TabsTrigger>
               <TabsTrigger value="preview">Preview</TabsTrigger>
+              <TabsTrigger value="seo">SEO &amp; sharing</TabsTrigger>
             </TabsList>
             <TabsContent value="write">
               <Card className="p-0 overflow-hidden">
@@ -217,6 +224,21 @@ function EditArticlePage() {
               <Card className="p-6 min-h-[500px]">
                 {previewArticle && <MarkdownRenderer content={previewArticle.content} />}
               </Card>
+            </TabsContent>
+            <TabsContent value="seo">
+              <SeoPreviewPanel
+                title={form.title}
+                slug={form.slug}
+                categorySlug={form.category_slug}
+                excerpt={form.excerpt}
+                content={form.content}
+                seoTitle={form.seo_title}
+                seoDescription={form.seo_description}
+                tags={form.tags.split(",").map((t) => t.trim()).filter(Boolean)}
+                authorName={form.author_name}
+                publishedAt={meta.published_at}
+                updatedAt={meta.updated_at}
+              />
             </TabsContent>
           </Tabs>
         </div>
