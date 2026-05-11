@@ -3545,11 +3545,14 @@ export type Database = {
       }
       workspaces: {
         Row: {
+          brand_color: string | null
+          brand_name: string | null
           created_at: string
           current_period_end: string | null
           domain_verified_at: string | null
           id: string
           is_internal: boolean
+          logo_url: string | null
           marketplace_domain: string | null
           name: string
           owner_user_id: string | null
@@ -3562,11 +3565,14 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          brand_color?: string | null
+          brand_name?: string | null
           created_at?: string
           current_period_end?: string | null
           domain_verified_at?: string | null
           id?: string
           is_internal?: boolean
+          logo_url?: string | null
           marketplace_domain?: string | null
           name: string
           owner_user_id?: string | null
@@ -3579,11 +3585,14 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          brand_color?: string | null
+          brand_name?: string | null
           created_at?: string
           current_period_end?: string | null
           domain_verified_at?: string | null
           id?: string
           is_internal?: boolean
+          logo_url?: string | null
           marketplace_domain?: string | null
           name?: string
           owner_user_id?: string | null
