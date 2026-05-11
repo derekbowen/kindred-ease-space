@@ -1,89 +1,117 @@
-## Goal
+# founders.click — Sharetribe Integration + Page Builder (v1)
 
-Stop wrong-host URLs from shipping. Every canonical, `og:url`, sitemap entry, and internal link must resolve to `https://www.founders.click/...` (never the apex `founders.click`, never any `*.lovable.app` host).
+Scope from your spec, scoped down to a shippable v1: Sharetribe connect → encrypted creds → cron sync → page builder (City Hub template) → SSR public renderer at `/p/:slug`. All other templates are seeded as placeholders only.
 
-Today's state (from a quick scan):
-- `src/routes/index.tsx` emits `rel="canonical"` and `og:url` pointing at the apex `https://founders.click/`.
-- `src/routes/sitemap[.]xml.tsx` builds URLs from `const SITE = "https://founders.click"`.
-- `src/routes/__root.tsx` `og:image` / `twitter:image` point at an `id-preview-…lovable.app` R2 thumbnail.
-- There is no central canonical helper in this repo yet.
+---
 
-The audit needs to catch all three: source code (lint), generated HTML (crawl), and runtime requests (smoke).
+## 1. Database (one migration)
 
-## What we'll build
+New tables (all RLS-on, workspace-scoped via `is_workspace_member`):
 
-### 1. Canonical helper (single source of truth)
+- **`tenant_integrations`** — per-workspace Sharetribe creds. `client_secret` stored via Supabase Vault (`vault.secrets`), table holds only `client_secret_vault_id`. Unique `(workspace_id, provider)`.
+- **`tenant_listings`** — synced listings. Indexes on `(workspace_id, city)`, `(workspace_id, category)`, `(workspace_id, state_published)`. Unique `(workspace_id, sharetribe_listing_id)`.
+- **`page_templates`** — system-owned (no tenant write). Seed: `city_hub`, `category_page`, `neighborhood`, `comparison`, `resource_article`. Only `city_hub` has a real `config_schema`; others are stubs flagged `is_active=false`.
+- **`tenant_pages`** — tenant-built pages. Unique `(workspace_id, slug)` so two tenants can both own `/p/austin`. Indexes on `(workspace_id, status)` and `slug`.
 
-`src/lib/canonical.ts`
-- `CANONICAL_ORIGIN = "https://www.founders.click"`
-- `canonicalUrl(path: string)` — joins origin + normalized path
-- `isCanonicalUrl(url: string)` — boolean for the audit
+Plus two SECURITY DEFINER helpers:
+- `tenant_set_integration_secret(_workspace_id, _client_secret)` → writes to vault, returns `vault_id`. Keeps service-role usage off the client.
+- `tenant_get_integration_secret(_workspace_id)` → returns decrypted secret, callable only by service role (used by sync function).
 
-Replace the hard-coded apex strings in `index.tsx` and `sitemap[.]xml.tsx` with this helper. Also fix the `og:image` host on `__root.tsx` (move the asset under `www.founders.click` or accept it as an allow-listed CDN — see Open Question 1).
+RLS: tenant tables all gated by `is_workspace_member(workspace_id, auth.uid())`. `page_templates` is world-readable, no writes. `tenant_listings` is also world-readable when `state_published=true` so the public `/p/:slug` renderer can read with anon key (still scoped by workspace_id in queries).
 
-### 2. Static audit (the lint)
+## 2. Sharetribe sync (server function, not Supabase Edge Function)
 
-`scripts/audit-canonical-urls.ts` runnable via `bun run audit:urls`.
+Per workspace knowledge + project conventions, server-side jobs in this stack should be **TanStack server functions / server routes**, not Supabase Edge Functions. Two pieces:
 
-It walks `src/routes/**/*.{ts,tsx}` and `src/**/*.functions.ts` and flags:
-- Any string literal matching `https?://founders\.click` (apex, missing `www`)
-- Any string literal matching `https?://[^"']*lovable\.app` outside an allow-list
-- Any `rel="canonical"` / `og:url` / `twitter:url` value that isn't built from `canonicalUrl(...)`
-- `<Link to="https://...">` absolute internal links (should be relative `to="/path"`)
+- `src/lib/sharetribe-sync.functions.ts` — `runSharetribeSync({ workspace_id })` server fn, `requireSupabaseAuth` + workspace-membership check. Calls into a server-only helper.
+- `src/routes/api/public/hooks/sync-sharetribe.ts` — public hook for `pg_cron`. Body `{ workspace_id }`, header `apikey: <anon>`. For "sync all", iterates connected workspaces.
 
-Allow-list lives at the top of the script (e.g. Supabase URLs, the R2 og:image bucket if we keep it, any developer comments). Output is grouped by file with line numbers; non-zero exit on any violation. Wired into `package.json` so it can run locally and in CI.
+Sync helper (`src/lib/sharetribe-sync.server.ts`, service-role):
+1. Fetch `tenant_integrations` row, decrypt secret via `tenant_get_integration_secret`.
+2. POST `https://flex-integ-api.sharetribe.com/v1/auth/token` with `grant_type=client_credentials&scope=integ` → `access_token`.
+3. Page through `/v1/integration_api/listings/query?per_page=100&page=N&include=author,images` until `meta.totalPages` reached.
+4. Map → upsert into `tenant_listings` by `(workspace_id, sharetribe_listing_id)`. Build JSON-LD `Product` and store in `structured_data`.
+5. Delete rows whose `sharetribe_listing_id` is no longer present (set captured during paging).
+6. Update `tenant_integrations.last_sync_at / status / listings_count / last_sync_error`.
+7. Retry 3× with exponential backoff (1s/3s/9s) on 429/5xx. Auth failure → `status='error'`.
 
-### 3. Live crawl audit (the runtime check)
+`pg_cron`: every 30 min, calls the public hook with `{}` → hook fans out to all `connected` integrations.
 
-A new admin page at `/app/seo/canonical-audit` plus a server function `auditCanonicalUrls` in `src/lib/admin-canonical-audit.functions.ts`.
+## 3. Connect UI — `/app/settings/integrations/sharetribe`
 
-For each URL in a seed list (homepage + every route from the sitemap, capped at e.g. 200 per run):
-- `fetch` the URL on `https://www.founders.click`
-- Parse the returned HTML and extract: `<link rel="canonical">`, `og:url`, `twitter:url`, every `<a href="...">`, every `<link rel="alternate">`
-- For each extracted URL, classify:
-  - ✅ Relative or starts with `https://www.founders.click`
-  - ⚠️ Apex `https://founders.click` (should redirect, but we don't want it baked into HTML)
-  - ❌ Any `lovable.app` host
-  - ➖ External (other domain) — reported but not a failure
-- Also `HEAD` the page itself on `https://founders.click/...` and confirm it returns a 301 to `www`.
+Form: marketplace URL, marketplace ID, client ID, client secret. On submit, server fn:
+1. Validates creds by calling `/v1/integration_api/marketplace/show`.
+2. On success, writes secret to vault via `tenant_set_integration_secret`, upserts `tenant_integrations` row with `status='connected'`.
+3. Returns sanitized row (never the secret) for the UI.
 
-Results stored in a new table `canonical_audit_runs` (run_id, url, issues jsonb, checked_at) so the admin UI can show history and a delta vs the last run. RLS: admin role only.
+Connected state shows: marketplace URL, last sync timestamp/status, listings count, "Sync now" button (calls `runSharetribeSync`), "Disconnect" button.
 
-The page renders: last-run summary (pass/warn/fail counts), failing URLs grouped by issue type, and a "Run audit now" button that triggers the server fn.
+## 4. Page builder — `/app/pages`
 
-### 4. Scheduled run
+- **List view**: table of `tenant_pages` (title, template, slug, status, published_at, actions).
+- **Create flow** (single multi-step page, not separate routes):
+  1. Pick template (cards from `page_templates` where `is_active`). v1 = only City Hub.
+  2. Configure form, dynamically rendered from `template.config_schema`: slug, SEO title, meta description, H1, variable inputs (city, state, category_plural), listing filter (city/state/limit/sort), markdown body. AI-assist button is a stub button that opens a tooltip "coming soon" — out of v1 to keep this shippable.
+  3. Preview iframe → `/preview/:page_id` (auth-gated route that renders draft content as the published renderer would).
+  4. Publish → sets `status='published'`, `published_at=now()`.
+- **Bulk matrix**: CSV upload (`slug,city,state,category_plural,...`), pick template, server fn loops and upserts `tenant_pages`. Progress shown via simple count + toast (no streaming).
 
-A `pg_cron` job hits a public route `/api/public/hooks/canonical-audit` once a day. The handler verifies the Supabase anon key in the `apikey` header, then invokes the same audit logic and writes a row. If any ❌ failures appear, it logs to `console.error` (which Lovable surfaces) and inserts an alert row in `admin_alerts` (existing table if present; otherwise a tiny new one). No email yet — that's a follow-up.
+## 5. Public SSR renderer — `/p/$slug`
 
-### 5. Fix the existing violations the audit will catch
+`src/routes/p.$slug.tsx`:
+- `loader` calls a server fn `getPublicPage({ slug, host })`.
+- Server fn resolves workspace from host using existing `workspace_for_host(host)` helper, then fetches `tenant_pages` by `(workspace_id, slug, status='published')`.
+- Runs listing query against `tenant_listings` with `page.listing_filter` (city/state/category/limit/sort). All in one round-trip.
+- Returns `{ page, listings, workspace }`.
+- Component renders the City Hub template as pure server HTML: hero (city + count), intro markdown, 24-card grid, body markdown, FAQ accordion (CSS-only `<details>`), related pages.
+- Each card: `<article itemscope itemtype="https://schema.org/Product">`, image with `loading="lazy"`, links to `listing.marketplace_url` with `rel="noopener nofollow"`.
+- `head()` emits canonical, OG, Twitter, and a `<script type="application/ld+json">` per listing from `structured_data`. Title/description from `page.title` / `page.meta_description`.
+- `errorComponent` + `notFoundComponent` per route conventions.
 
-In the same change set:
-- Rewrite `index.tsx` head to use `canonicalUrl("/")`
-- Rewrite `sitemap[.]xml.tsx` to use `CANONICAL_ORIGIN`
-- Decide on `__root.tsx` og:image (see Open Question 1)
-- Run `bun run audit:urls` to confirm zero violations
+## 6. City Hub template
 
-## File map
+Hard-coded React component `src/components/templates/CityHub.tsx`. `page_templates.config_schema` for `city_hub` matches your spec exactly. Renderer dispatches on `template.slug`.
 
-```text
-src/lib/canonical.ts                          (new)
-src/lib/admin-canonical-audit.functions.ts    (new — server fn)
-src/lib/admin-canonical-audit.server.ts       (new — fetch + parse helpers)
-src/routes/_authenticated/app.seo.canonical-audit.tsx   (new — admin UI)
-src/routes/api/public/hooks/canonical-audit.ts          (new — cron endpoint)
-scripts/audit-canonical-urls.ts               (new — static lint)
-src/routes/index.tsx                          (edit — use helper)
-src/routes/sitemap[.]xml.tsx                  (edit — use helper)
-src/routes/__root.tsx                         (edit — og:image host)
-package.json                                  (edit — "audit:urls" script)
-supabase migration                            (new table + RLS)
-pg_cron job                                   (insert via supabase tool, not migration)
+---
+
+## Technical notes / deviations
+
+- **Edge Functions vs server functions**: The spec says "Supabase Edge Function". Workspace and stack rules say *use TanStack server functions / server routes for app logic, not Edge Functions*. I'll implement as a server route under `/api/public/hooks/sync-sharetribe`, called by `pg_cron` via `pg_net`, and a `createServerFn` for the in-app "Sync now" button. Functionally equivalent, follows project conventions.
+- **Vault**: assumes `vault` extension is enabled (it is in standard Supabase projects). If `vault.create_secret` isn't available in this project I'll fall back to encrypting with `pgsodium` + a `SHARETRIBE_ENCRYPTION_KEY` runtime secret. Migration will branch.
+- **Subdomain → workspace resolution**: relies on existing `workspace_for_host(host)` DB function (already in your schema). Public renderer pulls the host from the request, not `window.location`.
+- **Unscoped routes**: nothing new under disallowed prefixes (you're not in the pool-rental project here, so the workspace-knowledge legacy-route rules don't apply — those are for fresh-web).
+- **AI body assist**, **structured-data validation page**, **detailed sync logs UI**, **partial-failure resume**, and **per-template builders beyond City Hub** are explicitly *out of v1*. I'll stub the AI button and leave a `// TODO v2` marker for the rest.
+
+---
+
+## File list (rough)
+
+```
+supabase/migrations/<ts>_sharetribe_pages.sql
+src/integrations/supabase/types.ts                  (regen)
+src/lib/sharetribe-sync.functions.ts
+src/lib/sharetribe-sync.server.ts
+src/lib/tenant-pages.functions.ts
+src/lib/tenant-pages.server.ts
+src/routes/api/public/hooks/sync-sharetribe.ts
+src/routes/_authenticated/app.settings.integrations.sharetribe.tsx
+src/routes/_authenticated/app.pages.tsx              (list)
+src/routes/_authenticated/app.pages.new.tsx          (create wizard)
+src/routes/_authenticated/app.pages.$id.edit.tsx
+src/routes/_authenticated/app.pages.bulk.tsx        (CSV matrix)
+src/routes/_authenticated/preview.$pageId.tsx
+src/routes/p.$slug.tsx                              (public SSR)
+src/components/templates/CityHub.tsx
+src/components/page-builder/{TemplatePicker,ConfigForm,ListingFilterEditor,MarkdownEditor}.tsx
+src/lib/app-nav.ts                                  (add Pages + Integrations entries)
 ```
 
-## Open questions
+Plus a separate `pg_cron` insert (via DB insert tool, not migration) once the hook is live.
 
-1. The current `og:image` is hosted on `pub-…r2.dev`. Two options: (a) re-upload the share image to `www.founders.click/og/home.png` and serve it from our own host, or (b) keep the R2 URL and add it to the audit allow-list. (a) is the cleaner long-term answer. Which do you want?
-2. Crawl scope: cap at 200 URLs per run, or crawl the entire sitemap (currently small but will grow)?
-3. Cron cadence: daily at 06:00 UTC, or hourly during the first week so we catch regressions fast?
+---
 
-Tell me your answers (or "you pick") and I'll implement.
+## Open question
+
+Spec says listing-card links go to `listing.marketplace_url` (the tenant's Sharetribe URL). Confirm: should those links be **`rel="noopener nofollow"`** (treat as outbound user content, preserves SEO juice for `/p/:slug`) or **`rel="noopener"` only** (pass link equity to the tenant's marketplace)? I'll default to `noopener nofollow` unless you say otherwise.
+
+Approve and I'll build it.
