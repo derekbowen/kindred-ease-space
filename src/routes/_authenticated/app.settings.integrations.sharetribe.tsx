@@ -14,6 +14,7 @@ import {
   disconnectSharetribe,
   runSharetribeSync,
 } from "@/lib/sharetribe-sync.functions";
+import { InlineCoach } from "@/components/coach/InlineCoach";
 
 export const Route = createFileRoute("/_authenticated/app/settings/integrations/sharetribe")({
   head: () => ({ meta: [{ title: "Sharetribe Integration — founders.click" }] }),
@@ -133,13 +134,20 @@ function SharetribeIntegrationPage() {
 
   return (
     <div className="p-6 max-w-3xl space-y-6">
-      <header>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Plug className="h-6 w-6" /> Sharetribe Integration
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Connect your Sharetribe Flex marketplace so we can sync listings and render SEO pages.
-        </p>
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Plug className="h-6 w-6" /> Sharetribe Integration
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Connect your Sharetribe Flex marketplace so we can sync listings and render SEO pages.
+          </p>
+        </div>
+        <InlineCoach
+          workspaceId={workspaceId}
+          context={{ route: "/app/settings/integrations/sharetribe" }}
+          label="Ask coach about sync"
+        />
       </header>
 
       {msg && (

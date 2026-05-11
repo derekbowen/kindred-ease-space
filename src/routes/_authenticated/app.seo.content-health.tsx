@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { scanContentHealth, type ContentHealthReport } from "@/lib/admin-content-health.functions";
+import { InlineCoach } from "@/components/coach/InlineCoach";
 
 export const Route = createFileRoute("/_authenticated/app/seo/content-health")({
   head: () => ({ meta: [{ title: "Content Health — founders.click" }] }),
@@ -39,9 +40,16 @@ function ContentHealthPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Content Health</h1>
-        <p className="text-sm text-muted-foreground">Find published pages with missing or thin body content.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Content Health</h1>
+          <p className="text-sm text-muted-foreground">Find published pages with missing or thin body content.</p>
+        </div>
+        <InlineCoach
+          workspaceId={workspaceId}
+          context={{ route: "/app/seo/content-health" }}
+          label="Ask coach about SEO"
+        />
       </div>
 
       <Card>
