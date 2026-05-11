@@ -1,27 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Plus, Sparkles, Wrench, ChevronDown, ChevronRight, Loader2, AlertCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Send, Plus, Sparkles, Loader2, AlertCircle, ExternalLink } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import {
   listConversations, createConversation, getMessages,
 } from "@/lib/coach.functions";
 import { SUGGESTED_PROMPTS } from "@/lib/coach-prompts";
+import { CoachMessage, type CoachMsg, type ToolCallShape } from "@/components/coach/CoachMessage";
 
-type Msg = {
-  id: string;
-  role: "user" | "assistant" | "tool" | "system";
-  content: string;
-  tool_calls?: Array<{ name: string; input: unknown; output: unknown }>;
-  isStreaming?: boolean;
-};
-
+type Msg = CoachMsg;
 type ToolEvent = { id: string; name: string; status: "running" | "done"; output?: unknown };
 
 export function CoachPanel({
