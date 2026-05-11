@@ -1,31 +1,12 @@
-// Stripe webhook -> updates subscriptions, grants credits
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { creditsForTier, resolvePlanTierFromPrice } from "../_shared/stripe-catalog.ts";
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2024-06-20" });
 const admin = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
-
-async function planTierForPrice(priceId: string | null): Promise<string> {
-  if (!priceId) return "unknown";
-  const { data } = await admin.from("billing_config").select("*").eq("id", 1).maybeSingle();
-  if (!data) return "unknown";
-  if (priceId === data.starter_price_id) return "starter";
-  if (priceId === data.pro_price_id) return "pro";
-  if (priceId === data.scale_price_id) return "scale";
-  return "unknown";
-}
-
-async function monthlyCreditsForTier(tier: string): Promise<number> {
-  const { data } = await admin.from("billing_config").select("*").eq("id", 1).maybeSingle();
-  if (!data) return 0;
-  if (tier === "starter") return data.starter_monthly_credits;
-  if (tier === "pro") return data.pro_monthly_credits;
-  if (tier === "scale") return data.scale_monthly_credits;
-  return 0;
-}
 
 Deno.serve(async (req) => {
   const sig = req.headers.get("stripe-signature");
@@ -50,10 +31,10 @@ Deno.serve(async (req) => {
         if (!workspace_id) break;
 
         if (mode === "credits") {
-          const { data: cfg } = await admin.from("billing_config").select("credits_per_pack").eq("id", 1).maybeSingle();
           const lineItems = await stripe.checkout.sessions.listLineItems(s.id);
           const qty = lineItems.data[0]?.quantity ?? 1;
-          const credits = (cfg?.credits_per_pack ?? 1000) * qty;
+          const creditsPerPack = Number(s.metadata?.credits_per_pack ?? 1000);
+          const credits = creditsPerPack * qty;
           await admin.from("credit_purchases").insert({
             workspace_id,
             stripe_session_id: s.id,
@@ -80,7 +61,7 @@ Deno.serve(async (req) => {
         const workspace_id = sub.metadata?.workspace_id;
         if (!workspace_id) break;
         const priceId = sub.items.data[0]?.price.id ?? null;
-        const tier = await planTierForPrice(priceId);
+        const tier = sub.metadata?.plan_tier ?? await resolvePlanTierFromPrice(stripe, priceId);
         await admin.from("subscriptions").upsert({
           workspace_id,
           stripe_subscription_id: sub.id,
@@ -99,7 +80,7 @@ Deno.serve(async (req) => {
         const { data: sub } = await admin.from("subscriptions")
           .select("workspace_id, plan_tier").eq("stripe_subscription_id", subId).maybeSingle();
         if (!sub?.workspace_id) break;
-        const credits = await monthlyCreditsForTier(sub.plan_tier);
+        const credits = creditsForTier(sub.plan_tier);
         if (credits > 0) {
           await admin.rpc("grant_credits", {
             _workspace_id: sub.workspace_id,
