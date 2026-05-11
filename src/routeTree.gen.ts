@@ -64,6 +64,7 @@ import { Route as AuthenticatedAppContentDataExportRouteImport } from './routes/
 import { Route as AuthenticatedAppContentCityHeroesRouteImport } from './routes/_authenticated/app.content.city-heroes'
 import { Route as AuthenticatedAppContentBulkEditorRouteImport } from './routes/_authenticated/app.content.bulk-editor'
 import { Route as AuthenticatedAppContentBlogRouteImport } from './routes/_authenticated/app.content.blog'
+import { Route as AuthenticatedAppSettingsIntegrationsSharetribeRouteImport } from './routes/_authenticated/app.settings.integrations.sharetribe'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -382,6 +383,12 @@ const AuthenticatedAppContentBlogRoute =
     path: '/content/blog',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
+const AuthenticatedAppSettingsIntegrationsSharetribeRoute =
+  AuthenticatedAppSettingsIntegrationsSharetribeRouteImport.update({
+    id: '/integrations/sharetribe',
+    path: '/integrations/sharetribe',
+    getParentRoute: () => AuthenticatedAppSettingsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -438,6 +445,7 @@ export interface FileRoutesByFullPath {
   '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
   '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
+  '/app/settings/integrations/sharetribe': typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -493,6 +501,7 @@ export interface FileRoutesByTo {
   '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
   '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
+  '/app/settings/integrations/sharetribe': typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -551,6 +560,7 @@ export interface FileRoutesById {
   '/_authenticated/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
   '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
+  '/_authenticated/app/settings/integrations/sharetribe': typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -609,6 +619,7 @@ export interface FileRouteTypes {
     | '/app/settings/domains'
     | '/api/public/hooks/canonical-audit'
     | '/api/public/hooks/sync-sharetribe'
+    | '/app/settings/integrations/sharetribe'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -664,6 +675,7 @@ export interface FileRouteTypes {
     | '/app/settings/domains'
     | '/api/public/hooks/canonical-audit'
     | '/api/public/hooks/sync-sharetribe'
+    | '/app/settings/integrations/sharetribe'
   id:
     | '__root__'
     | '/'
@@ -721,6 +733,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/settings/domains'
     | '/api/public/hooks/canonical-audit'
     | '/api/public/hooks/sync-sharetribe'
+    | '/_authenticated/app/settings/integrations/sharetribe'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1124,18 +1137,28 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppContentBlogRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/settings/integrations/sharetribe': {
+      id: '/_authenticated/app/settings/integrations/sharetribe'
+      path: '/integrations/sharetribe'
+      fullPath: '/app/settings/integrations/sharetribe'
+      preLoaderRoute: typeof AuthenticatedAppSettingsIntegrationsSharetribeRouteImport
+      parentRoute: typeof AuthenticatedAppSettingsRoute
+    }
   }
 }
 
 interface AuthenticatedAppSettingsRouteChildren {
   AuthenticatedAppSettingsApiKeysRoute: typeof AuthenticatedAppSettingsApiKeysRoute
   AuthenticatedAppSettingsDomainsRoute: typeof AuthenticatedAppSettingsDomainsRoute
+  AuthenticatedAppSettingsIntegrationsSharetribeRoute: typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
 }
 
 const AuthenticatedAppSettingsRouteChildren: AuthenticatedAppSettingsRouteChildren =
   {
     AuthenticatedAppSettingsApiKeysRoute: AuthenticatedAppSettingsApiKeysRoute,
     AuthenticatedAppSettingsDomainsRoute: AuthenticatedAppSettingsDomainsRoute,
+    AuthenticatedAppSettingsIntegrationsSharetribeRoute:
+      AuthenticatedAppSettingsIntegrationsSharetribeRoute,
   }
 
 const AuthenticatedAppSettingsRouteWithChildren =

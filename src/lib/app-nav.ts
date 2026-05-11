@@ -29,6 +29,8 @@ import {
   ClipboardCheck,
   HandCoins,
   Users,
+  Plug,
+  LayoutTemplate,
   type LucideIcon,
 } from "lucide-react";
 
