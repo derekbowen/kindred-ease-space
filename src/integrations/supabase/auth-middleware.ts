@@ -6,7 +6,26 @@ import type { Database } from './types'
 
 
 
-export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server(
+export const requireSupabaseAuth = createMiddleware({ type: 'function' })
+  .client(async ({ next }) => {
+    // Browser: attach the current Supabase access token so the server middleware
+    // (below) sees a Bearer token. Without this, server fns 401 because the
+    // default fetch from the client doesn't forward auth.
+    if (typeof window !== 'undefined') {
+      try {
+        const { supabase } = await import('./client');
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (token) {
+          return next({ headers: { authorization: `Bearer ${token}` } });
+        }
+      } catch (err) {
+        console.error('[requireSupabaseAuth client] failed to read session', err);
+      }
+    }
+    return next();
+  })
+  .server(
   async ({ next }) => {
     
     const SUPABASE_URL = process.env.SUPABASE_URL;
