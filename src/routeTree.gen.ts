@@ -13,11 +13,18 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as HelpRouteImport } from './routes/help'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as HelpIndexRouteImport } from './routes/help.index'
 import { Route as PSlugRouteImport } from './routes/p.$slug'
+import { Route as HelpSitemapDotxmlRouteImport } from './routes/help.sitemap[.]xml'
+import { Route as HelpSearchRouteImport } from './routes/help.search'
+import { Route as HelpContactRouteImport } from './routes/help.contact'
+import { Route as HelpCategoryRouteImport } from './routes/help.$category'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
+import { Route as HelpCategoryArticleRouteImport } from './routes/help.$category.$article'
 import { Route as ApiPublicSitemapByHostRouteImport } from './routes/api/public/sitemap-by-host'
 import { Route as ApiPublicPageLookupRouteImport } from './routes/api/public/page-lookup'
 import { Route as ApiPublicDomainTokenRouteImport } from './routes/api/public/domain-token'
@@ -91,6 +98,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HelpRoute = HelpRouteImport.update({
+  id: '/help',
+  path: '/help',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
@@ -100,10 +112,35 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HelpIndexRoute = HelpIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => HelpRoute,
+} as any)
 const PSlugRoute = PSlugRouteImport.update({
   id: '/p/$slug',
   path: '/p/$slug',
   getParentRoute: () => rootRouteImport,
+} as any)
+const HelpSitemapDotxmlRoute = HelpSitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
+  getParentRoute: () => HelpRoute,
+} as any)
+const HelpSearchRoute = HelpSearchRouteImport.update({
+  id: '/search',
+  path: '/search',
+  getParentRoute: () => HelpRoute,
+} as any)
+const HelpContactRoute = HelpContactRouteImport.update({
+  id: '/contact',
+  path: '/contact',
+  getParentRoute: () => HelpRoute,
+} as any)
+const HelpCategoryRoute = HelpCategoryRouteImport.update({
+  id: '/$category',
+  path: '/$category',
+  getParentRoute: () => HelpRoute,
 } as any)
 const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
   id: '/app',
@@ -114,6 +151,11 @@ const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedAppRoute,
+} as any)
+const HelpCategoryArticleRoute = HelpCategoryArticleRouteImport.update({
+  id: '/$article',
+  path: '/$article',
+  getParentRoute: () => HelpCategoryRoute,
 } as any)
 const ApiPublicSitemapByHostRoute = ApiPublicSitemapByHostRouteImport.update({
   id: '/api/public/sitemap-by-host',
@@ -425,12 +467,18 @@ const AuthenticatedAppPagesIdEditRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/help': typeof HelpRouteWithChildren
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
+  '/help/$category': typeof HelpCategoryRouteWithChildren
+  '/help/contact': typeof HelpContactRoute
+  '/help/search': typeof HelpSearchRoute
+  '/help/sitemap.xml': typeof HelpSitemapDotxmlRoute
   '/p/$slug': typeof PSlugRoute
+  '/help/': typeof HelpIndexRoute
   '/app/billing': typeof AuthenticatedAppBillingRoute
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/app/pages': typeof AuthenticatedAppPagesRouteWithChildren
@@ -439,6 +487,7 @@ export interface FileRoutesByFullPath {
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
   '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
+  '/help/$category/$article': typeof HelpCategoryArticleRoute
   '/app/': typeof AuthenticatedAppIndexRoute
   '/app/content/blog': typeof AuthenticatedAppContentBlogRoute
   '/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
@@ -491,7 +540,12 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/help/$category': typeof HelpCategoryRouteWithChildren
+  '/help/contact': typeof HelpContactRoute
+  '/help/search': typeof HelpSearchRoute
+  '/help/sitemap.xml': typeof HelpSitemapDotxmlRoute
   '/p/$slug': typeof PSlugRoute
+  '/help': typeof HelpIndexRoute
   '/app/billing': typeof AuthenticatedAppBillingRoute
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/app/pages': typeof AuthenticatedAppPagesRouteWithChildren
@@ -500,6 +554,7 @@ export interface FileRoutesByTo {
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
   '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
+  '/help/$category/$article': typeof HelpCategoryArticleRoute
   '/app': typeof AuthenticatedAppIndexRoute
   '/app/content/blog': typeof AuthenticatedAppContentBlogRoute
   '/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
@@ -550,12 +605,18 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
+  '/help': typeof HelpRouteWithChildren
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
+  '/help/$category': typeof HelpCategoryRouteWithChildren
+  '/help/contact': typeof HelpContactRoute
+  '/help/search': typeof HelpSearchRoute
+  '/help/sitemap.xml': typeof HelpSitemapDotxmlRoute
   '/p/$slug': typeof PSlugRoute
+  '/help/': typeof HelpIndexRoute
   '/_authenticated/app/billing': typeof AuthenticatedAppBillingRoute
   '/_authenticated/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/_authenticated/app/pages': typeof AuthenticatedAppPagesRouteWithChildren
@@ -564,6 +625,7 @@ export interface FileRoutesById {
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
   '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
+  '/help/$category/$article': typeof HelpCategoryArticleRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
   '/_authenticated/app/content/blog': typeof AuthenticatedAppContentBlogRoute
   '/_authenticated/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
@@ -614,12 +676,18 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/help'
     | '/login'
     | '/reset-password'
     | '/signup'
     | '/sitemap.xml'
     | '/app'
+    | '/help/$category'
+    | '/help/contact'
+    | '/help/search'
+    | '/help/sitemap.xml'
     | '/p/$slug'
+    | '/help/'
     | '/app/billing'
     | '/app/onboarding'
     | '/app/pages'
@@ -628,6 +696,7 @@ export interface FileRouteTypes {
     | '/api/public/domain-token'
     | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
+    | '/help/$category/$article'
     | '/app/'
     | '/app/content/blog'
     | '/app/content/bulk-editor'
@@ -680,7 +749,12 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/sitemap.xml'
+    | '/help/$category'
+    | '/help/contact'
+    | '/help/search'
+    | '/help/sitemap.xml'
     | '/p/$slug'
+    | '/help'
     | '/app/billing'
     | '/app/onboarding'
     | '/app/pages'
@@ -689,6 +763,7 @@ export interface FileRouteTypes {
     | '/api/public/domain-token'
     | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
+    | '/help/$category/$article'
     | '/app'
     | '/app/content/blog'
     | '/app/content/bulk-editor'
@@ -738,12 +813,18 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_authenticated'
+    | '/help'
     | '/login'
     | '/reset-password'
     | '/signup'
     | '/sitemap.xml'
     | '/_authenticated/app'
+    | '/help/$category'
+    | '/help/contact'
+    | '/help/search'
+    | '/help/sitemap.xml'
     | '/p/$slug'
+    | '/help/'
     | '/_authenticated/app/billing'
     | '/_authenticated/app/onboarding'
     | '/_authenticated/app/pages'
@@ -752,6 +833,7 @@ export interface FileRouteTypes {
     | '/api/public/domain-token'
     | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
+    | '/help/$category/$article'
     | '/_authenticated/app/'
     | '/_authenticated/app/content/blog'
     | '/_authenticated/app/content/bulk-editor'
@@ -802,6 +884,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
+  HelpRoute: typeof HelpRouteWithChildren
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
@@ -844,6 +927,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/help': {
+      id: '/help'
+      path: '/help'
+      fullPath: '/help'
+      preLoaderRoute: typeof HelpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated': {
       id: '/_authenticated'
       path: ''
@@ -858,12 +948,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/help/': {
+      id: '/help/'
+      path: '/'
+      fullPath: '/help/'
+      preLoaderRoute: typeof HelpIndexRouteImport
+      parentRoute: typeof HelpRoute
+    }
     '/p/$slug': {
       id: '/p/$slug'
       path: '/p/$slug'
       fullPath: '/p/$slug'
       preLoaderRoute: typeof PSlugRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/help/sitemap.xml': {
+      id: '/help/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/help/sitemap.xml'
+      preLoaderRoute: typeof HelpSitemapDotxmlRouteImport
+      parentRoute: typeof HelpRoute
+    }
+    '/help/search': {
+      id: '/help/search'
+      path: '/search'
+      fullPath: '/help/search'
+      preLoaderRoute: typeof HelpSearchRouteImport
+      parentRoute: typeof HelpRoute
+    }
+    '/help/contact': {
+      id: '/help/contact'
+      path: '/contact'
+      fullPath: '/help/contact'
+      preLoaderRoute: typeof HelpContactRouteImport
+      parentRoute: typeof HelpRoute
+    }
+    '/help/$category': {
+      id: '/help/$category'
+      path: '/$category'
+      fullPath: '/help/$category'
+      preLoaderRoute: typeof HelpCategoryRouteImport
+      parentRoute: typeof HelpRoute
     }
     '/_authenticated/app': {
       id: '/_authenticated/app'
@@ -878,6 +1003,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app/'
       preLoaderRoute: typeof AuthenticatedAppIndexRouteImport
       parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/help/$category/$article': {
+      id: '/help/$category/$article'
+      path: '/$article'
+      fullPath: '/help/$category/$article'
+      preLoaderRoute: typeof HelpCategoryArticleRouteImport
+      parentRoute: typeof HelpCategoryRoute
     }
     '/api/public/sitemap-by-host': {
       id: '/api/public/sitemap-by-host'
@@ -1399,9 +1531,40 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
   AuthenticatedRouteChildren,
 )
 
+interface HelpCategoryRouteChildren {
+  HelpCategoryArticleRoute: typeof HelpCategoryArticleRoute
+}
+
+const HelpCategoryRouteChildren: HelpCategoryRouteChildren = {
+  HelpCategoryArticleRoute: HelpCategoryArticleRoute,
+}
+
+const HelpCategoryRouteWithChildren = HelpCategoryRoute._addFileChildren(
+  HelpCategoryRouteChildren,
+)
+
+interface HelpRouteChildren {
+  HelpCategoryRoute: typeof HelpCategoryRouteWithChildren
+  HelpContactRoute: typeof HelpContactRoute
+  HelpSearchRoute: typeof HelpSearchRoute
+  HelpSitemapDotxmlRoute: typeof HelpSitemapDotxmlRoute
+  HelpIndexRoute: typeof HelpIndexRoute
+}
+
+const HelpRouteChildren: HelpRouteChildren = {
+  HelpCategoryRoute: HelpCategoryRouteWithChildren,
+  HelpContactRoute: HelpContactRoute,
+  HelpSearchRoute: HelpSearchRoute,
+  HelpSitemapDotxmlRoute: HelpSitemapDotxmlRoute,
+  HelpIndexRoute: HelpIndexRoute,
+}
+
+const HelpRouteWithChildren = HelpRoute._addFileChildren(HelpRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
+  HelpRoute: HelpRouteWithChildren,
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,

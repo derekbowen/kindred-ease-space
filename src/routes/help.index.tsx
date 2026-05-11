@@ -53,7 +53,7 @@ function HelpHome() {
         <section>
           <h2 className="text-xl font-semibold tracking-tight mb-6">Browse by category</h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {categories.map((c) => (
+            {categories.map((c: any) => (
               <CategoryCard key={c.id} category={c} count={countsBySlug[c.slug]} />
             ))}
           </div>
@@ -64,7 +64,7 @@ function HelpHome() {
           <section className="mt-16">
             <h2 className="text-xl font-semibold tracking-tight mb-6">Popular articles</h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {popular.map((a) => <ArticleCard key={a.id} article={a} showCategory />)}
+              {popular.map((a: any) => <ArticleCard key={a.id} article={a} showCategory />)}
             </div>
           </section>
         )}
@@ -74,7 +74,7 @@ function HelpHome() {
           <section className="mt-16">
             <h2 className="text-xl font-semibold tracking-tight mb-2">Recently updated</h2>
             <div className="border border-border rounded-lg bg-card px-3">
-              {recent.map((a) => <ArticleRow key={a.id} article={a} />)}
+              {recent.map((a: any) => <ArticleRow key={a.id} article={a} />)}
             </div>
           </section>
         )}

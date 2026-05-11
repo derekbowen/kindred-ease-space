@@ -111,7 +111,7 @@ function ArticlePage() {
         <section className="mt-12">
           <h2 className="text-base font-semibold mb-4">Related articles</h2>
           <div className="grid sm:grid-cols-2 gap-3">
-            {related.map((a) => <ArticleCard key={a.id} article={a} />)}
+            {related.map((a: any) => <ArticleCard key={a.id} article={a} />)}
           </div>
         </section>
       )}

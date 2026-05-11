@@ -54,7 +54,7 @@ function SearchPage() {
             {results.length} {results.length === 1 ? "result" : "results"} for <strong className="text-foreground">"{query}"</strong>
           </p>
           <div className="border border-border rounded-lg bg-card px-3">
-            {results.map((a) => <ArticleRow key={a.id} article={a} />)}
+            {results.map((a: any) => <ArticleRow key={a.id} article={a} />)}
           </div>
         </>
       )}
@@ -63,7 +63,7 @@ function SearchPage() {
         <aside className="mt-12 pt-8 border-t border-border">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Browse categories</h2>
           <div className="flex flex-wrap gap-2">
-            {categories.map((c) => (
+            {categories.map((c: any) => (
               <Link key={c.id} to={`/help/${c.slug}`} className="rounded-full border border-border px-3 py-1 text-sm hover:border-orange-500 hover:text-orange-500">
                 {c.name}
               </Link>

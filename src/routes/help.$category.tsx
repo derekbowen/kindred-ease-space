@@ -54,14 +54,14 @@ function CategoryPage() {
             <p className="text-sm text-muted-foreground">No articles yet.</p>
           ) : (
             <div className="border border-border rounded-lg bg-card px-3">
-              {articles.map((a) => <ArticleRow key={a.id} article={a} />)}
+              {articles.map((a: any) => <ArticleRow key={a.id} article={a} />)}
             </div>
           )}
         </div>
 
         <aside className="space-y-2">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Other categories</h2>
-          {otherCategories.map((c) => (
+          {otherCategories.map((c: any) => (
             <Link
               key={c.id}
               to={`/help/${c.slug}`}
