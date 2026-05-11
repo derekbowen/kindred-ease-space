@@ -21,6 +21,17 @@ export type HelpArticleListItem = {
   view_count: number;
   published_at: string | null;
   updated_at: string;
+  /** HTML snippet with <mark> highlights, set by full-text search */
+  headline?: string | null;
+  /** Search rank (0..n), higher = better. Set by full-text search */
+  rank?: number | null;
+};
+
+export type HelpTitleSuggestion = {
+  title: string;
+  slug: string;
+  category_slug: string;
+  similarity: number;
 };
 
 export type HelpArticleFull = HelpArticleListItem & {
