@@ -30,13 +30,13 @@ type ActionKey = "fix_thin_page" | "add_meta" | "create_city_page" | "add_intern
 
 const ACTION_META: Record<ActionKey, { label: string; icon: React.ComponentType<{ className?: string }>; confirmTitle: string; confirmBody: (ins: Insight) => string }> = {
   fix_thin_page: {
-    label: "Apply fix",
+    label: "Do it",
     icon: Wrench,
     confirmTitle: "Apply fix to this page?",
     confirmBody: () => "We'll expand the page body using AI and overwrite the existing markdown. This action is logged and can be reverted from the page editor's history.",
   },
   add_meta: {
-    label: "Apply fix",
+    label: "Do it",
     icon: Wrench,
     confirmTitle: "Generate SEO meta?",
     confirmBody: (ins) => {
@@ -46,13 +46,13 @@ const ACTION_META: Record<ActionKey, { label: string; icon: React.ComponentType<
     },
   },
   create_city_page: {
-    label: "Generate content",
+    label: "Do it",
     icon: FileText,
     confirmTitle: "Generate this city page?",
     confirmBody: (ins) => `We'll create a draft page for ${String(ins.action_payload?.city ?? "this city")} (status: draft, not in sitemap). Review it before publishing.`,
   },
   add_internal_links: {
-    label: "Add internal links",
+    label: "Do it",
     icon: Link2,
     confirmTitle: "Add internal links to this page?",
     confirmBody: () => "We'll add 3-6 contextual internal links to other published pages and overwrite the page body.",
