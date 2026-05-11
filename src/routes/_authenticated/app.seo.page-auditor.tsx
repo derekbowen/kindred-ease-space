@@ -56,9 +56,9 @@ function PageAuditorPage() {
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1 flex-1 min-w-[280px]">
               <Label>URL path</Label>
-              <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder="/p/los-angeles-ca" onKeyDown={(e) => { if (e.key === "Enter") audit(); }} />
+              <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder="/p/los-angeles-ca" onKeyDown={(e) => { if (e.key === "Enter") runAudit(); }} />
             </div>
-            <Button onClick={audit} disabled={busy || !workspaceId || !path.trim()} className="gap-2">
+            <Button onClick={runAudit} disabled={busy || !workspaceId || !path.trim()} className="gap-2">
               {busy && <Loader2 className="h-4 w-4 animate-spin" />} Audit
             </Button>
           </div>
