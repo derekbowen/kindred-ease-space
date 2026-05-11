@@ -78,29 +78,36 @@ function AppShell() {
             </Link>
           </SidebarHeader>
           <SidebarContent>
-            <SidebarGroup>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {NAV.map((item) => {
-                    const Icon = item.icon;
-                    const exact = "exact" in item ? item.exact : false;
-                    const active = exact
-                      ? location.pathname === item.to
-                      : location.pathname.startsWith(item.to);
-                    return (
-                      <SidebarMenuItem key={item.to}>
-                        <SidebarMenuButton asChild isActive={active}>
-                          <Link to={item.to}>
-                            <Icon className="h-4 w-4" />
-                            <span>{item.label}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
+            {NAV_SECTIONS.map((section) => (
+              <SidebarGroup key={section.label}>
+                <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {section.items.map((item) => {
+                      const Icon = item.icon;
+                      const active = item.exact
+                        ? location.pathname === item.to
+                        : location.pathname.startsWith(item.to) && item.to !== "/app";
+                      return (
+                        <SidebarMenuItem key={item.to}>
+                          <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
+                            <Link to={item.to}>
+                              <Icon className="h-4 w-4" />
+                              <span className="flex-1 truncate">{item.label}</span>
+                              {item.internalOnly && (
+                                <Badge variant="secondary" className="ml-auto h-4 px-1 text-[10px]">
+                                  internal
+                                </Badge>
+                              )}
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    })}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            ))}
           </SidebarContent>
           <SidebarFooter className="border-t border-sidebar-border">
             <div className="px-2 py-2 text-xs text-muted-foreground truncate">{me?.email}</div>
