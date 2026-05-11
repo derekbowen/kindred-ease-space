@@ -122,6 +122,22 @@ function AdminHelpArticlesPage() {
               <ExternalLink className="h-4 w-4 mr-2" /> View help center
             </Button>
           </Link>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              const t = toast.loading("Re-indexing articles for AI assistant…");
+              try {
+                const { data, error } = await supabase.functions.invoke("help-assistant-embed", { body: {} });
+                if (error) throw error;
+                toast.success(`Indexed ${data?.articles ?? 0} articles (${data?.chunks ?? 0} chunks)`, { id: t });
+              } catch (e) {
+                toast.error("Re-index failed", { id: t, description: e instanceof Error ? e.message : String(e) });
+              }
+            }}
+          >
+            <Sparkles className="h-4 w-4 mr-2" /> Re-index AI
+          </Button>
           <Button size="sm" onClick={onCreate} disabled={creating}>
             <Plus className="h-4 w-4 mr-2" /> New article
           </Button>
