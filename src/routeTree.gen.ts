@@ -22,6 +22,7 @@ import { Route as ApiPublicPageLookupRouteImport } from './routes/api/public/pag
 import { Route as ApiPublicDomainTokenRouteImport } from './routes/api/public/domain-token'
 import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated/app.settings'
 import { Route as AuthenticatedAppSeoCoachRouteImport } from './routes/_authenticated/app.seo-coach'
+import { Route as AuthenticatedAppPagesRouteImport } from './routes/_authenticated/app.pages'
 import { Route as AuthenticatedAppOnboardingRouteImport } from './routes/_authenticated/app.onboarding'
 import { Route as AuthenticatedAppBillingRouteImport } from './routes/_authenticated/app.billing'
 import { Route as ApiPublicHooksSyncSharetribeRouteImport } from './routes/api/public/hooks/sync-sharetribe'
@@ -132,6 +133,11 @@ const AuthenticatedAppSeoCoachRoute =
     path: '/seo-coach',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
+const AuthenticatedAppPagesRoute = AuthenticatedAppPagesRouteImport.update({
+  id: '/pages',
+  path: '/pages',
+  getParentRoute: () => AuthenticatedAppRoute,
+} as any)
 const AuthenticatedAppOnboardingRoute =
   AuthenticatedAppOnboardingRouteImport.update({
     id: '/onboarding',
@@ -399,6 +405,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/app/billing': typeof AuthenticatedAppBillingRoute
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
+  '/app/pages': typeof AuthenticatedAppPagesRoute
   '/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
@@ -455,6 +462,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/app/billing': typeof AuthenticatedAppBillingRoute
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
+  '/app/pages': typeof AuthenticatedAppPagesRoute
   '/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
@@ -514,6 +522,7 @@ export interface FileRoutesById {
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
   '/_authenticated/app/billing': typeof AuthenticatedAppBillingRoute
   '/_authenticated/app/onboarding': typeof AuthenticatedAppOnboardingRoute
+  '/_authenticated/app/pages': typeof AuthenticatedAppPagesRoute
   '/_authenticated/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/_authenticated/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
@@ -573,6 +582,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/app/billing'
     | '/app/onboarding'
+    | '/app/pages'
     | '/app/seo-coach'
     | '/app/settings'
     | '/api/public/domain-token'
@@ -629,6 +639,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/app/billing'
     | '/app/onboarding'
+    | '/app/pages'
     | '/app/seo-coach'
     | '/app/settings'
     | '/api/public/domain-token'
@@ -687,6 +698,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app'
     | '/_authenticated/app/billing'
     | '/_authenticated/app/onboarding'
+    | '/_authenticated/app/pages'
     | '/_authenticated/app/seo-coach'
     | '/_authenticated/app/settings'
     | '/api/public/domain-token'
@@ -841,6 +853,13 @@ declare module '@tanstack/react-router' {
       path: '/seo-coach'
       fullPath: '/app/seo-coach'
       preLoaderRoute: typeof AuthenticatedAppSeoCoachRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/pages': {
+      id: '/_authenticated/app/pages'
+      path: '/pages'
+      fullPath: '/app/pages'
+      preLoaderRoute: typeof AuthenticatedAppPagesRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
     '/_authenticated/app/onboarding': {
@@ -1169,6 +1188,7 @@ const AuthenticatedAppSettingsRouteWithChildren =
 interface AuthenticatedAppRouteChildren {
   AuthenticatedAppBillingRoute: typeof AuthenticatedAppBillingRoute
   AuthenticatedAppOnboardingRoute: typeof AuthenticatedAppOnboardingRoute
+  AuthenticatedAppPagesRoute: typeof AuthenticatedAppPagesRoute
   AuthenticatedAppSeoCoachRoute: typeof AuthenticatedAppSeoCoachRoute
   AuthenticatedAppSettingsRoute: typeof AuthenticatedAppSettingsRouteWithChildren
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
@@ -1213,6 +1233,7 @@ interface AuthenticatedAppRouteChildren {
 const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppBillingRoute: AuthenticatedAppBillingRoute,
   AuthenticatedAppOnboardingRoute: AuthenticatedAppOnboardingRoute,
+  AuthenticatedAppPagesRoute: AuthenticatedAppPagesRoute,
   AuthenticatedAppSeoCoachRoute: AuthenticatedAppSeoCoachRoute,
   AuthenticatedAppSettingsRoute: AuthenticatedAppSettingsRouteWithChildren,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
