@@ -1,117 +1,120 @@
-# founders.click — Sharetribe Integration + Page Builder (v1)
+# Tenant Onboarding & Setup System
 
-Scope from your spec, scoped down to a shippable v1: Sharetribe connect → encrypted creds → cron sync → page builder (City Hub template) → SSR public renderer at `/p/:slug`. All other templates are seeded as placeholders only.
+Build a complete onboarding system so new tenants can get to first value without you in the loop. Three surfaces, one source of truth.
 
----
+## Decisions baked in
 
-## 1. Database (one migration)
+1. **Cron is platform-managed.** One master `pg_cron` job loops every `tenant_integrations` row with `status='connected'` and calls the existing sync hook. Tenants never see SQL. The "Schedule cron" step is removed from the wizard entirely. The existing `/api/public/hooks/sync-sharetribe` already supports this — we just schedule it once, server-side.
+2. **Soft-blocking, not hard walls.** Steps 1–2 (Connect + Sync) gate the Pages builder with an inline nag. Everything else is encouraged but skippable. Dismiss hides the dashboard widget for 7 days.
+3. **State derived from real data**, not user-clicked checkboxes. Triggers update `workspace_onboarding` flags from `tenant_integrations` and `tenant_pages` events.
+4. **Email sequence**: scaffolded with Lovable Emails (built-in, queue-based). Will require setting up an email domain — I'll prompt for that when we get there. If you'd rather skip emails for v1, say so and I'll cut that section.
 
-New tables (all RLS-on, workspace-scoped via `is_workspace_member`):
+## Scope
 
-- **`tenant_integrations`** — per-workspace Sharetribe creds. `client_secret` stored via Supabase Vault (`vault.secrets`), table holds only `client_secret_vault_id`. Unique `(workspace_id, provider)`.
-- **`tenant_listings`** — synced listings. Indexes on `(workspace_id, city)`, `(workspace_id, category)`, `(workspace_id, state_published)`. Unique `(workspace_id, sharetribe_listing_id)`.
-- **`page_templates`** — system-owned (no tenant write). Seed: `city_hub`, `category_page`, `neighborhood`, `comparison`, `resource_article`. Only `city_hub` has a real `config_schema`; others are stubs flagged `is_active=false`.
-- **`tenant_pages`** — tenant-built pages. Unique `(workspace_id, slug)` so two tenants can both own `/p/austin`. Indexes on `(workspace_id, status)` and `slug`.
+### 1. Database (one migration)
 
-Plus two SECURITY DEFINER helpers:
-- `tenant_set_integration_secret(_workspace_id, _client_secret)` → writes to vault, returns `vault_id`. Keeps service-role usage off the client.
-- `tenant_get_integration_secret(_workspace_id)` → returns decrypted secret, callable only by service role (used by sync function).
+- `workspace_onboarding` — one row per workspace, tracks 5 step booleans + timestamps + `current_step`, `onboarding_completed`, `onboarding_dismissed_until`. Auto-created via trigger on `workspaces` insert. Backfill rows for existing workspaces.
+- `onboarding_events` — append-only event log (`workspace_id`, `step_name`, `event_type`, `metadata`) for funnel analytics.
+- Triggers (all `SECURITY DEFINER`):
+  - `tenant_integrations` insert/update with `status='connected'` → set `step_sharetribe_connected`
+  - `tenant_integrations` update where `last_sync_status='success'` → set `step_first_sync_completed`
+  - `tenant_pages` insert → set `step_first_page_created`
+  - `tenant_pages` update to `status='published'` → set `step_first_page_published`
+  - When all required steps true → set `onboarding_completed=true`
+- RLS: workspace members can read their own row, system updates via triggers. `onboarding_events` insert open to authenticated for own workspace; read restricted to workspace members + admins.
 
-RLS: tenant tables all gated by `is_workspace_member(workspace_id, auth.uid())`. `page_templates` is world-readable, no writes. `tenant_listings` is also world-readable when `state_published=true` so the public `/p/:slug` renderer can read with anon key (still scoped by workspace_id in queries).
+### 2. Onboarding wizard — `/app/onboarding`
 
-## 2. Sharetribe sync (server function, not Supabase Edge Function)
+Full-page route (not modal). Left rail vertical stepper, main content per step, top progress bar, "Skip for now" link.
 
-Per workspace knowledge + project conventions, server-side jobs in this stack should be **TanStack server functions / server routes**, not Supabase Edge Functions. Two pieces:
+- **Step 1 — Connect Sharetribe**: embeds the existing connect form from `/app/settings/integrations/sharetribe`. "Where do I find these?" expandable section linking to the Help article. Auto-advances on success.
+- **Step 2 — Run first sync**: big "Run Sync" button calling existing `runSharetribeSync` server fn. Polls integration row, shows live "X listings synced". Success card with stats.
+- **Step 3 — Create your first page**: simplified form (template = City Hub locked, city autocomplete from synced `tenant_listings.city`, state). "Generate" calls a new server fn that creates a draft page with sensible defaults. Preview pane.
+- **Step 4 — Publish & verify**: shows draft preview, "Publish" button, opens live URL in new tab, "I can see my page" confirmation.
+- **Step 5 — Connect GSC** *(optional)*: stub — shows "Coming soon" with a "Skip" button that marks step complete. (Real GSC OAuth is a separate build; let me know if you want it now.)
+- **Completion screen**: subtle confetti, 3 next-step cards (matrix tool, AI coach, pSEO playbook), "Go to dashboard" CTA.
 
-- `src/lib/sharetribe-sync.functions.ts` — `runSharetribeSync({ workspace_id })` server fn, `requireSupabaseAuth` + workspace-membership check. Calls into a server-only helper.
-- `src/routes/api/public/hooks/sync-sharetribe.ts` — public hook for `pg_cron`. Body `{ workspace_id }`, header `apikey: <anon>`. For "sync all", iterates connected workspaces.
+Wizard is resumable — `current_step` lookup on entry routes you to the right step.
 
-Sync helper (`src/lib/sharetribe-sync.server.ts`, service-role):
-1. Fetch `tenant_integrations` row, decrypt secret via `tenant_get_integration_secret`.
-2. POST `https://flex-integ-api.sharetribe.com/v1/auth/token` with `grant_type=client_credentials&scope=integ` → `access_token`.
-3. Page through `/v1/integration_api/listings/query?per_page=100&page=N&include=author,images` until `meta.totalPages` reached.
-4. Map → upsert into `tenant_listings` by `(workspace_id, sharetribe_listing_id)`. Build JSON-LD `Product` and store in `structured_data`.
-5. Delete rows whose `sharetribe_listing_id` is no longer present (set captured during paging).
-6. Update `tenant_integrations.last_sync_at / status / listings_count / last_sync_error`.
-7. Retry 3× with exponential backoff (1s/3s/9s) on 429/5xx. Auth failure → `status='error'`.
+### 3. Dashboard checklist widget
 
-`pg_cron`: every 30 min, calls the public hook with `{}` → hook fans out to all `connected` integrations.
+`<OnboardingChecklist />` rendered on `/app` dashboard when `onboarding_completed = false` AND `onboarding_dismissed_until < now()`.
 
-## 3. Connect UI — `/app/settings/integrations/sharetribe`
+- Header + dismiss X (sets `onboarding_dismissed_until = now() + 7 days`)
+- Progress bar "X of 5 complete"
+- Each step row: icon, label, "Start" button deep-linking to wizard at that step
+- Footer link to `/help/getting-started`
 
-Form: marketplace URL, marketplace ID, client ID, client secret. On submit, server fn:
-1. Validates creds by calling `/v1/integration_api/marketplace/show`.
-2. On success, writes secret to vault via `tenant_set_integration_secret`, upserts `tenant_integrations` row with `status='connected'`.
-3. Returns sanitized row (never the secret) for the UI.
+### 4. Soft-block on Pages
 
-Connected state shows: marketplace URL, last sync timestamp/status, listings count, "Sync now" button (calls `runSharetribeSync`), "Disconnect" button.
+`/app/pages` and `/app/pages/new` show a banner if Sharetribe not connected or first sync not run, with a "Finish setup" CTA to the wizard. Page builder still loads (not hard blocked) but the banner makes the prerequisite obvious.
 
-## 4. Page builder — `/app/pages`
+### 5. Platform-managed cron
 
-- **List view**: table of `tenant_pages` (title, template, slug, status, published_at, actions).
-- **Create flow** (single multi-step page, not separate routes):
-  1. Pick template (cards from `page_templates` where `is_active`). v1 = only City Hub.
-  2. Configure form, dynamically rendered from `template.config_schema`: slug, SEO title, meta description, H1, variable inputs (city, state, category_plural), listing filter (city/state/limit/sort), markdown body. AI-assist button is a stub button that opens a tooltip "coming soon" — out of v1 to keep this shippable.
-  3. Preview iframe → `/preview/:page_id` (auth-gated route that renders draft content as the published renderer would).
-  4. Publish → sets `status='published'`, `published_at=now()`.
-- **Bulk matrix**: CSV upload (`slug,city,state,category_plural,...`), pick template, server fn loops and upserts `tenant_pages`. Progress shown via simple count + toast (no streaming).
+- Replace the per-tenant SQL approach. Schedule **one** `pg_cron` job (`sync-all-tenants-30min`) that POSTs to `/api/public/hooks/sync-sharetribe` with empty body. The existing handler already iterates all connected workspaces via `runSharetribeSyncAll()`.
+- Run via the migration (uses `pg_cron` + `pg_net`, both already enabled per existing migrations).
+- Idempotent: unschedule existing job by name before re-creating.
 
-## 5. Public SSR renderer — `/p/$slug`
+### 6. Help Center articles (6 articles)
 
-`src/routes/p.$slug.tsx`:
-- `loader` calls a server fn `getPublicPage({ slug, host })`.
-- Server fn resolves workspace from host using existing `workspace_for_host(host)` helper, then fetches `tenant_pages` by `(workspace_id, slug, status='published')`.
-- Runs listing query against `tenant_listings` with `page.listing_filter` (city/state/category/limit/sort). All in one round-trip.
-- Returns `{ page, listings, workspace }`.
-- Component renders the City Hub template as pure server HTML: hero (city + count), intro markdown, 24-card grid, body markdown, FAQ accordion (CSS-only `<details>`), related pages.
-- Each card: `<article itemscope itemtype="https://schema.org/Product">`, image with `loading="lazy"`, links to `listing.marketplace_url` with `rel="noopener nofollow"`.
-- `head()` emits canonical, OG, Twitter, and a `<script type="application/ld+json">` per listing from `structured_data`. Title/description from `page.title` / `page.meta_description`.
-- `errorComponent` + `notFoundComponent` per route conventions.
+If a Help Center route doesn't exist yet, scaffold a minimal one at `/help/$slug` with markdown bodies stored in a `help_articles` table (slug, title, category, body_md, published). Seed 6 articles in "Getting Started":
 
-## 6. City Hub template
+1. Welcome to founders.click
+2. Connecting your Sharetribe marketplace
+3. Your first listing sync
+4. Building your first page
+5. Publishing and indexing your pages
+6. Connecting Google Search Console *(stub article)*
 
-Hard-coded React component `src/components/templates/CityHub.tsx`. `page_templates.config_schema` for `city_hub` matches your spec exactly. Renderer dispatches on `template.slug`.
+Each: 400–800 words placeholder copy, screenshot placeholders, "Was this helpful?" feedback writes to `help_feedback` table.
 
----
+### 7. Email sequence
 
-## Technical notes / deviations
+Scaffold Lovable Emails infrastructure (requires email domain). 6 templates triggered from a server-side scheduler that reads `workspace_onboarding` + `workspaces.created_at`:
 
-- **Edge Functions vs server functions**: The spec says "Supabase Edge Function". Workspace and stack rules say *use TanStack server functions / server routes for app logic, not Edge Functions*. I'll implement as a server route under `/api/public/hooks/sync-sharetribe`, called by `pg_cron` via `pg_net`, and a `createServerFn` for the in-app "Sync now" button. Functionally equivalent, follows project conventions.
-- **Vault**: assumes `vault` extension is enabled (it is in standard Supabase projects). If `vault.create_secret` isn't available in this project I'll fall back to encrypting with `pgsodium` + a `SHARETRIBE_ENCRYPTION_KEY` runtime secret. Migration will branch.
-- **Subdomain → workspace resolution**: relies on existing `workspace_for_host(host)` DB function (already in your schema). Public renderer pulls the host from the request, not `window.location`.
-- **Unscoped routes**: nothing new under disallowed prefixes (you're not in the pool-rental project here, so the workspace-knowledge legacy-route rules don't apply — those are for fresh-web).
-- **AI body assist**, **structured-data validation page**, **detailed sync logs UI**, **partial-failure resume**, and **per-template builders beyond City Hub** are explicitly *out of v1*. I'll stub the AI button and leave a `// TODO v2` marker for the rest.
+- Hour 0: Welcome
+- Hour 24: If !sharetribe_connected → "Stuck?"
+- Hour 48: If !first_sync → "Listings waiting"
+- Day 5: If !first_page_published → "Build your first page"
+- Day 7: If completed → "What's next"
+- Day 14: Founder check-in (calendar link placeholder)
 
----
+Suppression: skip if `onboarding_completed=true` (except day-7 success email) or `onboarding_dismissed_until > now()`.
 
-## File list (rough)
+A second `pg_cron` job (`onboarding-emails-hourly`) calls a new `/api/public/hooks/onboarding-emails` route that selects eligible workspaces and enqueues emails.
 
-```
-supabase/migrations/<ts>_sharetribe_pages.sql
-src/integrations/supabase/types.ts                  (regen)
-src/lib/sharetribe-sync.functions.ts
-src/lib/sharetribe-sync.server.ts
-src/lib/tenant-pages.functions.ts
-src/lib/tenant-pages.server.ts
-src/routes/api/public/hooks/sync-sharetribe.ts
-src/routes/_authenticated/app.settings.integrations.sharetribe.tsx
-src/routes/_authenticated/app.pages.tsx              (list)
-src/routes/_authenticated/app.pages.new.tsx          (create wizard)
-src/routes/_authenticated/app.pages.$id.edit.tsx
-src/routes/_authenticated/app.pages.bulk.tsx        (CSV matrix)
-src/routes/_authenticated/preview.$pageId.tsx
-src/routes/p.$slug.tsx                              (public SSR)
-src/components/templates/CityHub.tsx
-src/components/page-builder/{TemplatePicker,ConfigForm,ListingFilterEditor,MarkdownEditor}.tsx
-src/lib/app-nav.ts                                  (add Pages + Integrations entries)
-```
+### 8. Admin funnel analytics
 
-Plus a separate `pg_cron` insert (via DB insert tool, not migration) once the hook is live.
+`/app/admin/onboarding` (admin-gated): funnel chart (signups → connected → synced → page created → published → GSC), drop-off %, avg time per step, error frequency. Pulls from `onboarding_events` + `workspace_onboarding`.
 
----
+## Files
 
-## Open question
+**New:**
+- `supabase/migrations/<ts>_onboarding.sql` — tables, triggers, backfill, cron schedules
+- `src/lib/onboarding.functions.ts` + `.server.ts` — get/update progress, log events, generate first page
+- `src/lib/onboarding-emails.server.ts` — eligibility query + enqueue
+- `src/lib/help-articles.functions.ts` + `.server.ts`
+- `src/routes/_authenticated/app.onboarding.tsx` (replaces existing thin onboarding page; existing workspace-creation logic preserved as Step 0 if no workspace yet)
+- `src/components/onboarding/{StepRail,Step1Sharetribe,Step2Sync,Step3FirstPage,Step4Publish,Step5GSC,CompletionScreen}.tsx`
+- `src/components/onboarding/OnboardingChecklist.tsx`
+- `src/components/onboarding/SetupBanner.tsx` (soft-block on Pages)
+- `src/routes/help/index.tsx`, `src/routes/help/$slug.tsx`
+- `src/routes/_authenticated/app.admin.onboarding.tsx`
+- `src/routes/api/public/hooks/onboarding-emails.ts`
+- `supabase/functions/_shared/email-templates/onboarding-*.tsx` (6 templates) — only if you confirm email setup
 
-Spec says listing-card links go to `listing.marketplace_url` (the tenant's Sharetribe URL). Confirm: should those links be **`rel="noopener nofollow"`** (treat as outbound user content, preserves SEO juice for `/p/:slug`) or **`rel="noopener"` only** (pass link equity to the tenant's marketplace)? I'll default to `noopener nofollow` unless you say otherwise.
+**Edited:**
+- `src/routes/_authenticated/app.index.tsx` — mount `<OnboardingChecklist />`
+- `src/routes/_authenticated/app.pages.tsx` + `.new.tsx` — mount `<SetupBanner />`
+- `src/lib/app-nav.ts` — add Help + Admin Onboarding links
+- `src/integrations/supabase/types.ts` — auto-regen after migration
 
-Approve and I'll build it.
+## Open question before I start
+
+**Email setup** — I can scaffold the 6 emails using Lovable Emails (queue-based, retry-safe), but it requires setting up a sender domain. Three options:
+
+- **A)** Build everything including email sequence (I'll trigger the email-domain setup dialog when we get there).
+- **B)** Build everything except email sequence — ship in-app onboarding now, add emails later.
+- **C)** Use Resend instead (you already have a connection? — I'll need to check).
+
+Reply "A", "B", or "C" and I'll execute.
