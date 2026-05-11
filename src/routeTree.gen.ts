@@ -33,6 +33,7 @@ import { Route as AuthenticatedAppSeoKeywordOpportunitiesRouteImport } from './r
 import { Route as AuthenticatedAppSeoInternalLinksRouteImport } from './routes/_authenticated/app.seo.internal-links'
 import { Route as AuthenticatedAppSeoHealthRouteImport } from './routes/_authenticated/app.seo.health'
 import { Route as AuthenticatedAppSeoGscImportRouteImport } from './routes/_authenticated/app.seo.gsc-import'
+import { Route as AuthenticatedAppSeoContentHealthRouteImport } from './routes/_authenticated/app.seo.content-health'
 import { Route as AuthenticatedAppSeoCompetitorTrackerRouteImport } from './routes/_authenticated/app.seo.competitor-tracker'
 import { Route as AuthenticatedAppSeoCompetitorRadarRouteImport } from './routes/_authenticated/app.seo.competitor-radar'
 import { Route as AuthenticatedAppSeoClickReportRouteImport } from './routes/_authenticated/app.seo.click-report'
@@ -188,6 +189,12 @@ const AuthenticatedAppSeoGscImportRoute =
   AuthenticatedAppSeoGscImportRouteImport.update({
     id: '/seo/gsc-import',
     path: '/seo/gsc-import',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppSeoContentHealthRoute =
+  AuthenticatedAppSeoContentHealthRouteImport.update({
+    id: '/seo/content-health',
+    path: '/seo/content-health',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
 const AuthenticatedAppSeoCompetitorTrackerRoute =
@@ -357,6 +364,7 @@ export interface FileRoutesByFullPath {
   '/app/seo/click-report': typeof AuthenticatedAppSeoClickReportRoute
   '/app/seo/competitor-radar': typeof AuthenticatedAppSeoCompetitorRadarRoute
   '/app/seo/competitor-tracker': typeof AuthenticatedAppSeoCompetitorTrackerRoute
+  '/app/seo/content-health': typeof AuthenticatedAppSeoContentHealthRoute
   '/app/seo/gsc-import': typeof AuthenticatedAppSeoGscImportRoute
   '/app/seo/health': typeof AuthenticatedAppSeoHealthRoute
   '/app/seo/internal-links': typeof AuthenticatedAppSeoInternalLinksRoute
@@ -403,6 +411,7 @@ export interface FileRoutesByTo {
   '/app/seo/click-report': typeof AuthenticatedAppSeoClickReportRoute
   '/app/seo/competitor-radar': typeof AuthenticatedAppSeoCompetitorRadarRoute
   '/app/seo/competitor-tracker': typeof AuthenticatedAppSeoCompetitorTrackerRoute
+  '/app/seo/content-health': typeof AuthenticatedAppSeoContentHealthRoute
   '/app/seo/gsc-import': typeof AuthenticatedAppSeoGscImportRoute
   '/app/seo/health': typeof AuthenticatedAppSeoHealthRoute
   '/app/seo/internal-links': typeof AuthenticatedAppSeoInternalLinksRoute
@@ -452,6 +461,7 @@ export interface FileRoutesById {
   '/_authenticated/app/seo/click-report': typeof AuthenticatedAppSeoClickReportRoute
   '/_authenticated/app/seo/competitor-radar': typeof AuthenticatedAppSeoCompetitorRadarRoute
   '/_authenticated/app/seo/competitor-tracker': typeof AuthenticatedAppSeoCompetitorTrackerRoute
+  '/_authenticated/app/seo/content-health': typeof AuthenticatedAppSeoContentHealthRoute
   '/_authenticated/app/seo/gsc-import': typeof AuthenticatedAppSeoGscImportRoute
   '/_authenticated/app/seo/health': typeof AuthenticatedAppSeoHealthRoute
   '/_authenticated/app/seo/internal-links': typeof AuthenticatedAppSeoInternalLinksRoute
@@ -501,6 +511,7 @@ export interface FileRouteTypes {
     | '/app/seo/click-report'
     | '/app/seo/competitor-radar'
     | '/app/seo/competitor-tracker'
+    | '/app/seo/content-health'
     | '/app/seo/gsc-import'
     | '/app/seo/health'
     | '/app/seo/internal-links'
@@ -547,6 +558,7 @@ export interface FileRouteTypes {
     | '/app/seo/click-report'
     | '/app/seo/competitor-radar'
     | '/app/seo/competitor-tracker'
+    | '/app/seo/content-health'
     | '/app/seo/gsc-import'
     | '/app/seo/health'
     | '/app/seo/internal-links'
@@ -595,6 +607,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/seo/click-report'
     | '/_authenticated/app/seo/competitor-radar'
     | '/_authenticated/app/seo/competitor-tracker'
+    | '/_authenticated/app/seo/content-health'
     | '/_authenticated/app/seo/gsc-import'
     | '/_authenticated/app/seo/health'
     | '/_authenticated/app/seo/internal-links'
@@ -788,6 +801,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppSeoGscImportRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/seo/content-health': {
+      id: '/_authenticated/app/seo/content-health'
+      path: '/seo/content-health'
+      fullPath: '/app/seo/content-health'
+      preLoaderRoute: typeof AuthenticatedAppSeoContentHealthRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
     '/_authenticated/app/seo/competitor-tracker': {
       id: '/_authenticated/app/seo/competitor-tracker'
       path: '/seo/competitor-tracker'
@@ -973,6 +993,7 @@ interface AuthenticatedAppRouteChildren {
   AuthenticatedAppSeoClickReportRoute: typeof AuthenticatedAppSeoClickReportRoute
   AuthenticatedAppSeoCompetitorRadarRoute: typeof AuthenticatedAppSeoCompetitorRadarRoute
   AuthenticatedAppSeoCompetitorTrackerRoute: typeof AuthenticatedAppSeoCompetitorTrackerRoute
+  AuthenticatedAppSeoContentHealthRoute: typeof AuthenticatedAppSeoContentHealthRoute
   AuthenticatedAppSeoGscImportRoute: typeof AuthenticatedAppSeoGscImportRoute
   AuthenticatedAppSeoHealthRoute: typeof AuthenticatedAppSeoHealthRoute
   AuthenticatedAppSeoInternalLinksRoute: typeof AuthenticatedAppSeoInternalLinksRoute
@@ -1024,6 +1045,7 @@ const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
     AuthenticatedAppSeoCompetitorRadarRoute,
   AuthenticatedAppSeoCompetitorTrackerRoute:
     AuthenticatedAppSeoCompetitorTrackerRoute,
+  AuthenticatedAppSeoContentHealthRoute: AuthenticatedAppSeoContentHealthRoute,
   AuthenticatedAppSeoGscImportRoute: AuthenticatedAppSeoGscImportRoute,
   AuthenticatedAppSeoHealthRoute: AuthenticatedAppSeoHealthRoute,
   AuthenticatedAppSeoInternalLinksRoute: AuthenticatedAppSeoInternalLinksRoute,
