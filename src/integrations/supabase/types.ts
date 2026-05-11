@@ -3576,6 +3576,56 @@ export type Database = {
         }
         Relationships: []
       }
+      workspace_domains: {
+        Row: {
+          cloudflare_hostname_id: string | null
+          created_at: string
+          hostname: string
+          id: string
+          ssl_status: string | null
+          updated_at: string
+          verification_method: string | null
+          verification_token: string
+          verified: boolean
+          verified_at: string | null
+          workspace_id: string
+        }
+        Insert: {
+          cloudflare_hostname_id?: string | null
+          created_at?: string
+          hostname: string
+          id?: string
+          ssl_status?: string | null
+          updated_at?: string
+          verification_method?: string | null
+          verification_token: string
+          verified?: boolean
+          verified_at?: string | null
+          workspace_id: string
+        }
+        Update: {
+          cloudflare_hostname_id?: string | null
+          created_at?: string
+          hostname?: string
+          id?: string
+          ssl_status?: string | null
+          updated_at?: string
+          verification_method?: string | null
+          verification_token?: string
+          verified?: boolean
+          verified_at?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_domains_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workspace_members: {
         Row: {
           created_at: string
