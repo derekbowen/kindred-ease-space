@@ -26,6 +26,19 @@ Deno.serve(async (req) => {
     const admin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const { workspace_id, mode, quantity, tier } = await req.json();
 
+    // Validate inputs to avoid leaking TypeErrors from Stripe
+    const validModes = ["credits", "subscription"] as const;
+    const validTiers = ["starter", "pro", "scale"] as const;
+    if (!workspace_id || typeof workspace_id !== "string") {
+      return new Response(JSON.stringify({ error: "invalid_request" }), { status: 400, headers: corsHeaders });
+    }
+    if (!validModes.includes(mode)) {
+      return new Response(JSON.stringify({ error: "invalid_mode" }), { status: 400, headers: corsHeaders });
+    }
+    if (mode === "subscription" && !validTiers.includes(tier)) {
+      return new Response(JSON.stringify({ error: "invalid_tier" }), { status: 400, headers: corsHeaders });
+    }
+
     const { data: member } = await admin
       .from("workspace_members")
       .select("workspace_id")
@@ -88,6 +101,6 @@ Deno.serve(async (req) => {
     });
   } catch (e) {
     console.error("create-checkout error", e);
-    return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: corsHeaders });
   }
 });

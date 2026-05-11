@@ -41,6 +41,6 @@ Deno.serve(async (req) => {
     });
   } catch (e) {
     console.error("portal error", e);
-    return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: corsHeaders });
   }
 });

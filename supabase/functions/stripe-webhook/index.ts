@@ -19,7 +19,7 @@ Deno.serve(async (req) => {
     event = await stripe.webhooks.constructEventAsync(body, sig, secret);
   } catch (e) {
     console.error("webhook verify failed", e);
-    return new Response(`Webhook error: ${String(e)}`, { status: 400 });
+    return new Response(JSON.stringify({ error: "Invalid webhook signature" }), { status: 400 });
   }
 
   try {
@@ -104,6 +104,6 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ received: true }), { status: 200 });
   } catch (e) {
     console.error("webhook handler error", e);
-    return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
+    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500 });
   }
 });
