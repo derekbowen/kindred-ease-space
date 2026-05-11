@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { Sparkles, FileText, Search, Users, Zap, Brain, DollarSign } from "lucide-react";
+import { Sparkles, FileText, Search, Users, Zap, Brain } from "lucide-react";
 import { canonicalUrl } from "@/lib/canonical";
+import { SiteHeader } from "@/components/site/SiteHeader";
+import { SiteFooter } from "@/components/site/SiteFooter";
 
 export const Route = createFileRoute("/")({
   head: () => ({
