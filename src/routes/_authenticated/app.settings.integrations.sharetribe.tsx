@@ -14,6 +14,7 @@ import {
   disconnectSharetribe,
   runSharetribeSync,
 } from "@/lib/sharetribe-sync.functions";
+import { InlineCoach } from "@/components/coach/InlineCoach";
 
 export const Route = createFileRoute("/_authenticated/app/settings/integrations/sharetribe")({
   head: () => ({ meta: [{ title: "Sharetribe Integration — founders.click" }] }),
