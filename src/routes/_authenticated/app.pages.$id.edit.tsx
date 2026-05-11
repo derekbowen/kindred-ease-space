@@ -136,13 +136,20 @@ function EditPage() {
             Pages render at <code className="font-mono">/p/&lt;slug&gt;</code>
           </p>
         </div>
-        {!isNew && status === "published" && (
-          <Button asChild variant="outline" size="sm">
-            <a href={`/p/${slug}`} target="_blank" rel="noreferrer">
-              <ExternalLink className="h-4 w-4 mr-2" /> View
-            </a>
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <InlineCoach
+            workspaceId={workspaceId}
+            context={{ page_id: isNew ? undefined : id, route: `/app/pages/${id}/edit` }}
+            label="Ask coach about this page"
+          />
+          {!isNew && status === "published" && (
+            <Button asChild variant="outline" size="sm">
+              <a href={`/p/${slug}`} target="_blank" rel="noreferrer">
+                <ExternalLink className="h-4 w-4 mr-2" /> View
+              </a>
+            </Button>
+          )}
+        </div>
       </header>
 
       {err && (
