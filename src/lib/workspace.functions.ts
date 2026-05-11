@@ -68,17 +68,19 @@ export const createWorkspace = createServerFn({ method: "POST" })
     // Fire-and-forget welcome email — never block workspace creation.
     const userEmail = (context.claims as { email?: string } | undefined)?.email;
     if (userEmail) {
-      const tpl = welcomeEmailTemplate({
+      welcomeEmailTemplate({
         name: data.name,
         workspaceSlug: ws.slug,
-      });
-      sendEmail({
-        to: userEmail,
-        subject: tpl.subject,
-        html: tpl.html,
-        text: tpl.text,
-        idempotencyKey: `welcome-${ws.id}`,
-        meta: { workspace_id: ws.id, kind: "welcome" },
+      }).then((tpl) => {
+        if (!tpl) return;
+        return sendEmail({
+          to: userEmail,
+          subject: tpl.subject,
+          html: tpl.html,
+          text: tpl.text,
+          idempotencyKey: `welcome-${ws.id}`,
+          meta: { workspace_id: ws.id, kind: "welcome" },
+        });
       }).catch((err) => console.error("[createWorkspace] welcome email failed", err));
     }
 
