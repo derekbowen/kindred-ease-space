@@ -33,13 +33,6 @@ export type HelpArticleFull = HelpArticleListItem & {
   tags: string[];
 };
 
-const PLATFORM = "is";
-const NULL = null;
-
-function platformFilter<T extends { is: (col: string, val: unknown) => unknown }>(q: T): T {
-  return q.is("workspace_id", NULL) as T;
-}
-
 export async function listCategories(): Promise<HelpCategory[]> {
   const { data, error } = await supabaseAdmin
     .from("help_categories")
