@@ -17,3 +17,9 @@ verify_jwt = true
 
 [functions.ai-proxy]
 verify_jwt = true
+
+[functions.coach-chat]
+verify_jwt = true
+
+[functions.coach-briefing-cron]
+verify_jwt = false
