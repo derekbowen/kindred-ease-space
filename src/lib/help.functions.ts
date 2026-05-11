@@ -104,21 +104,37 @@ export type HelpSearchResult = {
   query: string;
   results: HelpArticleListItem[];
   categories: HelpCategory[];
+  /** "Did you mean" — fuzzy title matches when the query has typos */
+  suggestions: HelpTitleSuggestion[];
+  /** Popular articles surfaced when the search returned nothing */
+  popular: HelpArticleListItem[];
 };
 
 export const searchHelp = createServerFn({ method: "GET" })
   .inputValidator((d: { q: string }) => d)
   .handler(async ({ data }): Promise<HelpSearchResult> => {
     const q = (data.q ?? "").trim().slice(0, 200);
-    if (!q) return { query: "", results: [], categories: await listCategories() };
+    if (!q) {
+      const [categories, popular] = await Promise.all([listCategories(), listPopularArticles(6)]);
+      return { query: "", results: [], categories, suggestions: [], popular };
+    }
     try {
       const [results, categories] = await Promise.all([searchArticles(q, 50), listCategories()]);
-      // Fire-and-forget logging
+      let suggestions: HelpTitleSuggestion[] = [];
+      let popular: HelpArticleListItem[] = [];
+      if (results.length === 0) {
+        [suggestions, popular] = await Promise.all([
+          suggestArticleTitles(q, 5),
+          listPopularArticles(6),
+        ]);
+      } else if (results.length < 3) {
+        suggestions = await suggestArticleTitles(q, 3);
+      }
       logSearchQuery(q, results.length).catch(() => {});
-      return { query: q, results, categories };
+      return { query: q, results, categories, suggestions, popular };
     } catch (e) {
       console.error("[help] searchHelp", e);
-      return { query: q, results: [], categories: [] };
+      return { query: q, results: [], categories: [], suggestions: [], popular: [] };
     }
   });
 
