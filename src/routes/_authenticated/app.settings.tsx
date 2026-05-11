@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { getMe } from "@/lib/auth.functions";
+import { WorkspaceBrandingCard } from "@/components/WorkspaceBrandingCard";
 
 export const Route = createFileRoute("/_authenticated/app/settings")({
   head: () => ({ meta: [{ title: "Settings — founders.click" }] }),
@@ -15,16 +16,29 @@ export const Route = createFileRoute("/_authenticated/app/settings")({
 
 function SettingsPage() {
   const [me, setMe] = useState<Awaited<ReturnType<typeof getMe>> | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     getMe().then(setMe);
-  }, []);
+  }, [reloadKey]);
 
   const ws = me?.memberships?.[0]?.workspaces;
 
   return (
     <div className="space-y-6 max-w-2xl">
       <h1 className="text-2xl font-bold">Settings</h1>
+
+      {ws && (
+        <WorkspaceBrandingCard
+          workspaceId={ws.id}
+          initial={{
+            brand_name: ws.brand_name ?? null,
+            brand_color: ws.brand_color ?? null,
+            logo_url: ws.logo_url ?? null,
+          }}
+          onSaved={() => setReloadKey((k) => k + 1)}
+        />
+      )}
 
       <Card>
         <CardHeader>

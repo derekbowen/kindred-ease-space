@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link, Outlet, useNavigate, useLocation } from "@tanstack/react-router";
-import { LogOut, Sparkles } from "lucide-react";
+import { LogOut } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -66,12 +66,27 @@ function AppShell() {
         <Sidebar>
           <SidebarHeader className="border-b border-sidebar-border">
             <Link to="/app" className="px-2 py-3 flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-orange-500" />
-              <div className="text-sm">
-                <div className="font-bold tracking-tight">founders.click</div>
-                {activeWorkspace && (
+              {activeWorkspace?.logo_url ? (
+                <img
+                  src={activeWorkspace.logo_url}
+                  alt=""
+                  className="h-7 w-7 rounded object-contain bg-white/5"
+                />
+              ) : (
+                <div
+                  className="h-7 w-7 rounded flex items-center justify-center text-white text-xs font-bold"
+                  style={{ background: activeWorkspace?.brand_color ?? "hsl(var(--primary))" }}
+                >
+                  {(activeWorkspace?.brand_name || activeWorkspace?.name || "F").slice(0, 1).toUpperCase()}
+                </div>
+              )}
+              <div className="text-sm min-w-0">
+                <div className="font-bold tracking-tight truncate max-w-[160px]">
+                  {activeWorkspace?.brand_name || activeWorkspace?.name || "founders.click"}
+                </div>
+                {activeWorkspace?.marketplace_domain && (
                   <div className="text-xs text-muted-foreground truncate max-w-[160px]">
-                    {activeWorkspace.name}
+                    {activeWorkspace.marketplace_domain}
                   </div>
                 )}
               </div>
