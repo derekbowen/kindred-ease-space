@@ -344,40 +344,46 @@ export async function submitTicket(params: {
     const { sendEmail, newTicketStaffTemplate, ticketReceivedUserTemplate, SUPPORT_INBOX_EMAIL } =
       await import("./email.server");
 
-    const staffTpl = newTicketStaffTemplate({
-      ticketId,
-      subject: params.subject,
-      message: params.message,
-      email: params.email,
-      name: params.name,
-      category: params.category,
-      priority,
-    });
-    const userTpl = ticketReceivedUserTemplate({
-      ticketId,
-      subject: params.subject,
-      name: params.name,
-    });
+    const [staffTpl, userTpl] = await Promise.all([
+      newTicketStaffTemplate({
+        ticketId,
+        subject: params.subject,
+        message: params.message,
+        email: params.email,
+        name: params.name,
+        category: params.category,
+        priority,
+      }),
+      ticketReceivedUserTemplate({
+        ticketId,
+        subject: params.subject,
+        name: params.name,
+      }),
+    ]);
 
     await Promise.allSettled([
-      sendEmail({
-        to: SUPPORT_INBOX_EMAIL,
-        subject: staffTpl.subject,
-        html: staffTpl.html,
-        text: staffTpl.text,
-        replyTo: params.email,
-        idempotencyKey: `ticket-staff-${ticketId}`,
-        meta: { ticket_id: ticketId, kind: "ticket_new_staff" },
-      }),
-      sendEmail({
-        to: params.email,
-        subject: userTpl.subject,
-        html: userTpl.html,
-        text: userTpl.text,
-        replyTo: SUPPORT_INBOX_EMAIL,
-        idempotencyKey: `ticket-user-${ticketId}`,
-        meta: { ticket_id: ticketId, kind: "ticket_new_user" },
-      }),
+      staffTpl
+        ? sendEmail({
+            to: SUPPORT_INBOX_EMAIL,
+            subject: staffTpl.subject,
+            html: staffTpl.html,
+            text: staffTpl.text,
+            replyTo: params.email,
+            idempotencyKey: `ticket-staff-${ticketId}`,
+            meta: { ticket_id: ticketId, kind: "ticket_new_staff" },
+          })
+        : Promise.resolve(),
+      userTpl
+        ? sendEmail({
+            to: params.email,
+            subject: userTpl.subject,
+            html: userTpl.html,
+            text: userTpl.text,
+            replyTo: SUPPORT_INBOX_EMAIL,
+            idempotencyKey: `ticket-user-${ticketId}`,
+            meta: { ticket_id: ticketId, kind: "ticket_new_user" },
+          })
+        : Promise.resolve(),
     ]);
   } catch (e) {
     console.error("[help] submitTicket notify failed", e);
