@@ -35,14 +35,23 @@ function AppShell() {
   useEffect(() => {
     getMe()
       .then(setMe)
-      .catch((e) => console.error("getMe failed", e))
+      .catch((e) => {
+        const status = (e as { status?: number; response?: { status?: number } })?.status
+          ?? (e as { response?: { status?: number } })?.response?.status;
+        if (status === 401) {
+          navigate({ to: "/login", search: { next: location.pathname } });
+          return;
+        }
+        console.error("getMe failed", e);
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [navigate, location.pathname]);
 
   // Redirect to onboarding if user has no workspace yet
   useEffect(() => {
     if (loading || !me) return;
-    if (me.memberships.length === 0 && location.pathname !== "/app/onboarding") {
+    const memberships = Array.isArray(me.memberships) ? me.memberships : [];
+    if (memberships.length === 0 && location.pathname !== "/app/onboarding") {
       navigate({ to: "/app/onboarding" });
     }
   }, [loading, me, location.pathname, navigate]);
