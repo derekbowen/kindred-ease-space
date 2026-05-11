@@ -26,10 +26,10 @@ export const Route = createFileRoute("/api/public/hooks/sync-sharetribe")({
         try {
           if (body.workspace_id) {
             const r = await runSharetribeSyncForWorkspace(body.workspace_id);
-            return Response.json({ ok: true, scope: "single", ...r });
+            return Response.json({ scope: "single", ok: true, ...r });
           }
           const r = await runSharetribeSyncAll();
-          return Response.json({ ok: true, scope: "all", ...r });
+          return Response.json({ scope: "all", ok: true, ...r });
         } catch (e) {
           console.error("[sync-sharetribe] failed", e);
           return Response.json(

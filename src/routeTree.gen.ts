@@ -24,6 +24,7 @@ import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAppSeoCoachRouteImport } from './routes/_authenticated/app.seo-coach'
 import { Route as AuthenticatedAppOnboardingRouteImport } from './routes/_authenticated/app.onboarding'
 import { Route as AuthenticatedAppBillingRouteImport } from './routes/_authenticated/app.billing'
+import { Route as ApiPublicHooksSyncSharetribeRouteImport } from './routes/api/public/hooks/sync-sharetribe'
 import { Route as ApiPublicHooksCanonicalAuditRouteImport } from './routes/api/public/hooks/canonical-audit'
 import { Route as AuthenticatedAppSettingsDomainsRouteImport } from './routes/_authenticated/app.settings.domains'
 import { Route as AuthenticatedAppSettingsApiKeysRouteImport } from './routes/_authenticated/app.settings.api-keys'
@@ -141,6 +142,12 @@ const AuthenticatedAppBillingRoute = AuthenticatedAppBillingRouteImport.update({
   path: '/billing',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
+const ApiPublicHooksSyncSharetribeRoute =
+  ApiPublicHooksSyncSharetribeRouteImport.update({
+    id: '/api/public/hooks/sync-sharetribe',
+    path: '/api/public/hooks/sync-sharetribe',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksCanonicalAuditRoute =
   ApiPublicHooksCanonicalAuditRouteImport.update({
     id: '/api/public/hooks/canonical-audit',
@@ -430,6 +437,7 @@ export interface FileRoutesByFullPath {
   '/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
   '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
+  '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -484,6 +492,7 @@ export interface FileRoutesByTo {
   '/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
   '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
+  '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -541,6 +550,7 @@ export interface FileRoutesById {
   '/_authenticated/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
   '/_authenticated/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
+  '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -598,6 +608,7 @@ export interface FileRouteTypes {
     | '/app/settings/api-keys'
     | '/app/settings/domains'
     | '/api/public/hooks/canonical-audit'
+    | '/api/public/hooks/sync-sharetribe'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -652,6 +663,7 @@ export interface FileRouteTypes {
     | '/app/settings/api-keys'
     | '/app/settings/domains'
     | '/api/public/hooks/canonical-audit'
+    | '/api/public/hooks/sync-sharetribe'
   id:
     | '__root__'
     | '/'
@@ -708,6 +720,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/settings/api-keys'
     | '/_authenticated/app/settings/domains'
     | '/api/public/hooks/canonical-audit'
+    | '/api/public/hooks/sync-sharetribe'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -721,6 +734,7 @@ export interface RootRouteChildren {
   ApiPublicPageLookupRoute: typeof ApiPublicPageLookupRoute
   ApiPublicSitemapByHostRoute: typeof ApiPublicSitemapByHostRoute
   ApiPublicHooksCanonicalAuditRoute: typeof ApiPublicHooksCanonicalAuditRoute
+  ApiPublicHooksSyncSharetribeRoute: typeof ApiPublicHooksSyncSharetribeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -829,6 +843,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app/billing'
       preLoaderRoute: typeof AuthenticatedAppBillingRouteImport
       parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/api/public/hooks/sync-sharetribe': {
+      id: '/api/public/hooks/sync-sharetribe'
+      path: '/api/public/hooks/sync-sharetribe'
+      fullPath: '/api/public/hooks/sync-sharetribe'
+      preLoaderRoute: typeof ApiPublicHooksSyncSharetribeRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/public/hooks/canonical-audit': {
       id: '/api/public/hooks/canonical-audit'
@@ -1248,6 +1269,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicPageLookupRoute: ApiPublicPageLookupRoute,
   ApiPublicSitemapByHostRoute: ApiPublicSitemapByHostRoute,
   ApiPublicHooksCanonicalAuditRoute: ApiPublicHooksCanonicalAuditRoute,
+  ApiPublicHooksSyncSharetribeRoute: ApiPublicHooksSyncSharetribeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
