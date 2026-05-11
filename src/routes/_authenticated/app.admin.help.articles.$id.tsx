@@ -88,6 +88,7 @@ function EditArticlePage() {
           tags: (a.tags ?? []).join(", "),
           author_name: a.author_name ?? "",
         });
+        setMeta({ published_at: a.published_at ?? null, updated_at: a.updated_at ?? null });
       })
       .catch((e) => toast.error("Failed to load", { description: String(String(e)) }))
       .finally(() => setLoading(false));
