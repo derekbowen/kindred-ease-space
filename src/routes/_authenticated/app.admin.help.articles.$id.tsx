@@ -208,6 +208,7 @@ function EditArticlePage() {
             <TabsList>
               <TabsTrigger value="write">Write</TabsTrigger>
               <TabsTrigger value="preview">Preview</TabsTrigger>
+              <TabsTrigger value="seo">SEO &amp; sharing</TabsTrigger>
             </TabsList>
             <TabsContent value="write">
               <Card className="p-0 overflow-hidden">
@@ -223,6 +224,21 @@ function EditArticlePage() {
               <Card className="p-6 min-h-[500px]">
                 {previewArticle && <MarkdownRenderer content={previewArticle.content} />}
               </Card>
+            </TabsContent>
+            <TabsContent value="seo">
+              <SeoPreviewPanel
+                title={form.title}
+                slug={form.slug}
+                categorySlug={form.category_slug}
+                excerpt={form.excerpt}
+                content={form.content}
+                seoTitle={form.seo_title}
+                seoDescription={form.seo_description}
+                tags={form.tags.split(",").map((t) => t.trim()).filter(Boolean)}
+                authorName={form.author_name}
+                publishedAt={meta.published_at}
+                updatedAt={meta.updated_at}
+              />
             </TabsContent>
           </Tabs>
         </div>
