@@ -132,10 +132,10 @@ function mapListing(workspaceId: string, marketplaceUrl: string, raw: AnyRec, in
 
   // Resolve images via included relationships
   const imgRels: AnyRec[] = raw?.relationships?.images?.data ?? [];
-  const images = imgRels
+  const images = (imgRels
     .map((rel) => included.find((x) => x.type === "image" && x.id?.uuid === rel.id?.uuid))
-    .filter(Boolean)
-    .map((img: AnyRec) => {
+    .filter(Boolean) as AnyRec[])
+    .map((img) => {
       const variants = img?.attributes?.variants ?? {};
       const best =
         variants["square-small2x"] || variants["scaled-large"] || variants["default"] ||
