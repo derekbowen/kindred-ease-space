@@ -14,6 +14,7 @@ import {
   getTenantPage,
   upsertTenantPage,
 } from "@/lib/tenant-pages.functions";
+import { InlineCoach } from "@/components/coach/InlineCoach";
 
 export const Route = createFileRoute("/_authenticated/app/pages/$id/edit")({
   head: () => ({ meta: [{ title: "Edit page — founders.click" }] }),
