@@ -1,0 +1,5 @@
+UPDATE public.courses SET cover_image_url = 'https://ptfjspcphskifoseidut.supabase.co/storage/v1/object/public/course-covers/become-a-designer-with-canva.jpg' WHERE slug = 'become-a-designer-with-canva';
+UPDATE public.courses SET cover_image_url = 'https://ptfjspcphskifoseidut.supabase.co/storage/v1/object/public/course-covers/ai-for-pool-hosts.jpg' WHERE slug = 'ai-for-pool-hosts';
+UPDATE public.courses SET cover_image_url = 'https://ptfjspcphskifoseidut.supabase.co/storage/v1/object/public/course-covers/effortless-social-media-management-with-buffer.jpg' WHERE slug = 'effortless-social-media-management-with-buffer';
+UPDATE public.courses SET cover_image_url = 'https://ptfjspcphskifoseidut.supabase.co/storage/v1/object/public/course-covers/maximizing-revenue-upselling-pool-amenities.jpg' WHERE slug = 'maximizing-revenue-upselling-pool-amenities';
+UPDATE public.courses SET cover_image_url = 'https://ptfjspcphskifoseidut.supabase.co/storage/v1/object/public/course-covers/pool-rental-host-prep-guide.jpg' WHERE slug = 'pool-rental-host-prep-guide';

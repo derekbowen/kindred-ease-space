@@ -1,0 +1,1 @@
+-- See file supabase/migrations/20260508124714_update_terms_of_service.sql
