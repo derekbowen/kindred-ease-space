@@ -58,6 +58,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Content",
     items: [
+      { to: "/app/pages", label: "Pages", icon: LayoutTemplate },
       { to: "/app/content/quick-page-builder", label: "Quick Page Builder", icon: Sparkles },
       { to: "/app/content/generate", label: "Generate Content", icon: FileText },
       { to: "/app/content/migration", label: "Content Migration", icon: ArrowRightLeft },
