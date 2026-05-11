@@ -156,6 +156,11 @@ function AppShell() {
             <Outlet />
           </main>
         </SidebarInset>
+        <CoachLauncher workspaceId={me?.memberships?.[0]?.workspace_id ?? null} />
+      </div>
+    </SidebarProvider>
+  );
+}
       </div>
     </SidebarProvider>
   );
