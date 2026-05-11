@@ -2,6 +2,19 @@
 // Auth: workspace member required. Uses tenant BYOK -> platform fallback via the same
 // adapters as ai-proxy. Tool loop max 8 iterations.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://esm.sh/zod@3.23.8";
+
+const RequestSchema = z.object({
+  conversation_id: z.string().uuid(),
+  workspace_id: z.string().uuid(),
+  user_message: z.string().trim().min(1).max(8000),
+  context: z
+    .object({
+      page_id: z.string().uuid().optional(),
+      route: z.string().max(500).optional(),
+    })
+    .optional(),
+});
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -275,14 +288,15 @@ Deno.serve(async (req) => {
       });
     }
     const userId = ures.user.id;
-    const body = await req.json() as {
-      conversation_id: string;
-      workspace_id: string;
-      user_message: string;
-      context?: { page_id?: string; route?: string };
-    };
-    if (!body.conversation_id || !body.workspace_id || !body.user_message) {
-      return new Response(JSON.stringify({ error: "conversation_id, workspace_id, user_message required" }), {
+    let body: z.infer<typeof RequestSchema>;
+    try {
+      const raw = await req.json();
+      body = RequestSchema.parse(raw);
+    } catch (e) {
+      const msg = e instanceof z.ZodError
+        ? e.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
+        : "Invalid JSON body";
+      return new Response(JSON.stringify({ error: `Invalid request: ${msg}` }), {
         status: 400, headers: { ...cors, "Content-Type": "application/json" },
       });
     }
