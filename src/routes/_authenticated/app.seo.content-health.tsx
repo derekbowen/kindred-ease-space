@@ -40,9 +40,16 @@ function ContentHealthPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Content Health</h1>
-        <p className="text-sm text-muted-foreground">Find published pages with missing or thin body content.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Content Health</h1>
+          <p className="text-sm text-muted-foreground">Find published pages with missing or thin body content.</p>
+        </div>
+        <InlineCoach
+          workspaceId={workspaceId}
+          context={{ route: "/app/seo/content-health" }}
+          label="Ask coach about SEO"
+        />
       </div>
 
       <Card>
