@@ -151,21 +151,23 @@ export const adminUpdateTicket = createServerFn({ method: "POST" })
           const { sendEmail, ticketStatusChangedTemplate, SUPPORT_INBOX_EMAIL } = await import(
             "@/lib/email.server"
           );
-          const tpl = ticketStatusChangedTemplate({
+          const tpl = await ticketStatusChangedTemplate({
             ticketId: data.id,
             subject: existing.subject,
             name: existing.name,
             newStatus,
           });
-          await sendEmail({
-            to: existing.email,
-            subject: tpl.subject,
-            html: tpl.html,
-            text: tpl.text,
-            replyTo: SUPPORT_INBOX_EMAIL,
-            idempotencyKey: `ticket-status-${data.id}-${newStatus}`,
-            meta: { ticket_id: data.id, kind: "ticket_status_change", status: newStatus },
-          });
+          if (tpl) {
+            await sendEmail({
+              to: existing.email,
+              subject: tpl.subject,
+              html: tpl.html,
+              text: tpl.text,
+              replyTo: SUPPORT_INBOX_EMAIL,
+              idempotencyKey: `ticket-status-${data.id}-${newStatus}`,
+              meta: { ticket_id: data.id, kind: "ticket_status_change", status: newStatus },
+            });
+          }
         } catch (e) {
           console.error("[tickets] status email failed", e);
         }

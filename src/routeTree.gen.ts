@@ -78,6 +78,7 @@ import { Route as AuthenticatedAppContentDataExportRouteImport } from './routes/
 import { Route as AuthenticatedAppContentCityHeroesRouteImport } from './routes/_authenticated/app.content.city-heroes'
 import { Route as AuthenticatedAppContentBulkEditorRouteImport } from './routes/_authenticated/app.content.bulk-editor'
 import { Route as AuthenticatedAppContentBlogRouteImport } from './routes/_authenticated/app.content.blog'
+import { Route as AuthenticatedAppAdminEmailTemplatesRouteImport } from './routes/_authenticated/app.admin.email-templates'
 import { Route as AuthenticatedAppSettingsIntegrationsSharetribeRouteImport } from './routes/_authenticated/app.settings.integrations.sharetribe'
 import { Route as AuthenticatedAppPagesIdEditRouteImport } from './routes/_authenticated/app.pages.$id.edit'
 import { Route as AuthenticatedAppAdminHelpTicketsRouteImport } from './routes/_authenticated/app.admin.help.tickets'
@@ -476,6 +477,12 @@ const AuthenticatedAppContentBlogRoute =
     path: '/content/blog',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
+const AuthenticatedAppAdminEmailTemplatesRoute =
+  AuthenticatedAppAdminEmailTemplatesRouteImport.update({
+    id: '/admin/email-templates',
+    path: '/admin/email-templates',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
 const AuthenticatedAppSettingsIntegrationsSharetribeRoute =
   AuthenticatedAppSettingsIntegrationsSharetribeRouteImport.update({
     id: '/integrations/sharetribe',
@@ -545,6 +552,7 @@ export interface FileRoutesByFullPath {
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/help/$category/$article': typeof HelpCategoryArticleRoute
   '/app/': typeof AuthenticatedAppIndexRoute
+  '/app/admin/email-templates': typeof AuthenticatedAppAdminEmailTemplatesRoute
   '/app/content/blog': typeof AuthenticatedAppContentBlogRoute
   '/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
   '/app/content/city-heroes': typeof AuthenticatedAppContentCityHeroesRoute
@@ -620,6 +628,7 @@ export interface FileRoutesByTo {
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/help/$category/$article': typeof HelpCategoryArticleRoute
   '/app': typeof AuthenticatedAppIndexRoute
+  '/app/admin/email-templates': typeof AuthenticatedAppAdminEmailTemplatesRoute
   '/app/content/blog': typeof AuthenticatedAppContentBlogRoute
   '/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
   '/app/content/city-heroes': typeof AuthenticatedAppContentCityHeroesRoute
@@ -699,6 +708,7 @@ export interface FileRoutesById {
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/help/$category/$article': typeof HelpCategoryArticleRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
+  '/_authenticated/app/admin/email-templates': typeof AuthenticatedAppAdminEmailTemplatesRoute
   '/_authenticated/app/content/blog': typeof AuthenticatedAppContentBlogRoute
   '/_authenticated/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
   '/_authenticated/app/content/city-heroes': typeof AuthenticatedAppContentCityHeroesRoute
@@ -778,6 +788,7 @@ export interface FileRouteTypes {
     | '/api/public/sitemap-by-host'
     | '/help/$category/$article'
     | '/app/'
+    | '/app/admin/email-templates'
     | '/app/content/blog'
     | '/app/content/bulk-editor'
     | '/app/content/city-heroes'
@@ -853,6 +864,7 @@ export interface FileRouteTypes {
     | '/api/public/sitemap-by-host'
     | '/help/$category/$article'
     | '/app'
+    | '/app/admin/email-templates'
     | '/app/content/blog'
     | '/app/content/bulk-editor'
     | '/app/content/city-heroes'
@@ -931,6 +943,7 @@ export interface FileRouteTypes {
     | '/api/public/sitemap-by-host'
     | '/help/$category/$article'
     | '/_authenticated/app/'
+    | '/_authenticated/app/admin/email-templates'
     | '/_authenticated/app/content/blog'
     | '/_authenticated/app/content/bulk-editor'
     | '/_authenticated/app/content/city-heroes'
@@ -1486,6 +1499,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppContentBlogRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/admin/email-templates': {
+      id: '/_authenticated/app/admin/email-templates'
+      path: '/admin/email-templates'
+      fullPath: '/app/admin/email-templates'
+      preLoaderRoute: typeof AuthenticatedAppAdminEmailTemplatesRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
     '/_authenticated/app/settings/integrations/sharetribe': {
       id: '/_authenticated/app/settings/integrations/sharetribe'
       path: '/integrations/sharetribe'
@@ -1598,6 +1618,7 @@ interface AuthenticatedAppRouteChildren {
   AuthenticatedAppSeoCoachRoute: typeof AuthenticatedAppSeoCoachRoute
   AuthenticatedAppSettingsRoute: typeof AuthenticatedAppSettingsRouteWithChildren
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
+  AuthenticatedAppAdminEmailTemplatesRoute: typeof AuthenticatedAppAdminEmailTemplatesRoute
   AuthenticatedAppContentBlogRoute: typeof AuthenticatedAppContentBlogRoute
   AuthenticatedAppContentBulkEditorRoute: typeof AuthenticatedAppContentBulkEditorRoute
   AuthenticatedAppContentCityHeroesRoute: typeof AuthenticatedAppContentCityHeroesRoute
@@ -1647,6 +1668,8 @@ const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppSeoCoachRoute: AuthenticatedAppSeoCoachRoute,
   AuthenticatedAppSettingsRoute: AuthenticatedAppSettingsRouteWithChildren,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
+  AuthenticatedAppAdminEmailTemplatesRoute:
+    AuthenticatedAppAdminEmailTemplatesRoute,
   AuthenticatedAppContentBlogRoute: AuthenticatedAppContentBlogRoute,
   AuthenticatedAppContentBulkEditorRoute:
     AuthenticatedAppContentBulkEditorRoute,
