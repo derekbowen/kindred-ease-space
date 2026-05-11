@@ -85,6 +85,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: "/app/seo/gsc-import", label: "GSC Import", icon: Download },
       { to: "/app/seo/scrape-import", label: "Scrape Import", icon: Globe },
       { to: "/app/seo/click-report", label: "Click Report", icon: MousePointerClick },
+      { to: "/app/seo/canonical-audit", label: "Canonical Audit", icon: ShieldCheck },
     ],
   },
   {

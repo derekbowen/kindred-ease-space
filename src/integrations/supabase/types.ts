@@ -157,6 +157,45 @@ export type Database = {
           },
         ]
       }
+      canonical_audit_runs: {
+        Row: {
+          created_at: string
+          finished_at: string
+          id: string
+          pages: Json
+          pages_with_failures: number
+          pages_with_warnings: number
+          source: string
+          started_at: string
+          total_pages: number
+          totals: Json
+        }
+        Insert: {
+          created_at?: string
+          finished_at: string
+          id?: string
+          pages?: Json
+          pages_with_failures?: number
+          pages_with_warnings?: number
+          source?: string
+          started_at: string
+          total_pages?: number
+          totals?: Json
+        }
+        Update: {
+          created_at?: string
+          finished_at?: string
+          id?: string
+          pages?: Json
+          pages_with_failures?: number
+          pages_with_warnings?: number
+          source?: string
+          started_at?: string
+          total_pages?: number
+          totals?: Json
+        }
+        Relationships: []
+      }
       cities: {
         Row: {
           created_at: string

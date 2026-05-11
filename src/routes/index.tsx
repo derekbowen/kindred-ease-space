@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Sparkles, FileText, Search, Users, Zap, Brain, DollarSign } from "lucide-react";
+import { canonicalUrl } from "@/lib/canonical";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -10,12 +11,12 @@ export const Route = createFileRoute("/")({
       { property: "og:title", content: "founders.click — The growth engine for Sharetribe marketplaces" },
       { property: "og:description", content: "AI page generation at $0.012/page, competitor radar, rank tracking, lead hunting — all in one admin." },
       { property: "og:type", content: "website" },
-      { property: "og:url", content: "https://founders.click/" },
+      { property: "og:url", content: canonicalUrl("/") },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: "founders.click — Growth engine for Sharetribe" },
       { name: "twitter:description", content: "AI SEO + content factory + lead inbox for marketplace founders." },
     ],
-    links: [{ rel: "canonical", href: "https://founders.click/" }],
+    links: [{ rel: "canonical", href: canonicalUrl("/") }],
     scripts: [
       {
         type: "application/ld+json",

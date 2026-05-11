@@ -24,6 +24,7 @@ import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAppSeoCoachRouteImport } from './routes/_authenticated/app.seo-coach'
 import { Route as AuthenticatedAppOnboardingRouteImport } from './routes/_authenticated/app.onboarding'
 import { Route as AuthenticatedAppBillingRouteImport } from './routes/_authenticated/app.billing'
+import { Route as ApiPublicHooksCanonicalAuditRouteImport } from './routes/api/public/hooks/canonical-audit'
 import { Route as AuthenticatedAppSettingsDomainsRouteImport } from './routes/_authenticated/app.settings.domains'
 import { Route as AuthenticatedAppSettingsApiKeysRouteImport } from './routes/_authenticated/app.settings.api-keys'
 import { Route as AuthenticatedAppSeoSitemapRouteImport } from './routes/_authenticated/app.seo.sitemap'
@@ -42,6 +43,7 @@ import { Route as AuthenticatedAppSeoContentHealthRouteImport } from './routes/_
 import { Route as AuthenticatedAppSeoCompetitorTrackerRouteImport } from './routes/_authenticated/app.seo.competitor-tracker'
 import { Route as AuthenticatedAppSeoCompetitorRadarRouteImport } from './routes/_authenticated/app.seo.competitor-radar'
 import { Route as AuthenticatedAppSeoClickReportRouteImport } from './routes/_authenticated/app.seo.click-report'
+import { Route as AuthenticatedAppSeoCanonicalAuditRouteImport } from './routes/_authenticated/app.seo.canonical-audit'
 import { Route as AuthenticatedAppOpsSocialLeadHunterRouteImport } from './routes/_authenticated/app.ops.social-lead-hunter'
 import { Route as AuthenticatedAppOpsSiteFooterRouteImport } from './routes/_authenticated/app.ops.site-footer'
 import { Route as AuthenticatedAppOpsPlanRequestsRouteImport } from './routes/_authenticated/app.ops.plan-requests'
@@ -139,6 +141,12 @@ const AuthenticatedAppBillingRoute = AuthenticatedAppBillingRouteImport.update({
   path: '/billing',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
+const ApiPublicHooksCanonicalAuditRoute =
+  ApiPublicHooksCanonicalAuditRouteImport.update({
+    id: '/api/public/hooks/canonical-audit',
+    path: '/api/public/hooks/canonical-audit',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AuthenticatedAppSettingsDomainsRoute =
   AuthenticatedAppSettingsDomainsRouteImport.update({
     id: '/domains',
@@ -245,6 +253,12 @@ const AuthenticatedAppSeoClickReportRoute =
   AuthenticatedAppSeoClickReportRouteImport.update({
     id: '/seo/click-report',
     path: '/seo/click-report',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppSeoCanonicalAuditRoute =
+  AuthenticatedAppSeoCanonicalAuditRouteImport.update({
+    id: '/seo/canonical-audit',
+    path: '/seo/canonical-audit',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
 const AuthenticatedAppOpsSocialLeadHunterRoute =
@@ -396,6 +410,7 @@ export interface FileRoutesByFullPath {
   '/app/ops/plan-requests': typeof AuthenticatedAppOpsPlanRequestsRoute
   '/app/ops/site-footer': typeof AuthenticatedAppOpsSiteFooterRoute
   '/app/ops/social-lead-hunter': typeof AuthenticatedAppOpsSocialLeadHunterRoute
+  '/app/seo/canonical-audit': typeof AuthenticatedAppSeoCanonicalAuditRoute
   '/app/seo/click-report': typeof AuthenticatedAppSeoClickReportRoute
   '/app/seo/competitor-radar': typeof AuthenticatedAppSeoCompetitorRadarRoute
   '/app/seo/competitor-tracker': typeof AuthenticatedAppSeoCompetitorTrackerRoute
@@ -414,6 +429,7 @@ export interface FileRoutesByFullPath {
   '/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
   '/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
   '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
+  '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -448,6 +464,7 @@ export interface FileRoutesByTo {
   '/app/ops/plan-requests': typeof AuthenticatedAppOpsPlanRequestsRoute
   '/app/ops/site-footer': typeof AuthenticatedAppOpsSiteFooterRoute
   '/app/ops/social-lead-hunter': typeof AuthenticatedAppOpsSocialLeadHunterRoute
+  '/app/seo/canonical-audit': typeof AuthenticatedAppSeoCanonicalAuditRoute
   '/app/seo/click-report': typeof AuthenticatedAppSeoClickReportRoute
   '/app/seo/competitor-radar': typeof AuthenticatedAppSeoCompetitorRadarRoute
   '/app/seo/competitor-tracker': typeof AuthenticatedAppSeoCompetitorTrackerRoute
@@ -466,6 +483,7 @@ export interface FileRoutesByTo {
   '/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
   '/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
   '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
+  '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -503,6 +521,7 @@ export interface FileRoutesById {
   '/_authenticated/app/ops/plan-requests': typeof AuthenticatedAppOpsPlanRequestsRoute
   '/_authenticated/app/ops/site-footer': typeof AuthenticatedAppOpsSiteFooterRoute
   '/_authenticated/app/ops/social-lead-hunter': typeof AuthenticatedAppOpsSocialLeadHunterRoute
+  '/_authenticated/app/seo/canonical-audit': typeof AuthenticatedAppSeoCanonicalAuditRoute
   '/_authenticated/app/seo/click-report': typeof AuthenticatedAppSeoClickReportRoute
   '/_authenticated/app/seo/competitor-radar': typeof AuthenticatedAppSeoCompetitorRadarRoute
   '/_authenticated/app/seo/competitor-tracker': typeof AuthenticatedAppSeoCompetitorTrackerRoute
@@ -521,6 +540,7 @@ export interface FileRoutesById {
   '/_authenticated/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
   '/_authenticated/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
   '/_authenticated/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
+  '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -558,6 +578,7 @@ export interface FileRouteTypes {
     | '/app/ops/plan-requests'
     | '/app/ops/site-footer'
     | '/app/ops/social-lead-hunter'
+    | '/app/seo/canonical-audit'
     | '/app/seo/click-report'
     | '/app/seo/competitor-radar'
     | '/app/seo/competitor-tracker'
@@ -576,6 +597,7 @@ export interface FileRouteTypes {
     | '/app/seo/sitemap'
     | '/app/settings/api-keys'
     | '/app/settings/domains'
+    | '/api/public/hooks/canonical-audit'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -610,6 +632,7 @@ export interface FileRouteTypes {
     | '/app/ops/plan-requests'
     | '/app/ops/site-footer'
     | '/app/ops/social-lead-hunter'
+    | '/app/seo/canonical-audit'
     | '/app/seo/click-report'
     | '/app/seo/competitor-radar'
     | '/app/seo/competitor-tracker'
@@ -628,6 +651,7 @@ export interface FileRouteTypes {
     | '/app/seo/sitemap'
     | '/app/settings/api-keys'
     | '/app/settings/domains'
+    | '/api/public/hooks/canonical-audit'
   id:
     | '__root__'
     | '/'
@@ -664,6 +688,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/ops/plan-requests'
     | '/_authenticated/app/ops/site-footer'
     | '/_authenticated/app/ops/social-lead-hunter'
+    | '/_authenticated/app/seo/canonical-audit'
     | '/_authenticated/app/seo/click-report'
     | '/_authenticated/app/seo/competitor-radar'
     | '/_authenticated/app/seo/competitor-tracker'
@@ -682,6 +707,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/seo/sitemap'
     | '/_authenticated/app/settings/api-keys'
     | '/_authenticated/app/settings/domains'
+    | '/api/public/hooks/canonical-audit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -694,6 +720,7 @@ export interface RootRouteChildren {
   ApiPublicDomainTokenRoute: typeof ApiPublicDomainTokenRoute
   ApiPublicPageLookupRoute: typeof ApiPublicPageLookupRoute
   ApiPublicSitemapByHostRoute: typeof ApiPublicSitemapByHostRoute
+  ApiPublicHooksCanonicalAuditRoute: typeof ApiPublicHooksCanonicalAuditRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -802,6 +829,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app/billing'
       preLoaderRoute: typeof AuthenticatedAppBillingRouteImport
       parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/api/public/hooks/canonical-audit': {
+      id: '/api/public/hooks/canonical-audit'
+      path: '/api/public/hooks/canonical-audit'
+      fullPath: '/api/public/hooks/canonical-audit'
+      preLoaderRoute: typeof ApiPublicHooksCanonicalAuditRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/app/settings/domains': {
       id: '/_authenticated/app/settings/domains'
@@ -927,6 +961,13 @@ declare module '@tanstack/react-router' {
       path: '/seo/click-report'
       fullPath: '/app/seo/click-report'
       preLoaderRoute: typeof AuthenticatedAppSeoClickReportRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/seo/canonical-audit': {
+      id: '/_authenticated/app/seo/canonical-audit'
+      path: '/seo/canonical-audit'
+      fullPath: '/app/seo/canonical-audit'
+      preLoaderRoute: typeof AuthenticatedAppSeoCanonicalAuditRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
     '/_authenticated/app/ops/social-lead-hunter': {
@@ -1106,6 +1147,7 @@ interface AuthenticatedAppRouteChildren {
   AuthenticatedAppOpsPlanRequestsRoute: typeof AuthenticatedAppOpsPlanRequestsRoute
   AuthenticatedAppOpsSiteFooterRoute: typeof AuthenticatedAppOpsSiteFooterRoute
   AuthenticatedAppOpsSocialLeadHunterRoute: typeof AuthenticatedAppOpsSocialLeadHunterRoute
+  AuthenticatedAppSeoCanonicalAuditRoute: typeof AuthenticatedAppSeoCanonicalAuditRoute
   AuthenticatedAppSeoClickReportRoute: typeof AuthenticatedAppSeoClickReportRoute
   AuthenticatedAppSeoCompetitorRadarRoute: typeof AuthenticatedAppSeoCompetitorRadarRoute
   AuthenticatedAppSeoCompetitorTrackerRoute: typeof AuthenticatedAppSeoCompetitorTrackerRoute
@@ -1156,6 +1198,8 @@ const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppOpsSiteFooterRoute: AuthenticatedAppOpsSiteFooterRoute,
   AuthenticatedAppOpsSocialLeadHunterRoute:
     AuthenticatedAppOpsSocialLeadHunterRoute,
+  AuthenticatedAppSeoCanonicalAuditRoute:
+    AuthenticatedAppSeoCanonicalAuditRoute,
   AuthenticatedAppSeoClickReportRoute: AuthenticatedAppSeoClickReportRoute,
   AuthenticatedAppSeoCompetitorRadarRoute:
     AuthenticatedAppSeoCompetitorRadarRoute,
@@ -1203,6 +1247,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicDomainTokenRoute: ApiPublicDomainTokenRoute,
   ApiPublicPageLookupRoute: ApiPublicPageLookupRoute,
   ApiPublicSitemapByHostRoute: ApiPublicSitemapByHostRoute,
+  ApiPublicHooksCanonicalAuditRoute: ApiPublicHooksCanonicalAuditRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
