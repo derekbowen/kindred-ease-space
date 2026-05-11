@@ -22,6 +22,7 @@ import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAppSeoCoachRouteImport } from './routes/_authenticated/app.seo-coach'
 import { Route as AuthenticatedAppOnboardingRouteImport } from './routes/_authenticated/app.onboarding'
 import { Route as AuthenticatedAppBillingRouteImport } from './routes/_authenticated/app.billing'
+import { Route as AuthenticatedAppSettingsDomainsRouteImport } from './routes/_authenticated/app.settings.domains'
 import { Route as AuthenticatedAppSettingsApiKeysRouteImport } from './routes/_authenticated/app.settings.api-keys'
 import { Route as AuthenticatedAppSeoSitemapRouteImport } from './routes/_authenticated/app.seo.sitemap'
 import { Route as AuthenticatedAppSeoScrapeImportRouteImport } from './routes/_authenticated/app.seo.scrape-import'
@@ -126,6 +127,12 @@ const AuthenticatedAppBillingRoute = AuthenticatedAppBillingRouteImport.update({
   path: '/billing',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
+const AuthenticatedAppSettingsDomainsRoute =
+  AuthenticatedAppSettingsDomainsRouteImport.update({
+    id: '/domains',
+    path: '/domains',
+    getParentRoute: () => AuthenticatedAppSettingsRoute,
+  } as any)
 const AuthenticatedAppSettingsApiKeysRoute =
   AuthenticatedAppSettingsApiKeysRouteImport.update({
     id: '/api-keys',
@@ -392,6 +399,7 @@ export interface FileRoutesByFullPath {
   '/app/seo/scrape-import': typeof AuthenticatedAppSeoScrapeImportRoute
   '/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
   '/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
+  '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -441,6 +449,7 @@ export interface FileRoutesByTo {
   '/app/seo/scrape-import': typeof AuthenticatedAppSeoScrapeImportRoute
   '/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
   '/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
+  '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -493,6 +502,7 @@ export interface FileRoutesById {
   '/_authenticated/app/seo/scrape-import': typeof AuthenticatedAppSeoScrapeImportRoute
   '/_authenticated/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
   '/_authenticated/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
+  '/_authenticated/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -545,6 +555,7 @@ export interface FileRouteTypes {
     | '/app/seo/scrape-import'
     | '/app/seo/sitemap'
     | '/app/settings/api-keys'
+    | '/app/settings/domains'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -594,6 +605,7 @@ export interface FileRouteTypes {
     | '/app/seo/scrape-import'
     | '/app/seo/sitemap'
     | '/app/settings/api-keys'
+    | '/app/settings/domains'
   id:
     | '__root__'
     | '/'
@@ -645,6 +657,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/seo/scrape-import'
     | '/_authenticated/app/seo/sitemap'
     | '/_authenticated/app/settings/api-keys'
+    | '/_authenticated/app/settings/domains'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -749,6 +762,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app/billing'
       preLoaderRoute: typeof AuthenticatedAppBillingRouteImport
       parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/settings/domains': {
+      id: '/_authenticated/app/settings/domains'
+      path: '/domains'
+      fullPath: '/app/settings/domains'
+      preLoaderRoute: typeof AuthenticatedAppSettingsDomainsRouteImport
+      parentRoute: typeof AuthenticatedAppSettingsRoute
     }
     '/_authenticated/app/settings/api-keys': {
       id: '/_authenticated/app/settings/api-keys'
@@ -1007,11 +1027,13 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedAppSettingsRouteChildren {
   AuthenticatedAppSettingsApiKeysRoute: typeof AuthenticatedAppSettingsApiKeysRoute
+  AuthenticatedAppSettingsDomainsRoute: typeof AuthenticatedAppSettingsDomainsRoute
 }
 
 const AuthenticatedAppSettingsRouteChildren: AuthenticatedAppSettingsRouteChildren =
   {
     AuthenticatedAppSettingsApiKeysRoute: AuthenticatedAppSettingsApiKeysRoute,
+    AuthenticatedAppSettingsDomainsRoute: AuthenticatedAppSettingsDomainsRoute,
   }
 
 const AuthenticatedAppSettingsRouteWithChildren =
