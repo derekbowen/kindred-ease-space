@@ -1,21 +1,13 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link, Outlet, useNavigate, useLocation } from "@tanstack/react-router";
-import {
-  LayoutDashboard,
-  FileText,
-  Search,
-  Users,
-  Settings,
-  CreditCard,
-  LogOut,
-  Sparkles,
-} from "lucide-react";
+import { LogOut, Sparkles } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
@@ -28,19 +20,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { getMe } from "@/lib/auth.functions";
+import { NAV_SECTIONS } from "@/lib/app-nav";
 
 export const Route = createFileRoute("/_authenticated/app")({
   component: AppShell,
 });
-
-const NAV = [
-  { to: "/app", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { to: "/app/content", label: "Content", icon: FileText },
-  { to: "/app/seo", label: "SEO", icon: Search },
-  { to: "/app/users-ops", label: "Users & Ops", icon: Users },
-  { to: "/app/billing", label: "Billing & Credits", icon: CreditCard },
-  { to: "/app/settings", label: "Settings", icon: Settings },
-] as const;
 
 function AppShell() {
   const navigate = useNavigate();
