@@ -52,11 +52,24 @@ function HelpHome() {
         {/* Categories */}
         <section>
           <h2 className="text-xl font-semibold tracking-tight mb-6">Browse by category</h2>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {categories.map((c: any) => (
-              <CategoryCard key={c.id} category={c} count={countsBySlug[c.slug]} />
-            ))}
-          </div>
+          {categories.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border bg-card/50 p-10 text-center">
+              <p className="text-sm font-medium">No categories yet</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                We're putting the finishing touches on our help content. In the meantime,{" "}
+                <Link to="/help/contact" className="text-orange-500 hover:underline">
+                  contact support
+                </Link>{" "}
+                and we'll get back to you within one business day.
+              </p>
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {categories.map((c: any) => (
+                <CategoryCard key={c.id} category={c} count={countsBySlug[c.slug]} />
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Popular */}
