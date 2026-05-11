@@ -24,7 +24,8 @@ const ActionInput = z.object({
   payload: z.record(z.string(), z.unknown()).default({}),
 });
 
-type ActionResult = { ok: true; summary: string; details?: Record<string, unknown> };
+type JsonValue = string | number | boolean | null | { [k: string]: JsonValue } | JsonValue[];
+type ActionResult = { ok: true; summary: string; details?: Record<string, JsonValue> };
 
 const AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const DEFAULT_MODEL = "google/gemini-2.5-flash";
