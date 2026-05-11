@@ -132,7 +132,7 @@ export const updateWorkspaceBranding = createServerFn({ method: "POST" })
     });
     if (!isOwner) throw new Error("Not allowed");
 
-    const patch: Record<string, string | null> = {};
+    const patch: { brand_name?: string | null; brand_color?: string | null; logo_url?: string | null } = {};
     if (data.brandName !== undefined) patch.brand_name = data.brandName || null;
     if (data.brandColor !== undefined) patch.brand_color = data.brandColor || null;
     if (data.logoUrl !== undefined) patch.logo_url = data.logoUrl || null;
