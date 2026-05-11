@@ -1,5 +1,6 @@
 import {
   LayoutDashboard,
+  MessagesSquare,
   FileText,
   Sparkles,
   ArrowRightLeft,
