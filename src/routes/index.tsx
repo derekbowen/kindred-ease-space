@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { Sparkles, FileText, Search, Users, Zap, Brain, DollarSign } from "lucide-react";
+import { Sparkles, FileText, Search, Users, Zap, Brain } from "lucide-react";
 import { canonicalUrl } from "@/lib/canonical";
+import { SiteHeader } from "@/components/site/SiteHeader";
+import { SiteFooter } from "@/components/site/SiteFooter";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -43,22 +45,11 @@ export const Route = createFileRoute("/")({
 function Landing() {
   return (
     <div className="dark min-h-screen bg-background text-foreground">
-      {/* Header */}
-      <header className="border-b border-border">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link to="/" className="text-lg font-bold tracking-tight">
-            founders<span className="text-orange-500">.click</span>
-          </Link>
-          <nav className="flex items-center gap-4 text-sm">
-            <Link to="/login" className="text-muted-foreground hover:text-foreground">Sign in</Link>
-            <Button asChild size="sm"><Link to="/signup">Start free trial</Link></Button>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
 
       {/* Hero */}
       <section className="max-w-6xl mx-auto px-6 py-20 text-center">
-        <p className="text-sm uppercase tracking-widest text-orange-500 mb-4">For Sharetribe marketplace founders</p>
+        <p className="text-sm uppercase tracking-widest text-brand mb-4">For Sharetribe marketplace founders</p>
         <h1 className="text-5xl md:text-7xl font-bold tracking-tight">
           The all-in-one growth engine.
         </h1>
@@ -74,7 +65,7 @@ function Landing() {
 
       {/* Product demo video */}
       <section className="max-w-5xl mx-auto px-6 pb-16">
-        <div className="rounded-xl border border-border overflow-hidden bg-black shadow-2xl shadow-orange-500/10">
+        <div className="rounded-xl border border-border overflow-hidden bg-black shadow-2xl shadow-brand/10">
           <video
             controls
             playsInline
@@ -99,7 +90,7 @@ function Landing() {
             const Icon = f.icon;
             return (
               <div key={f.title} className="rounded-lg border border-border p-6 bg-card">
-                <Icon className="h-6 w-6 text-orange-500 mb-3" />
+                <Icon className="h-6 w-6 text-brand mb-3" />
                 <h3 className="font-semibold mb-1">{f.title}</h3>
                 <p className="text-sm text-muted-foreground">{f.body}</p>
               </div>
@@ -114,16 +105,16 @@ function Landing() {
         <p className="text-sm text-muted-foreground mb-10">Subscription + monthly AI credits. Top up anytime.</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {PLANS.map((p) => (
-            <div key={p.name} className={`rounded-lg border p-6 ${p.featured ? "border-orange-500/50 bg-orange-500/5" : "border-border bg-card"}`}>
+            <div key={p.name} className={`rounded-lg border p-6 ${p.featured ? "border-brand/50 bg-brand/5" : "border-border bg-card"}`}>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-xl font-semibold">{p.name}</h3>
-                {p.featured && <span className="text-xs px-2 py-0.5 bg-orange-500 text-white rounded">Popular</span>}
+                {p.featured && <span className="text-xs px-2 py-0.5 bg-brand text-brand-foreground rounded">Popular</span>}
               </div>
               <div className="mb-3">
                 <span className="text-4xl font-bold">${p.price}</span>
                 <span className="text-muted-foreground">/mo</span>
               </div>
-              <p className="text-sm text-orange-500 mb-4">{p.credits.toLocaleString()} AI credits / mo</p>
+              <p className="text-sm text-brand mb-4">{p.credits.toLocaleString()} AI credits / mo</p>
               <ul className="space-y-1.5 text-sm text-muted-foreground mb-6">
                 {p.features.map((feat) => <li key={feat}>• {feat}</li>)}
               </ul>
@@ -143,9 +134,7 @@ function Landing() {
         <Button asChild size="lg" className="mt-8"><Link to="/signup">Start your free trial</Link></Button>
       </section>
 
-      <footer className="border-t border-border py-8 text-center text-xs text-muted-foreground">
-        © {new Date().getFullYear()} founders.click
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

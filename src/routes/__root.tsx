@@ -10,6 +10,7 @@ import {
 
 import appCss from "../styles.css?url";
 import { installServerFnAuthFetch } from "@/integrations/supabase/server-fn-fetch";
+import { I18nProvider } from "@/lib/i18n";
 
 if (typeof window !== "undefined") {
   installServerFnAuthFetch();
@@ -122,7 +123,9 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
+      <I18nProvider>
+        <Outlet />
+      </I18nProvider>
     </QueryClientProvider>
   );
 }
