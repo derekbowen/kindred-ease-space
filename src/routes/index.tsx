@@ -46,6 +46,20 @@ function Landing() {
         <p className="mt-4 text-xs text-muted-foreground">14-day trial · 250 free credits · No card required</p>
       </section>
 
+      {/* Product demo video */}
+      <section className="max-w-5xl mx-auto px-6 pb-16">
+        <div className="rounded-xl border border-border overflow-hidden bg-black shadow-2xl shadow-orange-500/10">
+          <video
+            src="/product-demo.mp4"
+            controls
+            playsInline
+            preload="metadata"
+            className="w-full h-auto block"
+          />
+        </div>
+        <p className="text-center text-xs text-muted-foreground mt-3">Product demo — see the Content Factory in action</p>
+      </section>
+
       {/* Feature grid (the 7 slides condensed) */}
       <section className="max-w-6xl mx-auto px-6 py-16">
         <h2 className="text-3xl font-bold mb-10">Everything you need in one admin</h2>
