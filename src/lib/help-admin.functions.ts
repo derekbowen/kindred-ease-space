@@ -121,7 +121,7 @@ export const adminGetArticle = createServerFn({ method: "GET" })
     await assertAdmin(context.supabase, context.userId);
     const { data: row, error } = await supabaseAdmin
       .from("help_articles")
-      .select("*")
+      .select("id,slug,title,category_slug,excerpt,content,body_html,status,is_popular,is_published,seo_title,seo_description,tags,author_name,author_avatar_url,reading_time_minutes,view_count,helpful_count,not_helpful_count,published_at,updated_at,created_at,related_article_ids")
       .eq("id", data.id)
       .maybeSingle();
     if (error) throw error;
@@ -149,7 +149,7 @@ export const adminUpsertArticle = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     await assertAdmin(context.supabase, context.userId);
     const isPublishing = data.status === "published";
-    const payload: Record<string, unknown> = {
+    const payload: any = {
       slug: data.slug,
       title: data.title,
       category_slug: data.category_slug,
