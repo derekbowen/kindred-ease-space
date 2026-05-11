@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.verify_certificate(text) FROM anon, authenticated;

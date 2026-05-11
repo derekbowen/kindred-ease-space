@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS content_pages_url_path_key ON public.content_pages (url_path);
