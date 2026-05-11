@@ -46,7 +46,7 @@ function QuickPageBuilder() {
     setError(null); setResult(null); setBusy(true);
     try {
       const res = await create({ data: { workspaceId, title, description, topic, model } });
-      setResult({ url_path: res.page.url_path, title: res.page.title, words: res.words });
+      setResult({ url_path: res.page.url_path ?? "", title: res.page.title ?? "(untitled)", words: res.words });
       setTitle(""); setDescription(""); setTopic("");
     } catch (err: any) {
       setError(err?.message || String(err));
