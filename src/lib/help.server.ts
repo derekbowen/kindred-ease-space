@@ -21,6 +21,17 @@ export type HelpArticleListItem = {
   view_count: number;
   published_at: string | null;
   updated_at: string;
+  /** HTML snippet with <mark> highlights, set by full-text search */
+  headline?: string | null;
+  /** Search rank (0..n), higher = better. Set by full-text search */
+  rank?: number | null;
+};
+
+export type HelpTitleSuggestion = {
+  title: string;
+  slug: string;
+  category_slug: string;
+  similarity: number;
 };
 
 export type HelpArticleFull = HelpArticleListItem & {
@@ -153,20 +164,92 @@ export async function listAllPublishedArticleSlugs(): Promise<Array<{ category_s
 }
 
 export async function searchArticles(query: string, limit = 25): Promise<HelpArticleListItem[]> {
-  const q = query.trim();
-  if (!q) return [];
-  const res = await supabaseAdmin
-    .from("help_articles")
-    .select("id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at")
-    .is("workspace_id", null)
-    .eq("status", "published")
-    .textSearch("search_vector", q, { type: "websearch", config: "english" })
-    .limit(limit);
-  if (res.error) {
-    console.error("[help] searchArticles", res.error);
+  const expanded = expandSynonyms(query);
+  if (!expanded) return [];
+  const { data, error } = await supabaseAdmin.rpc("help_search_v2", {
+    q: expanded,
+    max_results: limit,
+  });
+  if (error) {
+    console.error("[help] searchArticles", error);
     return [];
   }
-  return (res.data ?? []) as HelpArticleListItem[];
+  return (data ?? []) as HelpArticleListItem[];
+}
+
+export async function suggestArticleTitles(query: string, limit = 5): Promise<HelpTitleSuggestion[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const { data, error } = await supabaseAdmin.rpc("help_suggest_titles", {
+    q,
+    max_results: limit,
+  });
+  if (error) {
+    console.error("[help] suggestArticleTitles", error);
+    return [];
+  }
+  return (data ?? []) as HelpTitleSuggestion[];
+}
+
+// ---------------- Synonyms ----------------
+// Lightweight synonym expansion. Postgres `english` config already handles
+// stemming (rank/ranks/ranking), so we only add domain-specific terms here.
+const SYNONYMS: Record<string, string[]> = {
+  seo: ["search engine optimization"],
+  sem: ["search engine marketing"],
+  cms: ["content management"],
+  ai: ["artificial intelligence", "llm"],
+  llm: ["language model", "ai"],
+  byok: ["bring your own key", "api key"],
+  api: ["integration", "endpoint"],
+  url: ["link", "permalink"],
+  uri: ["url", "link"],
+  signup: ["sign up", "register", "registration"],
+  signin: ["sign in", "login", "log in"],
+  login: ["sign in", "signin"],
+  logout: ["sign out", "signout"],
+  password: ["passcode", "credentials"],
+  billing: ["payment", "invoice", "subscription"],
+  invoice: ["billing", "receipt"],
+  subscription: ["plan", "billing"],
+  plan: ["subscription", "tier"],
+  cancel: ["unsubscribe", "remove"],
+  refund: ["chargeback", "money back"],
+  team: ["workspace", "members"],
+  workspace: ["team", "tenant"],
+  permission: ["role", "access"],
+  role: ["permission", "access"],
+  embed: ["embedding", "iframe"],
+  share: ["sharing", "publish"],
+  publish: ["live", "release"],
+  draft: ["unpublished"],
+  domain: ["dns", "custom domain"],
+  dns: ["domain", "record"],
+  ssl: ["https", "certificate"],
+  analytics: ["stats", "metrics", "reporting"],
+  metrics: ["analytics", "stats"],
+  ticket: ["support request", "issue"],
+  bug: ["issue", "error"],
+  error: ["bug", "issue", "problem"],
+};
+
+export function expandSynonyms(raw: string): string {
+  const q = raw.trim().toLowerCase();
+  if (!q) return "";
+  const terms = q.split(/\s+/).filter(Boolean);
+  const expansions: string[] = [q];
+  for (const t of terms) {
+    const syns = SYNONYMS[t];
+    if (syns) expansions.push(...syns);
+  }
+  // Deduplicate while preserving order — websearch_to_tsquery handles the OR
+  // semantics natively when terms are quoted with OR.
+  const seen = new Set<string>();
+  const parts = expansions
+    .map((s) => s.trim())
+    .filter((s) => s && !seen.has(s) && (seen.add(s), true));
+  if (parts.length === 1) return parts[0];
+  return parts.map((p) => (p.includes(" ") ? `"${p}"` : p)).join(" OR ");
 }
 
 export async function incrementArticleView(articleId: string): Promise<void> {
