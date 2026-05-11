@@ -2,6 +2,19 @@
 // Auth: workspace member required. Uses tenant BYOK -> platform fallback via the same
 // adapters as ai-proxy. Tool loop max 8 iterations.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://esm.sh/zod@3.23.8";
+
+const RequestSchema = z.object({
+  conversation_id: z.string().uuid(),
+  workspace_id: z.string().uuid(),
+  user_message: z.string().trim().min(1).max(8000),
+  context: z
+    .object({
+      page_id: z.string().uuid().optional(),
+      route: z.string().max(500).optional(),
+    })
+    .optional(),
+});
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
