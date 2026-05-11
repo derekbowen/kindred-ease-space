@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import {
   adminListCategories,
   adminUpsertCategory,
@@ -24,7 +24,6 @@ export const Route = createFileRoute("/_authenticated/app/admin/help/categories"
 type Cat = Awaited<ReturnType<typeof adminListCategories>>[number];
 
 function AdminHelpCategoriesPage() {
-  const { toast } = useToast();
   const listFn = useServerFn(adminListCategories);
   const upsertFn = useServerFn(adminUpsertCategory);
   const deleteFn = useServerFn(adminDeleteCategory);
@@ -42,7 +41,7 @@ function AdminHelpCategoriesPage() {
       .then(setRows)
       .catch((e) => {
         if (String(e?.message ?? e).includes("forbidden")) setForbidden(true);
-        else toast({ title: "Load failed", description: String(e), variant: "destructive" });
+        else toast.error("Load failed", { description: String(String(e)) });
       })
       .finally(() => setLoading(false));
   }, [listFn, toast]);
@@ -56,7 +55,7 @@ function AdminHelpCategoriesPage() {
     try {
       await reorderFn({ data: { ids: next.map((c) => c.id) } });
     } catch (e) {
-      toast({ title: "Reorder failed", description: String(e), variant: "destructive" });
+      toast.error("Reorder failed", { description: String(String(e)) });
       reload();
     }
   };
@@ -67,14 +66,14 @@ function AdminHelpCategoriesPage() {
       await deleteFn({ data: { id: c.id } });
       setRows((r) => r.filter((x) => x.id !== c.id));
     } catch (e) {
-      toast({ title: "Delete failed", description: String(e), variant: "destructive" });
+      toast.error("Delete failed", { description: String(String(e)) });
     }
   };
 
   const onSave = async () => {
     if (!editing) return;
     if (!editing.slug || !editing.name) {
-      toast({ title: "Slug and name required", variant: "destructive" });
+      toast.error("Slug and name required");
       return;
     }
     try {
@@ -92,7 +91,7 @@ function AdminHelpCategoriesPage() {
       setEditing(null);
       reload();
     } catch (e) {
-      toast({ title: "Save failed", description: String(e), variant: "destructive" });
+      toast.error("Save failed", { description: String(String(e)) });
     }
   };
 

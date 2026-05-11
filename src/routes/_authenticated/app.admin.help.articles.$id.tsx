@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { MarkdownRenderer } from "@/components/help/MarkdownRenderer";
 import {
   adminGetArticle,
@@ -47,7 +47,6 @@ type ArticleForm = {
 function EditArticlePage() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const { toast } = useToast();
   const getFn = useServerFn(adminGetArticle);
   const upsertFn = useServerFn(adminUpsertArticle);
   const catsFn = useServerFn(adminListCategories);
@@ -66,7 +65,7 @@ function EditArticlePage() {
       .then(([a, c]) => {
         setCats(c);
         if (!a) {
-          toast({ title: "Article not found", variant: "destructive" });
+          toast.error("Article not found");
           navigate({ to: "/app/admin/help/articles" });
           return;
         }
@@ -85,7 +84,7 @@ function EditArticlePage() {
           author_name: a.author_name ?? "",
         });
       })
-      .catch((e) => toast({ title: "Failed to load", description: String(e), variant: "destructive" }))
+      .catch((e) => toast.error("Failed to load", { description: String(String(e)) }))
       .finally(() => setLoading(false));
   }, [id, getFn, catsFn, navigate, toast]);
 
@@ -117,9 +116,9 @@ function EditArticlePage() {
       });
       setLastSaved(new Date());
       setDirty(false);
-      if (!opts.silent) toast({ title: "Saved" });
+      if (!opts.silent) toast.success("Saved");
     } catch (e) {
-      toast({ title: "Save failed", description: String(e), variant: "destructive" });
+      toast.error("Save failed", { description: String(String(e)) });
     } finally {
       setSaving(false);
     }

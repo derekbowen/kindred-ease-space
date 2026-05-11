@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import {
   adminListArticles,
   adminUpsertArticle,
@@ -29,7 +29,6 @@ export const Route = createFileRoute("/_authenticated/app/admin/help/articles")(
 
 function AdminHelpArticlesPage() {
   const navigate = useNavigate();
-  const { toast } = useToast();
   const listFn = useServerFn(adminListArticles);
   const catsFn = useServerFn(adminListCategories);
   const upsertFn = useServerFn(adminUpsertArticle);
@@ -50,14 +49,14 @@ function AdminHelpArticlesPage() {
       })
       .catch((e) => {
         if (String(e?.message ?? e).includes("forbidden")) setForbidden(true);
-        else toast({ title: "Failed to load articles", description: String(e), variant: "destructive" });
+        else toast.error("Failed to load articles", { description: String(String(e)) });
       })
       .finally(() => setLoading(false));
   }, [listFn, catsFn, toast]);
 
   const onCreate = async () => {
     if (!cats.length) {
-      toast({ title: "Create a category first", variant: "destructive" });
+      toast.error("Create a category first");
       return;
     }
     setCreating(true);
@@ -75,7 +74,7 @@ function AdminHelpArticlesPage() {
       });
       navigate({ to: "/app/admin/help/articles/$id", params: { id: res.id } });
     } catch (e) {
-      toast({ title: "Create failed", description: String(e), variant: "destructive" });
+      toast.error("Create failed", { description: String(String(e)) });
     } finally {
       setCreating(false);
     }
@@ -87,7 +86,7 @@ function AdminHelpArticlesPage() {
       await deleteFn({ data: { id } });
       setRows((r) => r.filter((x) => x.id !== id));
     } catch (e) {
-      toast({ title: "Delete failed", description: String(e), variant: "destructive" });
+      toast.error("Delete failed", { description: String(String(e)) });
     }
   };
 
