@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sendEmail, welcomeEmailTemplate } from "@/lib/email.server";
 
 const STARTER_TRIAL_CREDITS = 250;
 
@@ -63,6 +64,23 @@ export const createWorkspace = createServerFn({ method: "POST" })
       _ref_id: ws.id,
       _metadata: { source: "onboarding" },
     });
+
+    // Fire-and-forget welcome email — never block workspace creation.
+    const userEmail = (context.claims as { email?: string } | undefined)?.email;
+    if (userEmail) {
+      const tpl = welcomeEmailTemplate({
+        name: data.name,
+        workspaceSlug: ws.slug,
+      });
+      sendEmail({
+        to: userEmail,
+        subject: tpl.subject,
+        html: tpl.html,
+        text: tpl.text,
+        idempotencyKey: `welcome-${ws.id}`,
+        meta: { workspace_id: ws.id, kind: "welcome" },
+      }).catch((err) => console.error("[createWorkspace] welcome email failed", err));
+    }
 
     return { workspaceId: ws.id, slug: ws.slug };
   });
