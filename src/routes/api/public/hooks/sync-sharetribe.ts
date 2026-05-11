@@ -29,7 +29,7 @@ export const Route = createFileRoute("/api/public/hooks/sync-sharetribe")({
             return Response.json({ scope: "single", ok: true, ...r });
           }
           const r = await runSharetribeSyncAll();
-          return Response.json({ scope: "all", ok: true, ...r });
+          return Response.json({ scope: "all", success: true, ...r });
         } catch (e) {
           console.error("[sync-sharetribe] failed", e);
           return Response.json(
