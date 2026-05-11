@@ -33,7 +33,7 @@ function PageAuditorPage() {
     setRecent(r.rows);
   }
 
-  async function audit() {
+  async function runAudit() {
     if (!workspaceId || !path.trim()) return;
     setBusy(true); setError(null); setAudit(null); setSuggestions([]);
     try {
