@@ -41,11 +41,6 @@ export function SiteFooter() {
             <li><Link to="/" className="hover:text-foreground">{t("nav.features")}</Link></li>
             <li><Link to="/" className="hover:text-foreground">{t("nav.pricing")}</Link></li>
             <li><Link to="/help" className="hover:text-foreground">{t("nav.help")}</Link></li>
-            <li>
-              <a href="https://status.founders.click" target="_blank" rel="noreferrer" className="hover:text-foreground">
-                {t("footer.status")}
-              </a>
-            </li>
           </ul>
         </div>
 
