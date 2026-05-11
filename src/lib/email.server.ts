@@ -102,3 +102,110 @@ export function welcomeEmailTemplate(opts: { name?: string; workspaceSlug: strin
     text: `${greeting}\n\nYou're in. ${BRAND} turns your Sharetribe marketplace into SEO-optimized landing pages.\n\nNext: open ${url} and connect your marketplace.\n\nReply if you need help.`,
   };
 }
+
+// --- Support ticket templates -----------------------------------------
+
+export const SUPPORT_INBOX_EMAIL =
+  process.env.SUPPORT_INBOX_EMAIL || "support@founders.click";
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export function newTicketStaffTemplate(opts: {
+  ticketId: string;
+  subject: string;
+  message: string;
+  email: string;
+  name?: string | null;
+  category?: string | null;
+  priority: string;
+}) {
+  const ticketUrl = `${APP_URL}/app/admin/help/tickets`;
+  const who = opts.name ? `${escapeHtml(opts.name)} &lt;${escapeHtml(opts.email)}&gt;` : escapeHtml(opts.email);
+  return {
+    subject: `[Ticket] ${opts.priority.toUpperCase()} · ${opts.subject}`,
+    html: `<div style="${baseStyle}">
+  <p style="color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin:0 0 4px;">New support ticket</p>
+  <h1 style="font-size:20px;margin:0 0 12px;">${escapeHtml(opts.subject)}</h1>
+  <p style="margin:0 0 6px;"><strong>From:</strong> ${who}</p>
+  <p style="margin:0 0 6px;"><strong>Priority:</strong> ${escapeHtml(opts.priority)}${opts.category ? ` · <strong>Category:</strong> ${escapeHtml(opts.category)}` : ""}</p>
+  <div style="margin:18px 0;padding:14px 16px;background:#f8fafc;border-left:3px solid #0f172a;border-radius:4px;white-space:pre-wrap;font-size:14px;">${escapeHtml(opts.message)}</div>
+  <p style="margin:24px 0;"><a href="${ticketUrl}" style="${btnStyle}">Open ticket inbox</a></p>
+  <p style="color:#64748b;font-size:12px;">Ticket ID: ${opts.ticketId}</p>
+</div>`,
+    text: `New support ticket\n\nFrom: ${opts.name ? `${opts.name} <${opts.email}>` : opts.email}\nPriority: ${opts.priority}${opts.category ? `\nCategory: ${opts.category}` : ""}\n\nSubject: ${opts.subject}\n\n${opts.message}\n\nOpen inbox: ${ticketUrl}\nTicket ID: ${opts.ticketId}`,
+  };
+}
+
+export function ticketReceivedUserTemplate(opts: {
+  ticketId: string;
+  subject: string;
+  name?: string | null;
+}) {
+  const greeting = opts.name ? `Hi ${escapeHtml(opts.name)},` : "Hi,";
+  return {
+    subject: `We received your message: ${opts.subject}`,
+    html: `<div style="${baseStyle}">
+  <h1 style="font-size:20px;margin:0 0 12px;">${greeting}</h1>
+  <p>Thanks for reaching out to ${BRAND} support. We've received your message and a real human will get back to you as soon as possible — usually within one business day.</p>
+  <p><strong>Your message:</strong> ${escapeHtml(opts.subject)}</p>
+  <p style="color:#64748b;font-size:13px;">If you have anything to add, just reply to this email.</p>
+  <p style="color:#94a3b8;font-size:12px;margin-top:24px;">Reference: ${opts.ticketId}</p>
+</div>`,
+    text: `${greeting}\n\nThanks for reaching out to ${BRAND} support. We've received your message: "${opts.subject}" and will reply soon.\n\nReply to this email if you have anything to add.\n\nReference: ${opts.ticketId}`,
+  };
+}
+
+const STATUS_COPY: Record<string, { label: string; body: string }> = {
+  open: {
+    label: "Open",
+    body: "Your ticket is back in our queue and we'll respond shortly.",
+  },
+  in_progress: {
+    label: "In progress",
+    body: "We're actively working on your ticket and will follow up with an update.",
+  },
+  waiting: {
+    label: "Waiting on you",
+    body: "We need a bit more information from you to keep moving. Please reply to your last message when you can.",
+  },
+  resolved: {
+    label: "Resolved",
+    body: "We've marked this ticket as resolved. If anything is still off, reply and we'll reopen it.",
+  },
+  closed: {
+    label: "Closed",
+    body: "This ticket is now closed. You can always reply to start a new conversation.",
+  },
+};
+
+export function ticketStatusChangedTemplate(opts: {
+  ticketId: string;
+  subject: string;
+  name?: string | null;
+  newStatus: string;
+}) {
+  const copy = STATUS_COPY[opts.newStatus] ?? {
+    label: opts.newStatus,
+    body: `Status updated to ${opts.newStatus}.`,
+  };
+  const greeting = opts.name ? `Hi ${escapeHtml(opts.name)},` : "Hi,";
+  return {
+    subject: `[${copy.label}] ${opts.subject}`,
+    html: `<div style="${baseStyle}">
+  <h1 style="font-size:20px;margin:0 0 12px;">${greeting}</h1>
+  <p>Your support ticket <strong>"${escapeHtml(opts.subject)}"</strong> has been updated to <strong>${escapeHtml(copy.label)}</strong>.</p>
+  <p>${copy.body}</p>
+  <p style="color:#64748b;font-size:13px;margin-top:24px;">Just reply to this email to continue the conversation.</p>
+  <p style="color:#94a3b8;font-size:12px;margin-top:18px;">Reference: ${opts.ticketId}</p>
+</div>`,
+    text: `${greeting}\n\nYour support ticket "${opts.subject}" has been updated to ${copy.label}.\n\n${copy.body}\n\nReply to this email to continue the conversation.\n\nReference: ${opts.ticketId}`,
+  };
+}
+
