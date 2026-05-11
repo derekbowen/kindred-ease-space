@@ -45,18 +45,7 @@ export const Route = createFileRoute("/")({
 function Landing() {
   return (
     <div className="dark min-h-screen bg-background text-foreground">
-      {/* Header */}
-      <header className="border-b border-border">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link to="/" className="text-lg font-bold tracking-tight">
-            founders<span className="text-orange-500">.click</span>
-          </Link>
-          <nav className="flex items-center gap-4 text-sm">
-            <Link to="/login" className="text-muted-foreground hover:text-foreground">Sign in</Link>
-            <Button asChild size="sm"><Link to="/signup">Start free trial</Link></Button>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
 
       {/* Hero */}
       <section className="max-w-6xl mx-auto px-6 py-20 text-center">
