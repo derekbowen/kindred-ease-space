@@ -124,7 +124,7 @@ export const adminUpdateTicket = createServerFn({ method: "POST" })
 
     const { error } = await supabaseAdmin
       .from("support_tickets")
-      .update(patch)
+      .update(patch as any)
       .eq("id", data.id);
     if (error) throw error;
 
