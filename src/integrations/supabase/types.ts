@@ -1742,6 +1742,41 @@ export type Database = {
           },
         ]
       }
+      help_article_embeddings: {
+        Row: {
+          article_id: string
+          chunk_index: number
+          content: string
+          created_at: string
+          embedding: string
+          id: string
+        }
+        Insert: {
+          article_id: string
+          chunk_index: number
+          content: string
+          created_at?: string
+          embedding: string
+          id?: string
+        }
+        Update: {
+          article_id?: string
+          chunk_index?: number
+          content?: string
+          created_at?: string
+          embedding?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "help_article_embeddings_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "help_articles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       help_article_feedback: {
         Row: {
           article_id: string
@@ -4352,6 +4387,18 @@ export type Database = {
       is_workspace_owner: {
         Args: { _user_id: string; _workspace_id: string }
         Returns: boolean
+      }
+      match_help_chunks: {
+        Args: { match_count?: number; query_embedding: string }
+        Returns: {
+          article_id: string
+          article_slug: string
+          article_title: string
+          category_slug: string
+          chunk_index: number
+          content: string
+          similarity: number
+        }[]
       }
       move_to_dlq: {
         Args: {
