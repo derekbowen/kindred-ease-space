@@ -43,15 +43,15 @@ function OnboardingPage() {
   };
 
   return (
-    <div className="max-w-lg mx-auto">
-      <Card>
+    <div className="mx-auto w-full max-w-lg min-w-0">
+      <Card className="w-full min-w-0 overflow-hidden">
         <CardHeader>
-          <CardTitle>Set up your workspace</CardTitle>
-          <CardDescription>
+          <CardTitle className="text-2xl leading-tight sm:text-3xl">Set up your workspace</CardTitle>
+          <CardDescription className="text-base leading-relaxed text-balance">
             Tell us about your Sharetribe marketplace. You'll get 250 free trial credits and 14 days to explore everything.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="min-w-0">
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Workspace name</Label>
@@ -60,6 +60,7 @@ function OnboardingPage() {
                 placeholder="Pool Rental Near Me"
                 required
                 minLength={2}
+                autoCapitalize="words"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
@@ -70,14 +71,17 @@ function OnboardingPage() {
                 id="domain"
                 placeholder="poolrentalnearme.com"
                 required
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs leading-relaxed text-muted-foreground text-pretty">
                 The public domain of the Sharetribe marketplace you operate. You'll verify it after onboarding.
               </p>
             </div>
-            <Button type="submit" className="w-full" disabled={submitting}>
+            <Button type="submit" className="w-full text-base" disabled={submitting}>
               {submitting ? "Creating workspace…" : "Create workspace & start trial"}
             </Button>
           </form>

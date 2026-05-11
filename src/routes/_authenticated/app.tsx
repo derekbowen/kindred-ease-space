@@ -141,7 +141,7 @@ function AppShell() {
             </Button>
           </SidebarFooter>
         </Sidebar>
-        <SidebarInset>
+        <SidebarInset className="min-w-0 overflow-x-hidden">
           <header className="h-14 flex items-center gap-3 border-b border-border px-4">
             <SidebarTrigger />
             {activeWorkspace?.plan && (
@@ -153,7 +153,7 @@ function AppShell() {
               <span className="text-xs text-muted-foreground">{activeWorkspace.marketplace_domain}</span>
             )}
           </header>
-          <main className="flex-1 p-6 max-w-6xl w-full">
+          <main className="flex-1 w-full max-w-6xl min-w-0 px-4 py-4 sm:px-6 sm:py-6">
             <Outlet />
           </main>
         </SidebarInset>
