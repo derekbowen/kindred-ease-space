@@ -251,8 +251,8 @@ export const runCoachAction = createServerFn({ method: "POST" })
         status: errorMessage ? "error" : "success",
         briefing_id: data.briefingId ?? null,
         insight_index: data.insightIndex ?? null,
-        payload: data.payload,
-        result: errorMessage ? null : result!.details ?? null,
+        payload: JSON.parse(JSON.stringify(data.payload)),
+        result: errorMessage ? null : (result!.details ?? null),
         summary: errorMessage ?? result!.summary,
       },
     });
