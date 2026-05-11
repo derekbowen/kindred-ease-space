@@ -9,9 +9,11 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as HelpRouteImport } from './routes/help'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
@@ -81,6 +83,11 @@ import { Route as AuthenticatedAppAdminHelpCategoriesRouteImport } from './route
 import { Route as AuthenticatedAppAdminHelpArticlesRouteImport } from './routes/_authenticated/app.admin.help.articles'
 import { Route as AuthenticatedAppAdminHelpArticlesIdRouteImport } from './routes/_authenticated/app.admin.help.articles.$id'
 
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
@@ -94,6 +101,11 @@ const SignupRoute = SignupRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -490,9 +502,11 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/help': typeof HelpRouteWithChildren
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/terms': typeof TermsRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/help/$category': typeof HelpCategoryRouteWithChildren
   '/help/contact': typeof HelpContactRoute
@@ -561,9 +575,11 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/terms': typeof TermsRoute
   '/help/$category': typeof HelpCategoryRouteWithChildren
   '/help/contact': typeof HelpContactRoute
   '/help/search': typeof HelpSearchRoute
@@ -634,9 +650,11 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/help': typeof HelpRouteWithChildren
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/terms': typeof TermsRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
   '/help/$category': typeof HelpCategoryRouteWithChildren
   '/help/contact': typeof HelpContactRoute
@@ -708,9 +726,11 @@ export interface FileRouteTypes {
     | '/'
     | '/help'
     | '/login'
+    | '/privacy'
     | '/reset-password'
     | '/signup'
     | '/sitemap.xml'
+    | '/terms'
     | '/app'
     | '/help/$category'
     | '/help/contact'
@@ -779,9 +799,11 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/privacy'
     | '/reset-password'
     | '/signup'
     | '/sitemap.xml'
+    | '/terms'
     | '/help/$category'
     | '/help/contact'
     | '/help/search'
@@ -851,9 +873,11 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/help'
     | '/login'
+    | '/privacy'
     | '/reset-password'
     | '/signup'
     | '/sitemap.xml'
+    | '/terms'
     | '/_authenticated/app'
     | '/help/$category'
     | '/help/contact'
@@ -925,9 +949,11 @@ export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   HelpRoute: typeof HelpRouteWithChildren
   LoginRoute: typeof LoginRoute
+  PrivacyRoute: typeof PrivacyRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  TermsRoute: typeof TermsRoute
   PSlugRoute: typeof PSlugRoute
   ApiPublicDomainTokenRoute: typeof ApiPublicDomainTokenRoute
   ApiPublicPageLookupRoute: typeof ApiPublicPageLookupRoute
@@ -938,6 +964,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sitemap.xml': {
       id: '/sitemap.xml'
       path: '/sitemap.xml'
@@ -957,6 +990,13 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -1647,9 +1687,11 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   HelpRoute: HelpRouteWithChildren,
   LoginRoute: LoginRoute,
+  PrivacyRoute: PrivacyRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  TermsRoute: TermsRoute,
   PSlugRoute: PSlugRoute,
   ApiPublicDomainTokenRoute: ApiPublicDomainTokenRoute,
   ApiPublicPageLookupRoute: ApiPublicPageLookupRoute,
