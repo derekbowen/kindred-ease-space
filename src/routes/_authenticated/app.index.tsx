@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,11 +14,27 @@ export const Route = createFileRoute("/_authenticated/app/")({
 });
 
 function DashboardPage() {
+  const navigate = useNavigate();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
   useEffect(() => {
-    getMe().then((me) => setWorkspaceId(me.memberships[0]?.workspace_id ?? null));
-  }, []);
+    getMe()
+      .then((me) => {
+        const memberships = Array.isArray(me?.memberships) ? me.memberships : [];
+        setWorkspaceId(memberships[0]?.workspace_id ?? null);
+      })
+      .catch((err) => {
+        // 401s here just mean session expired / not hydrated — bounce to login.
+        const status = (err as { status?: number; response?: { status?: number } })?.status
+          ?? (err as { response?: { status?: number } })?.response?.status;
+        if (status === 401) {
+          navigate({ to: "/login", search: { next: "/app" } });
+        } else {
+          console.error("getMe failed", err);
+        }
+      });
+  }, [navigate]);
+
 
   const { data, isLoading } = useQuery({
     queryKey: ["workspace-overview", workspaceId],
