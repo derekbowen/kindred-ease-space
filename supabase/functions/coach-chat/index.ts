@@ -288,14 +288,15 @@ Deno.serve(async (req) => {
       });
     }
     const userId = ures.user.id;
-    const body = await req.json() as {
-      conversation_id: string;
-      workspace_id: string;
-      user_message: string;
-      context?: { page_id?: string; route?: string };
-    };
-    if (!body.conversation_id || !body.workspace_id || !body.user_message) {
-      return new Response(JSON.stringify({ error: "conversation_id, workspace_id, user_message required" }), {
+    let body: z.infer<typeof RequestSchema>;
+    try {
+      const raw = await req.json();
+      body = RequestSchema.parse(raw);
+    } catch (e) {
+      const msg = e instanceof z.ZodError
+        ? e.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
+        : "Invalid JSON body";
+      return new Response(JSON.stringify({ error: `Invalid request: ${msg}` }), {
         status: 400, headers: { ...cors, "Content-Type": "application/json" },
       });
     }
