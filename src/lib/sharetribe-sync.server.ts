@@ -149,7 +149,7 @@ function mapListing(workspaceId: string, marketplaceUrl: string, raw: AnyRec, in
           }
         : null;
     })
-    .filter(Boolean);
+    .filter(Boolean) as AnyRec[];
 
   // Author
   const authorRel = raw?.relationships?.author?.data;
