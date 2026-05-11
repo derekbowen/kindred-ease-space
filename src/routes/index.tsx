@@ -75,12 +75,17 @@ function Landing() {
       <section className="max-w-5xl mx-auto px-6 pb-16">
         <div className="rounded-xl border border-border overflow-hidden bg-black shadow-2xl shadow-orange-500/10">
           <video
-            src="/product-demo.mp4"
             controls
             playsInline
+            muted
             preload="metadata"
+            poster="/product-demo-poster.jpg"
             className="w-full h-auto block"
-          />
+          >
+            <source src="/product-demo.mp4" type="video/mp4" />
+            Your browser does not support the video tag.{" "}
+            <a href="/product-demo.mp4" className="underline">Download the demo</a>.
+          </video>
         </div>
         <p className="text-center text-xs text-muted-foreground mt-3">Product demo — see the Content Factory in action</p>
       </section>
