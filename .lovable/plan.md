@@ -1,87 +1,153 @@
-## Audit findings
+# PSEO Admin Engine → founders.click — Port Plan
 
-**The good:** Your Supabase already has the SaaS skeleton + every feature table founders.click needs.
-- `workspaces` (plan, subscription_status, trial_ends_at, stripe_customer_id, stripe_subscription_id, marketplace_domain, domain_verified_at, owner_user_id)
-- `workspace_members` + helpers `is_workspace_member`, `is_workspace_owner`, `workspace_for_host`
-- `customer_subscriptions` (workspace_id-scoped, status enum, period tracking)
-- `user_roles` + `has_role` (app-wide admin separate from tenant ownership)
-- All feature tables exist: `content_plan`, `content_pages`, `competitor_sites/urls/pages`, `gsc_query_data`, `serp_rankings`, `tracked_keywords`, `page_audits`, `internal_link_suggestions`, `provider_leads`, `email_branding`, `site_footer_settings`, `blog_posts`, `courses`, `course_*`, `mb_*`, `enriched_contacts`, `provider_claims`, `provider_plan_requests`, etc.
+## Bundle inventory
 
-**The critical gap:** Of ~60 tables, only **3** carry `workspace_id` (`content_pages`, `customer_subscriptions`, `workspace_members`). Everything else is gated by a single `has_role('admin')` policy — meaning today every paying customer would see every other customer's data. This is the #1 ship-blocker.
+- **44 route files** in `bundle/src/routes/admin.*.tsx` (you said 43; one is `admin.learning.$userId.tsx`)
+- **13 server modules** in `bundle/src/server/admin-*.functions.ts` (≈220 KB total — `admin-tools` 50K, `admin-weapons` 39K, `admin-dashboard` 22K alone)
+- **8 edge functions** in `bundle/supabase/functions/`
+- **103 SQL migrations** in `bundle/supabase/migrations/`
+- **1 layout** (`admin-layout.tsx`, 13K) and 2 lib files (`admin-tech-docs.ts`, `admin-tech-flows.ts`)
 
-**Other gaps:**
-- This project has zero app routes (only the placeholder `/`). No login, no dashboard, no signup.
-- No Stripe webhook → `customer_subscriptions` / `workspaces.subscription_status` plumbing.
-- No domain verification flow for `marketplace_domain`.
-- `email_branding` / `site_footer_settings` are global single-row tables — needs per-workspace.
-- No marketing site for founders.click yet.
+## Critical findings from inspecting the source
 
-## Recommended scope (this project) & domain
+1. **Source code is 100% single-tenant.** `rg "workspace_id|workspaceId|getMe"` across `src/server/` and `src/routes/` returns **zero matches**. Every `.from(...)` query in 13 server modules has to be retrofitted with workspace scoping. This is the single biggest piece of work — far bigger than the file copying.
+2. **Auth model differs.** Source uses `checkAdminRole()` against `user_roles.role='admin'` and a `/admin/no-access` route. This project uses workspace membership (`is_workspace_member` / `is_workspace_owner`). Port will replace the admin gate with a workspace-membership gate sourced from `getMe()`.
+3. **One missing import in the bundle.** `admin.click-report.tsx` imports `getCityClickReport` from `@/server/click-report.functions` — that file is **not in the bundle**. I will reconstruct it from `city_link_clicks` (which already has `workspace_id`).
+4. **`getCanonicalOrigin` / sitemap helpers** are not in the bundle. Some routes need them; I'll inline minimal versions.
 
-Build the SaaS app **here** at `/app/*` (signup, dashboard, every founders.click feature) and the marketing site at `/marketing/*` or under a separate domain. Two clean options:
+## Table mapping (bundle ↔ this project's DB)
 
-1. **Single project (recommended):** keep poolrentalnearme.com proxy untouched, add `/app` (admin) + `/marketing` (founders.click landing) routes. Point `founders.click` DNS at the same fresh-web Lovable host with a second nginx server block. One codebase, one Supabase, easiest to ship.
-2. **Split:** spin up a second Lovable project for marketing only. Adds ops cost, no real benefit at this stage.
+Bundle queries 35 tables. Crossing against this project's 68 tables:
 
-Going with option 1 below.
+**Already exist with `workspace_id` + RLS — just need filter retrofitting:**
+blog_posts, competitor_host_matches, competitor_pages, competitor_sites, competitor_urls, content_pages, content_plan, courses, enrichment_spend_log, gsc_query_data, help_articles, host_match_false_positives, internal_link_suggestions, listing_sync_log, page_audits, provider_claims, provider_leads, provider_plan_requests, providers, seo_fix_jobs, serp_rankings, site_issues, synced_listings, template_quality_breakdown, tracked_keywords
 
-## Plan — phased
+**Already exist, no `workspace_id` (global / shared):** cities, profiles, user_roles, pool_waitlist
 
-```text
-Phase 1: Multi-tenant data isolation (CRITICAL, blocks everything)
-Phase 2: Auth + workspace onboarding
-Phase 3: Stripe billing (built-in Stripe payments)
-Phase 4: Admin dashboard shell + first 2 features ported
-Phase 5: Marketing site (the 7 slides → /marketing)
-Phase 6: Remaining features ported into the shell
+**Net-new tables this port must create (with `workspace_id` + `is_workspace_member` RLS from day 1):**
+- `admin_section_presets` — used by content generator presets
+- `gsc_daily_pages` — daily aggregates for GSC import (current `gsc_query_data` is per-query, not per-day-per-page)
+- `host_leads` — used by lead inbox; we have `provider_leads` so I will **map references to `provider_leads`** instead of creating a new table (your "Lead inbox" already points at this)
+- `listing_audits` — output of listing-auditor (Phase 5 skip — not porting)
+- `missing_pages` — we already have `content_404_log` with the same shape; I will **map references to `content_404_log`** instead of creating a duplicate
+
+Net new tables to actually create: **`admin_section_presets`** and **`gsc_daily_pages`** only.
+
+## Route mapping (Phase 6 — porting)
+
+Source `/admin/X` → Target `/_authenticated/app/SECTION/Y`:
+
+### Overview (2)
+- `admin.dashboard.tsx` → `app.index.tsx` (replace existing)
+- `admin.tech-docs.tsx` → `app.tech-docs.tsx` (new route file; sidebar link)
+
+### Content (6)
+- `admin.quick-page.tsx` → `app.content.quick-page-builder.tsx`
+- `admin.generate-content.tsx` → `app.content.generate.tsx` ★ THE BIG ONE
+- `admin.content-migration.tsx` → `app.content.migration.tsx`
+- `admin.content-pages.tsx` → `app.content.bulk-editor.tsx`
+- `admin.data-import.tsx` → `app.content.data-import.tsx`
+- `admin.data-export.tsx` → `app.content.data-export.tsx`
+
+### SEO (17)
+- `admin.competitor-radar.tsx` → `app.seo.competitor-radar.tsx`
+- `admin.competitors.tsx` → `app.seo.competitor-tracker.tsx`
+- `admin.keyword-opportunities.tsx` → `app.seo.keyword-opportunities.tsx`
+- `admin.missing-pages.tsx` → `app.seo.missing-pages.tsx` (rewires to `content_404_log`)
+- `admin.gsc-import.tsx` → `app.seo.gsc-import.tsx`
+- `admin.scrape-import.tsx` → `app.seo.scrape-import.tsx`
+- `admin.page-auditor.tsx` → `app.seo.page-auditor.tsx`
+- `admin.seo-coach.tsx` → `app.seo.seo-coach.tsx` (new file; replaces `app.seo-coach.tsx`)
+- `admin.seo-health.tsx` → `app.seo.health.tsx`
+- `admin.link-checker.tsx` → `app.seo.link-checker.tsx`
+- `admin.link-audit.tsx` → `app.seo.link-audit.tsx`
+- `admin.internal-links.tsx` → `app.seo.internal-links.tsx`
+- `admin.rank-tracker.tsx` → `app.seo.rank-tracker.tsx`
+- `admin.click-report.tsx` → `app.seo.click-report.tsx` (+ reconstruct `click-report.functions.ts`)
+- `admin.indexing.tsx` → `app.seo.sitemap.tsx`
+- `admin.content-health.tsx` → `app.seo.content-health.tsx` (new)
+- `admin.redirect-aliases.tsx` → `app.seo.redirects.tsx` (new)
+- `admin.landing-link-check.tsx` → **skip** (merge into link-checker)
+
+### Ops (2)
+- `admin.leads.tsx` → `app.ops.lead-inbox.tsx` (rewires `host_leads` → `provider_leads`)
+- `admin.email-verify.tsx` → `app.ops.email-verify.tsx`
+
+**Total Phase 6: 27 routes ported.**
+
+## Routes I will SKIP (per your Phase 5 list)
+
+directory, claims, listing-auditor, sharetribe-prune, ig-lead-hunter, social-lead-hunter, site-footer, email-branding, cities-heroes, cities-heroes-report, learning, learning.$userId, blog, team, plan-requests, privacy-requests, no-access. Existing stubs stay; their nav entries stay marked `internalOnly` until you ask for them.
+
+## Server modules — port + retrofit
+
+All 13 modules copied from `bundle/src/server/admin-*.functions.ts` → `src/lib/admin-*.functions.ts` (per template's import-protection rules — `*.functions.ts` files outside `src/server/`). For each module:
+
+1. Replace `checkAdminRole()` calls with a **`requireWorkspace()`** middleware that reads the active `workspace_id` from `getMe()` and rejects if user has no membership.
+2. Add `.eq("workspace_id", workspaceId)` to every `SELECT/UPDATE/DELETE` against any table in the "already exist with workspace_id" list above.
+3. Add `workspace_id: workspaceId` to every `.insert(...)` payload on those tables.
+4. Leave `cities`, `profiles`, `user_roles` queries unscoped (intentionally global).
+5. `admin-team.functions.ts`, `admin-listing-audit.functions.ts`, `admin-blog.functions.ts` → **skip entirely** (their routes are Phase 5).
+
+Port targets (10 modules): `admin-auth`, `admin-dashboard`, `admin-tools`, `admin-weapons`, `admin-seo-tools`, `admin-seo-coach`, `admin-data-io`, `admin-quick-page`, `admin-pending-actions`, `admin-email-verify`. Plus reconstruct `click-report.functions.ts`.
+
+## Edge functions — port all 8
+
+Copy `bundle/supabase/functions/{name}/` → `supabase/functions/{name}/` verbatim. Then patch each to:
+- Accept `workspace_id` in the JSON body (required).
+- Verify caller's session and that they belong to that workspace (use `SUPABASE_SERVICE_ROLE_KEY` for auth check, then scope all writes by `workspace_id`).
+- Insert any new rows with `workspace_id` set.
+
+Functions: `generate-content-batch`, `generate-advocacy`, `generate-academy-pages`, `generate-course-content`, `generate-help-article`, `drive-content-generation`, `seed-academy-courses`, `seed-blog-posts`.
+
+## Migrations
+
+I will **NOT** copy the 103 bundle migrations wholesale — most would conflict with this project's existing schema. Instead, one new migration that creates only what's missing:
+
+```sql
+-- 20260511_admin_engine_port.sql
+-- 1. admin_section_presets (new)
+-- 2. gsc_daily_pages (new)
+-- 3. add a few missing columns the bundle code expects on existing tables
+--    (audit during port; e.g. content_pages.template_type is fine, etc.)
 ```
 
-### Phase 1 — Tenancy retrofit (1 migration, 1 PR)
-Add `workspace_id uuid` (nullable for backfill, then NOT NULL) to every operational table:
-`content_plan, competitor_sites, competitor_urls, competitor_pages, competitor_host_matches, gsc_query_data, serp_rankings, tracked_keywords, page_audits, internal_link_suggestions, provider_leads, provider_claims, provider_plan_requests, host_match_false_positives, enriched_contacts, enrichment_spend_log, email_branding, email_send_log, email_send_state, site_footer_settings, blog_posts, host_tools, help_articles, help_categories, content_404_log, seo_overrides, seo_fix_jobs, site_issues, listing_sync_log, page_quality, template_quality_breakdown, feature_requests, host_profiles, courses, course_*, mb_threads, mb_replies, mb_likes, suppressed_emails, synced_listings, customer_subscriptions (already has)`.
+I'll only know the full ALTER list after walking each ported file. Will add as a follow-up migration before claiming a tool is wired.
 
-Backfill all existing rows to a single "internal" workspace (your fresh-web one, mark `is_internal=true`). Replace every `has_role('admin')` ALL-policy with **two** policies per table: (a) workspace members read/write their workspace's rows, (b) `has_role('admin')` super-admin escape hatch.
+## Sidebar nav update
 
-Keep public-read policies (cities, amenities, blog_posts, etc.) as-is for the marketing/SEO surface.
+`src/lib/app-nav.ts` rewritten to match the bundle's GROUPS exactly (Overview / Content / SEO / Users & Ops), but with `/app/...` paths and `internalOnly` flags preserved on the Phase-5 stubs.
 
-### Phase 2 — Auth + onboarding
-- `/login`, `/signup` (email + Google), reset password page.
-- `_authenticated/` route group guarded via `beforeLoad` + Supabase session check.
-- First-run onboarding: name workspace → enter Sharetribe `marketplace_domain` → DNS TXT verification edge function → set `domain_verified_at`.
-- Trial timer starts on workspace creation (`trial_ends_at = now() + 14 days`, `plan='trial'`).
+## Execution order (waves)
 
-### Phase 3 — Billing (Stripe via Lovable's built-in Stripe payments)
-- Run `recommend_payment_provider`, then enable Stripe. Create 3 plans (Starter / Pro / Scale) once enabled.
-- Checkout session per workspace; portal link in settings.
-- `/api/public/webhooks/stripe` server route → verify signature → upsert `customer_subscriptions` → mirror `plan` / `subscription_status` / `current_period_end` onto `workspaces`.
-- Plan-gating helper `requirePlan(workspaceId, ['pro','scale'])` for premium features (Competitor Radar, IG Lead Hunter, etc.).
+Realistic scope: ~25 large React route files + 10 server modules + 8 edge functions + auth retrofit on every query. Doing it in one shot would burn a huge amount of tool calls and likely hit limits mid-way. I'll do it in **3 waves**, committing after each so nothing is left half-broken:
 
-### Phase 4 — Admin dashboard shell (`/app`)
-- Shadcn sidebar layout: Dashboard, Content, SEO, Users & Ops, Settings.
-- Workspace switcher (for users with multiple memberships).
-- Implement Dashboard tab + Content (Quick Page Builder + Bulk Page Editor) first as proof-of-concept end-to-end on the new tenancy model.
+- **Wave A — foundation** (this loop)
+  - New migration: `admin_section_presets`, `gsc_daily_pages`
+  - `src/lib/admin-auth.functions.ts` with `requireWorkspace()` helper
+  - `src/components/admin-layout.tsx` ported (renamed nav, workspace-aware)
+  - `src/lib/app-nav.ts` rewritten
+  - Port the 4 small server modules: `admin-quick-page`, `admin-pending-actions`, `admin-email-verify`, reconstruct `click-report`
+  - Port 5 small routes: `quick-page-builder`, `click-report`, `email-verify`, `tech-docs`, `lead-inbox`
+  - Port `admin.dashboard.tsx` → `app.index.tsx`
 
-### Phase 5 — Marketing site (`/marketing` or founders.click root)
-- Routes: `/marketing`, `/marketing/dashboard`, `/marketing/content`, `/marketing/seo`, `/marketing/users-ops`, `/marketing/pricing`.
-- Convert the 7 slides to dark-aesthetic SSR pages with per-route `head()` metadata.
-- CTA → `/signup?plan=...`.
-- Gate behind a separate nginx server block on founders.click pointed at the same fresh-web origin (no Lovable changes needed beyond routing).
+- **Wave B — content + data IO** (next loop)
+  - `admin-tools.functions.ts`, `admin-data-io.functions.ts`
+  - Routes: generate, bulk-editor, migration, data-import, data-export
+  - Edge fns: `generate-content-batch`, `generate-advocacy`
 
-### Phase 6 — Remaining features
-Port each remaining tab one-by-one against the now-isolated schema: SEO suite (Competitor Radar, Rank Tracker, Page Auditor, Link Auditor, Keyword Opportunities, Internal Link Recommender, Sitemap/404), Users & Ops (Lead Inbox, Email Verify, IG Lead Hunter, Directory Moderation, Email Branding per workspace, Site Footer Editor, Admin Team, Listing Claims & Plans), Content Factory cron, SEO Coach AI chat, Blog Admin & Learning.
+- **Wave C — SEO suite + remaining edge fns** (loop after)
+  - `admin-weapons`, `admin-seo-tools`, `admin-seo-coach`, `admin-dashboard`
+  - Routes: all 17 SEO routes
+  - Edge fns: remaining 6
 
-## Technical specifics
+After each wave: report on what's live, what's broken, what TODOs remain.
 
-- All workspace queries go through `createServerFn` with `requireSupabaseAuth` middleware so RLS does the isolation work — no admin client in feature code.
-- `supabaseAdmin` only in: Stripe webhook, DNS verifier, cron jobs (Content Factory, Competitor Radar daily scrape, Link Auditor, GSC pull), and the Sharetribe sitemap scrapers.
-- New SECURITY DEFINER helper `current_workspace_id(request_host text)` for SSR resolution by `marketplace_domain`.
-- Migrations split per phase to keep PRs reviewable.
-- Existing fresh-web `/p/*` and `/`/sitemap.xml routes untouched.
+## Open questions before I start (please confirm or override)
 
-## What I need from you to start
+1. **`host_leads` → `provider_leads` mapping** — OK? (Otherwise I create a separate `host_leads` table.)
+2. **`missing_pages` → `content_404_log` mapping** — OK?
+3. **Admin gate** — Confirm replacing `user_roles.role='admin'` check with workspace membership (any logged-in workspace member can use the admin tools for their own workspace; `is_internal=true` workspaces still see the internalOnly sidebar items).
+4. **Demo mode toggle** in the bundle's sidebar — keep it? (Lets you screenshare without exposing internal tools.)
 
-1. Confirm option 1 (single project, `/app` + founders.click DNS routed here) — or pick option 2.
-2. Confirm I should use Lovable's built-in Stripe payments (recommended, no account setup).
-3. Pricing: rough $/mo for Starter / Pro / Scale and what each tier unlocks (or say "pick reasonable defaults and I'll edit").
-
-Once those are answered I'll start with the Phase 1 tenancy migration, since nothing else is safe to expose to real customers without it.
+If you reply "go" without overriding, I'll proceed with all four defaults as written and start Wave A.
