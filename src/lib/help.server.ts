@@ -222,18 +222,25 @@ export async function submitFeedback(params: {
     console.error("[help] submitFeedback", error);
     throw error;
   }
-  // Increment counter (best-effort)
-  const col = params.isHelpful ? "helpful_count" : "not_helpful_count";
+  // Increment counter (best-effort, non-atomic)
   const { data } = await supabaseAdmin
     .from("help_articles")
-    .select(col)
+    .select("helpful_count,not_helpful_count")
     .eq("id", params.articleId)
     .single();
-  const current = (data as Record<string, number> | null)?.[col] ?? 0;
-  await supabaseAdmin
-    .from("help_articles")
-    .update({ [col]: current + 1 })
-    .eq("id", params.articleId);
+  if (data) {
+    if (params.isHelpful) {
+      await supabaseAdmin
+        .from("help_articles")
+        .update({ helpful_count: (data.helpful_count ?? 0) + 1 })
+        .eq("id", params.articleId);
+    } else {
+      await supabaseAdmin
+        .from("help_articles")
+        .update({ not_helpful_count: (data.not_helpful_count ?? 0) + 1 })
+        .eq("id", params.articleId);
+    }
+  }
 }
 
 export async function submitTicket(params: {
