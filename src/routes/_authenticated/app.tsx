@@ -64,8 +64,14 @@ function AppShell() {
   }, [loading, me, location.pathname, navigate]);
 
   const onSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate({ to: "/login" });
+    try {
+      const { error } = await supabase.auth.signOut({ scope: "global" });
+      if (error) console.error("signOut error", error);
+    } catch (e) {
+      console.error("signOut threw", e);
+    }
+    // Hard reload to clear any in-memory state and re-run auth guards
+    window.location.assign("/login");
   };
 
   const activeWorkspace = me?.memberships?.[0]?.workspaces;
