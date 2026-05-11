@@ -152,14 +152,9 @@ export async function listAllPublishedArticleSlugs(): Promise<Array<{ category_s
   return (data ?? []) as Array<{ category_slug: string; slug: string; updated_at: string }>;
 }
 
-export async function searchArticles(query: string, limit = 25): Promise<Array<HelpArticleListItem & { rank: number }>> {
+export async function searchArticles(query: string, limit = 25): Promise<HelpArticleListItem[]> {
   const q = query.trim();
   if (!q) return [];
-  // websearch_to_tsquery handles user-supplied phrases safely.
-  const { data, error } = await supabaseAdmin.rpc as never; // not used; fallback below
-  void data; void error; void q;
-
-  // Use a textSearch query — postgrest supports websearch type.
   const res = await supabaseAdmin
     .from("help_articles")
     .select("id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at")
@@ -171,22 +166,19 @@ export async function searchArticles(query: string, limit = 25): Promise<Array<H
     console.error("[help] searchArticles", res.error);
     return [];
   }
-  return ((res.data ?? []) as HelpArticleListItem[]).map((a) => ({ ...a, rank: 0 }));
+  return (res.data ?? []) as HelpArticleListItem[];
 }
 
 export async function incrementArticleView(articleId: string): Promise<void> {
-  // Best-effort; ignore failures.
-  const { error } = await supabaseAdmin
+  const { data } = await supabaseAdmin
     .from("help_articles")
     .select("view_count")
     .eq("id", articleId)
     .single();
-  if (error) return;
-  await supabaseAdmin.rpc as never;
-  // Use atomic update via raw SQL through a stored fn would be cleaner; do simple update.
+  if (!data) return;
   await supabaseAdmin
     .from("help_articles")
-    .update({ view_count: (await supabaseAdmin.from("help_articles").select("view_count").eq("id", articleId).single()).data?.view_count ?? 0 + 1 })
+    .update({ view_count: (data.view_count ?? 0) + 1 })
     .eq("id", articleId);
 }
 
