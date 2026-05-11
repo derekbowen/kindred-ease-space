@@ -108,7 +108,7 @@ function Landing() {
             <div key={p.name} className={`rounded-lg border p-6 ${p.featured ? "border-brand/50 bg-brand/5" : "border-border bg-card"}`}>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-xl font-semibold">{p.name}</h3>
-                {p.featured && <span className="text-xs px-2 py-0.5 bg-brand text-white rounded">Popular</span>}
+                {p.featured && <span className="text-xs px-2 py-0.5 bg-brand text-brand-foreground rounded">Popular</span>}
               </div>
               <div className="mb-3">
                 <span className="text-4xl font-bold">${p.price}</span>
