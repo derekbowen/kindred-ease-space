@@ -54,6 +54,10 @@ function EditArticlePage() {
 
   const [form, setForm] = useState<ArticleForm | null>(null);
   const [cats, setCats] = useState<Awaited<ReturnType<typeof adminListCategories>>>([]);
+  const [meta, setMeta] = useState<{ published_at: string | null; updated_at: string | null }>({
+    published_at: null,
+    updated_at: null,
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
