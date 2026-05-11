@@ -17,10 +17,12 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
+import { Route as ApiPublicSitemapByHostRouteImport } from './routes/api/public/sitemap-by-host'
 import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated/app.settings'
 import { Route as AuthenticatedAppSeoCoachRouteImport } from './routes/_authenticated/app.seo-coach'
 import { Route as AuthenticatedAppOnboardingRouteImport } from './routes/_authenticated/app.onboarding'
 import { Route as AuthenticatedAppBillingRouteImport } from './routes/_authenticated/app.billing'
+import { Route as AuthenticatedAppSettingsDomainsRouteImport } from './routes/_authenticated/app.settings.domains'
 import { Route as AuthenticatedAppSettingsApiKeysRouteImport } from './routes/_authenticated/app.settings.api-keys'
 import { Route as AuthenticatedAppSeoSitemapRouteImport } from './routes/_authenticated/app.seo.sitemap'
 import { Route as AuthenticatedAppSeoScrapeImportRouteImport } from './routes/_authenticated/app.seo.scrape-import'
@@ -97,6 +99,11 @@ const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
+const ApiPublicSitemapByHostRoute = ApiPublicSitemapByHostRouteImport.update({
+  id: '/api/public/sitemap-by-host',
+  path: '/api/public/sitemap-by-host',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedAppSettingsRoute =
   AuthenticatedAppSettingsRouteImport.update({
     id: '/settings',
@@ -120,6 +127,12 @@ const AuthenticatedAppBillingRoute = AuthenticatedAppBillingRouteImport.update({
   path: '/billing',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
+const AuthenticatedAppSettingsDomainsRoute =
+  AuthenticatedAppSettingsDomainsRouteImport.update({
+    id: '/domains',
+    path: '/domains',
+    getParentRoute: () => AuthenticatedAppSettingsRoute,
+  } as any)
 const AuthenticatedAppSettingsApiKeysRoute =
   AuthenticatedAppSettingsApiKeysRouteImport.update({
     id: '/api-keys',
@@ -348,6 +361,7 @@ export interface FileRoutesByFullPath {
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
+  '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/app/': typeof AuthenticatedAppIndexRoute
   '/app/content/blog': typeof AuthenticatedAppContentBlogRoute
   '/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
@@ -385,6 +399,7 @@ export interface FileRoutesByFullPath {
   '/app/seo/scrape-import': typeof AuthenticatedAppSeoScrapeImportRoute
   '/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
   '/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
+  '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -396,6 +411,7 @@ export interface FileRoutesByTo {
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
+  '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/app': typeof AuthenticatedAppIndexRoute
   '/app/content/blog': typeof AuthenticatedAppContentBlogRoute
   '/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
@@ -433,6 +449,7 @@ export interface FileRoutesByTo {
   '/app/seo/scrape-import': typeof AuthenticatedAppSeoScrapeImportRoute
   '/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
   '/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
+  '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -447,6 +464,7 @@ export interface FileRoutesById {
   '/_authenticated/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/_authenticated/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/_authenticated/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
+  '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
   '/_authenticated/app/content/blog': typeof AuthenticatedAppContentBlogRoute
   '/_authenticated/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
@@ -484,6 +502,7 @@ export interface FileRoutesById {
   '/_authenticated/app/seo/scrape-import': typeof AuthenticatedAppSeoScrapeImportRoute
   '/_authenticated/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
   '/_authenticated/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
+  '/_authenticated/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -498,6 +517,7 @@ export interface FileRouteTypes {
     | '/app/onboarding'
     | '/app/seo-coach'
     | '/app/settings'
+    | '/api/public/sitemap-by-host'
     | '/app/'
     | '/app/content/blog'
     | '/app/content/bulk-editor'
@@ -535,6 +555,7 @@ export interface FileRouteTypes {
     | '/app/seo/scrape-import'
     | '/app/seo/sitemap'
     | '/app/settings/api-keys'
+    | '/app/settings/domains'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -546,6 +567,7 @@ export interface FileRouteTypes {
     | '/app/onboarding'
     | '/app/seo-coach'
     | '/app/settings'
+    | '/api/public/sitemap-by-host'
     | '/app'
     | '/app/content/blog'
     | '/app/content/bulk-editor'
@@ -583,6 +605,7 @@ export interface FileRouteTypes {
     | '/app/seo/scrape-import'
     | '/app/seo/sitemap'
     | '/app/settings/api-keys'
+    | '/app/settings/domains'
   id:
     | '__root__'
     | '/'
@@ -596,6 +619,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/onboarding'
     | '/_authenticated/app/seo-coach'
     | '/_authenticated/app/settings'
+    | '/api/public/sitemap-by-host'
     | '/_authenticated/app/'
     | '/_authenticated/app/content/blog'
     | '/_authenticated/app/content/bulk-editor'
@@ -633,6 +657,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/seo/scrape-import'
     | '/_authenticated/app/seo/sitemap'
     | '/_authenticated/app/settings/api-keys'
+    | '/_authenticated/app/settings/domains'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -642,6 +667,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  ApiPublicSitemapByHostRoute: typeof ApiPublicSitemapByHostRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -702,6 +728,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppIndexRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/api/public/sitemap-by-host': {
+      id: '/api/public/sitemap-by-host'
+      path: '/api/public/sitemap-by-host'
+      fullPath: '/api/public/sitemap-by-host'
+      preLoaderRoute: typeof ApiPublicSitemapByHostRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/app/settings': {
       id: '/_authenticated/app/settings'
       path: '/settings'
@@ -729,6 +762,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app/billing'
       preLoaderRoute: typeof AuthenticatedAppBillingRouteImport
       parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/settings/domains': {
+      id: '/_authenticated/app/settings/domains'
+      path: '/domains'
+      fullPath: '/app/settings/domains'
+      preLoaderRoute: typeof AuthenticatedAppSettingsDomainsRouteImport
+      parentRoute: typeof AuthenticatedAppSettingsRoute
     }
     '/_authenticated/app/settings/api-keys': {
       id: '/_authenticated/app/settings/api-keys'
@@ -987,11 +1027,13 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedAppSettingsRouteChildren {
   AuthenticatedAppSettingsApiKeysRoute: typeof AuthenticatedAppSettingsApiKeysRoute
+  AuthenticatedAppSettingsDomainsRoute: typeof AuthenticatedAppSettingsDomainsRoute
 }
 
 const AuthenticatedAppSettingsRouteChildren: AuthenticatedAppSettingsRouteChildren =
   {
     AuthenticatedAppSettingsApiKeysRoute: AuthenticatedAppSettingsApiKeysRoute,
+    AuthenticatedAppSettingsDomainsRoute: AuthenticatedAppSettingsDomainsRoute,
   }
 
 const AuthenticatedAppSettingsRouteWithChildren =
@@ -1118,6 +1160,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  ApiPublicSitemapByHostRoute: ApiPublicSitemapByHostRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
