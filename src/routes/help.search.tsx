@@ -59,7 +59,7 @@ function SearchPage() {
           )}
 
           <div className="border border-border rounded-lg bg-card px-3">
-            {results.map((a) => (
+            {results.map((a: any) => (
               <ArticleRow key={a.id} article={a} />
             ))}
           </div>
