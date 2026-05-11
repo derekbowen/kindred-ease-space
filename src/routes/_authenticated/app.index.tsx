@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Sparkles, FileText, Users, Coins } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { getWorkspaceOverview } from "@/lib/workspace.functions";
+import { DailyBriefing } from "@/components/coach/DailyBriefing";
 
 export const Route = createFileRoute("/_authenticated/app/")({
   head: () => ({ meta: [{ title: "Dashboard — founders.click" }] }),
