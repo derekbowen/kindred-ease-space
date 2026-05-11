@@ -72,7 +72,7 @@ function SearchPage() {
             Browse categories
           </h2>
           <div className="flex flex-wrap gap-2">
-            {categories.map((c) => (
+            {categories.map((c: any) => (
               <Link
                 key={c.id}
                 to={`/help/${c.slug}`}
