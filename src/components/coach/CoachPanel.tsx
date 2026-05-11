@@ -209,11 +209,26 @@ export function CoachPanel({
               </div>
             )}
 
-            {messages.map((m) => <MessageBubble key={m.id} msg={m} />)}
+            {messages.map((m) => <CoachMessage key={m.id} msg={m} dense />)}
 
             {streaming && toolEvents.length > 0 && (
               <div className="space-y-1">
-                {toolEvents.map((t) => <ToolCard key={t.id} event={t} />)}
+                {toolEvents.map((t) => (
+                  <CoachMessage
+                    key={t.id}
+                    msg={{
+                      id: t.id,
+                      role: "tool",
+                      content: "",
+                      tool_calls: [{
+                        name: t.name,
+                        output: t.output,
+                        status: t.status,
+                      } as ToolCallShape],
+                    }}
+                    dense
+                  />
+                ))}
               </div>
             )}
 
