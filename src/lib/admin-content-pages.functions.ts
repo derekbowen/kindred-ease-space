@@ -59,7 +59,7 @@ export const updateContentPageBasics = createServerFn({ method: "POST" })
     const { workspaceId, id, ...patch } = data;
     const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
     if (Object.keys(clean).length === 0) return { ok: true };
-    const { error } = await supabaseAdmin
+    const { error } = await (supabaseAdmin as any)
       .from("content_pages")
       .update(clean)
       .eq("id", id)
