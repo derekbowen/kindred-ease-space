@@ -17,12 +17,36 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
-import { Route as AuthenticatedAppUsersOpsRouteImport } from './routes/_authenticated/app.users-ops'
 import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated/app.settings'
-import { Route as AuthenticatedAppSeoRouteImport } from './routes/_authenticated/app.seo'
 import { Route as AuthenticatedAppOnboardingRouteImport } from './routes/_authenticated/app.onboarding'
-import { Route as AuthenticatedAppContentRouteImport } from './routes/_authenticated/app.content'
 import { Route as AuthenticatedAppBillingRouteImport } from './routes/_authenticated/app.billing'
+import { Route as AuthenticatedAppSeoSitemapRouteImport } from './routes/_authenticated/app.seo.sitemap'
+import { Route as AuthenticatedAppSeoScrapeImportRouteImport } from './routes/_authenticated/app.seo.scrape-import'
+import { Route as AuthenticatedAppSeoRankTrackerRouteImport } from './routes/_authenticated/app.seo.rank-tracker'
+import { Route as AuthenticatedAppSeoPageAuditorRouteImport } from './routes/_authenticated/app.seo.page-auditor'
+import { Route as AuthenticatedAppSeoMissingPagesRouteImport } from './routes/_authenticated/app.seo.missing-pages'
+import { Route as AuthenticatedAppSeoLinkCheckerRouteImport } from './routes/_authenticated/app.seo.link-checker'
+import { Route as AuthenticatedAppSeoKeywordOpportunitiesRouteImport } from './routes/_authenticated/app.seo.keyword-opportunities'
+import { Route as AuthenticatedAppSeoInternalLinksRouteImport } from './routes/_authenticated/app.seo.internal-links'
+import { Route as AuthenticatedAppSeoHealthRouteImport } from './routes/_authenticated/app.seo.health'
+import { Route as AuthenticatedAppSeoGscImportRouteImport } from './routes/_authenticated/app.seo.gsc-import'
+import { Route as AuthenticatedAppSeoCompetitorTrackerRouteImport } from './routes/_authenticated/app.seo.competitor-tracker'
+import { Route as AuthenticatedAppSeoCompetitorRadarRouteImport } from './routes/_authenticated/app.seo.competitor-radar'
+import { Route as AuthenticatedAppSeoClickReportRouteImport } from './routes/_authenticated/app.seo.click-report'
+import { Route as AuthenticatedAppOpsSiteFooterRouteImport } from './routes/_authenticated/app.ops.site-footer'
+import { Route as AuthenticatedAppOpsPlanRequestsRouteImport } from './routes/_authenticated/app.ops.plan-requests'
+import { Route as AuthenticatedAppOpsListingClaimsRouteImport } from './routes/_authenticated/app.ops.listing-claims'
+import { Route as AuthenticatedAppOpsLeadInboxRouteImport } from './routes/_authenticated/app.ops.lead-inbox'
+import { Route as AuthenticatedAppOpsEmailBrandingRouteImport } from './routes/_authenticated/app.ops.email-branding'
+import { Route as AuthenticatedAppOpsDirectoryModerationRouteImport } from './routes/_authenticated/app.ops.directory-moderation'
+import { Route as AuthenticatedAppOpsAdminTeamRouteImport } from './routes/_authenticated/app.ops.admin-team'
+import { Route as AuthenticatedAppContentQuickPageBuilderRouteImport } from './routes/_authenticated/app.content.quick-page-builder'
+import { Route as AuthenticatedAppContentMigrationRouteImport } from './routes/_authenticated/app.content.migration'
+import { Route as AuthenticatedAppContentLearningRouteImport } from './routes/_authenticated/app.content.learning'
+import { Route as AuthenticatedAppContentGenerateRouteImport } from './routes/_authenticated/app.content.generate'
+import { Route as AuthenticatedAppContentCityHeroesRouteImport } from './routes/_authenticated/app.content.city-heroes'
+import { Route as AuthenticatedAppContentBulkEditorRouteImport } from './routes/_authenticated/app.content.bulk-editor'
+import { Route as AuthenticatedAppContentBlogRouteImport } from './routes/_authenticated/app.content.blog'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -63,39 +87,185 @@ const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
-const AuthenticatedAppUsersOpsRoute =
-  AuthenticatedAppUsersOpsRouteImport.update({
-    id: '/users-ops',
-    path: '/users-ops',
-    getParentRoute: () => AuthenticatedAppRoute,
-  } as any)
 const AuthenticatedAppSettingsRoute =
   AuthenticatedAppSettingsRouteImport.update({
     id: '/settings',
     path: '/settings',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
-const AuthenticatedAppSeoRoute = AuthenticatedAppSeoRouteImport.update({
-  id: '/seo',
-  path: '/seo',
-  getParentRoute: () => AuthenticatedAppRoute,
-} as any)
 const AuthenticatedAppOnboardingRoute =
   AuthenticatedAppOnboardingRouteImport.update({
     id: '/onboarding',
     path: '/onboarding',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
-const AuthenticatedAppContentRoute = AuthenticatedAppContentRouteImport.update({
-  id: '/content',
-  path: '/content',
-  getParentRoute: () => AuthenticatedAppRoute,
-} as any)
 const AuthenticatedAppBillingRoute = AuthenticatedAppBillingRouteImport.update({
   id: '/billing',
   path: '/billing',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
+const AuthenticatedAppSeoSitemapRoute =
+  AuthenticatedAppSeoSitemapRouteImport.update({
+    id: '/seo/sitemap',
+    path: '/seo/sitemap',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppSeoScrapeImportRoute =
+  AuthenticatedAppSeoScrapeImportRouteImport.update({
+    id: '/seo/scrape-import',
+    path: '/seo/scrape-import',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppSeoRankTrackerRoute =
+  AuthenticatedAppSeoRankTrackerRouteImport.update({
+    id: '/seo/rank-tracker',
+    path: '/seo/rank-tracker',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppSeoPageAuditorRoute =
+  AuthenticatedAppSeoPageAuditorRouteImport.update({
+    id: '/seo/page-auditor',
+    path: '/seo/page-auditor',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppSeoMissingPagesRoute =
+  AuthenticatedAppSeoMissingPagesRouteImport.update({
+    id: '/seo/missing-pages',
+    path: '/seo/missing-pages',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppSeoLinkCheckerRoute =
+  AuthenticatedAppSeoLinkCheckerRouteImport.update({
+    id: '/seo/link-checker',
+    path: '/seo/link-checker',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppSeoKeywordOpportunitiesRoute =
+  AuthenticatedAppSeoKeywordOpportunitiesRouteImport.update({
+    id: '/seo/keyword-opportunities',
+    path: '/seo/keyword-opportunities',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppSeoInternalLinksRoute =
+  AuthenticatedAppSeoInternalLinksRouteImport.update({
+    id: '/seo/internal-links',
+    path: '/seo/internal-links',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppSeoHealthRoute =
+  AuthenticatedAppSeoHealthRouteImport.update({
+    id: '/seo/health',
+    path: '/seo/health',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppSeoGscImportRoute =
+  AuthenticatedAppSeoGscImportRouteImport.update({
+    id: '/seo/gsc-import',
+    path: '/seo/gsc-import',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppSeoCompetitorTrackerRoute =
+  AuthenticatedAppSeoCompetitorTrackerRouteImport.update({
+    id: '/seo/competitor-tracker',
+    path: '/seo/competitor-tracker',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppSeoCompetitorRadarRoute =
+  AuthenticatedAppSeoCompetitorRadarRouteImport.update({
+    id: '/seo/competitor-radar',
+    path: '/seo/competitor-radar',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppSeoClickReportRoute =
+  AuthenticatedAppSeoClickReportRouteImport.update({
+    id: '/seo/click-report',
+    path: '/seo/click-report',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppOpsSiteFooterRoute =
+  AuthenticatedAppOpsSiteFooterRouteImport.update({
+    id: '/ops/site-footer',
+    path: '/ops/site-footer',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppOpsPlanRequestsRoute =
+  AuthenticatedAppOpsPlanRequestsRouteImport.update({
+    id: '/ops/plan-requests',
+    path: '/ops/plan-requests',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppOpsListingClaimsRoute =
+  AuthenticatedAppOpsListingClaimsRouteImport.update({
+    id: '/ops/listing-claims',
+    path: '/ops/listing-claims',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppOpsLeadInboxRoute =
+  AuthenticatedAppOpsLeadInboxRouteImport.update({
+    id: '/ops/lead-inbox',
+    path: '/ops/lead-inbox',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppOpsEmailBrandingRoute =
+  AuthenticatedAppOpsEmailBrandingRouteImport.update({
+    id: '/ops/email-branding',
+    path: '/ops/email-branding',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppOpsDirectoryModerationRoute =
+  AuthenticatedAppOpsDirectoryModerationRouteImport.update({
+    id: '/ops/directory-moderation',
+    path: '/ops/directory-moderation',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppOpsAdminTeamRoute =
+  AuthenticatedAppOpsAdminTeamRouteImport.update({
+    id: '/ops/admin-team',
+    path: '/ops/admin-team',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppContentQuickPageBuilderRoute =
+  AuthenticatedAppContentQuickPageBuilderRouteImport.update({
+    id: '/content/quick-page-builder',
+    path: '/content/quick-page-builder',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppContentMigrationRoute =
+  AuthenticatedAppContentMigrationRouteImport.update({
+    id: '/content/migration',
+    path: '/content/migration',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppContentLearningRoute =
+  AuthenticatedAppContentLearningRouteImport.update({
+    id: '/content/learning',
+    path: '/content/learning',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppContentGenerateRoute =
+  AuthenticatedAppContentGenerateRouteImport.update({
+    id: '/content/generate',
+    path: '/content/generate',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppContentCityHeroesRoute =
+  AuthenticatedAppContentCityHeroesRouteImport.update({
+    id: '/content/city-heroes',
+    path: '/content/city-heroes',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppContentBulkEditorRoute =
+  AuthenticatedAppContentBulkEditorRouteImport.update({
+    id: '/content/bulk-editor',
+    path: '/content/bulk-editor',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppContentBlogRoute =
+  AuthenticatedAppContentBlogRouteImport.update({
+    id: '/content/blog',
+    path: '/content/blog',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -105,12 +275,36 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/app/billing': typeof AuthenticatedAppBillingRoute
-  '/app/content': typeof AuthenticatedAppContentRoute
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
-  '/app/seo': typeof AuthenticatedAppSeoRoute
   '/app/settings': typeof AuthenticatedAppSettingsRoute
-  '/app/users-ops': typeof AuthenticatedAppUsersOpsRoute
   '/app/': typeof AuthenticatedAppIndexRoute
+  '/app/content/blog': typeof AuthenticatedAppContentBlogRoute
+  '/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
+  '/app/content/city-heroes': typeof AuthenticatedAppContentCityHeroesRoute
+  '/app/content/generate': typeof AuthenticatedAppContentGenerateRoute
+  '/app/content/learning': typeof AuthenticatedAppContentLearningRoute
+  '/app/content/migration': typeof AuthenticatedAppContentMigrationRoute
+  '/app/content/quick-page-builder': typeof AuthenticatedAppContentQuickPageBuilderRoute
+  '/app/ops/admin-team': typeof AuthenticatedAppOpsAdminTeamRoute
+  '/app/ops/directory-moderation': typeof AuthenticatedAppOpsDirectoryModerationRoute
+  '/app/ops/email-branding': typeof AuthenticatedAppOpsEmailBrandingRoute
+  '/app/ops/lead-inbox': typeof AuthenticatedAppOpsLeadInboxRoute
+  '/app/ops/listing-claims': typeof AuthenticatedAppOpsListingClaimsRoute
+  '/app/ops/plan-requests': typeof AuthenticatedAppOpsPlanRequestsRoute
+  '/app/ops/site-footer': typeof AuthenticatedAppOpsSiteFooterRoute
+  '/app/seo/click-report': typeof AuthenticatedAppSeoClickReportRoute
+  '/app/seo/competitor-radar': typeof AuthenticatedAppSeoCompetitorRadarRoute
+  '/app/seo/competitor-tracker': typeof AuthenticatedAppSeoCompetitorTrackerRoute
+  '/app/seo/gsc-import': typeof AuthenticatedAppSeoGscImportRoute
+  '/app/seo/health': typeof AuthenticatedAppSeoHealthRoute
+  '/app/seo/internal-links': typeof AuthenticatedAppSeoInternalLinksRoute
+  '/app/seo/keyword-opportunities': typeof AuthenticatedAppSeoKeywordOpportunitiesRoute
+  '/app/seo/link-checker': typeof AuthenticatedAppSeoLinkCheckerRoute
+  '/app/seo/missing-pages': typeof AuthenticatedAppSeoMissingPagesRoute
+  '/app/seo/page-auditor': typeof AuthenticatedAppSeoPageAuditorRoute
+  '/app/seo/rank-tracker': typeof AuthenticatedAppSeoRankTrackerRoute
+  '/app/seo/scrape-import': typeof AuthenticatedAppSeoScrapeImportRoute
+  '/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -119,12 +313,36 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/app/billing': typeof AuthenticatedAppBillingRoute
-  '/app/content': typeof AuthenticatedAppContentRoute
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
-  '/app/seo': typeof AuthenticatedAppSeoRoute
   '/app/settings': typeof AuthenticatedAppSettingsRoute
-  '/app/users-ops': typeof AuthenticatedAppUsersOpsRoute
   '/app': typeof AuthenticatedAppIndexRoute
+  '/app/content/blog': typeof AuthenticatedAppContentBlogRoute
+  '/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
+  '/app/content/city-heroes': typeof AuthenticatedAppContentCityHeroesRoute
+  '/app/content/generate': typeof AuthenticatedAppContentGenerateRoute
+  '/app/content/learning': typeof AuthenticatedAppContentLearningRoute
+  '/app/content/migration': typeof AuthenticatedAppContentMigrationRoute
+  '/app/content/quick-page-builder': typeof AuthenticatedAppContentQuickPageBuilderRoute
+  '/app/ops/admin-team': typeof AuthenticatedAppOpsAdminTeamRoute
+  '/app/ops/directory-moderation': typeof AuthenticatedAppOpsDirectoryModerationRoute
+  '/app/ops/email-branding': typeof AuthenticatedAppOpsEmailBrandingRoute
+  '/app/ops/lead-inbox': typeof AuthenticatedAppOpsLeadInboxRoute
+  '/app/ops/listing-claims': typeof AuthenticatedAppOpsListingClaimsRoute
+  '/app/ops/plan-requests': typeof AuthenticatedAppOpsPlanRequestsRoute
+  '/app/ops/site-footer': typeof AuthenticatedAppOpsSiteFooterRoute
+  '/app/seo/click-report': typeof AuthenticatedAppSeoClickReportRoute
+  '/app/seo/competitor-radar': typeof AuthenticatedAppSeoCompetitorRadarRoute
+  '/app/seo/competitor-tracker': typeof AuthenticatedAppSeoCompetitorTrackerRoute
+  '/app/seo/gsc-import': typeof AuthenticatedAppSeoGscImportRoute
+  '/app/seo/health': typeof AuthenticatedAppSeoHealthRoute
+  '/app/seo/internal-links': typeof AuthenticatedAppSeoInternalLinksRoute
+  '/app/seo/keyword-opportunities': typeof AuthenticatedAppSeoKeywordOpportunitiesRoute
+  '/app/seo/link-checker': typeof AuthenticatedAppSeoLinkCheckerRoute
+  '/app/seo/missing-pages': typeof AuthenticatedAppSeoMissingPagesRoute
+  '/app/seo/page-auditor': typeof AuthenticatedAppSeoPageAuditorRoute
+  '/app/seo/rank-tracker': typeof AuthenticatedAppSeoRankTrackerRoute
+  '/app/seo/scrape-import': typeof AuthenticatedAppSeoScrapeImportRoute
+  '/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -136,12 +354,36 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
   '/_authenticated/app/billing': typeof AuthenticatedAppBillingRoute
-  '/_authenticated/app/content': typeof AuthenticatedAppContentRoute
   '/_authenticated/app/onboarding': typeof AuthenticatedAppOnboardingRoute
-  '/_authenticated/app/seo': typeof AuthenticatedAppSeoRoute
   '/_authenticated/app/settings': typeof AuthenticatedAppSettingsRoute
-  '/_authenticated/app/users-ops': typeof AuthenticatedAppUsersOpsRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
+  '/_authenticated/app/content/blog': typeof AuthenticatedAppContentBlogRoute
+  '/_authenticated/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
+  '/_authenticated/app/content/city-heroes': typeof AuthenticatedAppContentCityHeroesRoute
+  '/_authenticated/app/content/generate': typeof AuthenticatedAppContentGenerateRoute
+  '/_authenticated/app/content/learning': typeof AuthenticatedAppContentLearningRoute
+  '/_authenticated/app/content/migration': typeof AuthenticatedAppContentMigrationRoute
+  '/_authenticated/app/content/quick-page-builder': typeof AuthenticatedAppContentQuickPageBuilderRoute
+  '/_authenticated/app/ops/admin-team': typeof AuthenticatedAppOpsAdminTeamRoute
+  '/_authenticated/app/ops/directory-moderation': typeof AuthenticatedAppOpsDirectoryModerationRoute
+  '/_authenticated/app/ops/email-branding': typeof AuthenticatedAppOpsEmailBrandingRoute
+  '/_authenticated/app/ops/lead-inbox': typeof AuthenticatedAppOpsLeadInboxRoute
+  '/_authenticated/app/ops/listing-claims': typeof AuthenticatedAppOpsListingClaimsRoute
+  '/_authenticated/app/ops/plan-requests': typeof AuthenticatedAppOpsPlanRequestsRoute
+  '/_authenticated/app/ops/site-footer': typeof AuthenticatedAppOpsSiteFooterRoute
+  '/_authenticated/app/seo/click-report': typeof AuthenticatedAppSeoClickReportRoute
+  '/_authenticated/app/seo/competitor-radar': typeof AuthenticatedAppSeoCompetitorRadarRoute
+  '/_authenticated/app/seo/competitor-tracker': typeof AuthenticatedAppSeoCompetitorTrackerRoute
+  '/_authenticated/app/seo/gsc-import': typeof AuthenticatedAppSeoGscImportRoute
+  '/_authenticated/app/seo/health': typeof AuthenticatedAppSeoHealthRoute
+  '/_authenticated/app/seo/internal-links': typeof AuthenticatedAppSeoInternalLinksRoute
+  '/_authenticated/app/seo/keyword-opportunities': typeof AuthenticatedAppSeoKeywordOpportunitiesRoute
+  '/_authenticated/app/seo/link-checker': typeof AuthenticatedAppSeoLinkCheckerRoute
+  '/_authenticated/app/seo/missing-pages': typeof AuthenticatedAppSeoMissingPagesRoute
+  '/_authenticated/app/seo/page-auditor': typeof AuthenticatedAppSeoPageAuditorRoute
+  '/_authenticated/app/seo/rank-tracker': typeof AuthenticatedAppSeoRankTrackerRoute
+  '/_authenticated/app/seo/scrape-import': typeof AuthenticatedAppSeoScrapeImportRoute
+  '/_authenticated/app/seo/sitemap': typeof AuthenticatedAppSeoSitemapRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -153,12 +395,36 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/app'
     | '/app/billing'
-    | '/app/content'
     | '/app/onboarding'
-    | '/app/seo'
     | '/app/settings'
-    | '/app/users-ops'
     | '/app/'
+    | '/app/content/blog'
+    | '/app/content/bulk-editor'
+    | '/app/content/city-heroes'
+    | '/app/content/generate'
+    | '/app/content/learning'
+    | '/app/content/migration'
+    | '/app/content/quick-page-builder'
+    | '/app/ops/admin-team'
+    | '/app/ops/directory-moderation'
+    | '/app/ops/email-branding'
+    | '/app/ops/lead-inbox'
+    | '/app/ops/listing-claims'
+    | '/app/ops/plan-requests'
+    | '/app/ops/site-footer'
+    | '/app/seo/click-report'
+    | '/app/seo/competitor-radar'
+    | '/app/seo/competitor-tracker'
+    | '/app/seo/gsc-import'
+    | '/app/seo/health'
+    | '/app/seo/internal-links'
+    | '/app/seo/keyword-opportunities'
+    | '/app/seo/link-checker'
+    | '/app/seo/missing-pages'
+    | '/app/seo/page-auditor'
+    | '/app/seo/rank-tracker'
+    | '/app/seo/scrape-import'
+    | '/app/seo/sitemap'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -167,12 +433,36 @@ export interface FileRouteTypes {
     | '/signup'
     | '/sitemap.xml'
     | '/app/billing'
-    | '/app/content'
     | '/app/onboarding'
-    | '/app/seo'
     | '/app/settings'
-    | '/app/users-ops'
     | '/app'
+    | '/app/content/blog'
+    | '/app/content/bulk-editor'
+    | '/app/content/city-heroes'
+    | '/app/content/generate'
+    | '/app/content/learning'
+    | '/app/content/migration'
+    | '/app/content/quick-page-builder'
+    | '/app/ops/admin-team'
+    | '/app/ops/directory-moderation'
+    | '/app/ops/email-branding'
+    | '/app/ops/lead-inbox'
+    | '/app/ops/listing-claims'
+    | '/app/ops/plan-requests'
+    | '/app/ops/site-footer'
+    | '/app/seo/click-report'
+    | '/app/seo/competitor-radar'
+    | '/app/seo/competitor-tracker'
+    | '/app/seo/gsc-import'
+    | '/app/seo/health'
+    | '/app/seo/internal-links'
+    | '/app/seo/keyword-opportunities'
+    | '/app/seo/link-checker'
+    | '/app/seo/missing-pages'
+    | '/app/seo/page-auditor'
+    | '/app/seo/rank-tracker'
+    | '/app/seo/scrape-import'
+    | '/app/seo/sitemap'
   id:
     | '__root__'
     | '/'
@@ -183,12 +473,36 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/_authenticated/app'
     | '/_authenticated/app/billing'
-    | '/_authenticated/app/content'
     | '/_authenticated/app/onboarding'
-    | '/_authenticated/app/seo'
     | '/_authenticated/app/settings'
-    | '/_authenticated/app/users-ops'
     | '/_authenticated/app/'
+    | '/_authenticated/app/content/blog'
+    | '/_authenticated/app/content/bulk-editor'
+    | '/_authenticated/app/content/city-heroes'
+    | '/_authenticated/app/content/generate'
+    | '/_authenticated/app/content/learning'
+    | '/_authenticated/app/content/migration'
+    | '/_authenticated/app/content/quick-page-builder'
+    | '/_authenticated/app/ops/admin-team'
+    | '/_authenticated/app/ops/directory-moderation'
+    | '/_authenticated/app/ops/email-branding'
+    | '/_authenticated/app/ops/lead-inbox'
+    | '/_authenticated/app/ops/listing-claims'
+    | '/_authenticated/app/ops/plan-requests'
+    | '/_authenticated/app/ops/site-footer'
+    | '/_authenticated/app/seo/click-report'
+    | '/_authenticated/app/seo/competitor-radar'
+    | '/_authenticated/app/seo/competitor-tracker'
+    | '/_authenticated/app/seo/gsc-import'
+    | '/_authenticated/app/seo/health'
+    | '/_authenticated/app/seo/internal-links'
+    | '/_authenticated/app/seo/keyword-opportunities'
+    | '/_authenticated/app/seo/link-checker'
+    | '/_authenticated/app/seo/missing-pages'
+    | '/_authenticated/app/seo/page-auditor'
+    | '/_authenticated/app/seo/rank-tracker'
+    | '/_authenticated/app/seo/scrape-import'
+    | '/_authenticated/app/seo/sitemap'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -258,25 +572,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppIndexRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
-    '/_authenticated/app/users-ops': {
-      id: '/_authenticated/app/users-ops'
-      path: '/users-ops'
-      fullPath: '/app/users-ops'
-      preLoaderRoute: typeof AuthenticatedAppUsersOpsRouteImport
-      parentRoute: typeof AuthenticatedAppRoute
-    }
     '/_authenticated/app/settings': {
       id: '/_authenticated/app/settings'
       path: '/settings'
       fullPath: '/app/settings'
       preLoaderRoute: typeof AuthenticatedAppSettingsRouteImport
-      parentRoute: typeof AuthenticatedAppRoute
-    }
-    '/_authenticated/app/seo': {
-      id: '/_authenticated/app/seo'
-      path: '/seo'
-      fullPath: '/app/seo'
-      preLoaderRoute: typeof AuthenticatedAppSeoRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
     '/_authenticated/app/onboarding': {
@@ -286,13 +586,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppOnboardingRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
-    '/_authenticated/app/content': {
-      id: '/_authenticated/app/content'
-      path: '/content'
-      fullPath: '/app/content'
-      preLoaderRoute: typeof AuthenticatedAppContentRouteImport
-      parentRoute: typeof AuthenticatedAppRoute
-    }
     '/_authenticated/app/billing': {
       id: '/_authenticated/app/billing'
       path: '/billing'
@@ -300,27 +593,271 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppBillingRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/seo/sitemap': {
+      id: '/_authenticated/app/seo/sitemap'
+      path: '/seo/sitemap'
+      fullPath: '/app/seo/sitemap'
+      preLoaderRoute: typeof AuthenticatedAppSeoSitemapRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/seo/scrape-import': {
+      id: '/_authenticated/app/seo/scrape-import'
+      path: '/seo/scrape-import'
+      fullPath: '/app/seo/scrape-import'
+      preLoaderRoute: typeof AuthenticatedAppSeoScrapeImportRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/seo/rank-tracker': {
+      id: '/_authenticated/app/seo/rank-tracker'
+      path: '/seo/rank-tracker'
+      fullPath: '/app/seo/rank-tracker'
+      preLoaderRoute: typeof AuthenticatedAppSeoRankTrackerRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/seo/page-auditor': {
+      id: '/_authenticated/app/seo/page-auditor'
+      path: '/seo/page-auditor'
+      fullPath: '/app/seo/page-auditor'
+      preLoaderRoute: typeof AuthenticatedAppSeoPageAuditorRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/seo/missing-pages': {
+      id: '/_authenticated/app/seo/missing-pages'
+      path: '/seo/missing-pages'
+      fullPath: '/app/seo/missing-pages'
+      preLoaderRoute: typeof AuthenticatedAppSeoMissingPagesRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/seo/link-checker': {
+      id: '/_authenticated/app/seo/link-checker'
+      path: '/seo/link-checker'
+      fullPath: '/app/seo/link-checker'
+      preLoaderRoute: typeof AuthenticatedAppSeoLinkCheckerRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/seo/keyword-opportunities': {
+      id: '/_authenticated/app/seo/keyword-opportunities'
+      path: '/seo/keyword-opportunities'
+      fullPath: '/app/seo/keyword-opportunities'
+      preLoaderRoute: typeof AuthenticatedAppSeoKeywordOpportunitiesRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/seo/internal-links': {
+      id: '/_authenticated/app/seo/internal-links'
+      path: '/seo/internal-links'
+      fullPath: '/app/seo/internal-links'
+      preLoaderRoute: typeof AuthenticatedAppSeoInternalLinksRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/seo/health': {
+      id: '/_authenticated/app/seo/health'
+      path: '/seo/health'
+      fullPath: '/app/seo/health'
+      preLoaderRoute: typeof AuthenticatedAppSeoHealthRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/seo/gsc-import': {
+      id: '/_authenticated/app/seo/gsc-import'
+      path: '/seo/gsc-import'
+      fullPath: '/app/seo/gsc-import'
+      preLoaderRoute: typeof AuthenticatedAppSeoGscImportRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/seo/competitor-tracker': {
+      id: '/_authenticated/app/seo/competitor-tracker'
+      path: '/seo/competitor-tracker'
+      fullPath: '/app/seo/competitor-tracker'
+      preLoaderRoute: typeof AuthenticatedAppSeoCompetitorTrackerRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/seo/competitor-radar': {
+      id: '/_authenticated/app/seo/competitor-radar'
+      path: '/seo/competitor-radar'
+      fullPath: '/app/seo/competitor-radar'
+      preLoaderRoute: typeof AuthenticatedAppSeoCompetitorRadarRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/seo/click-report': {
+      id: '/_authenticated/app/seo/click-report'
+      path: '/seo/click-report'
+      fullPath: '/app/seo/click-report'
+      preLoaderRoute: typeof AuthenticatedAppSeoClickReportRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/ops/site-footer': {
+      id: '/_authenticated/app/ops/site-footer'
+      path: '/ops/site-footer'
+      fullPath: '/app/ops/site-footer'
+      preLoaderRoute: typeof AuthenticatedAppOpsSiteFooterRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/ops/plan-requests': {
+      id: '/_authenticated/app/ops/plan-requests'
+      path: '/ops/plan-requests'
+      fullPath: '/app/ops/plan-requests'
+      preLoaderRoute: typeof AuthenticatedAppOpsPlanRequestsRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/ops/listing-claims': {
+      id: '/_authenticated/app/ops/listing-claims'
+      path: '/ops/listing-claims'
+      fullPath: '/app/ops/listing-claims'
+      preLoaderRoute: typeof AuthenticatedAppOpsListingClaimsRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/ops/lead-inbox': {
+      id: '/_authenticated/app/ops/lead-inbox'
+      path: '/ops/lead-inbox'
+      fullPath: '/app/ops/lead-inbox'
+      preLoaderRoute: typeof AuthenticatedAppOpsLeadInboxRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/ops/email-branding': {
+      id: '/_authenticated/app/ops/email-branding'
+      path: '/ops/email-branding'
+      fullPath: '/app/ops/email-branding'
+      preLoaderRoute: typeof AuthenticatedAppOpsEmailBrandingRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/ops/directory-moderation': {
+      id: '/_authenticated/app/ops/directory-moderation'
+      path: '/ops/directory-moderation'
+      fullPath: '/app/ops/directory-moderation'
+      preLoaderRoute: typeof AuthenticatedAppOpsDirectoryModerationRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/ops/admin-team': {
+      id: '/_authenticated/app/ops/admin-team'
+      path: '/ops/admin-team'
+      fullPath: '/app/ops/admin-team'
+      preLoaderRoute: typeof AuthenticatedAppOpsAdminTeamRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/content/quick-page-builder': {
+      id: '/_authenticated/app/content/quick-page-builder'
+      path: '/content/quick-page-builder'
+      fullPath: '/app/content/quick-page-builder'
+      preLoaderRoute: typeof AuthenticatedAppContentQuickPageBuilderRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/content/migration': {
+      id: '/_authenticated/app/content/migration'
+      path: '/content/migration'
+      fullPath: '/app/content/migration'
+      preLoaderRoute: typeof AuthenticatedAppContentMigrationRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/content/learning': {
+      id: '/_authenticated/app/content/learning'
+      path: '/content/learning'
+      fullPath: '/app/content/learning'
+      preLoaderRoute: typeof AuthenticatedAppContentLearningRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/content/generate': {
+      id: '/_authenticated/app/content/generate'
+      path: '/content/generate'
+      fullPath: '/app/content/generate'
+      preLoaderRoute: typeof AuthenticatedAppContentGenerateRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/content/city-heroes': {
+      id: '/_authenticated/app/content/city-heroes'
+      path: '/content/city-heroes'
+      fullPath: '/app/content/city-heroes'
+      preLoaderRoute: typeof AuthenticatedAppContentCityHeroesRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/content/bulk-editor': {
+      id: '/_authenticated/app/content/bulk-editor'
+      path: '/content/bulk-editor'
+      fullPath: '/app/content/bulk-editor'
+      preLoaderRoute: typeof AuthenticatedAppContentBulkEditorRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/content/blog': {
+      id: '/_authenticated/app/content/blog'
+      path: '/content/blog'
+      fullPath: '/app/content/blog'
+      preLoaderRoute: typeof AuthenticatedAppContentBlogRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
   }
 }
 
 interface AuthenticatedAppRouteChildren {
   AuthenticatedAppBillingRoute: typeof AuthenticatedAppBillingRoute
-  AuthenticatedAppContentRoute: typeof AuthenticatedAppContentRoute
   AuthenticatedAppOnboardingRoute: typeof AuthenticatedAppOnboardingRoute
-  AuthenticatedAppSeoRoute: typeof AuthenticatedAppSeoRoute
   AuthenticatedAppSettingsRoute: typeof AuthenticatedAppSettingsRoute
-  AuthenticatedAppUsersOpsRoute: typeof AuthenticatedAppUsersOpsRoute
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
+  AuthenticatedAppContentBlogRoute: typeof AuthenticatedAppContentBlogRoute
+  AuthenticatedAppContentBulkEditorRoute: typeof AuthenticatedAppContentBulkEditorRoute
+  AuthenticatedAppContentCityHeroesRoute: typeof AuthenticatedAppContentCityHeroesRoute
+  AuthenticatedAppContentGenerateRoute: typeof AuthenticatedAppContentGenerateRoute
+  AuthenticatedAppContentLearningRoute: typeof AuthenticatedAppContentLearningRoute
+  AuthenticatedAppContentMigrationRoute: typeof AuthenticatedAppContentMigrationRoute
+  AuthenticatedAppContentQuickPageBuilderRoute: typeof AuthenticatedAppContentQuickPageBuilderRoute
+  AuthenticatedAppOpsAdminTeamRoute: typeof AuthenticatedAppOpsAdminTeamRoute
+  AuthenticatedAppOpsDirectoryModerationRoute: typeof AuthenticatedAppOpsDirectoryModerationRoute
+  AuthenticatedAppOpsEmailBrandingRoute: typeof AuthenticatedAppOpsEmailBrandingRoute
+  AuthenticatedAppOpsLeadInboxRoute: typeof AuthenticatedAppOpsLeadInboxRoute
+  AuthenticatedAppOpsListingClaimsRoute: typeof AuthenticatedAppOpsListingClaimsRoute
+  AuthenticatedAppOpsPlanRequestsRoute: typeof AuthenticatedAppOpsPlanRequestsRoute
+  AuthenticatedAppOpsSiteFooterRoute: typeof AuthenticatedAppOpsSiteFooterRoute
+  AuthenticatedAppSeoClickReportRoute: typeof AuthenticatedAppSeoClickReportRoute
+  AuthenticatedAppSeoCompetitorRadarRoute: typeof AuthenticatedAppSeoCompetitorRadarRoute
+  AuthenticatedAppSeoCompetitorTrackerRoute: typeof AuthenticatedAppSeoCompetitorTrackerRoute
+  AuthenticatedAppSeoGscImportRoute: typeof AuthenticatedAppSeoGscImportRoute
+  AuthenticatedAppSeoHealthRoute: typeof AuthenticatedAppSeoHealthRoute
+  AuthenticatedAppSeoInternalLinksRoute: typeof AuthenticatedAppSeoInternalLinksRoute
+  AuthenticatedAppSeoKeywordOpportunitiesRoute: typeof AuthenticatedAppSeoKeywordOpportunitiesRoute
+  AuthenticatedAppSeoLinkCheckerRoute: typeof AuthenticatedAppSeoLinkCheckerRoute
+  AuthenticatedAppSeoMissingPagesRoute: typeof AuthenticatedAppSeoMissingPagesRoute
+  AuthenticatedAppSeoPageAuditorRoute: typeof AuthenticatedAppSeoPageAuditorRoute
+  AuthenticatedAppSeoRankTrackerRoute: typeof AuthenticatedAppSeoRankTrackerRoute
+  AuthenticatedAppSeoScrapeImportRoute: typeof AuthenticatedAppSeoScrapeImportRoute
+  AuthenticatedAppSeoSitemapRoute: typeof AuthenticatedAppSeoSitemapRoute
 }
 
 const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppBillingRoute: AuthenticatedAppBillingRoute,
-  AuthenticatedAppContentRoute: AuthenticatedAppContentRoute,
   AuthenticatedAppOnboardingRoute: AuthenticatedAppOnboardingRoute,
-  AuthenticatedAppSeoRoute: AuthenticatedAppSeoRoute,
   AuthenticatedAppSettingsRoute: AuthenticatedAppSettingsRoute,
-  AuthenticatedAppUsersOpsRoute: AuthenticatedAppUsersOpsRoute,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
+  AuthenticatedAppContentBlogRoute: AuthenticatedAppContentBlogRoute,
+  AuthenticatedAppContentBulkEditorRoute:
+    AuthenticatedAppContentBulkEditorRoute,
+  AuthenticatedAppContentCityHeroesRoute:
+    AuthenticatedAppContentCityHeroesRoute,
+  AuthenticatedAppContentGenerateRoute: AuthenticatedAppContentGenerateRoute,
+  AuthenticatedAppContentLearningRoute: AuthenticatedAppContentLearningRoute,
+  AuthenticatedAppContentMigrationRoute: AuthenticatedAppContentMigrationRoute,
+  AuthenticatedAppContentQuickPageBuilderRoute:
+    AuthenticatedAppContentQuickPageBuilderRoute,
+  AuthenticatedAppOpsAdminTeamRoute: AuthenticatedAppOpsAdminTeamRoute,
+  AuthenticatedAppOpsDirectoryModerationRoute:
+    AuthenticatedAppOpsDirectoryModerationRoute,
+  AuthenticatedAppOpsEmailBrandingRoute: AuthenticatedAppOpsEmailBrandingRoute,
+  AuthenticatedAppOpsLeadInboxRoute: AuthenticatedAppOpsLeadInboxRoute,
+  AuthenticatedAppOpsListingClaimsRoute: AuthenticatedAppOpsListingClaimsRoute,
+  AuthenticatedAppOpsPlanRequestsRoute: AuthenticatedAppOpsPlanRequestsRoute,
+  AuthenticatedAppOpsSiteFooterRoute: AuthenticatedAppOpsSiteFooterRoute,
+  AuthenticatedAppSeoClickReportRoute: AuthenticatedAppSeoClickReportRoute,
+  AuthenticatedAppSeoCompetitorRadarRoute:
+    AuthenticatedAppSeoCompetitorRadarRoute,
+  AuthenticatedAppSeoCompetitorTrackerRoute:
+    AuthenticatedAppSeoCompetitorTrackerRoute,
+  AuthenticatedAppSeoGscImportRoute: AuthenticatedAppSeoGscImportRoute,
+  AuthenticatedAppSeoHealthRoute: AuthenticatedAppSeoHealthRoute,
+  AuthenticatedAppSeoInternalLinksRoute: AuthenticatedAppSeoInternalLinksRoute,
+  AuthenticatedAppSeoKeywordOpportunitiesRoute:
+    AuthenticatedAppSeoKeywordOpportunitiesRoute,
+  AuthenticatedAppSeoLinkCheckerRoute: AuthenticatedAppSeoLinkCheckerRoute,
+  AuthenticatedAppSeoMissingPagesRoute: AuthenticatedAppSeoMissingPagesRoute,
+  AuthenticatedAppSeoPageAuditorRoute: AuthenticatedAppSeoPageAuditorRoute,
+  AuthenticatedAppSeoRankTrackerRoute: AuthenticatedAppSeoRankTrackerRoute,
+  AuthenticatedAppSeoScrapeImportRoute: AuthenticatedAppSeoScrapeImportRoute,
+  AuthenticatedAppSeoSitemapRoute: AuthenticatedAppSeoSitemapRoute,
 }
 
 const AuthenticatedAppRouteWithChildren =
