@@ -18,6 +18,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
 import { Route as ApiPublicSitemapByHostRouteImport } from './routes/api/public/sitemap-by-host'
+import { Route as ApiPublicPageLookupRouteImport } from './routes/api/public/page-lookup'
 import { Route as ApiPublicDomainTokenRouteImport } from './routes/api/public/domain-token'
 import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated/app.settings'
 import { Route as AuthenticatedAppSeoCoachRouteImport } from './routes/_authenticated/app.seo-coach'
@@ -103,6 +104,11 @@ const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
 const ApiPublicSitemapByHostRoute = ApiPublicSitemapByHostRouteImport.update({
   id: '/api/public/sitemap-by-host',
   path: '/api/public/sitemap-by-host',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicPageLookupRoute = ApiPublicPageLookupRouteImport.update({
+  id: '/api/public/page-lookup',
+  path: '/api/public/page-lookup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicDomainTokenRoute = ApiPublicDomainTokenRouteImport.update({
@@ -368,6 +374,7 @@ export interface FileRoutesByFullPath {
   '/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
+  '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/app/': typeof AuthenticatedAppIndexRoute
   '/app/content/blog': typeof AuthenticatedAppContentBlogRoute
@@ -419,6 +426,7 @@ export interface FileRoutesByTo {
   '/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
+  '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/app': typeof AuthenticatedAppIndexRoute
   '/app/content/blog': typeof AuthenticatedAppContentBlogRoute
@@ -473,6 +481,7 @@ export interface FileRoutesById {
   '/_authenticated/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/_authenticated/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
+  '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
   '/_authenticated/app/content/blog': typeof AuthenticatedAppContentBlogRoute
@@ -527,6 +536,7 @@ export interface FileRouteTypes {
     | '/app/seo-coach'
     | '/app/settings'
     | '/api/public/domain-token'
+    | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
     | '/app/'
     | '/app/content/blog'
@@ -578,6 +588,7 @@ export interface FileRouteTypes {
     | '/app/seo-coach'
     | '/app/settings'
     | '/api/public/domain-token'
+    | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
     | '/app'
     | '/app/content/blog'
@@ -631,6 +642,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/seo-coach'
     | '/_authenticated/app/settings'
     | '/api/public/domain-token'
+    | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
     | '/_authenticated/app/'
     | '/_authenticated/app/content/blog'
@@ -680,6 +692,7 @@ export interface RootRouteChildren {
   SignupRoute: typeof SignupRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiPublicDomainTokenRoute: typeof ApiPublicDomainTokenRoute
+  ApiPublicPageLookupRoute: typeof ApiPublicPageLookupRoute
   ApiPublicSitemapByHostRoute: typeof ApiPublicSitemapByHostRoute
 }
 
@@ -746,6 +759,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/sitemap-by-host'
       fullPath: '/api/public/sitemap-by-host'
       preLoaderRoute: typeof ApiPublicSitemapByHostRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/page-lookup': {
+      id: '/api/public/page-lookup'
+      path: '/api/public/page-lookup'
+      fullPath: '/api/public/page-lookup'
+      preLoaderRoute: typeof ApiPublicPageLookupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/domain-token': {
@@ -1181,6 +1201,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignupRoute: SignupRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiPublicDomainTokenRoute: ApiPublicDomainTokenRoute,
+  ApiPublicPageLookupRoute: ApiPublicPageLookupRoute,
   ApiPublicSitemapByHostRoute: ApiPublicSitemapByHostRoute,
 }
 export const routeTree = rootRouteImport
