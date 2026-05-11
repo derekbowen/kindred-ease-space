@@ -329,11 +329,59 @@ export async function submitTicket(params: {
       category: params.category ?? null,
       workspace_id: params.workspaceId ?? null,
     })
-    .select("id")
+    .select("id,priority")
     .single();
   if (error) {
     console.error("[help] submitTicket", error);
     throw error;
   }
-  return { id: data!.id as string };
+
+  const ticketId = data!.id as string;
+  const priority = ((data as any)!.priority as string) ?? "normal";
+
+  // Fire-and-forget email notifications — never block ticket creation.
+  try {
+    const { sendEmail, newTicketStaffTemplate, ticketReceivedUserTemplate, SUPPORT_INBOX_EMAIL } =
+      await import("./email.server");
+
+    const staffTpl = newTicketStaffTemplate({
+      ticketId,
+      subject: params.subject,
+      message: params.message,
+      email: params.email,
+      name: params.name,
+      category: params.category,
+      priority,
+    });
+    const userTpl = ticketReceivedUserTemplate({
+      ticketId,
+      subject: params.subject,
+      name: params.name,
+    });
+
+    await Promise.allSettled([
+      sendEmail({
+        to: SUPPORT_INBOX_EMAIL,
+        subject: staffTpl.subject,
+        html: staffTpl.html,
+        text: staffTpl.text,
+        replyTo: params.email,
+        idempotencyKey: `ticket-staff-${ticketId}`,
+        meta: { ticket_id: ticketId, kind: "ticket_new_staff" },
+      }),
+      sendEmail({
+        to: params.email,
+        subject: userTpl.subject,
+        html: userTpl.html,
+        text: userTpl.text,
+        replyTo: SUPPORT_INBOX_EMAIL,
+        idempotencyKey: `ticket-user-${ticketId}`,
+        meta: { ticket_id: ticketId, kind: "ticket_new_user" },
+      }),
+    ]);
+  } catch (e) {
+    console.error("[help] submitTicket notify failed", e);
+  }
+
+  return { id: ticketId };
 }
