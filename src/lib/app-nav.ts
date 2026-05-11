@@ -32,6 +32,7 @@ import {
   Plug,
   LayoutTemplate,
   type LucideIcon,
+  ThumbsUp,
 } from "lucide-react";
 
 export type NavItem = {
