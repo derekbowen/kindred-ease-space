@@ -44,7 +44,10 @@ export const createWorkspace = createServerFn({ method: "POST" })
       .select("id, slug")
       .single();
 
-    if (error || !ws) throw new Error(error?.message ?? "Failed to create workspace");
+    if (error || !ws) {
+      console.error("[createWorkspace] insert error", error);
+      throw new Error("Failed to create workspace. Please try again.");
+    }
 
     await supabaseAdmin.from("workspace_members").insert({
       workspace_id: ws.id,
