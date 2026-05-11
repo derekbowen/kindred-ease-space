@@ -112,6 +112,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: "/app/ops/listing-claims", label: "Listing Claims", icon: ClipboardCheck, internalOnly: true },
       { to: "/app/ops/plan-requests", label: "Plan Requests", icon: HandCoins, internalOnly: true },
       { to: "/app/ops/admin-team", label: "Admin Team", icon: Users },
+      { to: "/app/admin/help/articles", label: "Help Articles", icon: BookOpen, internalOnly: true },
+      { to: "/app/admin/help/categories", label: "Help Categories", icon: LayoutTemplate, internalOnly: true },
     ],
   },
 ];

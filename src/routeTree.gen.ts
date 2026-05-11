@@ -77,6 +77,9 @@ import { Route as AuthenticatedAppContentBulkEditorRouteImport } from './routes/
 import { Route as AuthenticatedAppContentBlogRouteImport } from './routes/_authenticated/app.content.blog'
 import { Route as AuthenticatedAppSettingsIntegrationsSharetribeRouteImport } from './routes/_authenticated/app.settings.integrations.sharetribe'
 import { Route as AuthenticatedAppPagesIdEditRouteImport } from './routes/_authenticated/app.pages.$id.edit'
+import { Route as AuthenticatedAppAdminHelpCategoriesRouteImport } from './routes/_authenticated/app.admin.help.categories'
+import { Route as AuthenticatedAppAdminHelpArticlesRouteImport } from './routes/_authenticated/app.admin.help.articles'
+import { Route as AuthenticatedAppAdminHelpArticlesIdRouteImport } from './routes/_authenticated/app.admin.help.articles.$id'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -464,6 +467,24 @@ const AuthenticatedAppPagesIdEditRoute =
     path: '/$id/edit',
     getParentRoute: () => AuthenticatedAppPagesRoute,
   } as any)
+const AuthenticatedAppAdminHelpCategoriesRoute =
+  AuthenticatedAppAdminHelpCategoriesRouteImport.update({
+    id: '/admin/help/categories',
+    path: '/admin/help/categories',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppAdminHelpArticlesRoute =
+  AuthenticatedAppAdminHelpArticlesRouteImport.update({
+    id: '/admin/help/articles',
+    path: '/admin/help/articles',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppAdminHelpArticlesIdRoute =
+  AuthenticatedAppAdminHelpArticlesIdRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => AuthenticatedAppAdminHelpArticlesRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -531,8 +552,11 @@ export interface FileRoutesByFullPath {
   '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
   '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
+  '/app/admin/help/articles': typeof AuthenticatedAppAdminHelpArticlesRouteWithChildren
+  '/app/admin/help/categories': typeof AuthenticatedAppAdminHelpCategoriesRoute
   '/app/pages/$id/edit': typeof AuthenticatedAppPagesIdEditRoute
   '/app/settings/integrations/sharetribe': typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
+  '/app/admin/help/articles/$id': typeof AuthenticatedAppAdminHelpArticlesIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -598,8 +622,11 @@ export interface FileRoutesByTo {
   '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
   '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
+  '/app/admin/help/articles': typeof AuthenticatedAppAdminHelpArticlesRouteWithChildren
+  '/app/admin/help/categories': typeof AuthenticatedAppAdminHelpCategoriesRoute
   '/app/pages/$id/edit': typeof AuthenticatedAppPagesIdEditRoute
   '/app/settings/integrations/sharetribe': typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
+  '/app/admin/help/articles/$id': typeof AuthenticatedAppAdminHelpArticlesIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -669,8 +696,11 @@ export interface FileRoutesById {
   '/_authenticated/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
   '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
+  '/_authenticated/app/admin/help/articles': typeof AuthenticatedAppAdminHelpArticlesRouteWithChildren
+  '/_authenticated/app/admin/help/categories': typeof AuthenticatedAppAdminHelpCategoriesRoute
   '/_authenticated/app/pages/$id/edit': typeof AuthenticatedAppPagesIdEditRoute
   '/_authenticated/app/settings/integrations/sharetribe': typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
+  '/_authenticated/app/admin/help/articles/$id': typeof AuthenticatedAppAdminHelpArticlesIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -740,8 +770,11 @@ export interface FileRouteTypes {
     | '/app/settings/domains'
     | '/api/public/hooks/canonical-audit'
     | '/api/public/hooks/sync-sharetribe'
+    | '/app/admin/help/articles'
+    | '/app/admin/help/categories'
     | '/app/pages/$id/edit'
     | '/app/settings/integrations/sharetribe'
+    | '/app/admin/help/articles/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -807,8 +840,11 @@ export interface FileRouteTypes {
     | '/app/settings/domains'
     | '/api/public/hooks/canonical-audit'
     | '/api/public/hooks/sync-sharetribe'
+    | '/app/admin/help/articles'
+    | '/app/admin/help/categories'
     | '/app/pages/$id/edit'
     | '/app/settings/integrations/sharetribe'
+    | '/app/admin/help/articles/$id'
   id:
     | '__root__'
     | '/'
@@ -877,8 +913,11 @@ export interface FileRouteTypes {
     | '/_authenticated/app/settings/domains'
     | '/api/public/hooks/canonical-audit'
     | '/api/public/hooks/sync-sharetribe'
+    | '/_authenticated/app/admin/help/articles'
+    | '/_authenticated/app/admin/help/categories'
     | '/_authenticated/app/pages/$id/edit'
     | '/_authenticated/app/settings/integrations/sharetribe'
+    | '/_authenticated/app/admin/help/articles/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1375,6 +1414,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppPagesIdEditRouteImport
       parentRoute: typeof AuthenticatedAppPagesRoute
     }
+    '/_authenticated/app/admin/help/categories': {
+      id: '/_authenticated/app/admin/help/categories'
+      path: '/admin/help/categories'
+      fullPath: '/app/admin/help/categories'
+      preLoaderRoute: typeof AuthenticatedAppAdminHelpCategoriesRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/admin/help/articles': {
+      id: '/_authenticated/app/admin/help/articles'
+      path: '/admin/help/articles'
+      fullPath: '/app/admin/help/articles'
+      preLoaderRoute: typeof AuthenticatedAppAdminHelpArticlesRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/admin/help/articles/$id': {
+      id: '/_authenticated/app/admin/help/articles/$id'
+      path: '/$id'
+      fullPath: '/app/admin/help/articles/$id'
+      preLoaderRoute: typeof AuthenticatedAppAdminHelpArticlesIdRouteImport
+      parentRoute: typeof AuthenticatedAppAdminHelpArticlesRoute
+    }
   }
 }
 
@@ -1412,6 +1472,21 @@ const AuthenticatedAppSettingsRouteChildren: AuthenticatedAppSettingsRouteChildr
 const AuthenticatedAppSettingsRouteWithChildren =
   AuthenticatedAppSettingsRoute._addFileChildren(
     AuthenticatedAppSettingsRouteChildren,
+  )
+
+interface AuthenticatedAppAdminHelpArticlesRouteChildren {
+  AuthenticatedAppAdminHelpArticlesIdRoute: typeof AuthenticatedAppAdminHelpArticlesIdRoute
+}
+
+const AuthenticatedAppAdminHelpArticlesRouteChildren: AuthenticatedAppAdminHelpArticlesRouteChildren =
+  {
+    AuthenticatedAppAdminHelpArticlesIdRoute:
+      AuthenticatedAppAdminHelpArticlesIdRoute,
+  }
+
+const AuthenticatedAppAdminHelpArticlesRouteWithChildren =
+  AuthenticatedAppAdminHelpArticlesRoute._addFileChildren(
+    AuthenticatedAppAdminHelpArticlesRouteChildren,
   )
 
 interface AuthenticatedAppRouteChildren {
@@ -1457,6 +1532,8 @@ interface AuthenticatedAppRouteChildren {
   AuthenticatedAppSeoRankTrackerRoute: typeof AuthenticatedAppSeoRankTrackerRoute
   AuthenticatedAppSeoScrapeImportRoute: typeof AuthenticatedAppSeoScrapeImportRoute
   AuthenticatedAppSeoSitemapRoute: typeof AuthenticatedAppSeoSitemapRoute
+  AuthenticatedAppAdminHelpArticlesRoute: typeof AuthenticatedAppAdminHelpArticlesRouteWithChildren
+  AuthenticatedAppAdminHelpCategoriesRoute: typeof AuthenticatedAppAdminHelpCategoriesRoute
 }
 
 const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
@@ -1514,6 +1591,10 @@ const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppSeoRankTrackerRoute: AuthenticatedAppSeoRankTrackerRoute,
   AuthenticatedAppSeoScrapeImportRoute: AuthenticatedAppSeoScrapeImportRoute,
   AuthenticatedAppSeoSitemapRoute: AuthenticatedAppSeoSitemapRoute,
+  AuthenticatedAppAdminHelpArticlesRoute:
+    AuthenticatedAppAdminHelpArticlesRouteWithChildren,
+  AuthenticatedAppAdminHelpCategoriesRoute:
+    AuthenticatedAppAdminHelpCategoriesRoute,
 }
 
 const AuthenticatedAppRouteWithChildren =
