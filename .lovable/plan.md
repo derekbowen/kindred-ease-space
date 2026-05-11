@@ -1,67 +1,93 @@
+# AI Coach for founders.click
 
-# Help Center Build Plan
+A contextual, tool-using agent embedded in the app. Not a chatbot — it reads workspace data, calls tools, and returns specific actionable recommendations. Uses each tenant's BYOK keys via the existing `ai-proxy` edge function.
 
-Full scope from the prompt, sequenced across 4 turns so each turn ships something working and reviewable. Accent color reuses existing brand tokens from `src/styles.css` (no new palette).
+## Scope
 
-## Turn 1 — Foundation + Public Site (SSR)
+Three surfaces:
+1. **Persistent chat panel** — slide-out, ⌘J shortcut, available on every `/app/*` route
+2. **Daily briefing card** — top of `/app/dashboard`, regenerated nightly via cron
+3. **Inline coaching** — context-aware side panel on page builder, listing sync, SEO settings
 
-**Database** (single migration)
-- `help_categories`, `help_articles` (with `tsvector` + GIN index + trigger), `help_article_feedback`, `help_search_queries`, `support_tickets`
-- RLS: published categories/articles readable by anon; feedback/queries/tickets insert-only by anon; admin-only writes via `has_role(_, 'admin')`
-- Seed: 5 categories + 15 placeholder articles (markdown bodies)
+## Database (one migration)
 
-**Public routes** (all SSR via loaders + server fns using `supabaseAdmin` server-side)
-- `/help` — hero, search input, 5 category cards, popular + recent sections
-- `/help/$category` — breadcrumb, article list, sidebar of other categories
-- `/help/$category/$article` — TOC, markdown body, feedback widget, related articles
-- `/help/search?q=` — Postgres `websearch_to_tsquery` + `ts_rank`, filters
-- `/help/contact` — form → `support_tickets` insert (email send wired in turn 3)
-- `/help/sitemap.xml` — server route, absolute URLs
+- `coach_conversations` — workspace_id, user_id, title, context_type, context_ref_id
+- `coach_messages` — conversation_id, role, content, tool_calls jsonb, tokens_used
+- `coach_daily_briefings` — workspace_id, briefing_date (unique), insights jsonb, viewed_at
+- `coach_action_log` — workspace_id, user_id, action_type, details jsonb
+- `coach_system_prompts` — version-controlled system prompt rows so we can iterate without redeploy
+- `coach_user_preferences` — per-user mode (aggressive/steady), preferred response length, model preference
+- RLS: workspace members can read/write their workspace rows only; user prefs scoped to `auth.uid()`
 
-**Components**
-- `Breadcrumb`, `CategoryCard`, `ArticleCard`, `TableOfContents`, `HelpfulFeedback`, `Callout`, `CodeBlock` (Shiki), `MarkdownRenderer` (remark/rehype + custom `:::info` callouts), `ContactForm`
+## Edge functions
 
-**SEO**
-- Per-route `head()` with title/description/og/canonical
-- Article JSON-LD (`Article` + `BreadcrumbList`)
+### `coach-chat` (streaming SSE)
+- Auth: workspace member check
+- Loads conversation history (last 20 messages) + workspace summary + active system prompt version
+- Resolves tenant BYOK via `tenant_get_ai_credential` (provider/model from `coach_user_preferences`, fallback OpenAI)
+- Tool-use loop, max 8 iterations: send → if `tool_use` blocks, execute → append results → repeat
+- Streams final assistant text via SSE
+- Persists every message (user, assistant, tool result) with `tokens_used`
+- Returns rolling cost estimate to client
+- Anthropic prompt caching headers on system + workspace context blocks
 
-## Turn 2 — Admin CRUD
+### `coach-tools` (internal RPC, called only from `coach-chat`)
+Single function exposing all tools — keeps deploy simple. Tools:
+- `query_pages(filters)` — over `tenant_pages`
+- `query_listings(filters)` — over `tenant_listings`
+- `get_page_seo_audit(page_id)` — word count, title/meta length, H1, internal links, schema check
+- `get_gsc_data(page_url?, days)` — pulls existing GSC data if connected, else returns `not_connected`
+- `suggest_content_additions(page_id)` — diff vs top 3 SERP results for primary keyword
+- `suggest_internal_links(page_id)` — related workspace pages that should link in
+- `generate_page_content(page_id, section, brief)` — uses BYOK to draft markdown
+- `check_listing_coverage()` — listings with no page, pages with no matching listings
+- `check_sitemap_health()` — validates sitemap, finds 404s and orphans
+- `run_competitor_analysis(query, location)` — top-3 SERP scrape via existing fetch infra
+- `apply_seo_fix(page_id, fix_type, payload)` — gated; requires `confirmed: true` flag set by client
 
-- `/app/admin/help/articles` — list with filters, markdown editor with live preview, autosave draft (30s), publish toggle, body_html pre-render on save
-- `/app/admin/help/categories` — CRUD + drag-to-reorder
-- Admin gating via existing `user_roles` + `has_role(uid, 'admin')`
-- Server functions for all writes (`*.functions.ts` calling `supabaseAdmin` only after admin check)
+All tool inputs validated with Zod. Workspace isolation enforced inside every tool implementation in addition to RLS.
 
-## Turn 3 — Search Modal + Contact Email + Feedback Dashboard
+### `coach-briefing-cron` (called by pg_cron daily at 06:00 UTC)
+- For each active workspace: run analysis tools, score by `impressions × position_improvement_potential`
+- Send top 10 candidates to LLM, ask for top 3 with priority + action_type + action_payload
+- Upsert into `coach_daily_briefings` keyed by `(workspace_id, briefing_date)`
 
-- `SearchModal` (cmd+K) — debounced 150ms, keyboard nav, recent searches in localStorage
-- Contact form → `support_tickets` insert + EmailIt notification to support@founders.click (reuse existing `email.server.ts`)
-- `/app/admin/help/feedback` — recent thumbs-down, lowest helpful-ratio articles, zero-result query log
-- `/app/admin/help/tickets` — inbox, view, status/priority/assignment, reply via email
+### Pg_cron
+- Schedule via `net.http_post` to `coach-briefing-cron` daily, using anon key in `apikey` header
 
-## Turn 4 — Polish + Automation
+## Frontend
 
-- Dynamic OG images per article (server route rendering SVG → PNG, no external deps)
-- AI draft generator in admin (Lovable AI Gateway, google/gemini-2.5-flash)
-- Weekly zero-result query digest (pg_cron → server route → email)
-- Dark mode toggle (if not already present) + accessibility pass (focus rings, ARIA, contrast)
-- Lighthouse audit + lazy-loading sweep
+- `src/lib/coach.functions.ts` — server fns: `listConversations`, `createConversation`, `getMessages`, `getTodayBriefing`, `dismissInsight`, `logCoachAction`, `setCoachPreferences`
+- `src/components/coach/CoachPanel.tsx` — slide-out using existing Sheet primitive; conversation list, streaming message renderer (react-markdown), tool-call collapsibles, action buttons, suggested prompts, cost footer
+- `src/components/coach/CoachLauncher.tsx` — floating button + ⌘J binding, mounted in `_authenticated` layout
+- `src/components/coach/DailyBriefing.tsx` — three insight cards on dashboard with "Take action" / "Dismiss"
+- `src/components/coach/InlineCoach.tsx` — collapsible right panel; consumes `context` prop; mounted on page builder, listing sync, SEO settings routes
+- Streaming via `fetch` to `/functions/v1/coach-chat`, SSE parser per AI gateway pattern
+- Suggested prompts library (15 starter prompts) in `src/lib/coach-prompts.ts`
 
-## Technical notes
+## Constraints honored
 
-- All article data access goes through `supabaseAdmin` in `*.server.ts` / server functions — never from browser
-- Markdown rendered to HTML at save time, stored in `body_html`; runtime just sanitizes + injects TOC anchors
-- Search uses `websearch_to_tsquery('english', q)` ranked by `ts_rank(search_vector, query)`
-- Sitemap built from `published_at IS NOT NULL`, absolute URL via request host
-- No new npm deps beyond: `react-markdown`, `remark-gfm`, `rehype-slug`, `rehype-autolink-headings`, `shiki`, `dompurify`
+- All LLM calls use tenant BYOK; if missing, panel shows upgrade CTA pointing to `/app/settings/ai`
+- Destructive tools (`apply_seo_fix`, `generate_page_content` write-back) require client to pass `confirmed: true` after a Confirm click
+- Context window trimmed to last 20 messages + system + workspace summary
+- Streaming SSE; no spinners on assistant text
+- Workspace isolation: RLS + tool-level checks
+- No autonomous mutations — every write is button-triggered
 
-## Out of scope (explicit)
+## Out of scope for this build
 
-- Subdomain `help.founders.click` — using `/help` subpath
-- Algolia / MeiliSearch — Postgres FTS only
-- pgvector related-articles automation (deferred; manual `related_article_ids` for now)
-- Tenant-branded help centers (the "unconventional play")
+- Public `/audit` lead magnet (separate workstream)
+- Cross-workspace user memory (will scaffold `coach_user_preferences` but not auto-summarize)
+- Conversation summarization rollup at 50 messages (will leave a TODO; trim-only for now)
+- Coach analytics dashboard for admins
 
----
+## Build order
 
-Approve to start Turn 1 (migration + 5 categories + 15 seed articles + full public site + SEO).
+1. Migration (tables + RLS + `coach_system_prompts` seed row)
+2. `coach-chat` edge function with full tool layer + Zod schemas + streaming
+3. `coach-briefing-cron` + pg_cron schedule
+4. `coach.functions.ts` server functions
+5. `CoachPanel` + `CoachLauncher` mounted in `_authenticated` layout
+6. `DailyBriefing` on dashboard
+7. `InlineCoach` wired into page builder route (other surfaces follow same pattern)
+8. Suggested prompts + cost footer + ⌘J shortcut

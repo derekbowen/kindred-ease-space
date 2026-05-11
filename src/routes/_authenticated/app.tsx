@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { getMe } from "@/lib/auth.functions";
 import { NAV_SECTIONS } from "@/lib/app-nav";
+import { CoachLauncher } from "@/components/coach/CoachLauncher";
 
 export const Route = createFileRoute("/_authenticated/app")({
   component: AppShell,
@@ -156,6 +157,7 @@ function AppShell() {
             <Outlet />
           </main>
         </SidebarInset>
+        <CoachLauncher workspaceId={me?.memberships?.[0]?.workspace_id ?? null} />
       </div>
     </SidebarProvider>
   );

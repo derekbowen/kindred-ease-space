@@ -394,6 +394,201 @@ export type Database = {
           },
         ]
       }
+      coach_action_log: {
+        Row: {
+          action_type: string
+          created_at: string
+          details: Json | null
+          id: string
+          user_id: string
+          workspace_id: string
+        }
+        Insert: {
+          action_type: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          user_id: string
+          workspace_id: string
+        }
+        Update: {
+          action_type?: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          user_id?: string
+          workspace_id?: string
+        }
+        Relationships: []
+      }
+      coach_conversations: {
+        Row: {
+          context_ref_id: string | null
+          context_type: string | null
+          created_at: string
+          id: string
+          title: string | null
+          updated_at: string
+          user_id: string
+          workspace_id: string
+        }
+        Insert: {
+          context_ref_id?: string | null
+          context_type?: string | null
+          created_at?: string
+          id?: string
+          title?: string | null
+          updated_at?: string
+          user_id: string
+          workspace_id: string
+        }
+        Update: {
+          context_ref_id?: string | null
+          context_type?: string | null
+          created_at?: string
+          id?: string
+          title?: string | null
+          updated_at?: string
+          user_id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_conversations_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coach_daily_briefings: {
+        Row: {
+          briefing_date: string
+          generated_at: string
+          id: string
+          insights: Json
+          viewed_at: string | null
+          workspace_id: string
+        }
+        Insert: {
+          briefing_date: string
+          generated_at?: string
+          id?: string
+          insights?: Json
+          viewed_at?: string | null
+          workspace_id: string
+        }
+        Update: {
+          briefing_date?: string
+          generated_at?: string
+          id?: string
+          insights?: Json
+          viewed_at?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_daily_briefings_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coach_messages: {
+        Row: {
+          content: string | null
+          conversation_id: string
+          cost_usd_micros: number | null
+          created_at: string
+          id: string
+          role: string
+          tokens_used: number | null
+          tool_calls: Json | null
+        }
+        Insert: {
+          content?: string | null
+          conversation_id: string
+          cost_usd_micros?: number | null
+          created_at?: string
+          id?: string
+          role: string
+          tokens_used?: number | null
+          tool_calls?: Json | null
+        }
+        Update: {
+          content?: string | null
+          conversation_id?: string
+          cost_usd_micros?: number | null
+          created_at?: string
+          id?: string
+          role?: string
+          tokens_used?: number | null
+          tool_calls?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "coach_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coach_system_prompts: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          is_active: boolean
+          version: number
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          version: number
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          version?: number
+        }
+        Relationships: []
+      }
+      coach_user_preferences: {
+        Row: {
+          mode: string | null
+          preferred_model: string | null
+          preferred_provider: string | null
+          response_length: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          mode?: string | null
+          preferred_model?: string | null
+          preferred_provider?: string | null
+          response_length?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          mode?: string | null
+          preferred_model?: string | null
+          preferred_provider?: string | null
+          response_length?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       competitor_host_matches: {
         Row: {
           admin_notes: string | null
