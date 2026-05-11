@@ -201,3 +201,102 @@ export const adminDeleteArticle = createServerFn({ method: "POST" })
     if (error) throw error;
     return { ok: true };
   });
+
+// ---------------- Feedback Dashboard ----------------
+
+function normalizeIssue(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 200);
+}
+
+export const adminFeedbackOverview = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ days: z.number().int().min(1).max(365).default(30) }).parse(d ?? {})
+  )
+  .handler(async ({ context, data }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const since = new Date(Date.now() - data.days * 86400_000).toISOString();
+
+    const { data: articles, error: aErr } = await supabaseAdmin
+      .from("help_articles")
+      .select("id,slug,title,category_slug,helpful_count,not_helpful_count,view_count,status")
+      .is("workspace_id", null);
+    if (aErr) throw aErr;
+
+    const { data: feedback, error: fErr } = await supabaseAdmin
+      .from("help_article_feedback")
+      .select("article_id,is_helpful,comment,created_at")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(5000);
+    if (fErr) throw fErr;
+
+    const perArticle = new Map<string, {
+      recent_helpful: number;
+      recent_not_helpful: number;
+      issues: Map<string, { count: number; sample: string }>;
+    }>();
+
+    for (const row of feedback ?? []) {
+      const id = row.article_id as string;
+      let bucket = perArticle.get(id);
+      if (!bucket) {
+        bucket = { recent_helpful: 0, recent_not_helpful: 0, issues: new Map() };
+        perArticle.set(id, bucket);
+      }
+      if (row.is_helpful) bucket.recent_helpful += 1;
+      else bucket.recent_not_helpful += 1;
+
+      const c = (row.comment ?? "").trim();
+      if (!row.is_helpful && c.length > 2) {
+        const key = normalizeIssue(c);
+        const existing = bucket.issues.get(key);
+        if (existing) existing.count += 1;
+        else bucket.issues.set(key, { count: 1, sample: c.slice(0, 240) });
+      }
+    }
+
+    const articleStats = (articles ?? []).map((a) => {
+      const bucket = perArticle.get(a.id as string);
+      const total = (a.helpful_count ?? 0) + (a.not_helpful_count ?? 0);
+      const ratio = total > 0 ? (a.helpful_count ?? 0) / total : null;
+      const topIssues = bucket
+        ? Array.from(bucket.issues.entries())
+            .map(([key, v]) => ({ key, count: v.count, sample: v.sample }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 5)
+        : [];
+      return {
+        id: a.id as string,
+        slug: a.slug as string,
+        title: a.title as string,
+        category_slug: a.category_slug as string,
+        status: a.status as string,
+        view_count: a.view_count ?? 0,
+        helpful_count: a.helpful_count ?? 0,
+        not_helpful_count: a.not_helpful_count ?? 0,
+        total_votes: total,
+        helpful_ratio: ratio,
+        recent_helpful: bucket?.recent_helpful ?? 0,
+        recent_not_helpful: bucket?.recent_not_helpful ?? 0,
+        top_issues: topIssues,
+      };
+    });
+
+    const totals = articleStats.reduce(
+      (acc, a) => {
+        acc.helpful += a.helpful_count;
+        acc.not_helpful += a.not_helpful_count;
+        acc.recent_helpful += a.recent_helpful;
+        acc.recent_not_helpful += a.recent_not_helpful;
+        return acc;
+      },
+      { helpful: 0, not_helpful: 0, recent_helpful: 0, recent_not_helpful: 0 }
+    );
+
+    return {
+      window_days: data.days,
+      totals,
+      articles: articleStats,
+    };
+  });
