@@ -4720,6 +4720,31 @@ export type Database = {
         }
         Returns: boolean
       }
+      help_search_v2: {
+        Args: { max_results?: number; q: string }
+        Returns: {
+          category_slug: string
+          excerpt: string
+          headline: string
+          id: string
+          published_at: string
+          rank: number
+          reading_time_minutes: number
+          slug: string
+          title: string
+          updated_at: string
+          view_count: number
+        }[]
+      }
+      help_suggest_titles: {
+        Args: { max_results?: number; q: string }
+        Returns: {
+          category_slug: string
+          similarity: number
+          slug: string
+          title: string
+        }[]
+      }
       is_workspace_member: {
         Args: { _user_id: string; _workspace_id: string }
         Returns: boolean
@@ -4767,6 +4792,8 @@ export type Database = {
           read_ct: number
         }[]
       }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
       tenant_delete_ai_credential: {
         Args: { _provider: string; _workspace_id: string }
         Returns: boolean
