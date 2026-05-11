@@ -9,6 +9,7 @@ import {
   listPopularArticles,
   listRecentArticles,
   searchArticles,
+  suggestArticleTitles,
   logSearchQuery,
   submitFeedback,
   submitTicket,
@@ -16,6 +17,7 @@ import {
   type HelpCategory,
   type HelpArticleListItem,
   type HelpArticleFull,
+  type HelpTitleSuggestion,
 } from "./help.server";
 
 export type HelpHomeData = {
