@@ -100,7 +100,7 @@ export const adminUpdateTicket = createServerFn({ method: "POST" })
 
     const { data: existing, error: exErr } = await supabaseAdmin
       .from("support_tickets")
-      .select("status,priority")
+      .select("status,priority,subject,email,name")
       .eq("id", data.id)
       .maybeSingle();
     if (exErr) throw exErr;
@@ -108,9 +108,11 @@ export const adminUpdateTicket = createServerFn({ method: "POST" })
 
     const patch: Record<string, any> = {};
     let statusChange: string | null = null;
+    let newStatus: string | null = null;
     if (data.status && data.status !== existing.status) {
       patch.status = data.status;
       statusChange = `${existing.status} → ${data.status}`;
+      newStatus = data.status;
       if (data.status === "resolved" || data.status === "closed") {
         patch.resolved_at = new Date().toISOString();
       } else {
@@ -142,6 +144,32 @@ export const adminUpdateTicket = createServerFn({ method: "POST" })
         is_internal: true,
         status_change: statusChange,
       });
+
+      // Notify the ticket submitter — fire-and-forget.
+      if (newStatus && existing.email) {
+        try {
+          const { sendEmail, ticketStatusChangedTemplate, SUPPORT_INBOX_EMAIL } = await import(
+            "@/lib/email.server"
+          );
+          const tpl = ticketStatusChangedTemplate({
+            ticketId: data.id,
+            subject: existing.subject,
+            name: existing.name,
+            newStatus,
+          });
+          await sendEmail({
+            to: existing.email,
+            subject: tpl.subject,
+            html: tpl.html,
+            text: tpl.text,
+            replyTo: SUPPORT_INBOX_EMAIL,
+            idempotencyKey: `ticket-status-${data.id}-${newStatus}`,
+            meta: { ticket_id: data.id, kind: "ticket_status_change", status: newStatus },
+          });
+        } catch (e) {
+          console.error("[tickets] status email failed", e);
+        }
+      }
     }
     return { ok: true };
   });
