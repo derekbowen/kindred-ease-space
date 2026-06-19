@@ -107,6 +107,100 @@ export const createWorkspace = createServerFn({ method: "POST" })
     return { workspaceId: ws.id, slug: ws.slug };
   });
 
+/**
+ * Auto-provision a workspace so a new user never hits a setup wall. If they
+ * already belong to one, returns it. Otherwise creates a default workspace
+ * (name/domain are filled in later from the optional setup portal in Settings).
+ * Idempotent: safe to call on every app entry.
+ */
+export const ensureWorkspace = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { userId } = context;
+
+    const { data: existing } = await supabaseAdmin
+      .from("workspace_members")
+      .select("workspace_id")
+      .eq("user_id", userId)
+      .limit(1)
+      .maybeSingle();
+    if (existing?.workspace_id) return { workspaceId: existing.workspace_id, created: false };
+
+    const slug = `ws-${Math.random().toString(36).slice(2, 10)}`;
+    const { data: ws, error } = await supabaseAdmin
+      .from("workspaces")
+      .insert({
+        slug,
+        name: "My Marketplace",
+        owner_user_id: userId,
+        plan: "starter",
+        subscription_status: "trialing",
+        trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+      })
+      .select("id")
+      .single();
+    if (error || !ws) {
+      console.error("[ensureWorkspace] insert error", error);
+      throw new Error(error?.message ? `Couldn't set up your workspace: ${error.message}` : "Couldn't set up your workspace.");
+    }
+
+    const { error: memberErr } = await supabaseAdmin
+      .from("workspace_members")
+      .insert({ workspace_id: ws.id, user_id: userId, role: "owner" });
+    if (memberErr) {
+      console.error("[ensureWorkspace] member insert error", memberErr);
+      await supabaseAdmin.from("workspaces").delete().eq("id", ws.id);
+      throw new Error(`Couldn't link you to the workspace: ${memberErr.message}`);
+    }
+
+    // Non-fatal trial credits.
+    try {
+      await supabaseAdmin.rpc("grant_credits", {
+        _workspace_id: ws.id,
+        _amount: STARTER_TRIAL_CREDITS,
+        _reason: "trial_grant",
+        _ref_type: "trial",
+        _ref_id: ws.id,
+        _metadata: { source: "auto_provision" },
+      });
+    } catch (e) {
+      console.error("[ensureWorkspace] grant_credits failed (non-fatal)", e);
+    }
+
+    return { workspaceId: ws.id, created: true };
+  });
+
+/** Editable workspace profile — the optional "setup portal" (name + domain). */
+export const updateWorkspaceProfile = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data) =>
+    z
+      .object({
+        workspaceId: z.string().uuid(),
+        name: z.string().trim().min(2).max(80).optional(),
+        marketplaceDomain: z.string().trim().max(120).optional().or(z.literal("")),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: isOwner } = await supabaseAdmin.rpc("is_workspace_owner", {
+      _workspace_id: data.workspaceId,
+      _user_id: context.userId,
+    });
+    if (!isOwner) throw new Error("Not allowed");
+
+    const patch: { name?: string; marketplace_domain?: string | null } = {};
+    if (data.name !== undefined) patch.name = data.name;
+    if (data.marketplaceDomain !== undefined) {
+      patch.marketplace_domain = data.marketplaceDomain
+        ? data.marketplaceDomain.toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "")
+        : null;
+    }
+    const { error } = await supabaseAdmin.from("workspaces").update(patch).eq("id", data.workspaceId);
+    if (error) throw new Error(error.message);
+    return { ok: true as const };
+  });
+
 export const getWorkspaceOverview = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data) => z.object({ workspaceId: z.string().uuid() }).parse(data))

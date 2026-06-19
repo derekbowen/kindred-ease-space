@@ -31,7 +31,7 @@ function SignupPage() {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/app/onboarding`,
+        emailRedirectTo: `${window.location.origin}/app`,
         data: { display_name: name, full_name: name },
       },
     });
@@ -44,7 +44,7 @@ function SignupPage() {
     // user here with a "check your email" message instead of bouncing them into
     // the app only to be kicked to /login by the auth guard.
     if (data.session) {
-      navigate({ to: "/app/onboarding" });
+      navigate({ to: "/app" });
     } else {
       setConfirmEmail(true);
       toast.success("Check your email to confirm your account.");
@@ -54,7 +54,7 @@ function SignupPage() {
   const onGoogle = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/app/onboarding` },
+      options: { redirectTo: `${window.location.origin}/app` },
     });
 
     if (error) {
