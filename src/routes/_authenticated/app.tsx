@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { getMe } from "@/lib/auth.functions";
+import { ensureWorkspace } from "@/lib/workspace.functions";
 import { NAV_SECTIONS } from "@/lib/app-nav";
 import { CoachLauncher } from "@/components/coach/CoachLauncher";
 
@@ -48,14 +49,20 @@ function AppShell() {
       .finally(() => setLoading(false));
   }, [navigate, location.pathname]);
 
-  // Redirect to onboarding if user has no workspace yet
+  // No setup wall: if the user has no workspace yet, auto-provision one in the
+  // background and drop them straight into the product. Marketplace details are
+  // an optional setup step they can finish anytime in Settings.
+  const [provisioning, setProvisioning] = useState(false);
   useEffect(() => {
     if (loading || !me) return;
     const memberships = Array.isArray(me.memberships) ? me.memberships : [];
-    if (memberships.length === 0 && location.pathname !== "/app/onboarding") {
-      navigate({ to: "/app/onboarding" });
-    }
-  }, [loading, me, location.pathname, navigate]);
+    if (memberships.length > 0 || provisioning) return;
+    setProvisioning(true);
+    ensureWorkspace()
+      .then(() => getMe().then(setMe))
+      .catch((e) => console.error("ensureWorkspace failed", e))
+      .finally(() => setProvisioning(false));
+  }, [loading, me, provisioning]);
 
   const onSignOut = async () => {
     try {

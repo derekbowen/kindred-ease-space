@@ -5,8 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Sparkles, FileText, Users, Coins } from "lucide-react";
-import { getMe } from "@/lib/auth.functions";
-import { getWorkspaceOverview } from "@/lib/workspace.functions";
+import { ensureWorkspace, getWorkspaceOverview } from "@/lib/workspace.functions";
 import { DailyBriefing } from "@/components/coach/DailyBriefing";
 
 export const Route = createFileRoute("/_authenticated/app/")({
@@ -19,11 +18,9 @@ function DashboardPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
   useEffect(() => {
-    getMe()
-      .then((me) => {
-        const memberships = Array.isArray(me?.memberships) ? me.memberships : [];
-        setWorkspaceId(memberships[0]?.workspace_id ?? null);
-      })
+    // Auto-provisions a workspace if the user has none — no setup wall.
+    ensureWorkspace()
+      .then((r) => setWorkspaceId(r.workspaceId))
       .catch((err) => {
         // 401s here just mean session expired / not hydrated — bounce to login.
         const status = (err as { status?: number; response?: { status?: number } })?.status
@@ -31,7 +28,7 @@ function DashboardPage() {
         if (status === 401) {
           navigate({ to: "/login", search: { next: "/app" } });
         } else {
-          console.error("getMe failed", err);
+          console.error("ensureWorkspace failed", err);
         }
       });
   }, [navigate]);
@@ -69,6 +66,22 @@ function DashboardPage() {
           {ws?.name} · {ws?.marketplace_domain ?? "no domain set"}
         </p>
       </div>
+
+      {!ws?.marketplace_domain && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="py-4 flex items-center justify-between gap-3">
+            <div>
+              <div className="font-medium">Finish setting up your marketplace</div>
+              <div className="text-xs text-muted-foreground">
+                Add your marketplace name and domain whenever you're ready — it's optional.
+              </div>
+            </div>
+            <Button variant="outline" asChild>
+              <Link to="/app/settings">Open setup</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {ws?.subscription_status === "trialing" && daysLeft !== null && (
         <Card className="border-orange-500/30 bg-orange-500/5">
