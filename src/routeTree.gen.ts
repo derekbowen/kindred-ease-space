@@ -24,6 +24,7 @@ import { Route as HelpSitemapDotxmlRouteImport } from './routes/help.sitemap[.]x
 import { Route as HelpSearchRouteImport } from './routes/help.search'
 import { Route as HelpContactRouteImport } from './routes/help.contact'
 import { Route as HelpCategoryRouteImport } from './routes/help.$category'
+import { Route as ApplySlugRouteImport } from './routes/apply.$slug'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
 import { Route as HelpCategoryArticleRouteImport } from './routes/help.$category.$article'
@@ -36,6 +37,8 @@ import { Route as AuthenticatedAppPagesRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAppOnboardingRouteImport } from './routes/_authenticated/app.onboarding'
 import { Route as AuthenticatedAppCoachRouteImport } from './routes/_authenticated/app.coach'
 import { Route as AuthenticatedAppBillingRouteImport } from './routes/_authenticated/app.billing'
+import { Route as AuthenticatedAppAffiliatesRouteImport } from './routes/_authenticated/app.affiliates'
+import { Route as AuthenticatedAppAddonsRouteImport } from './routes/_authenticated/app.addons'
 import { Route as ApiPublicHooksSyncSharetribeRouteImport } from './routes/api/public/hooks/sync-sharetribe'
 import { Route as ApiPublicHooksCanonicalAuditRouteImport } from './routes/api/public/hooks/canonical-audit'
 import { Route as AuthenticatedAppSettingsDomainsRouteImport } from './routes/_authenticated/app.settings.domains'
@@ -79,6 +82,11 @@ import { Route as AuthenticatedAppContentDataExportRouteImport } from './routes/
 import { Route as AuthenticatedAppContentCityHeroesRouteImport } from './routes/_authenticated/app.content.city-heroes'
 import { Route as AuthenticatedAppContentBulkEditorRouteImport } from './routes/_authenticated/app.content.bulk-editor'
 import { Route as AuthenticatedAppContentBlogRouteImport } from './routes/_authenticated/app.content.blog'
+import { Route as AuthenticatedAppAffiliatesSettingsRouteImport } from './routes/_authenticated/app.affiliates.settings'
+import { Route as AuthenticatedAppAffiliatesProgramsRouteImport } from './routes/_authenticated/app.affiliates.programs'
+import { Route as AuthenticatedAppAffiliatesPayoutsRouteImport } from './routes/_authenticated/app.affiliates.payouts'
+import { Route as AuthenticatedAppAffiliatesDirectoryRouteImport } from './routes/_authenticated/app.affiliates.directory'
+import { Route as AuthenticatedAppAffiliatesCustomiseRouteImport } from './routes/_authenticated/app.affiliates.customise'
 import { Route as AuthenticatedAppAdminEmailTemplatesRouteImport } from './routes/_authenticated/app.admin.email-templates'
 import { Route as AuthenticatedAppSettingsIntegrationsSharetribeRouteImport } from './routes/_authenticated/app.settings.integrations.sharetribe'
 import { Route as AuthenticatedAppPagesIdEditRouteImport } from './routes/_authenticated/app.pages.$id.edit'
@@ -86,6 +94,7 @@ import { Route as AuthenticatedAppAdminHelpTicketsRouteImport } from './routes/_
 import { Route as AuthenticatedAppAdminHelpFeedbackRouteImport } from './routes/_authenticated/app.admin.help.feedback'
 import { Route as AuthenticatedAppAdminHelpCategoriesRouteImport } from './routes/_authenticated/app.admin.help.categories'
 import { Route as AuthenticatedAppAdminHelpArticlesRouteImport } from './routes/_authenticated/app.admin.help.articles'
+import { Route as AuthenticatedAppAffiliatesProgramsIdEditRouteImport } from './routes/_authenticated/app.affiliates.programs.$id.edit'
 import { Route as AuthenticatedAppAdminHelpArticlesIdRouteImport } from './routes/_authenticated/app.admin.help.articles.$id'
 
 const TermsRoute = TermsRouteImport.update({
@@ -162,6 +171,11 @@ const HelpCategoryRoute = HelpCategoryRouteImport.update({
   path: '/$category',
   getParentRoute: () => HelpRoute,
 } as any)
+const ApplySlugRoute = ApplySlugRouteImport.update({
+  id: '/apply/$slug',
+  path: '/apply/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
   id: '/app',
   path: '/app',
@@ -223,6 +237,17 @@ const AuthenticatedAppCoachRoute = AuthenticatedAppCoachRouteImport.update({
 const AuthenticatedAppBillingRoute = AuthenticatedAppBillingRouteImport.update({
   id: '/billing',
   path: '/billing',
+  getParentRoute: () => AuthenticatedAppRoute,
+} as any)
+const AuthenticatedAppAffiliatesRoute =
+  AuthenticatedAppAffiliatesRouteImport.update({
+    id: '/affiliates',
+    path: '/affiliates',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppAddonsRoute = AuthenticatedAppAddonsRouteImport.update({
+  id: '/addons',
+  path: '/addons',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
 const ApiPublicHooksSyncSharetribeRoute =
@@ -483,6 +508,36 @@ const AuthenticatedAppContentBlogRoute =
     path: '/content/blog',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
+const AuthenticatedAppAffiliatesSettingsRoute =
+  AuthenticatedAppAffiliatesSettingsRouteImport.update({
+    id: '/settings',
+    path: '/settings',
+    getParentRoute: () => AuthenticatedAppAffiliatesRoute,
+  } as any)
+const AuthenticatedAppAffiliatesProgramsRoute =
+  AuthenticatedAppAffiliatesProgramsRouteImport.update({
+    id: '/programs',
+    path: '/programs',
+    getParentRoute: () => AuthenticatedAppAffiliatesRoute,
+  } as any)
+const AuthenticatedAppAffiliatesPayoutsRoute =
+  AuthenticatedAppAffiliatesPayoutsRouteImport.update({
+    id: '/payouts',
+    path: '/payouts',
+    getParentRoute: () => AuthenticatedAppAffiliatesRoute,
+  } as any)
+const AuthenticatedAppAffiliatesDirectoryRoute =
+  AuthenticatedAppAffiliatesDirectoryRouteImport.update({
+    id: '/directory',
+    path: '/directory',
+    getParentRoute: () => AuthenticatedAppAffiliatesRoute,
+  } as any)
+const AuthenticatedAppAffiliatesCustomiseRoute =
+  AuthenticatedAppAffiliatesCustomiseRouteImport.update({
+    id: '/customise',
+    path: '/customise',
+    getParentRoute: () => AuthenticatedAppAffiliatesRoute,
+  } as any)
 const AuthenticatedAppAdminEmailTemplatesRoute =
   AuthenticatedAppAdminEmailTemplatesRouteImport.update({
     id: '/admin/email-templates',
@@ -525,6 +580,12 @@ const AuthenticatedAppAdminHelpArticlesRoute =
     path: '/admin/help/articles',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
+const AuthenticatedAppAffiliatesProgramsIdEditRoute =
+  AuthenticatedAppAffiliatesProgramsIdEditRouteImport.update({
+    id: '/$id/edit',
+    path: '/$id/edit',
+    getParentRoute: () => AuthenticatedAppAffiliatesProgramsRoute,
+  } as any)
 const AuthenticatedAppAdminHelpArticlesIdRoute =
   AuthenticatedAppAdminHelpArticlesIdRouteImport.update({
     id: '/$id',
@@ -542,12 +603,15 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
+  '/apply/$slug': typeof ApplySlugRoute
   '/help/$category': typeof HelpCategoryRouteWithChildren
   '/help/contact': typeof HelpContactRoute
   '/help/search': typeof HelpSearchRoute
   '/help/sitemap.xml': typeof HelpSitemapDotxmlRoute
   '/p/$slug': typeof PSlugRoute
   '/help/': typeof HelpIndexRoute
+  '/app/addons': typeof AuthenticatedAppAddonsRoute
+  '/app/affiliates': typeof AuthenticatedAppAffiliatesRouteWithChildren
   '/app/billing': typeof AuthenticatedAppBillingRoute
   '/app/coach': typeof AuthenticatedAppCoachRoute
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
@@ -560,6 +624,11 @@ export interface FileRoutesByFullPath {
   '/help/$category/$article': typeof HelpCategoryArticleRoute
   '/app/': typeof AuthenticatedAppIndexRoute
   '/app/admin/email-templates': typeof AuthenticatedAppAdminEmailTemplatesRoute
+  '/app/affiliates/customise': typeof AuthenticatedAppAffiliatesCustomiseRoute
+  '/app/affiliates/directory': typeof AuthenticatedAppAffiliatesDirectoryRoute
+  '/app/affiliates/payouts': typeof AuthenticatedAppAffiliatesPayoutsRoute
+  '/app/affiliates/programs': typeof AuthenticatedAppAffiliatesProgramsRouteWithChildren
+  '/app/affiliates/settings': typeof AuthenticatedAppAffiliatesSettingsRoute
   '/app/content/blog': typeof AuthenticatedAppContentBlogRoute
   '/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
   '/app/content/city-heroes': typeof AuthenticatedAppContentCityHeroesRoute
@@ -610,6 +679,7 @@ export interface FileRoutesByFullPath {
   '/app/pages/$id/edit': typeof AuthenticatedAppPagesIdEditRoute
   '/app/settings/integrations/sharetribe': typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
   '/app/admin/help/articles/$id': typeof AuthenticatedAppAdminHelpArticlesIdRoute
+  '/app/affiliates/programs/$id/edit': typeof AuthenticatedAppAffiliatesProgramsIdEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -619,12 +689,15 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
+  '/apply/$slug': typeof ApplySlugRoute
   '/help/$category': typeof HelpCategoryRouteWithChildren
   '/help/contact': typeof HelpContactRoute
   '/help/search': typeof HelpSearchRoute
   '/help/sitemap.xml': typeof HelpSitemapDotxmlRoute
   '/p/$slug': typeof PSlugRoute
   '/help': typeof HelpIndexRoute
+  '/app/addons': typeof AuthenticatedAppAddonsRoute
+  '/app/affiliates': typeof AuthenticatedAppAffiliatesRouteWithChildren
   '/app/billing': typeof AuthenticatedAppBillingRoute
   '/app/coach': typeof AuthenticatedAppCoachRoute
   '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
@@ -637,6 +710,11 @@ export interface FileRoutesByTo {
   '/help/$category/$article': typeof HelpCategoryArticleRoute
   '/app': typeof AuthenticatedAppIndexRoute
   '/app/admin/email-templates': typeof AuthenticatedAppAdminEmailTemplatesRoute
+  '/app/affiliates/customise': typeof AuthenticatedAppAffiliatesCustomiseRoute
+  '/app/affiliates/directory': typeof AuthenticatedAppAffiliatesDirectoryRoute
+  '/app/affiliates/payouts': typeof AuthenticatedAppAffiliatesPayoutsRoute
+  '/app/affiliates/programs': typeof AuthenticatedAppAffiliatesProgramsRouteWithChildren
+  '/app/affiliates/settings': typeof AuthenticatedAppAffiliatesSettingsRoute
   '/app/content/blog': typeof AuthenticatedAppContentBlogRoute
   '/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
   '/app/content/city-heroes': typeof AuthenticatedAppContentCityHeroesRoute
@@ -687,6 +765,7 @@ export interface FileRoutesByTo {
   '/app/pages/$id/edit': typeof AuthenticatedAppPagesIdEditRoute
   '/app/settings/integrations/sharetribe': typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
   '/app/admin/help/articles/$id': typeof AuthenticatedAppAdminHelpArticlesIdRoute
+  '/app/affiliates/programs/$id/edit': typeof AuthenticatedAppAffiliatesProgramsIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -700,12 +779,15 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
+  '/apply/$slug': typeof ApplySlugRoute
   '/help/$category': typeof HelpCategoryRouteWithChildren
   '/help/contact': typeof HelpContactRoute
   '/help/search': typeof HelpSearchRoute
   '/help/sitemap.xml': typeof HelpSitemapDotxmlRoute
   '/p/$slug': typeof PSlugRoute
   '/help/': typeof HelpIndexRoute
+  '/_authenticated/app/addons': typeof AuthenticatedAppAddonsRoute
+  '/_authenticated/app/affiliates': typeof AuthenticatedAppAffiliatesRouteWithChildren
   '/_authenticated/app/billing': typeof AuthenticatedAppBillingRoute
   '/_authenticated/app/coach': typeof AuthenticatedAppCoachRoute
   '/_authenticated/app/onboarding': typeof AuthenticatedAppOnboardingRoute
@@ -718,6 +800,11 @@ export interface FileRoutesById {
   '/help/$category/$article': typeof HelpCategoryArticleRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
   '/_authenticated/app/admin/email-templates': typeof AuthenticatedAppAdminEmailTemplatesRoute
+  '/_authenticated/app/affiliates/customise': typeof AuthenticatedAppAffiliatesCustomiseRoute
+  '/_authenticated/app/affiliates/directory': typeof AuthenticatedAppAffiliatesDirectoryRoute
+  '/_authenticated/app/affiliates/payouts': typeof AuthenticatedAppAffiliatesPayoutsRoute
+  '/_authenticated/app/affiliates/programs': typeof AuthenticatedAppAffiliatesProgramsRouteWithChildren
+  '/_authenticated/app/affiliates/settings': typeof AuthenticatedAppAffiliatesSettingsRoute
   '/_authenticated/app/content/blog': typeof AuthenticatedAppContentBlogRoute
   '/_authenticated/app/content/bulk-editor': typeof AuthenticatedAppContentBulkEditorRoute
   '/_authenticated/app/content/city-heroes': typeof AuthenticatedAppContentCityHeroesRoute
@@ -768,6 +855,7 @@ export interface FileRoutesById {
   '/_authenticated/app/pages/$id/edit': typeof AuthenticatedAppPagesIdEditRoute
   '/_authenticated/app/settings/integrations/sharetribe': typeof AuthenticatedAppSettingsIntegrationsSharetribeRoute
   '/_authenticated/app/admin/help/articles/$id': typeof AuthenticatedAppAdminHelpArticlesIdRoute
+  '/_authenticated/app/affiliates/programs/$id/edit': typeof AuthenticatedAppAffiliatesProgramsIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -781,12 +869,15 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/terms'
     | '/app'
+    | '/apply/$slug'
     | '/help/$category'
     | '/help/contact'
     | '/help/search'
     | '/help/sitemap.xml'
     | '/p/$slug'
     | '/help/'
+    | '/app/addons'
+    | '/app/affiliates'
     | '/app/billing'
     | '/app/coach'
     | '/app/onboarding'
@@ -799,6 +890,11 @@ export interface FileRouteTypes {
     | '/help/$category/$article'
     | '/app/'
     | '/app/admin/email-templates'
+    | '/app/affiliates/customise'
+    | '/app/affiliates/directory'
+    | '/app/affiliates/payouts'
+    | '/app/affiliates/programs'
+    | '/app/affiliates/settings'
     | '/app/content/blog'
     | '/app/content/bulk-editor'
     | '/app/content/city-heroes'
@@ -849,6 +945,7 @@ export interface FileRouteTypes {
     | '/app/pages/$id/edit'
     | '/app/settings/integrations/sharetribe'
     | '/app/admin/help/articles/$id'
+    | '/app/affiliates/programs/$id/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -858,12 +955,15 @@ export interface FileRouteTypes {
     | '/signup'
     | '/sitemap.xml'
     | '/terms'
+    | '/apply/$slug'
     | '/help/$category'
     | '/help/contact'
     | '/help/search'
     | '/help/sitemap.xml'
     | '/p/$slug'
     | '/help'
+    | '/app/addons'
+    | '/app/affiliates'
     | '/app/billing'
     | '/app/coach'
     | '/app/onboarding'
@@ -876,6 +976,11 @@ export interface FileRouteTypes {
     | '/help/$category/$article'
     | '/app'
     | '/app/admin/email-templates'
+    | '/app/affiliates/customise'
+    | '/app/affiliates/directory'
+    | '/app/affiliates/payouts'
+    | '/app/affiliates/programs'
+    | '/app/affiliates/settings'
     | '/app/content/blog'
     | '/app/content/bulk-editor'
     | '/app/content/city-heroes'
@@ -926,6 +1031,7 @@ export interface FileRouteTypes {
     | '/app/pages/$id/edit'
     | '/app/settings/integrations/sharetribe'
     | '/app/admin/help/articles/$id'
+    | '/app/affiliates/programs/$id/edit'
   id:
     | '__root__'
     | '/'
@@ -938,12 +1044,15 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/terms'
     | '/_authenticated/app'
+    | '/apply/$slug'
     | '/help/$category'
     | '/help/contact'
     | '/help/search'
     | '/help/sitemap.xml'
     | '/p/$slug'
     | '/help/'
+    | '/_authenticated/app/addons'
+    | '/_authenticated/app/affiliates'
     | '/_authenticated/app/billing'
     | '/_authenticated/app/coach'
     | '/_authenticated/app/onboarding'
@@ -956,6 +1065,11 @@ export interface FileRouteTypes {
     | '/help/$category/$article'
     | '/_authenticated/app/'
     | '/_authenticated/app/admin/email-templates'
+    | '/_authenticated/app/affiliates/customise'
+    | '/_authenticated/app/affiliates/directory'
+    | '/_authenticated/app/affiliates/payouts'
+    | '/_authenticated/app/affiliates/programs'
+    | '/_authenticated/app/affiliates/settings'
     | '/_authenticated/app/content/blog'
     | '/_authenticated/app/content/bulk-editor'
     | '/_authenticated/app/content/city-heroes'
@@ -1006,6 +1120,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/pages/$id/edit'
     | '/_authenticated/app/settings/integrations/sharetribe'
     | '/_authenticated/app/admin/help/articles/$id'
+    | '/_authenticated/app/affiliates/programs/$id/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1018,6 +1133,7 @@ export interface RootRouteChildren {
   SignupRoute: typeof SignupRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TermsRoute: typeof TermsRoute
+  ApplySlugRoute: typeof ApplySlugRoute
   PSlugRoute: typeof PSlugRoute
   ApiPublicDomainTokenRoute: typeof ApiPublicDomainTokenRoute
   ApiPublicPageLookupRoute: typeof ApiPublicPageLookupRoute
@@ -1133,6 +1249,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HelpCategoryRouteImport
       parentRoute: typeof HelpRoute
     }
+    '/apply/$slug': {
+      id: '/apply/$slug'
+      path: '/apply/$slug'
+      fullPath: '/apply/$slug'
+      preLoaderRoute: typeof ApplySlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/app': {
       id: '/_authenticated/app'
       path: '/app'
@@ -1215,6 +1338,20 @@ declare module '@tanstack/react-router' {
       path: '/billing'
       fullPath: '/app/billing'
       preLoaderRoute: typeof AuthenticatedAppBillingRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/affiliates': {
+      id: '/_authenticated/app/affiliates'
+      path: '/affiliates'
+      fullPath: '/app/affiliates'
+      preLoaderRoute: typeof AuthenticatedAppAffiliatesRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/addons': {
+      id: '/_authenticated/app/addons'
+      path: '/addons'
+      fullPath: '/app/addons'
+      preLoaderRoute: typeof AuthenticatedAppAddonsRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
     '/api/public/hooks/sync-sharetribe': {
@@ -1518,6 +1655,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppContentBlogRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/affiliates/settings': {
+      id: '/_authenticated/app/affiliates/settings'
+      path: '/settings'
+      fullPath: '/app/affiliates/settings'
+      preLoaderRoute: typeof AuthenticatedAppAffiliatesSettingsRouteImport
+      parentRoute: typeof AuthenticatedAppAffiliatesRoute
+    }
+    '/_authenticated/app/affiliates/programs': {
+      id: '/_authenticated/app/affiliates/programs'
+      path: '/programs'
+      fullPath: '/app/affiliates/programs'
+      preLoaderRoute: typeof AuthenticatedAppAffiliatesProgramsRouteImport
+      parentRoute: typeof AuthenticatedAppAffiliatesRoute
+    }
+    '/_authenticated/app/affiliates/payouts': {
+      id: '/_authenticated/app/affiliates/payouts'
+      path: '/payouts'
+      fullPath: '/app/affiliates/payouts'
+      preLoaderRoute: typeof AuthenticatedAppAffiliatesPayoutsRouteImport
+      parentRoute: typeof AuthenticatedAppAffiliatesRoute
+    }
+    '/_authenticated/app/affiliates/directory': {
+      id: '/_authenticated/app/affiliates/directory'
+      path: '/directory'
+      fullPath: '/app/affiliates/directory'
+      preLoaderRoute: typeof AuthenticatedAppAffiliatesDirectoryRouteImport
+      parentRoute: typeof AuthenticatedAppAffiliatesRoute
+    }
+    '/_authenticated/app/affiliates/customise': {
+      id: '/_authenticated/app/affiliates/customise'
+      path: '/customise'
+      fullPath: '/app/affiliates/customise'
+      preLoaderRoute: typeof AuthenticatedAppAffiliatesCustomiseRouteImport
+      parentRoute: typeof AuthenticatedAppAffiliatesRoute
+    }
     '/_authenticated/app/admin/email-templates': {
       id: '/_authenticated/app/admin/email-templates'
       path: '/admin/email-templates'
@@ -1567,6 +1739,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppAdminHelpArticlesRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/affiliates/programs/$id/edit': {
+      id: '/_authenticated/app/affiliates/programs/$id/edit'
+      path: '/$id/edit'
+      fullPath: '/app/affiliates/programs/$id/edit'
+      preLoaderRoute: typeof AuthenticatedAppAffiliatesProgramsIdEditRouteImport
+      parentRoute: typeof AuthenticatedAppAffiliatesProgramsRoute
+    }
     '/_authenticated/app/admin/help/articles/$id': {
       id: '/_authenticated/app/admin/help/articles/$id'
       path: '/$id'
@@ -1576,6 +1755,48 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface AuthenticatedAppAffiliatesProgramsRouteChildren {
+  AuthenticatedAppAffiliatesProgramsIdEditRoute: typeof AuthenticatedAppAffiliatesProgramsIdEditRoute
+}
+
+const AuthenticatedAppAffiliatesProgramsRouteChildren: AuthenticatedAppAffiliatesProgramsRouteChildren =
+  {
+    AuthenticatedAppAffiliatesProgramsIdEditRoute:
+      AuthenticatedAppAffiliatesProgramsIdEditRoute,
+  }
+
+const AuthenticatedAppAffiliatesProgramsRouteWithChildren =
+  AuthenticatedAppAffiliatesProgramsRoute._addFileChildren(
+    AuthenticatedAppAffiliatesProgramsRouteChildren,
+  )
+
+interface AuthenticatedAppAffiliatesRouteChildren {
+  AuthenticatedAppAffiliatesCustomiseRoute: typeof AuthenticatedAppAffiliatesCustomiseRoute
+  AuthenticatedAppAffiliatesDirectoryRoute: typeof AuthenticatedAppAffiliatesDirectoryRoute
+  AuthenticatedAppAffiliatesPayoutsRoute: typeof AuthenticatedAppAffiliatesPayoutsRoute
+  AuthenticatedAppAffiliatesProgramsRoute: typeof AuthenticatedAppAffiliatesProgramsRouteWithChildren
+  AuthenticatedAppAffiliatesSettingsRoute: typeof AuthenticatedAppAffiliatesSettingsRoute
+}
+
+const AuthenticatedAppAffiliatesRouteChildren: AuthenticatedAppAffiliatesRouteChildren =
+  {
+    AuthenticatedAppAffiliatesCustomiseRoute:
+      AuthenticatedAppAffiliatesCustomiseRoute,
+    AuthenticatedAppAffiliatesDirectoryRoute:
+      AuthenticatedAppAffiliatesDirectoryRoute,
+    AuthenticatedAppAffiliatesPayoutsRoute:
+      AuthenticatedAppAffiliatesPayoutsRoute,
+    AuthenticatedAppAffiliatesProgramsRoute:
+      AuthenticatedAppAffiliatesProgramsRouteWithChildren,
+    AuthenticatedAppAffiliatesSettingsRoute:
+      AuthenticatedAppAffiliatesSettingsRoute,
+  }
+
+const AuthenticatedAppAffiliatesRouteWithChildren =
+  AuthenticatedAppAffiliatesRoute._addFileChildren(
+    AuthenticatedAppAffiliatesRouteChildren,
+  )
 
 interface AuthenticatedAppPagesRouteChildren {
   AuthenticatedAppPagesBulkRoute: typeof AuthenticatedAppPagesBulkRoute
@@ -1631,6 +1852,8 @@ const AuthenticatedAppAdminHelpArticlesRouteWithChildren =
   )
 
 interface AuthenticatedAppRouteChildren {
+  AuthenticatedAppAddonsRoute: typeof AuthenticatedAppAddonsRoute
+  AuthenticatedAppAffiliatesRoute: typeof AuthenticatedAppAffiliatesRouteWithChildren
   AuthenticatedAppBillingRoute: typeof AuthenticatedAppBillingRoute
   AuthenticatedAppCoachRoute: typeof AuthenticatedAppCoachRoute
   AuthenticatedAppOnboardingRoute: typeof AuthenticatedAppOnboardingRoute
@@ -1682,6 +1905,8 @@ interface AuthenticatedAppRouteChildren {
 }
 
 const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
+  AuthenticatedAppAddonsRoute: AuthenticatedAppAddonsRoute,
+  AuthenticatedAppAffiliatesRoute: AuthenticatedAppAffiliatesRouteWithChildren,
   AuthenticatedAppBillingRoute: AuthenticatedAppBillingRoute,
   AuthenticatedAppCoachRoute: AuthenticatedAppCoachRoute,
   AuthenticatedAppOnboardingRoute: AuthenticatedAppOnboardingRoute,
@@ -1803,6 +2028,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignupRoute: SignupRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TermsRoute: TermsRoute,
+  ApplySlugRoute: ApplySlugRoute,
   PSlugRoute: PSlugRoute,
   ApiPublicDomainTokenRoute: ApiPublicDomainTokenRoute,
   ApiPublicPageLookupRoute: ApiPublicPageLookupRoute,

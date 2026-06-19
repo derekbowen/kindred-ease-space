@@ -34,6 +34,11 @@ import {
   LayoutTemplate,
   type LucideIcon,
   ThumbsUp,
+  Share2,
+  Megaphone,
+  Wallet,
+  Palette,
+  Store,
 } from "lucide-react";
 
 export type NavItem = {
@@ -95,8 +100,20 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    label: "Affiliates",
+    items: [
+      { to: "/app/affiliates", label: "Affiliate Dashboard", icon: Share2, exact: true },
+      { to: "/app/affiliates/programs", label: "Programs", icon: Megaphone },
+      { to: "/app/affiliates/directory", label: "Affiliates", icon: Users },
+      { to: "/app/affiliates/payouts", label: "Payouts", icon: Wallet },
+      { to: "/app/affiliates/customise", label: "Customise", icon: Palette },
+      { to: "/app/affiliates/settings", label: "Affiliate Settings", icon: Settings },
+    ],
+  },
+  {
     label: "Account",
     items: [
+      { to: "/app/addons", label: "Add-ons", icon: Store },
       { to: "/app/billing", label: "Billing & Plans", icon: CreditCard },
       { to: "/app/settings", label: "Workspace Settings", icon: Settings },
       { to: "/app/settings/ai", label: "AI Providers", icon: Sparkles },
