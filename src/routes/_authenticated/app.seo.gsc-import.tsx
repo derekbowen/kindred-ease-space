@@ -15,6 +15,15 @@ export const Route = createFileRoute("/_authenticated/app/seo/gsc-import")({
 
 type ParsedRow = { url_path: string; query: string; clicks: number; impressions: number; ctr: number | null; position: number | null };
 
+// GSC exports CTR as "2.2%"; store it as a 0-1 fraction (0.022) so downstream
+// views (which render ctr * 100) show 2.2%, not 220%.
+function parseCtr(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const n = parseFloat(raw.replace("%", ""));
+  if (!isFinite(n)) return null;
+  return raw.includes("%") || n > 1 ? n / 100 : n;
+}
+
 function parseCsv(csv: string): ParsedRow[] {
   const lines = csv.trim().split(/\r?\n/);
   if (!lines.length) return [];
@@ -37,7 +46,7 @@ function parseCsv(csv: string): ParsedRow[] {
       query: cols[iQuery],
       clicks: parseInt(cols[iClicks] || "0", 10) || 0,
       impressions: parseInt(cols[iImpr] || "0", 10) || 0,
-      ctr: cols[iCtr] ? parseFloat(cols[iCtr].replace("%", "")) || null : null,
+      ctr: parseCtr(cols[iCtr]),
       position: cols[iPos] ? parseFloat(cols[iPos]) || null : null,
     });
   }

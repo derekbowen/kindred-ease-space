@@ -3,6 +3,13 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runFullAudit, type AuditRunSummary } from "./admin-canonical-audit.server";
 
+// This tool crawls the live platform site (up to 200 outbound fetches) and reads
+// a global, non-tenant audit table — so it's platform-admin only, not per-tenant.
+async function assertAdmin(userId: string) {
+  const { data, error } = await supabaseAdmin.rpc("has_role", { _user_id: userId, _role: "admin" });
+  if (error || !data) throw new Error("Forbidden — platform admin only");
+}
+
 const EMPTY_SUMMARY: AuditRunSummary = {
   startedAt: new Date(0).toISOString(),
   finishedAt: new Date(0).toISOString(),
@@ -16,7 +23,8 @@ const EMPTY_SUMMARY: AuditRunSummary = {
 /** Trigger a fresh audit. Stores the result and returns it. */
 export const runCanonicalAudit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async (): Promise<AuditRunSummary> => {
+  .handler(async ({ context }): Promise<AuditRunSummary> => {
+    await assertAdmin(context.userId);
     try {
       const summary = await runFullAudit();
       const { error } = await supabaseAdmin.from("canonical_audit_runs").insert({
@@ -39,7 +47,8 @@ export const runCanonicalAudit = createServerFn({ method: "POST" })
 /** Most recent stored audit run, or an empty summary. */
 export const getLatestCanonicalAudit = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async (): Promise<AuditRunSummary> => {
+  .handler(async ({ context }): Promise<AuditRunSummary> => {
+    await assertAdmin(context.userId);
     try {
       const { data, error } = await supabaseAdmin
         .from("canonical_audit_runs")

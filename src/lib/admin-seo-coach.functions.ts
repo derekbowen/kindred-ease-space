@@ -27,7 +27,7 @@ async function buildSnapshot(workspaceId: string): Promise<string> {
       const { count } = await sb().from("content_404_log")
         .select("*", { count: "exact", head: true })
         .eq("workspace_id", workspaceId)
-        .eq("resolved", false);
+        .is("resolved_at", null);
       return count ?? 0;
     }, 0),
 

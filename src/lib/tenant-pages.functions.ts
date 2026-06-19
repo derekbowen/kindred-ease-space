@@ -120,11 +120,12 @@ export const deleteTenantPage = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertMember(data.workspaceId, context.userId);
-    await sb()
+    const { error } = await sb()
       .from("tenant_pages")
       .delete()
       .eq("id", data.id)
       .eq("workspace_id", data.workspaceId);
+    if (error) throw new Error(error.message);
     return { ok: true as const };
   });
 

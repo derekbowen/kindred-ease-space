@@ -1,11 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
 import { getMe } from "@/lib/auth.functions";
 import { WorkspaceBrandingCard } from "@/components/WorkspaceBrandingCard";
 
@@ -61,12 +60,8 @@ function SettingsPage() {
               )}
             </div>
           </div>
-          <Button
-            variant="outline"
-            disabled
-            onClick={() => toast.info("Domain verification ships next.")}
-          >
-            Verify with DNS TXT
+          <Button variant="outline" asChild>
+            <Link to="/app/settings/domains">Manage &amp; verify domains</Link>
           </Button>
         </CardContent>
       </Card>
