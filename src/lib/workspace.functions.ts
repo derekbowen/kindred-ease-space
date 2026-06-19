@@ -47,7 +47,11 @@ export const createWorkspace = createServerFn({ method: "POST" })
 
     if (error || !ws) {
       console.error("[createWorkspace] insert error", error);
-      throw new Error("Failed to create workspace. Please try again.");
+      // Surface the underlying reason — a generic message makes a stuck signup
+      // impossible to diagnose for the user (and us).
+      throw new Error(
+        error?.message ? `Couldn't create workspace: ${error.message}` : "Failed to create workspace. Please try again.",
+      );
     }
 
     await supabaseAdmin.from("workspace_members").insert({
