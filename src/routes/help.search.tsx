@@ -75,7 +75,8 @@ function SearchPage() {
             {categories.map((c: any) => (
               <Link
                 key={c.id}
-                to={`/help/${c.slug}`}
+                to="/help/$category"
+                params={{ category: c.slug }}
                 className="rounded-full border border-border px-3 py-1 text-sm hover:border-orange-500 hover:text-orange-500"
               >
                 {c.name}
@@ -112,7 +113,8 @@ function DidYouMean({
         {suggestions.map((s) => (
           <li key={`${s.category_slug}/${s.slug}`}>
             <Link
-              to={`/help/${s.category_slug}/${s.slug}`}
+              to="/help/$category/$article"
+              params={{ category: s.category_slug, article: s.slug }}
               className="inline-flex items-center rounded-full bg-background border border-border px-3 py-1 text-sm hover:border-orange-500 hover:text-orange-500"
             >
               {s.title}

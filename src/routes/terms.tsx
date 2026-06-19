@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { LegalLayout } from "@/components/LegalLayout";
+import { canonicalUrl } from "@/lib/canonical";
 
 const EFFECTIVE = "May 11, 2026";
 
@@ -10,8 +11,10 @@ export const Route = createFileRoute("/terms")({
       { name: "description", content: "Terms of Service for founders.click, a product of 10000 Solutions LLC." },
       { property: "og:title", content: "Terms of Service — founders.click" },
       { property: "og:description", content: "Terms of Service for founders.click, a product of 10000 Solutions LLC." },
+      { property: "og:url", content: canonicalUrl("/terms") },
       { name: "robots", content: "index, follow" },
     ],
+    links: [{ rel: "canonical", href: canonicalUrl("/terms") }],
   }),
   component: TermsPage,
 });

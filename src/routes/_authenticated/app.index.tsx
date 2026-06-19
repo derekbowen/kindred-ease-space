@@ -107,7 +107,7 @@ function DashboardPage() {
             <CardTitle className="text-3xl">{data?.stats.publishedPages ?? 0}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            <Link to="/app/content" className="hover:text-foreground">Open Content →</Link>
+            <Link to="/app/pages" className="hover:text-foreground">Open Pages →</Link>
           </CardContent>
         </Card>
 
@@ -119,7 +119,7 @@ function DashboardPage() {
             <CardTitle className="text-3xl">{data?.stats.leads ?? 0}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            <Link to="/app/users-ops" className="hover:text-foreground">Open Users & Ops →</Link>
+            <Link to="/app/ops/lead-inbox" className="hover:text-foreground">Open Lead Inbox →</Link>
           </CardContent>
         </Card>
       </div>

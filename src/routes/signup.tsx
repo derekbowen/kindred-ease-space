@@ -22,11 +22,12 @@ function SignupPage() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [confirmEmail, setConfirmEmail] = useState(false);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -39,8 +40,15 @@ function SignupPage() {
       toast.error(error.message);
       return;
     }
-    toast.success("Check your email to confirm your account.");
-    navigate({ to: "/app/onboarding" });
+    // When email confirmation is required, signUp returns no session — keep the
+    // user here with a "check your email" message instead of bouncing them into
+    // the app only to be kicked to /login by the auth guard.
+    if (data.session) {
+      navigate({ to: "/app/onboarding" });
+    } else {
+      setConfirmEmail(true);
+      toast.success("Check your email to confirm your account.");
+    }
   };
 
   const onGoogle = async () => {
@@ -68,6 +76,18 @@ function SignupPage() {
           </Link>
           <p className="mt-2 text-sm text-muted-foreground">14-day free trial. No card required.</p>
         </div>
+        {confirmEmail ? (
+          <div className="space-y-4 text-center">
+            <p className="text-sm text-muted-foreground">
+              We sent a confirmation link to <span className="font-medium text-foreground">{email}</span>. Click it to
+              activate your workspace, then sign in.
+            </p>
+            <Button asChild className="w-full">
+              <Link to="/login">Go to sign in</Link>
+            </Button>
+          </div>
+        ) : (
+          <>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Your name</Label>
@@ -92,6 +112,8 @@ function SignupPage() {
           Already have an account?{" "}
           <Link to="/login" className="text-orange-500 hover:underline">Sign in</Link>
         </div>
+          </>
+        )}
       </div>
     </div>
   );

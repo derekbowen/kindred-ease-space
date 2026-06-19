@@ -1,8 +1,27 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequestHeader } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const sb = () => supabaseAdmin as any;
+
+/**
+ * Resolve the public request host server-side. Route loaders run during SSR
+ * where `window` is undefined, so the host MUST come from request headers
+ * (Cloudflare sets `x-forwarded-host` to the original tenant domain), not from
+ * the client. Returns undefined when called outside a request context.
+ */
+function resolveRequestHost(): string | undefined {
+  try {
+    const raw = getRequestHeader("x-forwarded-host") || getRequestHeader("host");
+    if (!raw) return undefined;
+    // Mirror window.location.host (hostname[:port]) but drop a trailing port so
+    // it matches the stored domain. Take the first value if a list is present.
+    return raw.split(",")[0]!.trim().toLowerCase().replace(/:\d+$/, "") || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export type PublicListing = {
   id: string;
@@ -40,11 +59,14 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
       })
       .parse(d),
   )
-  .handler(async ({ data }): Promise<{ page: PublicTenantPage | null }> => {
+  .handler(async ({ data }): Promise<{ page: PublicTenantPage | null; host: string | null }> => {
     let workspaceId = data.workspaceId ?? null;
 
-    if (!workspaceId && data.host) {
-      const { data: ws } = await sb().rpc("workspace_for_host", { _host: data.host });
+    // Prefer the host the client passed (if any), but always fall back to the
+    // real request host resolved server-side — the loader can't read it during SSR.
+    const host = data.host ?? resolveRequestHost() ?? null;
+    if (!workspaceId && host) {
+      const { data: ws } = await sb().rpc("workspace_for_host", { _host: host });
       if (ws) workspaceId = ws as string;
     }
     // Fallback: if there is exactly one workspace in the project, use it
@@ -52,7 +74,7 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
       const { data: rows } = await sb().from("workspaces").select("id").limit(2);
       if (rows && rows.length === 1) workspaceId = rows[0].id;
     }
-    if (!workspaceId) return { page: null };
+    if (!workspaceId) return { page: null, host };
 
     const { data: page } = await sb()
       .from("tenant_pages")
@@ -64,7 +86,7 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
       .eq("status", "published")
       .maybeSingle();
 
-    if (!page) return { page: null };
+    if (!page) return { page: null, host };
 
     const f = (page.listing_filter ?? {}) as Record<string, any>;
     let q = sb()
@@ -93,5 +115,6 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
         workspace_name: (page.workspaces as any)?.name ?? "",
         listings: (listings ?? []) as PublicListing[],
       },
+      host,
     };
   });

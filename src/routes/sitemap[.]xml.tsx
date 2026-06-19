@@ -1,7 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { canonicalUrl } from "@/lib/canonical";
 
-const ROUTES = ["/", "/login", "/signup"];
+// Only public, indexable routes. Auth pages (/login, /signup, /reset-password)
+// are intentionally excluded — they're Disallow'd in robots.txt.
+const ROUTES = ["/", "/help", "/privacy", "/terms"];
 
 export const Route = createFileRoute("/sitemap.xml")({
   server: {

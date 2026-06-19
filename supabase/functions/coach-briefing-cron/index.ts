@@ -10,6 +10,23 @@ const cors = {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
+
+  // This function runs with verify_jwt = false (so pg_cron can call it), which
+  // leaves it open to the internet. When CRON_SECRET is configured, require it —
+  // this gates the otherwise-unauthenticated endpoint that fans out expensive
+  // LLM calls across every workspace. (Set CRON_SECRET on the function, the
+  // pg_cron job header, and the app; until then behaviour is unchanged.)
+  const CRON_SECRET = Deno.env.get("CRON_SECRET");
+  if (CRON_SECRET) {
+    const provided = req.headers.get("x-cron-secret");
+    if (provided !== CRON_SECRET) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
+    }
+  }
+
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");

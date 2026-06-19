@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { assertWorkspaceMember } from "@/lib/admin-helpers.functions";
 import { z } from "zod";
 
 export const listConversations = createServerFn({ method: "POST" })
@@ -101,13 +102,18 @@ export const getTodayBriefing = createServerFn({ method: "POST" })
 export const generateBriefingNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ workspaceId: z.string().uuid() }).parse)
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    // Without this, any authenticated user could force-regenerate (and overwrite)
+    // another workspace's briefing — and drive LLM cost — via an arbitrary id.
+    await assertWorkspaceMember(data.workspaceId, context.userId);
     const url = `${process.env.SUPABASE_URL}/functions/v1/coach-briefing-cron`;
     const r = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         apikey: process.env.SUPABASE_PUBLISHABLE_KEY ?? "",
+        // Forwarded so the cron's optional shared-secret gate accepts this call.
+        "x-cron-secret": process.env.CRON_SECRET ?? "",
       },
       body: JSON.stringify({ workspace_id: data.workspaceId }),
     });

@@ -2,6 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { listAllPublishedArticleSlugs, listCategories } from "@/lib/help.server";
 import { canonicalUrl } from "@/lib/canonical";
 
+function escapeXml(s: string): string {
+  return s.replace(/[<>&'"]/g, (c) =>
+    ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[c]!,
+  );
+}
+
 export const Route = createFileRoute("/help/sitemap.xml")({
   server: {
     handlers: {
@@ -21,7 +27,7 @@ export const Route = createFileRoute("/help/sitemap.xml")({
           ];
           const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls.map((u) => `  <url><loc>${u.loc}</loc><lastmod>${u.lastmod}</lastmod></url>`).join("\n")}
+${urls.map((u) => `  <url><loc>${escapeXml(u.loc)}</loc><lastmod>${u.lastmod}</lastmod></url>`).join("\n")}
 </urlset>`;
           return new Response(xml, { headers: { "Content-Type": "application/xml; charset=utf-8" } });
         } catch (e) {

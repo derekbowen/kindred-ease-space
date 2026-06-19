@@ -239,8 +239,8 @@ function ArticleRow({ a }: { a: ArticleStat }) {
               {a.status}
             </Badge>
             <Link
-              to="/help/$slug"
-              params={{ slug: a.slug }}
+              to="/help/$category/$article"
+              params={{ category: a.category_slug, article: a.slug }}
               className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
             >
               <ExternalLink className="h-3 w-3" /> View

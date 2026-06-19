@@ -64,7 +64,8 @@ function CategoryPage() {
           {otherCategories.map((c: any) => (
             <Link
               key={c.id}
-              to={`/help/${c.slug}`}
+              to="/help/$category"
+              params={{ category: c.slug }}
               className="block text-sm text-muted-foreground hover:text-foreground py-1.5"
             >
               {c.name}

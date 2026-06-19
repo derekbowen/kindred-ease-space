@@ -11,6 +11,7 @@ import {
 import appCss from "../styles.css?url";
 import { installServerFnAuthFetch } from "@/integrations/supabase/server-fn-fetch";
 import { I18nProvider } from "@/lib/i18n";
+import { canonicalUrl } from "@/lib/canonical";
 
 if (typeof window !== "undefined") {
   installServerFnAuthFetch();
@@ -78,18 +79,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "founders.click — The growth engine for Sharetribe marketplaces" },
+      { name: "description", content: "AI-powered SEO, content factory, lead inbox and ops dashboard for Sharetribe marketplace founders. Replace your agency. Move at AI speed." },
+      { name: "author", content: "founders.click" },
+      { property: "og:title", content: "founders.click — The growth engine for Sharetribe marketplaces" },
+      { property: "og:description", content: "AI-powered SEO, content factory, lead inbox and ops dashboard for Sharetribe marketplace founders." },
       { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
-      { name: "twitter:title", content: "Lovable App" },
-      { name: "twitter:description", content: "Lovable Generated Project" },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/33f9e8d7-fb5b-4dcd-85f2-294ff266c0c4/id-preview-c0e697cc--1e32d901-e1cf-436a-ad20-853b1177ad2e.lovable.app-1778460267965.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/33f9e8d7-fb5b-4dcd-85f2-294ff266c0c4/id-preview-c0e697cc--1e32d901-e1cf-436a-ad20-853b1177ad2e.lovable.app-1778460267965.png" },
+      { property: "og:site_name", content: "founders.click" },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "founders.click — Growth engine for Sharetribe" },
+      { name: "twitter:description", content: "AI SEO + content factory + lead inbox for marketplace founders." },
+      { property: "og:image", content: canonicalUrl("/product-demo-poster.jpg") },
+      { name: "twitter:image", content: canonicalUrl("/product-demo-poster.jpg") },
     ],
     links: [
       {
