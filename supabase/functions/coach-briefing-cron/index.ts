@@ -29,7 +29,10 @@ Deno.serve(async (req) => {
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+  const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
+  // Briefings are an internal platform cost (not billed to clients), so use a
+  // cheap Flash model regardless of the per-client default.
+  const BRIEFING_MODEL = "google/gemini-3-flash-preview";
   const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
   try {
@@ -99,14 +102,14 @@ Deno.serve(async (req) => {
           total_listings: listings.data?.length ?? 0,
         };
 
-        // Ask LLM for top 3 insights — use platform key (briefings are an internal feature)
+        // Ask LLM for top 3 insights — platform OpenRouter key (internal feature).
         let insights: Array<Record<string, unknown>> = [];
-        if (LOVABLE_API_KEY) {
-          const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        if (OPENROUTER_API_KEY) {
+          const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
-            headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+            headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
             body: JSON.stringify({
-              model: "google/gemini-3-flash-preview",
+              model: BRIEFING_MODEL,
               messages: [
                 {
                   role: "system",

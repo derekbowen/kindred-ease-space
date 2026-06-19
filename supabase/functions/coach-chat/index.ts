@@ -3,6 +3,11 @@
 // adapters as ai-proxy. Tool loop max 8 iterations.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://esm.sh/zod@3.23.8";
+import {
+  OPENROUTER_BASE,
+  PLATFORM_DEFAULT_MODEL,
+  creditsForUsage,
+} from "../_shared/ai-pricing.ts";
 
 const RequestSchema = z.object({
   conversation_id: z.string().uuid(),
@@ -21,8 +26,6 @@ const cors = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-
-const PLATFORM_DEFAULT_MODEL = "google/gemini-3-flash-preview";
 
 type ChatMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -273,7 +276,7 @@ Deno.serve(async (req) => {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const PUBLISHABLE = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
-  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+  const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
   const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
   try {
@@ -353,8 +356,9 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
       .from("tenant_ai_credentials").select("provider, status").eq("workspace_id", body.workspace_id);
     const validByok = (creds ?? []).find((c) => c.status === "valid");
 
-    let apiBase = "https://ai.gateway.lovable.dev/v1";
-    let apiKey = LOVABLE_API_KEY ?? "";
+    // Default to the platform path (OpenRouter, billed to credits).
+    let apiBase = OPENROUTER_BASE;
+    let apiKey = OPENROUTER_API_KEY ?? "";
     let model = PLATFORM_DEFAULT_MODEL;
     let usedByok = false;
 
@@ -368,13 +372,13 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
         if (validByok.provider === "openai") {
           apiBase = "https://api.openai.com/v1"; model = "gpt-4o-mini";
         } else if (validByok.provider === "openrouter") {
-          apiBase = "https://openrouter.ai/api/v1"; model = "openai/gpt-4o-mini";
+          apiBase = "https://openrouter.ai/api/v1"; model = "google/gemini-3.1-pro-preview";
         }
-        // Anthropic / Google fall through to gateway with platform key for tool-loop simplicity (v1)
-        // Future: native adapters with tool support
+        // Anthropic / Google BYOK route back to the platform OpenRouter key for
+        // tool-loop simplicity (v1). Future: native tool-calling adapters.
         if (validByok.provider === "anthropic" || validByok.provider === "google") {
-          apiBase = "https://ai.gateway.lovable.dev/v1";
-          apiKey = LOVABLE_API_KEY ?? "";
+          apiBase = OPENROUTER_BASE;
+          apiKey = OPENROUTER_API_KEY ?? "";
           model = PLATFORM_DEFAULT_MODEL;
           usedByok = false;
         }
@@ -385,6 +389,25 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
       return new Response(JSON.stringify({ error: "No AI provider configured" }), {
         status: 500, headers: { ...cors, "Content-Type": "application/json" },
       });
+    }
+
+    // Platform usage is billed to purchased credits. Pre-check balance (after the
+    // free trial quota) so we don't run an expensive tool loop a client can't
+    // cover. No hard cap — an empty balance just means "top up to continue".
+    if (!usedByok) {
+      const { error: qErr } = await admin.rpc("consume_platform_ai_credit", {
+        _workspace_id: body.workspace_id,
+      });
+      if (qErr && typeof qErr.message === "string" && qErr.message.includes("platform_ai_quota_exhausted")) {
+        const { data: bal } = await admin
+          .from("credit_balances").select("balance").eq("workspace_id", body.workspace_id).maybeSingle();
+        if (!bal || bal.balance <= 0) {
+          return new Response(
+            JSON.stringify({ error: "Out of AI credits. Top up in Billing to keep coaching.", code: "insufficient_credits" }),
+            { status: 402, headers: { ...cors, "Content-Type": "application/json" } },
+          );
+        }
+      }
     }
 
     // Set up SSE stream
@@ -449,10 +472,49 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
               .update({ updated_at: new Date().toISOString() })
               .eq("id", body.conversation_id);
 
+            // Settle platform credits for the entire turn (all tool-loop
+            // iterations) and log usage. BYOK turns bill the tenant's own key.
+            let creditsCharged = 0;
+            if (!usedByok) {
+              creditsCharged = creditsForUsage(model, totalPromptTokens, totalCompletionTokens);
+              if (creditsCharged > 0) {
+                const { error: dErr } = await admin.rpc("deduct_credits", {
+                  _workspace_id: body.workspace_id,
+                  _amount: creditsCharged,
+                  _reason: "ai_usage",
+                  _ai_model: model,
+                  _ref_type: "coach",
+                  _ref_id: body.conversation_id,
+                  _metadata: { provider: "platform" },
+                });
+                if (dErr) {
+                  const { data: bal2 } = await admin
+                    .from("credit_balances").select("balance").eq("workspace_id", body.workspace_id).maybeSingle();
+                  const remaining = Math.max(0, bal2?.balance ?? 0);
+                  if (remaining > 0) {
+                    await admin.rpc("deduct_credits", {
+                      _workspace_id: body.workspace_id, _amount: remaining, _reason: "ai_usage",
+                      _ai_model: model, _ref_type: "coach", _ref_id: body.conversation_id,
+                      _metadata: { provider: "platform", clamped: true },
+                    });
+                  }
+                  creditsCharged = remaining;
+                }
+              }
+            }
+            await admin.from("ai_usage_log").insert({
+              workspace_id: body.workspace_id, provider: usedByok ? "byok" : "platform",
+              model, feature: "coach",
+              prompt_tokens: totalPromptTokens, completion_tokens: totalCompletionTokens,
+              total_tokens: totalPromptTokens + totalCompletionTokens,
+              used_byok: usedByok, status: "ok",
+            });
+
             send("done", {
               prompt_tokens: totalPromptTokens,
               completion_tokens: totalCompletionTokens,
               used_byok: usedByok,
+              credits_charged: creditsCharged,
               model,
             });
             controller.close();
