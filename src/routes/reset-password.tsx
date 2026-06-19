@@ -19,9 +19,18 @@ function ResetPasswordPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.location.hash.includes("type=recovery")) {
+    if (typeof window === "undefined") return;
+    // Implicit flow returns "#...type=recovery"; PKCE returns "?code=...". In both
+    // cases supabase-js fires a PASSWORD_RECOVERY auth event once the recovery
+    // session is established, which is the only reliable signal (the URL hash is
+    // cleared by detectSessionInUrl before this effect may run).
+    if (window.location.hash.includes("type=recovery")) {
       setMode("update");
     }
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") setMode("update");
+    });
+    return () => data.subscription.unsubscribe();
   }, []);
 
   const onRequest = async (e: React.FormEvent) => {

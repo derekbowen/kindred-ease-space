@@ -5,7 +5,8 @@ import type { HelpArticleListItem } from "@/lib/help.server";
 export function ArticleCard({ article, showCategory = false }: { article: HelpArticleListItem; showCategory?: boolean }) {
   return (
     <Link
-      to={`/help/${article.category_slug}/${article.slug}`}
+      to="/help/$category/$article"
+      params={{ category: article.category_slug, article: article.slug }}
       className="group block rounded-lg border border-border bg-card p-5 hover:border-orange-500/40 transition-colors"
     >
       {showCategory && (
@@ -33,7 +34,8 @@ export function ArticleRow({ article }: { article: HelpArticleListItem }) {
   const snippet = article.headline ?? article.excerpt ?? null;
   return (
     <Link
-      to={`/help/${article.category_slug}/${article.slug}`}
+      to="/help/$category/$article"
+      params={{ category: article.category_slug, article: article.slug }}
       className="group flex items-start gap-4 py-4 border-b border-border last:border-0 hover:bg-accent/30 -mx-3 px-3 rounded transition-colors"
     >
       <div className="flex-1 min-w-0">

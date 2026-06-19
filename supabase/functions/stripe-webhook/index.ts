@@ -62,13 +62,19 @@ Deno.serve(async (req) => {
         if (!workspace_id) break;
         const priceId = sub.items.data[0]?.price.id ?? null;
         const tier = sub.metadata?.plan_tier ?? await resolvePlanTierFromPrice(stripe, priceId);
+        // current_period_end can be absent on some subscription states; guard
+        // against new Date(NaN) which would throw and force endless Stripe retries.
+        const periodEnd =
+          typeof sub.current_period_end === "number"
+            ? new Date(sub.current_period_end * 1000).toISOString()
+            : null;
         await admin.from("subscriptions").upsert({
           workspace_id,
           stripe_subscription_id: sub.id,
           stripe_price_id: priceId,
           plan_tier: tier,
           status: sub.status,
-          current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
+          current_period_end: periodEnd,
           cancel_at_period_end: sub.cancel_at_period_end,
         }, { onConflict: "stripe_subscription_id" });
         break;
@@ -77,19 +83,40 @@ Deno.serve(async (req) => {
         const inv = event.data.object as Stripe.Invoice;
         const subId = inv.subscription as string | null;
         if (!subId) break;
+
+        // Resolve workspace + tier from our local row, but fall back to Stripe
+        // directly when the subscription.created event hasn't been processed yet
+        // (Stripe does not guarantee event ordering) — otherwise the first
+        // month's credits would be silently lost.
+        let workspace_id: string | null = null;
+        let plan_tier: string | null = null;
         const { data: sub } = await admin.from("subscriptions")
           .select("workspace_id, plan_tier").eq("stripe_subscription_id", subId).maybeSingle();
-        if (!sub?.workspace_id) break;
-        const credits = creditsForTier(sub.plan_tier);
+        if (sub?.workspace_id) {
+          workspace_id = sub.workspace_id;
+          plan_tier = sub.plan_tier;
+        } else {
+          const stripeSub = await stripe.subscriptions.retrieve(subId);
+          workspace_id = stripeSub.metadata?.workspace_id ?? null;
+          const priceId = stripeSub.items.data[0]?.price.id ?? null;
+          plan_tier = stripeSub.metadata?.plan_tier ?? (await resolvePlanTierFromPrice(stripe, priceId));
+        }
+        if (!workspace_id) break;
+
+        const credits = creditsForTier(plan_tier);
         if (credits > 0) {
+          // grant_credits is idempotent on (_reason, _ref_type, _ref_id), so a
+          // redelivered invoice.paid will not double-grant.
           await admin.rpc("grant_credits", {
-            _workspace_id: sub.workspace_id,
+            _workspace_id: workspace_id,
             _amount: credits,
             _reason: "monthly_grant",
             _ref_type: "stripe_invoice",
             _ref_id: inv.id,
-            _metadata: { plan_tier: sub.plan_tier },
+            _metadata: { plan_tier },
           });
+        } else {
+          console.warn(`invoice.paid: tier "${plan_tier}" resolved to 0 credits for sub ${subId}`);
         }
         break;
       }

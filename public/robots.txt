@@ -5,4 +5,5 @@ Disallow: /login
 Disallow: /signup
 Disallow: /reset-password
 
-Sitemap: https://founders.click/sitemap.xml
+Sitemap: https://www.founders.click/sitemap.xml
+Sitemap: https://www.founders.click/help/sitemap.xml

@@ -1,10 +1,18 @@
 // Unified AI proxy with BYOK -> platform fallback.
-// Tries the workspace's own provider key first; falls back to Lovable AI Gateway
-// (deducting one platform credit) if no valid BYOK key is configured.
+// Tries the workspace's own provider key first; otherwise uses the platform
+// OpenRouter key and bills the workspace's purchased credits at a markup
+// (after a small free trial quota). No hard cap — out of credits => top up.
 //
 // Surfaces real provider errors verbatim (no swallowing), but never logs the key.
 // Logs every call (success or failure) into ai_usage_log.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  OPENROUTER_BASE,
+  resolvePlatformModel,
+  estimateCostMicros,
+  creditsForUsage,
+  estimateCreditsBeforeCall,
+} from "../_shared/ai-pricing.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -25,30 +33,12 @@ type Body = {
   preferProvider?: Provider; // optional explicit choice
 };
 
-// Approximate per-1K-token costs in USD micros (1 USD = 1_000_000 micros).
-// Used to estimate cost when providers don't report it.
-const COST_PER_1K_MICROS: Record<string, { in: number; out: number }> = {
-  "gpt-4o-mini": { in: 150, out: 600 },
-  "gpt-5-mini": { in: 250, out: 2000 },
-  "claude-haiku-4-5": { in: 1000, out: 5000 },
-  "gemini-2.5-flash": { in: 75, out: 300 },
-  "google/gemini-3-flash-preview": { in: 100, out: 400 },
-  default: { in: 500, out: 1500 },
-};
-
 const PROVIDER_DEFAULT_MODEL: Record<Exclude<Provider, "platform">, string> = {
   openai: "gpt-5-mini",
   anthropic: "claude-haiku-4-5",
   google: "gemini-2.5-flash",
-  openrouter: "google/gemini-2.5-flash",
+  openrouter: "google/gemini-3.1-pro-preview",
 };
-
-const PLATFORM_DEFAULT_MODEL = "google/gemini-3-flash-preview";
-
-function estimateCostMicros(model: string, ptoks: number, ctoks: number): number {
-  const c = COST_PER_1K_MICROS[model] ?? COST_PER_1K_MICROS.default;
-  return Math.round((ptoks * c.in + ctoks * c.out) / 1000);
-}
 
 // ---------- provider adapters ----------
 
@@ -142,7 +132,7 @@ Deno.serve(async (req) => {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const PUBLISHABLE = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
@@ -180,40 +170,61 @@ Deno.serve(async (req) => {
       .select("provider, status, default_models")
       .eq("workspace_id", body.workspaceId);
 
+    // Honor an explicit choice only if it's "platform" or a *valid* configured
+    // credential — never let the caller force an unconfigured/invalid provider
+    // (or pick platform to spend platform credits when they have their own key).
+    const validCreds = (creds ?? []).filter((c) => c.status === "valid");
     let provider: Provider = "platform";
-    if (body.preferProvider) {
+    if (body.preferProvider === "platform") {
+      provider = "platform";
+    } else if (body.preferProvider && validCreds.some((c) => c.provider === body.preferProvider)) {
       provider = body.preferProvider;
-    } else {
-      const valid = (creds ?? []).find((c) => c.status === "valid");
-      if (valid) provider = valid.provider as Provider;
+    } else if (validCreds[0]) {
+      provider = validCreds[0].provider as Provider;
     }
 
     let result: { text: string; promptTokens: number; completionTokens: number; model: string };
     let usedByok = false;
+    let platformBilling: "free_quota" | "credits" | null = null;
 
     if (provider === "platform") {
-      // Fallback path: deduct one platform credit, then call Lovable AI Gateway.
-      if (!LOVABLE_API_KEY) throw new Error("Platform AI key not configured");
+      // Platform path: OpenRouter key, billed to the workspace's credits.
+      if (!OPENROUTER_API_KEY) throw new Error("Platform AI key not configured");
+      const model = resolvePlatformModel(body.model);
+
+      // 1. Spend the free trial quota first (a handful of free platform calls).
       const { error: qErr } = await admin.rpc("consume_platform_ai_credit", {
         _workspace_id: body.workspaceId,
       });
-      if (qErr) {
-        const msg = qErr.message?.includes("platform_ai_quota_exhausted")
-          ? "Free AI quota exhausted. Add your own API key in Settings → AI to continue."
-          : qErr.message;
-        await admin.from("ai_usage_log").insert({
-          workspace_id: body.workspaceId, user_id: userId, provider: "platform",
-          model: PLATFORM_DEFAULT_MODEL, feature: body.feature ?? null,
-          status: "quota_exhausted", error: msg, used_byok: false,
-        });
-        return new Response(JSON.stringify({ error: msg }), {
-          status: 402, headers: { ...cors, "Content-Type": "application/json" },
-        });
+      if (!qErr) {
+        platformBilling = "free_quota";
+      } else if (typeof qErr.message === "string" && qErr.message.includes("platform_ai_quota_exhausted")) {
+        // 2. Trial exhausted — bill purchased credits. Pre-check the balance so we
+        //    don't pay OpenRouter for a client who can't cover it. No hard cap:
+        //    a zero balance just means "top up to continue".
+        platformBilling = "credits";
+        const promptChars = body.messages.reduce((n, m) => n + (m.content?.length ?? 0), 0);
+        const estCredits = estimateCreditsBeforeCall(model, promptChars, body.maxTokens);
+        const { data: bal } = await admin
+          .from("credit_balances").select("balance").eq("workspace_id", body.workspaceId).maybeSingle();
+        if (!bal || bal.balance < estCredits) {
+          const msg = "Out of AI credits. Top up in Billing to keep generating.";
+          await admin.from("ai_usage_log").insert({
+            workspace_id: body.workspaceId, user_id: userId, provider: "platform",
+            model, feature: body.feature ?? null,
+            status: "insufficient_credits", error: msg, used_byok: false,
+          });
+          return new Response(JSON.stringify({ error: msg, code: "insufficient_credits" }), {
+            status: 402, headers: { ...cors, "Content-Type": "application/json" },
+          });
+        }
+      } else {
+        throw new Error(qErr.message);
       }
-      const model = body.model ?? PLATFORM_DEFAULT_MODEL;
+
       const r = await callOpenAICompatible(
-        "https://ai.gateway.lovable.dev/v1",
-        LOVABLE_API_KEY,
+        OPENROUTER_BASE,
+        OPENROUTER_API_KEY,
         { model, messages: body.messages, max_tokens: body.maxTokens, temperature: body.temperature },
       );
       result = { ...r, model };
@@ -250,6 +261,39 @@ Deno.serve(async (req) => {
     }
 
     const costMicros = estimateCostMicros(result.model, result.promptTokens, result.completionTokens);
+
+    // Settle credits AFTER a successful call (cost-accurate, and no charge on
+    // failure). Only the purchased-credit platform path bills; BYOK and the free
+    // trial quota do not touch the credit ledger.
+    let creditsCharged = 0;
+    if (platformBilling === "credits") {
+      creditsCharged = creditsForUsage(result.model, result.promptTokens, result.completionTokens);
+      const { error: dErr } = await admin.rpc("deduct_credits", {
+        _workspace_id: body.workspaceId,
+        _amount: creditsCharged,
+        _reason: "ai_usage",
+        _ai_model: result.model,
+        _ref_type: body.feature ?? "ai",
+        _ref_id: null,
+        _metadata: { provider: "platform" },
+      });
+      if (dErr) {
+        // Actual exceeded balance at settle time (rare) — clamp to what's left
+        // rather than failing a response the client already received.
+        const { data: bal2 } = await admin
+          .from("credit_balances").select("balance").eq("workspace_id", body.workspaceId).maybeSingle();
+        const remaining = Math.max(0, bal2?.balance ?? 0);
+        if (remaining > 0) {
+          await admin.rpc("deduct_credits", {
+            _workspace_id: body.workspaceId, _amount: remaining, _reason: "ai_usage",
+            _ai_model: result.model, _ref_type: body.feature ?? "ai", _ref_id: null,
+            _metadata: { provider: "platform", clamped: true },
+          });
+        }
+        creditsCharged = remaining;
+      }
+    }
+
     await admin.from("ai_usage_log").insert({
       workspace_id: body.workspaceId, user_id: userId,
       provider, model: result.model, feature: body.feature ?? null,
@@ -261,7 +305,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({
       text: result.text, model: result.model, provider,
       usedByok, promptTokens: result.promptTokens, completionTokens: result.completionTokens,
-      costUsd: costMicros / 1_000_000,
+      costUsd: costMicros / 1_000_000, creditsCharged,
     }), { headers: { ...cors, "Content-Type": "application/json" } });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";

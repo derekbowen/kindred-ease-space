@@ -20,7 +20,8 @@ export function CategoryCard({
 }) {
   return (
     <Link
-      to={`/help/${category.slug}`}
+      to="/help/$category"
+      params={{ category: category.slug }}
       className="group block rounded-xl border border-border bg-card p-6 hover:border-orange-500/50 hover:shadow-lg transition-all"
     >
       <div className="flex items-start justify-between gap-4">

@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { assertWorkspaceOwner } from "./admin-helpers.functions";
 import {
   validateSharetribeCredentials,
   runSharetribeSyncForWorkspace,
@@ -45,7 +46,8 @@ export const connectSharetribe = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertMember(data.workspaceId, context.userId);
+    // Connecting rotates/overwrites stored credentials — owner-only.
+    await assertWorkspaceOwner(data.workspaceId, context.userId);
 
     const v = await validateSharetribeCredentials({
       clientId: data.clientId,
@@ -97,7 +99,8 @@ export const disconnectSharetribe = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ workspaceId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await assertMember(data.workspaceId, context.userId);
+    // Disconnecting hard-deletes the integration AND every synced listing — owner-only.
+    await assertWorkspaceOwner(data.workspaceId, context.userId);
     await (supabaseAdmin as any)
       .from("tenant_integrations")
       .delete()

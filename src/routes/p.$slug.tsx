@@ -5,15 +5,21 @@ import { canonicalUrl } from "@/lib/canonical";
 
 export const Route = createFileRoute("/p/$slug")({
   loader: async ({ params, location }) => {
-    const host = typeof window === "undefined" ? undefined : window.location.host;
-    const r = await getPublicTenantPage({ data: { slug: params.slug, host } });
+    // Host is resolved server-side inside the server fn (from request headers);
+    // `window.location.host` is undefined during SSR, which would 404 every
+    // crawler / first-paint hit on tenant custom domains.
+    const r = await getPublicTenantPage({ data: { slug: params.slug } });
     if (!r.page) throw notFound();
-    return { page: r.page, path: location.pathname };
+    return { page: r.page, path: location.pathname, host: r.host };
   },
   head: ({ loaderData }) => {
     if (!loaderData) return {};
     const p = loaderData.page;
-    const url = canonicalUrl(loaderData.path);
+    // Tenant pages are served on the tenant's own domain, so the canonical must
+    // be self-referential to that host — not the founders.click platform origin.
+    const url = loaderData.host
+      ? `https://${loaderData.host}${loaderData.path}`
+      : canonicalUrl(loaderData.path);
     const tags = [
       { title: p.title },
       { name: "description", content: p.meta_description ?? p.title },
