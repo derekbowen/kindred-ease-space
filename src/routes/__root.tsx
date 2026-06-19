@@ -12,6 +12,7 @@ import appCss from "../styles.css?url";
 import { installServerFnAuthFetch } from "@/integrations/supabase/server-fn-fetch";
 import { I18nProvider } from "@/lib/i18n";
 import { canonicalUrl } from "@/lib/canonical";
+import { Toaster } from "@/components/ui/sonner";
 
 if (typeof window !== "undefined") {
   installServerFnAuthFetch();
@@ -126,6 +127,9 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
         <Outlet />
+        {/* Global toast host — without this, every toast.success/error in the app
+            is silently dropped, making forms (login, signup, onboarding) look dead. */}
+        <Toaster richColors position="top-center" />
       </I18nProvider>
     </QueryClientProvider>
   );

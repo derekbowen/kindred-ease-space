@@ -1,0 +1,105 @@
+import { useEffect, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Check } from "lucide-react";
+import { toast } from "sonner";
+import { getMe } from "@/lib/auth.functions";
+import { getAddons, requestAddon } from "@/lib/addons.functions";
+
+export const Route = createFileRoute("/_authenticated/app/addons")({
+  head: () => ({ meta: [{ title: "Add-ons — founders.click" }] }),
+  component: AddonsPage,
+});
+
+function AddonsPage() {
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const request = useServerFn(requestAddon);
+
+  useEffect(() => {
+    getMe().then((me) => setWorkspaceId(me?.memberships?.[0]?.workspace_id ?? null)).catch(() => {});
+  }, []);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["addons", workspaceId],
+    queryFn: () => getAddons({ data: { workspaceId: workspaceId! } }),
+    enabled: !!workspaceId,
+  });
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Add-ons</h1>
+        <p className="text-sm text-muted-foreground">Bolt extra capabilities onto your marketplace. Managed add-ons are set up for you after purchase.</p>
+      </div>
+
+      {isLoading ? (
+        <div className="grid gap-4 md:grid-cols-2">{[0, 1].map((i) => <Skeleton key={i} className="h-64" />)}</div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {(data?.catalog ?? []).map((a) => {
+            const requested = a.requestStatus === "requested" || a.requestStatus === "contacted";
+            const isAffiliate = a.key === "affiliate-standard";
+            return (
+              <Card key={a.key} className="flex flex-col">
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-2">
+                    <CardTitle className="text-lg">{a.name}</CardTitle>
+                    {a.fulfilment === "managed" && <Badge variant="outline">Done-for-you</Badge>}
+                  </div>
+                  <CardDescription>{a.tagline}</CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-1 flex-col gap-4">
+                  <p className="text-sm text-muted-foreground">{a.description}</p>
+                  <ul className="space-y-1.5 text-sm">
+                    {a.bullets.map((b) => (
+                      <li key={b} className="flex items-start gap-2"><Check className="mt-0.5 h-4 w-4 text-emerald-500 shrink-0" />{b}</li>
+                    ))}
+                  </ul>
+                  <div className="mt-auto pt-2">
+                    <div className="mb-3 text-2xl font-bold">
+                      ${(a.priceCents / 100).toFixed(0)}<span className="text-sm font-normal text-muted-foreground">/{a.cadence}</span>
+                    </div>
+                    {isAffiliate ? (
+                      <Button asChild className="w-full"><Link to="/app/affiliates">Open Affiliate tools</Link></Button>
+                    ) : requested ? (
+                      <Button disabled className="w-full" variant="outline">Requested — we'll be in touch</Button>
+                    ) : a.requestStatus === "active" ? (
+                      <Button disabled className="w-full" variant="outline">Active</Button>
+                    ) : (
+                      <Button
+                        className="w-full"
+                        disabled={busy === a.key}
+                        onClick={async () => {
+                          if (!workspaceId) return;
+                          setBusy(a.key);
+                          try {
+                            await request({ data: { workspaceId, addonKey: a.key } });
+                            await qc.invalidateQueries({ queryKey: ["addons", workspaceId] });
+                            toast.success("Thanks! We'll reach out to get you set up.");
+                          } catch (e) {
+                            toast.error(e instanceof Error ? e.message : "Could not request add-on");
+                          } finally {
+                            setBusy(null);
+                          }
+                        }}
+                      >
+                        {busy === a.key ? "Requesting…" : `Get it — $${(a.priceCents / 100).toFixed(0)}/${a.cadence}`}
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

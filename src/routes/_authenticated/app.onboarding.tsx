@@ -20,6 +20,7 @@ function OnboardingPage() {
   const [name, setName] = useState("");
   const [domain, setDomain] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     // If user already has a workspace, skip onboarding
@@ -31,12 +32,15 @@ function OnboardingPage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
+    setError(null);
     try {
       await create({ data: { name, marketplaceDomain: domain } });
       toast.success("Workspace created. Welcome aboard!");
       navigate({ to: "/app" });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not create workspace");
+      const msg = err instanceof Error ? err.message : "Could not create workspace";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
@@ -81,6 +85,11 @@ function OnboardingPage() {
                 The public domain of the Sharetribe marketplace you operate. You'll verify it after onboarding.
               </p>
             </div>
+            {error && (
+              <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </p>
+            )}
             <Button type="submit" className="w-full text-base" disabled={submitting}>
               {submitting ? "Creating workspace…" : "Create workspace & start trial"}
             </Button>

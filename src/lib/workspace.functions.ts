@@ -47,23 +47,43 @@ export const createWorkspace = createServerFn({ method: "POST" })
 
     if (error || !ws) {
       console.error("[createWorkspace] insert error", error);
-      throw new Error("Failed to create workspace. Please try again.");
+      // Surface the underlying reason — a generic message makes a stuck signup
+      // impossible to diagnose for the user (and us).
+      throw new Error(
+        error?.message ? `Couldn't create workspace: ${error.message}` : "Failed to create workspace. Please try again.",
+      );
     }
 
-    await supabaseAdmin.from("workspace_members").insert({
+    // Owner membership is essential — if it fails the user would land back on
+    // onboarding forever (getMe sees no workspace). Check it, and roll back the
+    // orphaned workspace so a retry is clean.
+    const { error: memberErr } = await supabaseAdmin.from("workspace_members").insert({
       workspace_id: ws.id,
       user_id: userId,
       role: "owner",
     });
+    if (memberErr) {
+      console.error("[createWorkspace] member insert error", memberErr);
+      await supabaseAdmin.from("workspaces").delete().eq("id", ws.id);
+      throw new Error(`Couldn't link you to the workspace: ${memberErr.message}`);
+    }
 
-    await supabaseAdmin.rpc("grant_credits", {
-      _workspace_id: ws.id,
-      _amount: STARTER_TRIAL_CREDITS,
-      _reason: "trial_grant",
-      _ref_type: "trial",
-      _ref_id: ws.id,
-      _metadata: { source: "onboarding" },
-    });
+    // Trial credits are a nice-to-have. NEVER let a credit-grant hiccup block
+    // onboarding — the workspace + membership already exist, so the user gets in;
+    // credits can be granted/backfilled later.
+    try {
+      const { error: grantErr } = await supabaseAdmin.rpc("grant_credits", {
+        _workspace_id: ws.id,
+        _amount: STARTER_TRIAL_CREDITS,
+        _reason: "trial_grant",
+        _ref_type: "trial",
+        _ref_id: ws.id,
+        _metadata: { source: "onboarding" },
+      });
+      if (grantErr) console.error("[createWorkspace] grant_credits failed (non-fatal)", grantErr);
+    } catch (e) {
+      console.error("[createWorkspace] grant_credits threw (non-fatal)", e);
+    }
 
     // Fire-and-forget welcome email — never block workspace creation.
     const userEmail = (context.claims as { email?: string } | undefined)?.email;

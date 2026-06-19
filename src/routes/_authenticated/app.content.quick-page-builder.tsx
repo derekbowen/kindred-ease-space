@@ -26,7 +26,7 @@ function QuickPageBuilder() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [topic, setTopic] = useState("");
-  const [model, setModel] = useState("google/gemini-2.5-flash");
+  const [model, setModel] = useState("google/gemini-3.1-pro-preview");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ url_path: string; title: string; words: number } | null>(null);
@@ -93,10 +93,10 @@ function QuickPageBuilder() {
               <Select value={model} onValueChange={setModel}>
                 <SelectTrigger id="model"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="google/gemini-2.5-flash">Gemini 2.5 Flash (default, free)</SelectItem>
-                  <SelectItem value="google/gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
-                  <SelectItem value="openai/gpt-5">GPT-5</SelectItem>
-                  <SelectItem value="openai/gpt-5-mini">GPT-5 Mini</SelectItem>
+                  <SelectItem value="google/gemini-3.1-pro-preview">Gemini 3.1 Pro (best quality)</SelectItem>
+                  <SelectItem value="google/gemini-3.5-flash">Gemini 3.5 Flash</SelectItem>
+                  <SelectItem value="google/gemini-3-flash-preview">Gemini 3 Flash (cheapest)</SelectItem>
+                  <SelectItem value="google/gemini-3.1-flash-lite-preview">Gemini 3.1 Flash-Lite</SelectItem>
                 </SelectContent>
               </Select>
             </div>
