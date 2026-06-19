@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Check } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import { getMe } from "@/lib/auth.functions";
-import { getAddons, requestAddon } from "@/lib/addons.functions";
+import { getAddons } from "@/lib/addons.functions";
 
 export const Route = createFileRoute("/_authenticated/app/addons")({
   head: () => ({ meta: [{ title: "Add-ons — founders.click" }] }),
@@ -19,8 +19,6 @@ export const Route = createFileRoute("/_authenticated/app/addons")({
 function AddonsPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const qc = useQueryClient();
-  const request = useServerFn(requestAddon);
 
   useEffect(() => {
     getMe().then((me) => setWorkspaceId(me?.memberships?.[0]?.workspace_id ?? null)).catch(() => {});
@@ -31,6 +29,24 @@ function AddonsPage() {
     queryFn: () => getAddons({ data: { workspaceId: workspaceId! } }),
     enabled: !!workspaceId,
   });
+
+  // Map the add-on to its Stripe price key, then redirect to Checkout.
+  const checkout = async (catalogKey: string) => {
+    if (!workspaceId) return toast.error("No workspace");
+    const addonKey = catalogKey === "affiliate-standard" ? "affiliate-standard" : catalogKey;
+    setBusy(catalogKey);
+    try {
+      const { data: res, error } = await supabase.functions.invoke("create-checkout", {
+        body: { workspace_id: workspaceId, mode: "addon", addon_key: addonKey },
+      });
+      if (error) throw error;
+      if (res?.url) window.location.href = res.url;
+      else throw new Error("No checkout URL returned");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not start checkout");
+      setBusy(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -44,8 +60,8 @@ function AddonsPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {(data?.catalog ?? []).map((a) => {
-            const requested = a.requestStatus === "requested" || a.requestStatus === "contacted";
             const isAffiliate = a.key === "affiliate-standard";
+            const active = a.requestStatus === "active";
             return (
               <Card key={a.key} className="flex flex-col">
                 <CardHeader>
@@ -66,31 +82,16 @@ function AddonsPage() {
                     <div className="mb-3 text-2xl font-bold">
                       ${(a.priceCents / 100).toFixed(0)}<span className="text-sm font-normal text-muted-foreground">/{a.cadence}</span>
                     </div>
-                    {isAffiliate ? (
-                      <Button asChild className="w-full"><Link to="/app/affiliates">Open Affiliate tools</Link></Button>
-                    ) : requested ? (
-                      <Button disabled className="w-full" variant="outline">Requested — we'll be in touch</Button>
-                    ) : a.requestStatus === "active" ? (
+                    {active ? (
                       <Button disabled className="w-full" variant="outline">Active</Button>
                     ) : (
-                      <Button
-                        className="w-full"
-                        disabled={busy === a.key}
-                        onClick={async () => {
-                          if (!workspaceId) return;
-                          setBusy(a.key);
-                          try {
-                            await request({ data: { workspaceId, addonKey: a.key } });
-                            await qc.invalidateQueries({ queryKey: ["addons", workspaceId] });
-                            toast.success("Thanks! We'll reach out to get you set up.");
-                          } catch (e) {
-                            toast.error(e instanceof Error ? e.message : "Could not request add-on");
-                          } finally {
-                            setBusy(null);
-                          }
-                        }}
-                      >
-                        {busy === a.key ? "Requesting…" : `Get it — $${(a.priceCents / 100).toFixed(0)}/${a.cadence}`}
+                      <Button className="w-full" disabled={busy === a.key} onClick={() => checkout(a.key)}>
+                        {busy === a.key ? "Redirecting…" : `Get it — $${(a.priceCents / 100).toFixed(0)}/${a.cadence}`}
+                      </Button>
+                    )}
+                    {isAffiliate && (
+                      <Button asChild variant="ghost" size="sm" className="mt-2 w-full">
+                        <Link to="/app/affiliates">Or start a free trial →</Link>
                       </Button>
                     )}
                   </div>

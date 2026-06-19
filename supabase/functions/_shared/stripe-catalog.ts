@@ -42,6 +42,69 @@ export const CREDIT_PACK = {
   description: "One-time purchase of 1,000 AI credits.",
 };
 
+// Resellable monthly add-ons. DM Champ is white-glove (managed setup); the
+// affiliate tiers are self-serve (entitlement is flipped on by the webhook).
+export type AddonKey = "dmchamp" | "affiliate-lite" | "affiliate-standard" | "affiliate-pro";
+
+type AddonDefinition = { catalogKey: string; name: string; description: string; priceCents: number; tier?: string };
+
+export const ADDON_CATALOG: Record<AddonKey, AddonDefinition> = {
+  dmchamp: {
+    catalogKey: "addon-dmchamp",
+    name: "DM Champ — AI Sales Agent",
+    description: "White-label AI agent for WhatsApp/Instagram/Messenger. Done-for-you setup.",
+    priceCents: 9900,
+  },
+  "affiliate-lite": {
+    catalogKey: "addon-affiliate-lite",
+    name: "Affiliate Programs (Lite)",
+    description: "Referral/affiliate programs for your Sharetribe marketplace.",
+    priceCents: 1500,
+    tier: "lite",
+  },
+  "affiliate-standard": {
+    catalogKey: "addon-affiliate-standard",
+    name: "Affiliate Programs (Standard)",
+    description: "Referral/affiliate programs for your Sharetribe marketplace.",
+    priceCents: 3000,
+    tier: "standard",
+  },
+  "affiliate-pro": {
+    catalogKey: "addon-affiliate-pro",
+    name: "Affiliate Programs (Pro)",
+    description: "Referral/affiliate programs for your Sharetribe marketplace.",
+    priceCents: 4500,
+    tier: "pro",
+  },
+};
+
+export function isAddonKey(k: unknown): k is AddonKey {
+  return typeof k === "string" && k in ADDON_CATALOG;
+}
+
+export async function ensureAddonPrice(stripe: Stripe, addonKey: AddonKey) {
+  const def = ADDON_CATALOG[addonKey];
+  const meta = { kind: "addon", addon_key: addonKey, ...(def.tier ? { addon_tier: def.tier } : {}) };
+  const product = await ensureProduct(stripe, {
+    catalogKey: def.catalogKey,
+    name: def.name,
+    description: def.description,
+    metadata: meta,
+  });
+  const prices = await stripe.prices.list({ product: product.id, active: true, limit: 100 });
+  const existing = prices.data.find(
+    (p) => p.currency === "usd" && p.unit_amount === def.priceCents && p.recurring?.interval === "month",
+  );
+  if (existing) return existing;
+  return stripe.prices.create({
+    currency: "usd",
+    product: product.id,
+    recurring: { interval: "month" },
+    unit_amount: def.priceCents,
+    metadata: meta,
+  });
+}
+
 async function ensureProduct(
   stripe: Stripe,
   params: { catalogKey: string; name: string; description: string; metadata?: Record<string, string> },
