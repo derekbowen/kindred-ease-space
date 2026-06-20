@@ -48,7 +48,9 @@ export const auditPage = createServerFn({ method: "POST" })
       .maybeSingle();
 
     if (!page) {
-      const needle = path.replace(/^\//, "").split("/").pop() || path;
+      const rawNeedle = path.replace(/^\//, "").split("/").pop() || path;
+      // Strip PostgREST metacharacters to prevent .or() filter injection.
+      const needle = rawNeedle.replace(/[%_,()*]/g, "");
       const { data: similar } = await sb()
         .from("content_pages")
         .select("url_path, title, status")
