@@ -136,7 +136,10 @@ export const listCompetitorPages = createServerFn({ method: "POST" })
       .eq("workspace_id", data.workspaceId)
       .order("updated_at", { ascending: false })
       .limit(data.limit);
-    if (data.q) q = q.or(`url.ilike.%${data.q}%,title.ilike.%${data.q}%,domain.ilike.%${data.q}%`);
+    if (data.q) {
+      const s = data.q.replace(/[%_,()*]/g, "");
+      if (s) q = q.or(`url.ilike.%${s}%,title.ilike.%${s}%,domain.ilike.%${s}%`);
+    }
     const { data: rows } = await q;
     return { rows: (rows || []) as CompetitorRow[] };
   });
@@ -337,7 +340,10 @@ export const listLinkSuggestions = createServerFn({ method: "POST" })
       .order("score", { ascending: false })
       .limit(data.limit);
     if (data.status !== "all") q = q.eq("status", data.status);
-    if (data.q) q = q.or(`from_url.ilike.%${data.q}%,to_url.ilike.%${data.q}%,anchor_text.ilike.%${data.q}%`);
+    if (data.q) {
+      const s = data.q.replace(/[%_,()*]/g, "");
+      if (s) q = q.or(`from_url.ilike.%${s}%,to_url.ilike.%${s}%,anchor_text.ilike.%${s}%`);
+    }
     const { data: rows } = await q;
     return { rows: (rows || []) as LinkSuggestionRow[] };
   });

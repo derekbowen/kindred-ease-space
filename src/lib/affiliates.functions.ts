@@ -222,7 +222,12 @@ export const listAffiliates = createServerFn({ method: "GET" })
       .limit(500);
     if (data.programId) q = q.eq("program_id", data.programId);
     if (data.status) q = q.eq("status", data.status);
-    if (data.search) q = q.or(`name.ilike.%${data.search}%,email.ilike.%${data.search}%`);
+    if (data.search) {
+      // Strip PostgREST metacharacters so a value like `foo,status.eq.draft`
+      // can't inject extra filter conditions into the .or() expression.
+      const s = data.search.replace(/[%_,()*]/g, "");
+      if (s) q = q.or(`name.ilike.%${s}%,email.ilike.%${s}%`);
+    }
     const { data: rows } = await q;
 
     // Per-affiliate GMV / revenue / payouts paid.

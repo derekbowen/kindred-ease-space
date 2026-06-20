@@ -35,7 +35,11 @@ export const listContentPages = createServerFn({ method: "POST" })
       .order("updated_at", { ascending: false })
       .limit(data.limit);
     if (data.status) q = q.eq("status", data.status);
-    if (data.search) q = q.or(`slug.ilike.%${data.search}%,title.ilike.%${data.search}%,url_path.ilike.%${data.search}%`);
+    if (data.search) {
+      // Strip PostgREST metacharacters to prevent .or() filter injection.
+      const s = data.search.replace(/[%_,()*]/g, "");
+      if (s) q = q.or(`slug.ilike.%${s}%,title.ilike.%${s}%,url_path.ilike.%${s}%`);
+    }
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
     return { rows: (rows ?? []) as ContentPageRow[] };

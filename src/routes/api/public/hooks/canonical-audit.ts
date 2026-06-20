@@ -1,21 +1,38 @@
 /**
  * Public cron hook for the canonical-URL audit. Called by pg_cron once a day.
  *
- * Auth: requires `apikey` header to match SUPABASE_ANON_KEY (the documented
- * pattern for `/api/public/*` endpoints). Returns a small JSON summary so
- * cron job_run_details stay readable.
+ * Auth: requires `Authorization: Bearer <CRON_SECRET>` (also accepts the legacy
+ * `apikey`/`x-cron-secret` headers for migration convenience). The previous
+ * implementation accepted SUPABASE_ANON_KEY, which is embedded in the public
+ * client bundle — anyone could trigger up to 200 outbound fetches per call.
  */
 import { createFileRoute } from "@tanstack/react-router";
+import { timingSafeEqual } from "crypto";
 import { runFullAudit } from "@/lib/admin-canonical-audit.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+
+function safeEqual(a: string, b: string) {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
 
 export const Route = createFileRoute("/api/public/hooks/canonical-audit")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const expected = process.env.SUPABASE_ANON_KEY;
-        const provided = request.headers.get("apikey") ?? request.headers.get("x-anon-key");
-        if (!expected || !provided || provided !== expected) {
+        const expected = process.env.CRON_SECRET;
+        const authHeader = request.headers.get("authorization") ?? "";
+        const bearer = authHeader.toLowerCase().startsWith("bearer ")
+          ? authHeader.slice(7).trim()
+          : "";
+        const provided =
+          bearer ||
+          request.headers.get("x-cron-secret") ||
+          request.headers.get("apikey") ||
+          "";
+        if (!expected || !provided || !safeEqual(provided, expected)) {
           return new Response(JSON.stringify({ error: "Unauthorized" }), {
             status: 401,
             headers: { "Content-Type": "application/json" },
