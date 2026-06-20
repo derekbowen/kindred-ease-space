@@ -69,7 +69,7 @@ function ApplyPage() {
               <div className="space-y-1">
                 <Label htmlFor="program">Program</Label>
                 <select id="program" value={programId} onChange={(e) => setProgramId(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                  {form.programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  {form.programs.map((p: { id: string; name: string }) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
             )}
