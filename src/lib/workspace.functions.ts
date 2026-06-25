@@ -205,7 +205,17 @@ export const getWorkspaceOverview = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data) => z.object({ workspaceId: z.string().uuid() }).parse(data))
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+
+    // Explicit membership check — don't trust the client-supplied workspaceId.
+    // RLS would also block reads, but defense-in-depth matters for a multi-
+    // tenant endpoint and gives a clean 403-style error instead of silent nulls.
+    const { data: isMember } = await supabaseAdmin.rpc("is_workspace_member", {
+      _workspace_id: data.workspaceId,
+      _user_id: userId,
+    });
+    if (!isMember) throw new Error("Not allowed");
+
 
     const [{ data: ws }, { data: balance }, { count: pageCount }, { count: leadCount }] =
       await Promise.all([

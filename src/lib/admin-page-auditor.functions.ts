@@ -35,8 +35,12 @@ export const auditPage = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
-    const lovKey = process.env.LOVABLE_API_KEY;
-    if (!lovKey) return { ok: false as const, error: "LOVABLE_API_KEY not configured" };
+    // BYOK first, platform env-var fallback. Hard-failing on a missing
+    // LOVABLE_API_KEY env var meant any platform-key rotation broke audits
+    // for every workspace with no way out.
+    const { getWorkspaceSecret } = await import("@/lib/workspace-secrets.server");
+    const lovKey = await getWorkspaceSecret(data.workspaceId, "LOVABLE_API_KEY", "LOVABLE_API_KEY");
+    if (!lovKey) return { ok: false as const, error: "No AI key configured. Add a BYOK key under Settings → API Keys." };
 
     const path = normalizeAuditPath(data.url_path);
 

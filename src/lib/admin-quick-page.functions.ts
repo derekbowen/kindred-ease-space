@@ -67,8 +67,10 @@ export const createQuickPage = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
 
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) throw new Error("OPENROUTER_API_KEY not configured");
+    // BYOK first, platform env-var fallback.
+    const { getWorkspaceSecret } = await import("@/lib/workspace-secrets.server");
+    const apiKey = await getWorkspaceSecret(data.workspaceId, "OPENROUTER_API_KEY", "OPENROUTER_API_KEY");
+    if (!apiKey) throw new Error("No AI key configured. Add a BYOK OpenRouter key under Settings → API Keys.");
     const model = resolvePlatformModel(data.model);
 
     // Bill the platform credit system (same model as ai-proxy): free trial
