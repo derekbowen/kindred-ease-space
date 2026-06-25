@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
+import { getMe } from "@/lib/auth.functions";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/app/billing")({
@@ -28,12 +29,16 @@ function BillingPage() {
 
   useEffect(() => {
     (async () => {
-      const { data: ws } = await supabase.from("workspaces").select("id").limit(1).maybeSingle();
-      if (!ws) return;
-      setWorkspaceId(ws.id);
+      // Resolve workspace via getMe (server-side membership check) instead of
+      // `workspaces.select().limit(1)`. Multi-workspace users would otherwise
+      // see whichever row Postgres returned first.
+      const me = await getMe();
+      const wsId = me.memberships?.[0]?.workspace_id ?? null;
+      if (!wsId) return;
+      setWorkspaceId(wsId);
       const [{ data: bal }, { data: subRow }] = await Promise.all([
-        supabase.from("credit_balances").select("balance").eq("workspace_id", ws.id).maybeSingle(),
-        supabase.from("subscriptions").select("plan_tier, status, current_period_end").eq("workspace_id", ws.id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        supabase.from("credit_balances").select("balance").eq("workspace_id", wsId).maybeSingle(),
+        supabase.from("subscriptions").select("plan_tier, status, current_period_end").eq("workspace_id", wsId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
       ]);
       setBalance(bal?.balance ?? 0);
       setSub(subRow);
