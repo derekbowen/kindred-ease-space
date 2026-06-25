@@ -50,7 +50,11 @@ function json(status: number, body: unknown, extra: Record<string, string> = {})
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "public, max-age=60",
+      // Default to no-store. Negative results (domain_not_found / page_not_found)
+      // would otherwise be cached for 60s at the edge, so a newly verified
+      // domain or freshly published page would 404 to embedders for up to a
+      // minute. Successful lookups can opt back into a short cache via `extra`.
+      "Cache-Control": "no-store",
       ...CORS_HEADERS,
       ...extra,
     },

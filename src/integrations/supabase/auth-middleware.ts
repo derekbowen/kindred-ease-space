@@ -57,7 +57,7 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' })
       throw new Response('Unauthorized: Only Bearer tokens are supported', { status: 401 });
     }
 
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.slice(7);
     if (!token) {
       throw new Response('Unauthorized: No token provided', { status: 401 });
     }

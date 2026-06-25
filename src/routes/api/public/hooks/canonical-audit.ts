@@ -12,10 +12,15 @@ import { runFullAudit } from "@/lib/admin-canonical-audit.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 function safeEqual(a: string, b: string) {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) return false;
-  return timingSafeEqual(ab, bb);
+  // Pad both sides to the longer length to keep the compare timing-safe
+  // regardless of input shape — early-return on length mismatch leaks the
+  // expected secret's length.
+  const len = Math.max(a.length, b.length);
+  const ab = Buffer.alloc(len);
+  const bb = Buffer.alloc(len);
+  ab.write(a);
+  bb.write(b);
+  return a.length === b.length && timingSafeEqual(ab, bb);
 }
 
 export const Route = createFileRoute("/api/public/hooks/canonical-audit")({
