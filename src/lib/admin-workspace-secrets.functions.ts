@@ -18,16 +18,15 @@ export const listWorkspaceSecrets = createServerFn({ method: "POST" })
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     const { data: rows } = await supabaseAdmin
       .from("workspace_secrets")
-      .select("id, key_name, value, updated_at")
+      .select("id, key_name, last_four, value_length, updated_at")
       .eq("workspace_id", data.workspaceId)
       .order("key_name", { ascending: true });
     return {
       rows: (rows || []).map((r: any) => ({
         id: r.id,
         key_name: r.key_name,
-        // Only show length/last 4 to avoid leaking full secret to the UI.
-        preview: r.value
-          ? `••••${String(r.value).slice(-4)} (${String(r.value).length} chars)`
+        preview: r.last_four
+          ? `••••${r.last_four} (${r.value_length ?? 0} chars)`
           : "(empty)",
         updated_at: r.updated_at,
       })),
@@ -45,15 +44,13 @@ export const upsertWorkspaceSecret = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceOwner(data.workspaceId, context.userId);
-    const { error } = await supabaseAdmin
-      .from("workspace_secrets")
-      .upsert({
-        workspace_id: data.workspaceId,
-        key_name: data.keyName,
-        value: data.value,
-        created_by: context.userId,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "workspace_id,key_name" });
+    // Use the authenticated user's client so the RPC's auth.uid() owner check
+    // sees the caller — supabaseAdmin would run as service_role with null uid.
+    const { error } = await context.supabase.rpc("tenant_set_workspace_secret", {
+      _workspace_id: data.workspaceId,
+      _key_name: data.keyName,
+      _value: data.value,
+    });
     if (error) return { ok: false as const, error: error.message };
     return { ok: true as const };
   });
@@ -65,11 +62,10 @@ export const deleteWorkspaceSecret = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceOwner(data.workspaceId, context.userId);
-    const { error } = await supabaseAdmin
-      .from("workspace_secrets")
-      .delete()
-      .eq("workspace_id", data.workspaceId)
-      .eq("id", data.id);
+    const { error } = await context.supabase.rpc("tenant_delete_workspace_secret", {
+      _workspace_id: data.workspaceId,
+      _id: data.id,
+    });
     if (error) return { ok: false as const, error: error.message };
     return { ok: true as const };
   });
