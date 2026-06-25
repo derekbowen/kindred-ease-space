@@ -1,9 +1,9 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 /**
- * Server-only BYOK helper. Reads a per-workspace API key from
- * `public.workspace_secrets`. Falls back to an env var if no per-workspace
- * key has been configured (useful in dev / for the original tenant).
+ * Server-only BYOK helper. Reads a per-workspace API key from Supabase Vault
+ * via the `tenant_get_workspace_secret` SECURITY DEFINER RPC. Falls back to an
+ * env var if no per-workspace key has been configured.
  *
  * NEVER import this file from client code. NEVER expose returned values to
  * the browser.
@@ -13,16 +13,14 @@ export async function getWorkspaceSecret(
   keyName: string,
   envFallback?: string,
 ): Promise<string | null> {
-  const { data, error } = await supabaseAdmin
-    .from("workspace_secrets")
-    .select("value")
-    .eq("workspace_id", workspaceId)
-    .eq("key_name", keyName)
-    .maybeSingle();
+  const { data, error } = await supabaseAdmin.rpc("tenant_get_workspace_secret", {
+    _workspace_id: workspaceId,
+    _key_name: keyName,
+  });
   if (error) {
     console.error(`workspace-secrets: failed to read ${keyName}:`, error.message);
   }
-  if (data?.value) return data.value;
+  if (typeof data === "string" && data.length > 0) return data;
   if (envFallback) {
     const envVal = process.env[envFallback];
     if (envVal) return envVal;
