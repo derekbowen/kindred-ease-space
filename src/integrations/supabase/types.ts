@@ -4569,8 +4569,10 @@ export type Database = {
           created_by: string | null
           id: string
           key_name: string
+          last_four: string | null
           updated_at: string
-          value: string
+          value_length: number | null
+          vault_secret_id: string | null
           workspace_id: string
         }
         Insert: {
@@ -4578,8 +4580,10 @@ export type Database = {
           created_by?: string | null
           id?: string
           key_name: string
+          last_four?: string | null
           updated_at?: string
-          value: string
+          value_length?: number | null
+          vault_secret_id?: string | null
           workspace_id: string
         }
         Update: {
@@ -4587,8 +4591,10 @@ export type Database = {
           created_by?: string | null
           id?: string
           key_name?: string
+          last_four?: string | null
           updated_at?: string
-          value?: string
+          value_length?: number | null
+          vault_secret_id?: string | null
           workspace_id?: string
         }
         Relationships: [
@@ -4884,12 +4890,20 @@ export type Database = {
         Args: { _provider: string; _workspace_id: string }
         Returns: boolean
       }
+      tenant_delete_workspace_secret: {
+        Args: { _id: string; _workspace_id: string }
+        Returns: boolean
+      }
       tenant_get_ai_credential: {
         Args: { _provider: string; _workspace_id: string }
         Returns: string
       }
       tenant_get_integration_secret: {
         Args: { _workspace_id: string }
+        Returns: string
+      }
+      tenant_get_workspace_secret: {
+        Args: { _key_name: string; _workspace_id: string }
         Returns: string
       }
       tenant_set_ai_credential: {
@@ -4904,6 +4918,10 @@ export type Database = {
       }
       tenant_set_integration_secret: {
         Args: { _client_secret: string; _workspace_id: string }
+        Returns: string
+      }
+      tenant_set_workspace_secret: {
+        Args: { _key_name: string; _value: string; _workspace_id: string }
         Returns: string
       }
       verify_certificate: {
