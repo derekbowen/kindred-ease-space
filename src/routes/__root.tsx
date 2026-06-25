@@ -1,4 +1,5 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import {
   Outlet,
   Link,
@@ -10,6 +11,7 @@ import {
 
 import appCss from "../styles.css?url";
 import { installServerFnAuthFetch } from "@/integrations/supabase/server-fn-fetch";
+import { supabase } from "@/integrations/supabase/client";
 import { I18nProvider } from "@/lib/i18n";
 import { canonicalUrl } from "@/lib/canonical";
 import { Toaster } from "@/components/ui/sonner";
@@ -125,6 +127,7 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <AuthStateBridge />
       <I18nProvider>
         <Outlet />
         {/* Global toast host — without this, every toast.success/error in the app
@@ -133,4 +136,27 @@ function RootComponent() {
       </I18nProvider>
     </QueryClientProvider>
   );
+}
+
+/**
+ * Single global Supabase auth listener. Without this, sign-in / sign-out in
+ * one tab doesn't refresh router context or react-query caches in another,
+ * and post-OAuth landings can keep stale `getMe` results. Filter to identity
+ * transitions to avoid thrashing on TOKEN_REFRESHED / INITIAL_SESSION.
+ */
+function AuthStateBridge() {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
+      router.invalidate();
+      // On SIGNED_OUT, don't refetch protected queries against a cleared
+      // session — that just produces a 401 storm. Sign-out flows clear the
+      // cache themselves.
+      if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
+    });
+    return () => sub.subscription.unsubscribe();
+  }, [router, queryClient]);
+  return null;
 }

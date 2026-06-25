@@ -219,8 +219,10 @@ export const runCoachAction = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await assertWorkspaceMember(data.workspaceId, userId);
 
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
+    // BYOK first, platform env-var fallback.
+    const { getWorkspaceSecret } = await import("@/lib/workspace-secrets.server");
+    const apiKey = await getWorkspaceSecret(data.workspaceId, "LOVABLE_API_KEY", "LOVABLE_API_KEY");
+    if (!apiKey) throw new Error("No AI key configured. Add a BYOK key under Settings → API Keys.");
 
     let result: ActionResult;
     let errorMessage: string | null = null;

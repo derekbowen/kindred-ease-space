@@ -120,8 +120,10 @@ export const seoCoachChat = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }): Promise<{ ok: true; reply: string } | { ok: false; error: string }> => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) return { ok: false, error: "LOVABLE_API_KEY not configured" };
+    // BYOK first, platform env-var fallback.
+    const { getWorkspaceSecret } = await import("@/lib/workspace-secrets.server");
+    const apiKey = await getWorkspaceSecret(data.workspaceId, "LOVABLE_API_KEY", "LOVABLE_API_KEY");
+    if (!apiKey) return { ok: false, error: "No AI key configured. Add a BYOK key under Settings → API Keys." };
 
     const snapshot = await buildSnapshot(data.workspaceId);
     const completedNote = data.completedRoutes?.length

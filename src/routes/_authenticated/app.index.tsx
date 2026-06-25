@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Sparkles, FileText, Users, Coins } from "lucide-react";
-import { ensureWorkspace, getWorkspaceOverview } from "@/lib/workspace.functions";
+import { getMe } from "@/lib/auth.functions";
+import { getWorkspaceOverview } from "@/lib/workspace.functions";
 import { DailyBriefing } from "@/components/coach/DailyBriefing";
 
 export const Route = createFileRoute("/_authenticated/app/")({
@@ -18,19 +19,30 @@ function DashboardPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Auto-provisions a workspace if the user has none — no setup wall.
-    ensureWorkspace()
-      .then((r) => setWorkspaceId(r.workspaceId))
-      .catch((err) => {
-        // 401s here just mean session expired / not hydrated — bounce to login.
+    // The app shell (`_authenticated/app.tsx`) is the single owner of
+    // workspace auto-provisioning. We only READ membership here —
+    // calling ensureWorkspace() in parallel with the shell creates a
+    // TOCTOU race that produces duplicate workspaces on first signup.
+    let cancelled = false;
+    const poll = async (attempt = 0): Promise<void> => {
+      try {
+        const me = await getMe();
+        const wsId = me?.memberships?.[0]?.workspace_id ?? null;
+        if (cancelled) return;
+        if (wsId) {
+          setWorkspaceId(wsId);
+          return;
+        }
+        if (attempt < 12) setTimeout(() => poll(attempt + 1), 400);
+      } catch (err) {
         const status = (err as { status?: number; response?: { status?: number } })?.status
           ?? (err as { response?: { status?: number } })?.response?.status;
-        if (status === 401) {
-          navigate({ to: "/login", search: { next: "/app" } });
-        } else {
-          console.error("ensureWorkspace failed", err);
-        }
-      });
+        if (status === 401) navigate({ to: "/login", search: { next: "/app" } });
+        else console.error("getMe failed", err);
+      }
+    };
+    poll();
+    return () => { cancelled = true; };
   }, [navigate]);
 
 
