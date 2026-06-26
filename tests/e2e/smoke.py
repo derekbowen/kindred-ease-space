@@ -71,7 +71,7 @@ async def run():
         await page.get_by_label("Email").fill(email)
         await page.get_by_label("Password").fill(password)
         await shot(page, "2_signup_filled")
-        await page.get_by_role("button", name=lambda n: n and "trial" in n.lower()).click()
+        await page.get_by_role("button", name=__import__("re").compile(r"trial", __import__("re").I)).click()
 
         # Wait for either /app dashboard, the email-confirmation screen, or an error toast.
         try:
@@ -95,7 +95,7 @@ async def run():
                 await page.goto(f"{BASE_URL}/login", wait_until="domcontentloaded")
                 await page.get_by_label("Email").fill(TEST_EMAIL)
                 await page.get_by_label("Password").fill(TEST_PASS)
-                await page.get_by_role("button", name=lambda n: n and ("sign in" in n.lower() or "log in" in n.lower())).click()
+                await page.get_by_role("button", name=__import__("re").compile(r"sign in|log in", __import__("re").I)).click()
                 await page.wait_for_url("**/app**", timeout=10_000)
             else:
                 errors.append(f"signup did not reach /app and no confirmation message at {page.url}")
