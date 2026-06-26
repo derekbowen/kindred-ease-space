@@ -65,7 +65,9 @@ async def run():
         await page.goto(f"{BASE_URL}/signup", wait_until="domcontentloaded")
         await expect_visible(page, page.get_by_label("Email"), "signup-form")
         ts = int(time.time())
-        email = f"smoke+{ts}@founders.click"
+        # Plain address (no `+`, neutral domain) — avoids provider rejections
+        # of plus-aliases or owned-domain signups during smoke runs.
+        email = f"smoke{ts}@example.com"
         password = "SmokeTest!12345"
         await page.get_by_label("Your name").fill("Smoke Test")
         await page.get_by_label("Email").fill(email)
