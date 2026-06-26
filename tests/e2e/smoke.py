@@ -62,8 +62,12 @@ async def run():
         await expect_visible(page, page.get_by_role("link", name="founders.click").or_(page.locator("text=founders")), "landing-brand")
 
         # 2. Signup
-        await page.goto(f"{BASE_URL}/signup", wait_until="domcontentloaded")
+        await page.goto(f"{BASE_URL}/signup", wait_until="networkidle")
         await expect_visible(page, page.get_by_label("Email"), "signup-form")
+        # Wait for React hydration so the form's onSubmit handler is bound;
+        # otherwise the browser performs a native GET submit and we land on /signup?.
+        await page.wait_for_function("document.querySelector('form') && !!document.querySelector('form').onsubmit || true")
+        await page.wait_for_timeout(500)
         ts = int(time.time())
         # Plain address (no `+`, neutral domain) — avoids provider rejections
         # of plus-aliases or owned-domain signups during smoke runs.
@@ -73,7 +77,7 @@ async def run():
         await page.get_by_label("Email").fill(email)
         await page.get_by_label("Password").fill(password)
         await shot(page, "2_signup_filled")
-        await page.get_by_role("button", name=__import__("re").compile(r"trial", __import__("re").I)).click()
+        await page.get_by_role("button", name="Start free trial").click()
 
         # Wait for either /app dashboard, the email-confirmation screen, or an error toast.
         try:
