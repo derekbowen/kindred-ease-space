@@ -148,8 +148,20 @@ export const ensureWorkspace = createServerFn({ method: "POST" })
       .from("workspace_members")
       .insert({ workspace_id: ws.id, user_id: userId, role: "owner" });
     if (memberErr) {
-      console.error("[ensureWorkspace] member insert error", memberErr);
+      // TOCTOU: a parallel ensureWorkspace() call already created an owner
+      // membership for this user (blocked by the partial unique index
+      // workspace_members_one_owner_per_user). Roll back our orphan workspace
+      // and return the winner so the caller still gets a usable workspaceId.
+      console.warn("[ensureWorkspace] owner-membership race; reconciling", memberErr.message);
       await supabaseAdmin.from("workspaces").delete().eq("id", ws.id);
+      const { data: winner } = await supabaseAdmin
+        .from("workspace_members")
+        .select("workspace_id")
+        .eq("user_id", userId)
+        .eq("role", "owner")
+        .limit(1)
+        .maybeSingle();
+      if (winner?.workspace_id) return { workspaceId: winner.workspace_id, created: false };
       throw new Error(`Couldn't link you to the workspace: ${memberErr.message}`);
     }
 
@@ -169,6 +181,7 @@ export const ensureWorkspace = createServerFn({ method: "POST" })
 
     return { workspaceId: ws.id, created: true };
   });
+
 
 /** Editable workspace profile — the optional "setup portal" (name + domain). */
 export const updateWorkspaceProfile = createServerFn({ method: "POST" })

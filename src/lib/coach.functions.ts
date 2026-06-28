@@ -7,6 +7,7 @@ export const listConversations = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ workspaceId: z.string().uuid() }).parse)
   .handler(async ({ data, context }) => {
+    await assertWorkspaceMember(data.workspaceId, context.userId);
     const { supabase } = context;
     const { data: rows } = await supabase
       .from("coach_conversations")
@@ -16,6 +17,7 @@ export const listConversations = createServerFn({ method: "POST" })
       .limit(50);
     return { conversations: rows ?? [] };
   });
+
 
 export const createConversation = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -88,6 +90,7 @@ export const getTodayBriefing = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ workspaceId: z.string().uuid() }).parse)
   .handler(async ({ data, context }) => {
+    await assertWorkspaceMember(data.workspaceId, context.userId);
     const { supabase } = context;
     const today = new Date().toISOString().slice(0, 10);
     const { data: row } = await supabase
@@ -98,6 +101,7 @@ export const getTodayBriefing = createServerFn({ method: "POST" })
       .maybeSingle();
     return { briefing: row };
   });
+
 
 export const generateBriefingNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
