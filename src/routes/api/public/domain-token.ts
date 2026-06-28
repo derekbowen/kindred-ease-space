@@ -4,8 +4,14 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const sb = () => supabaseAdmin as any;
 
-// Per-Worker-instance rate limit. Mirrors page-lookup. Good enough to dampen
-// single-source enumeration of pending domain verification tokens.
+// Per-Worker-instance rate limit. NOTE: Cloudflare scales Workers
+// horizontally, so each isolate keeps its own bucket — the effective limit
+// at the edge is roughly `limit * <live isolate count>`. That's fine for
+// dampening accidental loops and single-source enumeration of pending
+// verification tokens; it is NOT a substitute for an abuse-grade limiter.
+// For a hardened limit, move counters to a Durable Object or KV namespace
+// keyed by IP. Until then, the 404-when-verified rule below is the real
+// safety: tokens stop being readable as soon as DNS verifies.
 const buckets = new Map<string, { count: number; resetAt: number }>();
 function rateLimit(ip: string, limit = 120, windowMs = 60_000): boolean {
   const now = Date.now();
@@ -17,6 +23,7 @@ function rateLimit(ip: string, limit = 120, windowMs = 60_000): boolean {
   b.count += 1;
   return b.count <= limit;
 }
+
 
 function clientIp(request: Request): string {
   const xff = request.headers.get("x-forwarded-for");
