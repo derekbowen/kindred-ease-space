@@ -40,9 +40,10 @@ jobs:
       - name: Run smoke test
         env:
           SMOKE_BASE_URL: ${{ secrets.SMOKE_BASE_URL }}
-          SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
-          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+          SUPABASE_TEST_EMAIL: ${{ secrets.SUPABASE_TEST_EMAIL }}
+          SUPABASE_TEST_PASSWORD: ${{ secrets.SUPABASE_TEST_PASSWORD }}
         run: python tests/e2e/smoke.py
+
 
       - name: Upload screenshots on failure
         if: failure()
