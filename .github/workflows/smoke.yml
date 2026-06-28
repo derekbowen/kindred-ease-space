@@ -1,10 +1,10 @@
 name: E2E Smoke
 
-# Runs the landing → signup → workspace → dashboard → billing flow against
-# the published preview URL. Required secrets on the repo:
-#   SMOKE_BASE_URL  — e.g. https://kindred-ease-space.lovable.app
-#   SMOKE_EMAIL     — disposable test mailbox (optional; smoke.py mints one if absent)
-#   SMOKE_PASSWORD  — password for the test account
+# Required repo secrets:
+#   SMOKE_BASE_URL          — e.g. https://kindred-ease-space.lovable.app
+#   SUPABASE_TEST_EMAIL     — pre-confirmed test account (optional; signup-only path runs without)
+#   SUPABASE_TEST_PASSWORD  — password for that account
+
 
 on:
   workflow_dispatch:
