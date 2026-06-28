@@ -1,0 +1,55 @@
+name: E2E Smoke
+
+# Required repo secrets:
+#   SMOKE_BASE_URL          — e.g. https://kindred-ease-space.lovable.app
+#   SUPABASE_TEST_EMAIL     — pre-confirmed test account (optional; signup-only path runs without)
+#   SUPABASE_TEST_PASSWORD  — password for that account
+
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *" # every 6 hours
+  push:
+    branches: [main]
+    paths:
+      - "src/routes/_authenticated/**"
+      - "src/lib/workspace.functions.ts"
+      - "src/routes/signup.tsx"
+      - "src/routes/login.tsx"
+      - "tests/e2e/**"
+      - ".github/workflows/smoke.yml"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Playwright
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Run smoke test
+        env:
+          SMOKE_BASE_URL: ${{ secrets.SMOKE_BASE_URL }}
+          SUPABASE_TEST_EMAIL: ${{ secrets.SUPABASE_TEST_EMAIL }}
+          SUPABASE_TEST_PASSWORD: ${{ secrets.SUPABASE_TEST_PASSWORD }}
+        run: python tests/e2e/smoke.py
+
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-screenshots
+          path: /tmp/browser/smoke/
+          if-no-files-found: ignore
+

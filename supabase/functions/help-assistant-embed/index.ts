@@ -56,7 +56,15 @@ Deno.serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY missing");
+    if (!LOVABLE_API_KEY) {
+      // Embedding is an admin batch job — surface a clean 503 instead of a
+      // 500 stack so the admin UI can render a "configure LOVABLE_API_KEY" hint.
+      return new Response(
+        JSON.stringify({ error: "embedding_unavailable", message: "LOVABLE_API_KEY is not configured for this project." }),
+        { status: 503, headers: { ...cors, "Content-Type": "application/json" } },
+      );
+    }
+
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 

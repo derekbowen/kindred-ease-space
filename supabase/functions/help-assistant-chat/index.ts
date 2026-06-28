@@ -30,7 +30,19 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
   try {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY missing");
+    if (!LOVABLE_API_KEY) {
+      // Graceful fallback — the help widget is a nice-to-have, not a hard
+      // dependency. Tell the visitor (and the embed widget) that the
+      // assistant is offline so they can fall back to browsing /help.
+      return new Response(
+        JSON.stringify({
+          error: "assistant_unavailable",
+          message: "The help assistant is temporarily unavailable. Browse the help center at /help in the meantime.",
+        }),
+        { status: 503, headers: { ...cors, "Content-Type": "application/json" } },
+      );
+    }
+
 
     const { messages } = (await req.json()) as { messages: Msg[] };
     if (!Array.isArray(messages) || messages.length === 0) {
