@@ -46,8 +46,11 @@ export type NavItem = {
   label: string;
   icon: LucideIcon;
   internalOnly?: boolean;
+  /** Scaffolded UI only — hidden from the sidebar in production. */
+  stub?: boolean;
   exact?: boolean;
 };
+
 
 export type NavSection = {
   label: string;
