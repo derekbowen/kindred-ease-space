@@ -85,24 +85,25 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "SEO",
     items: [
-      { to: "/app/seo/competitor-radar", label: "Competitor Radar", icon: Radar },
+      { to: "/app/seo/competitor-radar", label: "Competitor Radar", icon: Radar, stub: true },
       { to: "/app/seo/rank-tracker", label: "Rank Tracker", icon: TrendingUp },
       { to: "/app/seo/page-auditor", label: "AI Page Auditor", icon: ScanSearch },
-      { to: "/app/seo/listing-auditor", label: "Listing Auditor", icon: ScanSearch },
+      { to: "/app/seo/listing-auditor", label: "Listing Auditor", icon: ScanSearch, stub: true },
       { to: "/app/seo/keyword-opportunities", label: "Keyword Opportunities", icon: Lightbulb },
       { to: "/app/seo/competitor-tracker", label: "Competitor Tracker", icon: Target },
       { to: "/app/seo/internal-links", label: "Internal Link Recommender", icon: Link2 },
-      { to: "/app/seo/health", label: "SEO Health", icon: Activity },
+      { to: "/app/seo/health", label: "SEO Health", icon: Activity, stub: true },
       { to: "/app/seo/link-checker", label: "Link Checker", icon: LinkIcon },
-      { to: "/app/seo/link-audit", label: "Link Audit Dashboard", icon: LinkIcon },
+      { to: "/app/seo/link-audit", label: "Link Audit Dashboard", icon: LinkIcon, stub: true },
       { to: "/app/seo/missing-pages", label: "Missing Pages (404s)", icon: FileX2 },
-      { to: "/app/seo/sitemap", label: "Sitemap & Indexing", icon: Map },
+      { to: "/app/seo/sitemap", label: "Sitemap & Indexing", icon: Map, stub: true },
       { to: "/app/seo/gsc-import", label: "GSC Import", icon: Download },
-      { to: "/app/seo/scrape-import", label: "Scrape Import", icon: Globe },
+      { to: "/app/seo/scrape-import", label: "Scrape Import", icon: Globe, stub: true },
       { to: "/app/seo/click-report", label: "Click Report", icon: MousePointerClick },
       { to: "/app/seo/canonical-audit", label: "Canonical Audit", icon: ShieldCheck },
     ],
   },
+
   {
     label: "Affiliates",
     items: [
