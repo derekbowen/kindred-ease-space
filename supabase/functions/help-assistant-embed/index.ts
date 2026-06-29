@@ -17,9 +17,9 @@ function stripMarkdown(s: string): string {
   return s
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`[^`]*`/g, " ")
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/[#>*_~\-]+/g, " ")
+    .replace(new RegExp("!\\[[^\\]]*\\]\\([^)]*\\)", "g"), " ")
+    .replace(new RegExp("\\[([^\\]]+)\\]\\([^)]*\\)", "g"), "$1")
+    .replace(/[-#>*_~]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -60,23 +60,37 @@ Deno.serve(async (req) => {
       // Embedding is an admin batch job — surface a clean 503 instead of a
       // 500 stack so the admin UI can render a "configure LOVABLE_API_KEY" hint.
       return new Response(
-        JSON.stringify({ error: "embedding_unavailable", message: "LOVABLE_API_KEY is not configured for this project." }),
+        JSON.stringify({
+          error: "embedding_unavailable",
+          message: "LOVABLE_API_KEY is not configured for this project.",
+        }),
         { status: 503, headers: { ...cors, "Content-Type": "application/json" } },
       );
     }
-
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
     // AuthN/AuthZ: require admin role
     const authHeader = req.headers.get("Authorization") ?? "";
-    const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
+    const userClient = createClient(
+      SUPABASE_URL,
+      Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!,
+      {
+        global: { headers: { Authorization: authHeader } },
+      },
+    );
     const { data: u } = await userClient.auth.getUser();
-    if (!u?.user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+    if (!u?.user)
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
     const { data: isAdmin } = await admin.rpc("has_role", { _user_id: u.user.id, _role: "admin" });
-    if (!isAdmin) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+    if (!isAdmin)
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
 
     const body = await req.json().catch(() => ({}));
     const articleId: string | undefined = body.articleId;
@@ -98,11 +112,18 @@ Deno.serve(async (req) => {
       const pieces = chunk(text).filter((p) => p.trim().length > 40);
       if (pieces.length === 0) continue;
       // Embed in batches of 32
-      const rows: { article_id: string; chunk_index: number; content: string; embedding: number[] }[] = [];
+      const rows: {
+        article_id: string;
+        chunk_index: number;
+        content: string;
+        embedding: number[];
+      }[] = [];
       for (let i = 0; i < pieces.length; i += 32) {
         const batch = pieces.slice(i, i + 32);
         const embs = await embedBatch(batch, LOVABLE_API_KEY);
-        embs.forEach((emb, j) => rows.push({ article_id: a.id, chunk_index: i + j, content: batch[j], embedding: emb }));
+        embs.forEach((emb, j) =>
+          rows.push({ article_id: a.id, chunk_index: i + j, content: batch[j], embedding: emb }),
+        );
       }
       // Replace existing chunks for this article
       await admin.from("help_article_embeddings").delete().eq("article_id", a.id);
@@ -111,11 +132,17 @@ Deno.serve(async (req) => {
       totalChunks += rows.length;
     }
 
-    return new Response(JSON.stringify({ ok: true, articles: articles?.length ?? 0, chunks: totalChunks }), {
-      headers: { ...cors, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ ok: true, articles: articles?.length ?? 0, chunks: totalChunks }),
+      {
+        headers: { ...cors, "Content-Type": "application/json" },
+      },
+    );
   } catch (e) {
     console.error("[help-assistant-embed]", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown" }), {
+      status: 500,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
   }
 });

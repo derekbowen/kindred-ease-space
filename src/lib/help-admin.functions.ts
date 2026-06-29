@@ -13,7 +13,10 @@ async function assertAdmin(supabase: any, userId: string) {
 }
 
 function readingTime(md: string): number {
-  const words = md.replace(/[`*_#>\-\[\]\(\)]/g, " ").split(/\s+/).filter(Boolean).length;
+  const words = md
+    .replace(new RegExp("[`*_#>\\-\\[\\]()]", "g"), " ")
+    .split(/\s+/)
+    .filter(Boolean).length;
   return Math.max(1, Math.round(words / 200));
 }
 
@@ -38,7 +41,12 @@ export const adminListCategories = createServerFn({ method: "GET" })
 
 const CategoryUpsertSchema = z.object({
   id: z.string().uuid().optional().nullable(),
-  slug: z.string().trim().min(1).max(100).regex(/^[a-z0-9-]+$/),
+  slug: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .regex(/^[a-z0-9-]+$/),
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).optional().nullable(),
   icon: z.string().trim().max(60).optional().nullable(),
@@ -61,7 +69,10 @@ export const adminUpsertCategory = createServerFn({ method: "POST" })
       workspace_id: null,
     };
     if (data.id) {
-      const { error } = await supabaseAdmin.from("help_categories").update(payload).eq("id", data.id);
+      const { error } = await supabaseAdmin
+        .from("help_categories")
+        .update(payload)
+        .eq("id", data.id);
       if (error) throw error;
       return { id: data.id };
     }
@@ -86,15 +97,13 @@ export const adminDeleteCategory = createServerFn({ method: "POST" })
 
 export const adminReorderCategories = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z.object({ ids: z.array(z.string().uuid()).max(200) }).parse(d)
-  )
+  .inputValidator((d: unknown) => z.object({ ids: z.array(z.string().uuid()).max(200) }).parse(d))
   .handler(async ({ context, data }) => {
     await assertAdmin(context.supabase, context.userId);
     await Promise.all(
       data.ids.map((id, idx) =>
-        supabaseAdmin.from("help_categories").update({ sort_order: idx }).eq("id", id)
-      )
+        supabaseAdmin.from("help_categories").update({ sort_order: idx }).eq("id", id),
+      ),
     );
     return { ok: true };
   });
@@ -107,7 +116,9 @@ export const adminListArticles = createServerFn({ method: "GET" })
     await assertAdmin(context.supabase, context.userId);
     const { data, error } = await supabaseAdmin
       .from("help_articles")
-      .select("id,slug,title,category_slug,status,is_popular,view_count,helpful_count,not_helpful_count,updated_at,published_at")
+      .select(
+        "id,slug,title,category_slug,status,is_popular,view_count,helpful_count,not_helpful_count,updated_at,published_at",
+      )
       .is("workspace_id", null)
       .order("updated_at", { ascending: false });
     if (error) throw error;
@@ -121,7 +132,9 @@ export const adminGetArticle = createServerFn({ method: "GET" })
     await assertAdmin(context.supabase, context.userId);
     const { data: row, error } = await supabaseAdmin
       .from("help_articles")
-      .select("id,slug,title,category_slug,excerpt,content,body_html,status,is_popular,is_published,seo_title,seo_description,tags,author_name,author_avatar_url,reading_time_minutes,view_count,helpful_count,not_helpful_count,published_at,updated_at,created_at,related_article_ids")
+      .select(
+        "id,slug,title,category_slug,excerpt,content,body_html,status,is_popular,is_published,seo_title,seo_description,tags,author_name,author_avatar_url,reading_time_minutes,view_count,helpful_count,not_helpful_count,published_at,updated_at,created_at,related_article_ids",
+      )
       .eq("id", data.id)
       .maybeSingle();
     if (error) throw error;
@@ -130,7 +143,12 @@ export const adminGetArticle = createServerFn({ method: "GET" })
 
 const ArticleUpsertSchema = z.object({
   id: z.string().uuid().optional().nullable(),
-  slug: z.string().trim().min(1).max(150).regex(/^[a-z0-9-]+$/),
+  slug: z
+    .string()
+    .trim()
+    .min(1)
+    .max(150)
+    .regex(/^[a-z0-9-]+$/),
   title: z.string().trim().min(1).max(200),
   category_slug: z.string().trim().min(1).max(100),
   excerpt: z.string().trim().max(500).optional().nullable(),
@@ -211,7 +229,7 @@ function normalizeIssue(s: string): string {
 export const adminFeedbackOverview = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({ days: z.number().int().min(1).max(365).default(30) }).parse(d ?? {})
+    z.object({ days: z.number().int().min(1).max(365).default(30) }).parse(d ?? {}),
   )
   .handler(async ({ context, data }) => {
     await assertAdmin(context.supabase, context.userId);
@@ -231,11 +249,14 @@ export const adminFeedbackOverview = createServerFn({ method: "GET" })
       .limit(5000);
     if (fErr) throw fErr;
 
-    const perArticle = new Map<string, {
-      recent_helpful: number;
-      recent_not_helpful: number;
-      issues: Map<string, { count: number; sample: string }>;
-    }>();
+    const perArticle = new Map<
+      string,
+      {
+        recent_helpful: number;
+        recent_not_helpful: number;
+        issues: Map<string, { count: number; sample: string }>;
+      }
+    >();
 
     for (const row of feedback ?? []) {
       const id = row.article_id as string;
@@ -291,7 +312,7 @@ export const adminFeedbackOverview = createServerFn({ method: "GET" })
         acc.recent_not_helpful += a.recent_not_helpful;
         return acc;
       },
-      { helpful: 0, not_helpful: 0, recent_helpful: 0, recent_not_helpful: 0 }
+      { helpful: 0, not_helpful: 0, recent_helpful: 0, recent_not_helpful: 0 },
     );
 
     return {

@@ -16,12 +16,7 @@ const ActionInput = z.object({
   workspaceId: workspaceIdSchema,
   briefingId: z.string().uuid().optional(),
   insightIndex: z.number().int().nonnegative().optional(),
-  actionType: z.enum([
-    "fix_thin_page",
-    "add_meta",
-    "create_city_page",
-    "add_internal_links",
-  ]),
+  actionType: z.enum(["fix_thin_page", "add_meta", "create_city_page", "add_internal_links"]),
   payload: z.record(z.string(), z.unknown()).default({}),
 });
 
@@ -51,7 +46,11 @@ async function callAI(systemPrompt: string, userPrompt: string, apiKey: string):
   return j.choices?.[0]?.message?.content?.trim() ?? "";
 }
 
-async function fixThinPage(workspaceId: string, payload: Record<string, unknown>, apiKey: string): Promise<ActionResult> {
+async function fixThinPage(
+  workspaceId: string,
+  payload: Record<string, unknown>,
+  apiKey: string,
+): Promise<ActionResult> {
   const pageId = String(payload.page_id ?? "");
   if (!pageId) throw new Error("Missing page_id");
   const { data: page, error } = await supabaseAdmin
@@ -76,11 +75,23 @@ async function fixThinPage(workspaceId: string, payload: Record<string, unknown>
     .eq("workspace_id", workspaceId);
   if (upErr) throw new Error(upErr.message);
 
-  return { ok: true, summary: `Expanded "${page.title}" to ${expanded.length} chars`, details: { pageId } };
+  return {
+    ok: true,
+    summary: `Expanded "${page.title}" to ${expanded.length} chars`,
+    details: { pageId },
+  };
 }
 
-async function addMeta(workspaceId: string, payload: Record<string, unknown>, apiKey: string): Promise<ActionResult> {
-  const ids: string[] = Array.isArray(payload.page_ids) ? (payload.page_ids as string[]) : payload.page_id ? [String(payload.page_id)] : [];
+async function addMeta(
+  workspaceId: string,
+  payload: Record<string, unknown>,
+  apiKey: string,
+): Promise<ActionResult> {
+  const ids: string[] = Array.isArray(payload.page_ids)
+    ? (payload.page_ids as string[])
+    : payload.page_id
+      ? [String(payload.page_id)]
+      : [];
   if (ids.length === 0) throw new Error("Missing page_ids");
 
   const { data: pages, error } = await supabaseAdmin
@@ -98,7 +109,11 @@ async function addMeta(workspaceId: string, payload: Record<string, unknown>, ap
       apiKey,
     );
     let parsed: { seo_title?: string; seo_description?: string } = {};
-    try { parsed = JSON.parse(out.replace(/```json|```/g, "").trim()); } catch { /* skip */ }
+    try {
+      parsed = JSON.parse(out.replace(/```json|```/g, "").trim());
+    } catch {
+      /* skip */
+    }
     if (!parsed.seo_title || !parsed.seo_description) continue;
     const { error: upErr } = await supabaseAdmin
       .from("tenant_pages")
@@ -109,10 +124,18 @@ async function addMeta(workspaceId: string, payload: Record<string, unknown>, ap
       .eq("workspace_id", workspaceId);
     if (!upErr) updated += 1;
   }
-  return { ok: true, summary: `Updated meta on ${updated} of ${ids.length} pages`, details: { updated, requested: ids.length } };
+  return {
+    ok: true,
+    summary: `Updated meta on ${updated} of ${ids.length} pages`,
+    details: { updated, requested: ids.length },
+  };
 }
 
-async function createCityPage(workspaceId: string, payload: Record<string, unknown>, apiKey: string): Promise<ActionResult> {
+async function createCityPage(
+  workspaceId: string,
+  payload: Record<string, unknown>,
+  apiKey: string,
+): Promise<ActionResult> {
   const city = String(payload.city ?? "").trim();
   if (!city) throw new Error("Missing city");
   const state = String(payload.state ?? "").trim();
@@ -142,7 +165,11 @@ async function createCityPage(workspaceId: string, payload: Record<string, unkno
     apiKey,
   );
   let seo: { seo_title?: string; seo_description?: string } = {};
-  try { seo = JSON.parse(seoOut.replace(/```json|```/g, "").trim()); } catch { /* fall back */ }
+  try {
+    seo = JSON.parse(seoOut.replace(/```json|```/g, "").trim());
+  } catch {
+    /* fall back */
+  }
 
   const pageTitle = (seo.seo_title ?? title).slice(0, 200);
   const { data: inserted, error: insErr } = await supabaseAdmin
@@ -171,7 +198,11 @@ async function createCityPage(workspaceId: string, payload: Record<string, unkno
   };
 }
 
-async function addInternalLinks(workspaceId: string, payload: Record<string, unknown>, apiKey: string): Promise<ActionResult> {
+async function addInternalLinks(
+  workspaceId: string,
+  payload: Record<string, unknown>,
+  apiKey: string,
+): Promise<ActionResult> {
   const pageId = String(payload.page_id ?? "");
   if (!pageId) throw new Error("Missing page_id");
 
@@ -194,12 +225,13 @@ async function addInternalLinks(workspaceId: string, payload: Record<string, unk
 
   const targets = (candidates ?? [])
     .filter((c) => c.slug)
-    .map((c) => `- /p/${c.slug} — ${c.title}`).join("\n");
+    .map((c) => `- /p/${c.slug} — ${c.title}`)
+    .join("\n");
 
   if (!targets) throw new Error("No internal link candidates available");
 
   const updated = await callAI(
-    'You add 3-6 contextual internal links to a markdown page. Use Markdown link syntax [anchor text](/p/slug). Only link to slugs from the provided list. Do NOT change other content. Return the FULL updated markdown only.',
+    "You add 3-6 contextual internal links to a markdown page. Use Markdown link syntax [anchor text](/p/slug). Only link to slugs from the provided list. Do NOT change other content. Return the FULL updated markdown only.",
     `Existing page (title: "${page.title}"):\n\n${page.body_markdown}\n\nAvailable internal link targets:\n${targets}`,
     apiKey,
   );
@@ -217,7 +249,11 @@ async function addInternalLinks(workspaceId: string, payload: Record<string, unk
     .eq("workspace_id", workspaceId);
   if (upErr) throw new Error(upErr.message);
 
-  return { ok: true, summary: `Added ${added} internal link${added === 1 ? "" : "s"} to "${page.title}"`, details: { pageId, added } };
+  return {
+    ok: true,
+    summary: `Added ${added} internal link${added === 1 ? "" : "s"} to "${page.title}"`,
+    details: { pageId, added },
+  };
 }
 
 export const runCoachAction = createServerFn({ method: "POST" })

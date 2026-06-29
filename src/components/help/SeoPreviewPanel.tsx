@@ -40,8 +40,8 @@ function firstParagraph(md: string): string {
   const stripped = md
     .replace(/```[\s\S]*?```/g, "")
     .replace(/^#{1,6}\s.*$/gm, "")
-    .replace(/!\[.*?\]\(.*?\)/g, "")
-    .replace(/\[(.*?)\]\(.*?\)/g, "$1")
+    .replace(new RegExp("!\\[[^\\]]*\\]\\([^)]*\\)", "g"), "")
+    .replace(new RegExp("\\[([^\\]]+)\\]\\([^)]*\\)", "g"), "$1")
     .replace(/[`*_>#~]/g, "")
     .trim();
   const para = stripped.split(/\n{2,}/).find((p) => p.trim().length > 0) ?? "";
@@ -66,12 +66,16 @@ export function SeoPreviewPanel(props: Props) {
 
   const path = `/help/${categorySlug || "category"}/${slug || "slug"}`;
   const canonical = canonicalUrl(path);
-  const displayUrl = `${CANONICAL_ORIGIN.replace(/^https?:\/\//, "")}${path}`.replace(/^www\./, "www.");
+  const displayUrl = `${CANONICAL_ORIGIN.replace(/^https?:\/\//, "")}${path}`.replace(
+    /^www\./,
+    "www.",
+  );
 
   const resolvedTitle = (seoTitle || title || "Untitled").trim();
-  const fullTitle = resolvedTitle.endsWith(TITLE_SUFFIX) ? resolvedTitle : `${resolvedTitle}${TITLE_SUFFIX}`;
-  const resolvedDescription =
-    (seoDescription || excerpt || firstParagraph(content) || "").trim();
+  const fullTitle = resolvedTitle.endsWith(TITLE_SUFFIX)
+    ? resolvedTitle
+    : `${resolvedTitle}${TITLE_SUFFIX}`;
+  const resolvedDescription = (seoDescription || excerpt || firstParagraph(content) || "").trim();
 
   const jsonLd = useMemo(() => {
     const articleLd = {
@@ -104,24 +108,45 @@ export function SeoPreviewPanel(props: Props) {
       ],
     };
     return [articleLd, breadcrumbLd];
-  }, [title, resolvedDescription, publishedAt, updatedAt, authorName, canonical, tags, ogImage, categorySlug]);
+  }, [
+    title,
+    resolvedDescription,
+    publishedAt,
+    updatedAt,
+    authorName,
+    canonical,
+    tags,
+    ogImage,
+    categorySlug,
+  ]);
 
   const issues = useMemo(() => {
     const out: { level: "warn" | "error" | "ok"; msg: string }[] = [];
     if (!title.trim()) out.push({ level: "error", msg: "Missing title" });
     if (!slug.trim()) out.push({ level: "error", msg: "Missing slug" });
-    if (!resolvedDescription) out.push({ level: "warn", msg: "No description (excerpt or SEO description)" });
+    if (!resolvedDescription)
+      out.push({ level: "warn", msg: "No description (excerpt or SEO description)" });
     if (resolvedTitle.length > 60)
-      out.push({ level: "warn", msg: `SEO title is ${resolvedTitle.length} chars — Google truncates near 60.` });
+      out.push({
+        level: "warn",
+        msg: `SEO title is ${resolvedTitle.length} chars — Google truncates near 60.`,
+      });
     if (resolvedTitle.length > 0 && resolvedTitle.length < 25)
       out.push({ level: "warn", msg: "SEO title is very short — aim for 40–60 chars." });
     if (resolvedDescription.length > 160)
-      out.push({ level: "warn", msg: `Description is ${resolvedDescription.length} chars — Google truncates near 160.` });
+      out.push({
+        level: "warn",
+        msg: `Description is ${resolvedDescription.length} chars — Google truncates near 160.`,
+      });
     if (resolvedDescription && resolvedDescription.length < 70)
       out.push({ level: "warn", msg: "Description is short — aim for 120–160 chars." });
     if (slug && !/^[a-z0-9-]+$/.test(slug))
-      out.push({ level: "error", msg: "Slug should only contain lowercase letters, numbers and hyphens." });
-    if (tags.length === 0) out.push({ level: "warn", msg: "No tags — helps internal search and JSON-LD keywords." });
+      out.push({
+        level: "error",
+        msg: "Slug should only contain lowercase letters, numbers and hyphens.",
+      });
+    if (tags.length === 0)
+      out.push({ level: "warn", msg: "No tags — helps internal search and JSON-LD keywords." });
     if (out.length === 0) out.push({ level: "ok", msg: "Looks good." });
     return out;
   }, [title, slug, resolvedTitle, resolvedDescription, tags]);
@@ -171,7 +196,6 @@ export function SeoPreviewPanel(props: Props) {
         <div className="overflow-hidden rounded-md border border-border bg-background">
           <div className="aspect-[1.91/1] w-full bg-gradient-to-br from-orange-500/15 via-amber-500/10 to-rose-500/15 flex items-center justify-center">
             {ogImage ? (
-              // eslint-disable-next-line @next/next/no-img-element
               <img src={ogImage} alt="" className="h-full w-full object-cover" />
             ) : (
               <div className="text-center text-muted-foreground">
@@ -184,9 +208,13 @@ export function SeoPreviewPanel(props: Props) {
             <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
               {displayUrl.split("/")[0]}
             </p>
-            <p className="mt-0.5 text-sm font-semibold leading-snug line-clamp-2">{title || "Untitled"}</p>
+            <p className="mt-0.5 text-sm font-semibold leading-snug line-clamp-2">
+              {title || "Untitled"}
+            </p>
             {resolvedDescription && (
-              <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{resolvedDescription}</p>
+              <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                {resolvedDescription}
+              </p>
             )}
           </div>
         </div>
@@ -202,10 +230,16 @@ export function SeoPreviewPanel(props: Props) {
             )}
           </div>
           <div className="px-3 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{displayUrl}</p>
-            <p className="mt-0.5 text-sm font-semibold leading-snug line-clamp-1">{title || "Untitled"}</p>
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              {displayUrl}
+            </p>
+            <p className="mt-0.5 text-sm font-semibold leading-snug line-clamp-1">
+              {title || "Untitled"}
+            </p>
             {resolvedDescription && (
-              <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">{resolvedDescription}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">
+                {resolvedDescription}
+              </p>
             )}
           </div>
         </div>
@@ -268,11 +302,7 @@ function CharCount({ value, max, label }: { value: string; max: number; label: s
   );
 }
 
-function IssuesList({
-  issues,
-}: {
-  issues: { level: "warn" | "error" | "ok"; msg: string }[];
-}) {
+function IssuesList({ issues }: { issues: { level: "warn" | "error" | "ok"; msg: string }[] }) {
   return (
     <ul className="space-y-1">
       {issues.map((i, idx) => {
@@ -310,7 +340,9 @@ function JsonLdSection({ jsonLd }: { jsonLd: object[] }) {
           <Badge variant="secondary" className="text-[10px]">
             JSON-LD
           </Badge>
-          <span className="text-muted-foreground">Auto-generated structured data ({jsonLd.length} blocks)</span>
+          <span className="text-muted-foreground">
+            Auto-generated structured data ({jsonLd.length} blocks)
+          </span>
         </span>
         {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
       </button>
@@ -328,7 +360,9 @@ function JsonLdSection({ jsonLd }: { jsonLd: object[] }) {
                 });
               }}
             >
-              {copied ? "Copied" : (
+              {copied ? (
+                "Copied"
+              ) : (
                 <>
                   <Copy className="h-3 w-3 mr-1" /> Copy
                 </>

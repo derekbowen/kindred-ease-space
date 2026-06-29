@@ -1,0 +1,17 @@
+# Normalize line endings for text files on checkout/commit
+* text=auto eol=lf
+
+# Keep Windows scripts as CRLF if any
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.mp4 binary
+*.mov binary
+*.zip binary

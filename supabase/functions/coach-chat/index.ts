@@ -31,7 +31,11 @@ const cors = {
 type ChatMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
-  tool_calls?: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }>;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+  }>;
   tool_call_id?: string;
   name?: string;
 };
@@ -42,7 +46,8 @@ const TOOLS = [
     type: "function",
     function: {
       name: "get_workspace_overview",
-      description: "Counts of pages, listings, integrations status. Always call first for 'what should I work on' questions.",
+      description:
+        "Counts of pages, listings, integrations status. Always call first for 'what should I work on' questions.",
       parameters: { type: "object", properties: {}, additionalProperties: false },
     },
   },
@@ -82,7 +87,8 @@ const TOOLS = [
     type: "function",
     function: {
       name: "get_page_seo_audit",
-      description: "Audit one page: word count, title/meta length, H1 presence, internal link count.",
+      description:
+        "Audit one page: word count, title/meta length, H1 presence, internal link count.",
       parameters: {
         type: "object",
         properties: { page_id: { type: "string" } },
@@ -112,6 +118,66 @@ const TOOLS = [
       parameters: { type: "object", properties: {}, additionalProperties: false },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "get_gsc_data",
+      description:
+        "Summarize recent Google Search Console performance for the workspace or a specific page (impressions, clicks, position). Returns not_connected if no data.",
+      parameters: {
+        type: "object",
+        properties: {
+          page_url: {
+            type: "string",
+            description: "Optional full or path url to filter to one page",
+          },
+          days: { type: "number", description: "Lookback days, default 28" },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "check_sitemap_health",
+      description: "Check published pages in sitemap, recent 404s, and obvious orphans.",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "suggest_content_additions",
+      description:
+        "For a page, suggest specific content additions or sections based on current body length and common gaps.",
+      parameters: {
+        type: "object",
+        properties: { page_id: { type: "string" } },
+        required: ["page_id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "apply_seo_fix",
+      description:
+        "Apply a confirmed SEO fix (e.g. update_meta, add_h1, publish_page). Must include confirmed: true after user approves.",
+      parameters: {
+        type: "object",
+        properties: {
+          page_id: { type: "string" },
+          fix_type: { type: "string", enum: ["update_meta", "add_h1", "set_title", "publish"] },
+          payload: { type: "object", additionalProperties: true },
+          confirmed: { type: "boolean", description: "Must be true to execute write" },
+        },
+        required: ["page_id", "fix_type", "confirmed"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // ---------- Tool implementations ----------
@@ -124,10 +190,23 @@ async function executeTool(
   switch (name) {
     case "get_workspace_overview": {
       const [pages, listings, integ, ws] = await Promise.all([
-        admin.from("tenant_pages").select("status", { count: "exact", head: false }).eq("workspace_id", workspaceId),
-        admin.from("tenant_listings").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId),
-        admin.from("tenant_integrations").select("provider, status").eq("workspace_id", workspaceId),
-        admin.from("workspaces").select("name, plan, subscription_status").eq("id", workspaceId).single(),
+        admin
+          .from("tenant_pages")
+          .select("status", { count: "exact", head: false })
+          .eq("workspace_id", workspaceId),
+        admin
+          .from("tenant_listings")
+          .select("id", { count: "exact", head: true })
+          .eq("workspace_id", workspaceId),
+        admin
+          .from("tenant_integrations")
+          .select("provider, status")
+          .eq("workspace_id", workspaceId),
+        admin
+          .from("workspaces")
+          .select("name, plan, subscription_status")
+          .eq("id", workspaceId)
+          .single(),
       ]);
       const allPages = (pages.data ?? []) as Array<{ status: string }>;
       const published = allPages.filter((p) => p.status === "published").length;
@@ -141,7 +220,11 @@ async function executeTool(
       };
     }
     case "query_pages": {
-      const { status, search, limit } = args as { status?: string; search?: string; limit?: number };
+      const { status, search, limit } = args as {
+        status?: string;
+        search?: string;
+        limit?: number;
+      };
       let q = admin
         .from("tenant_pages")
         .select("id, slug, title, status, meta_description, published_at, updated_at")
@@ -150,7 +233,9 @@ async function executeTool(
         .limit(Math.min(limit ?? 20, 50));
       if (status) q = q.eq("status", status);
       if (search) {
-        const safe = String(search).replace(/[%,().,]/g, "").slice(0, 100);
+        const safe = String(search)
+          .replace(/[%,().,]/g, "")
+          .slice(0, 100);
         if (safe) q = q.or(`slug.ilike.%${safe}%,title.ilike.%${safe}%`);
       }
       const { data, error } = await q;
@@ -158,7 +243,11 @@ async function executeTool(
       return { pages: data };
     }
     case "query_listings": {
-      const { city, category, limit } = args as { city?: string; category?: string; limit?: number };
+      const { city, category, limit } = args as {
+        city?: string;
+        category?: string;
+        limit?: number;
+      };
       let q = admin
         .from("tenant_listings")
         .select("id, title, slug, city, state, category, price_amount, price_currency")
@@ -183,9 +272,11 @@ async function executeTool(
       const wordCount = body.trim().split(/\s+/).filter(Boolean).length;
       const internalLinks = (body.match(/\]\(\/p\//g) ?? []).length;
       const issues: string[] = [];
-      if (!page.title || (page.title as string).length > 60) issues.push("Title missing or >60 chars (Google truncates)");
+      if (!page.title || (page.title as string).length > 60)
+        issues.push("Title missing or >60 chars (Google truncates)");
       if (!page.meta_description) issues.push("Missing meta description");
-      else if ((page.meta_description as string).length > 160) issues.push("Meta description >160 chars");
+      else if ((page.meta_description as string).length > 160)
+        issues.push("Meta description >160 chars");
       if (!page.h1) issues.push("Missing H1");
       if (wordCount < 300) issues.push(`Thin content: ${wordCount} words (recommend 800+)`);
       if (internalLinks === 0) issues.push("Zero internal links to other pages");
@@ -209,9 +300,16 @@ async function executeTool(
         .eq("id", page_id)
         .single();
       if (!target) return { error: "Page not found" };
-      const tokens = ((target.title as string | null) ?? "").toLowerCase().split(/\W+/).filter((t) => t.length > 4);
-      if (tokens.length === 0) return { suggestions: [], note: "Page title too short to derive related terms" };
-      const ors = tokens.slice(0, 3).map((t) => `title.ilike.%${t}%`).join(",");
+      const tokens = ((target.title as string | null) ?? "")
+        .toLowerCase()
+        .split(/\W+/)
+        .filter((t) => t.length > 4);
+      if (tokens.length === 0)
+        return { suggestions: [], note: "Page title too short to derive related terms" };
+      const ors = tokens
+        .slice(0, 3)
+        .map((t) => `title.ilike.%${t}%`)
+        .join(",");
       const { data: candidates } = await admin
         .from("tenant_pages")
         .select("id, slug, title, body_markdown")
@@ -229,16 +327,24 @@ async function executeTool(
     case "check_listing_coverage": {
       const [{ data: listings }, { data: pages }] = await Promise.all([
         admin.from("tenant_listings").select("id, city, category").eq("workspace_id", workspaceId),
-        admin.from("tenant_pages").select("listing_filter, status").eq("workspace_id", workspaceId).eq("status", "published"),
+        admin
+          .from("tenant_pages")
+          .select("listing_filter, status")
+          .eq("workspace_id", workspaceId)
+          .eq("status", "published"),
       ]);
       const cityCoverage = new Set<string>();
-      for (const p of (pages ?? [])) {
+      for (const p of pages ?? []) {
         const f = (p.listing_filter as { city?: string } | null) ?? {};
         if (f.city) cityCoverage.add(String(f.city).toLowerCase());
       }
       const cities = new Map<string, number>();
-      for (const l of (listings ?? [])) {
-        if (l.city) cities.set(String(l.city).toLowerCase(), (cities.get(String(l.city).toLowerCase()) ?? 0) + 1);
+      for (const l of listings ?? []) {
+        if (l.city)
+          cities.set(
+            String(l.city).toLowerCase(),
+            (cities.get(String(l.city).toLowerCase()) ?? 0) + 1,
+          );
       }
       const uncoveredCities = [...cities.entries()]
         .filter(([c]) => !cityCoverage.has(c))
@@ -249,10 +355,159 @@ async function executeTool(
         total_listings: listings?.length ?? 0,
         total_published_pages: pages?.length ?? 0,
         uncovered_cities: uncoveredCities,
-        suggestion: uncoveredCities.length > 0
-          ? `${uncoveredCities.length} cities have listings but no dedicated page. Top: ${uncoveredCities[0].city} (${uncoveredCities[0].listing_count} listings).`
-          : "All cities with listings have at least one page.",
+        suggestion:
+          uncoveredCities.length > 0
+            ? `${uncoveredCities.length} cities have listings but no dedicated page. Top: ${uncoveredCities[0].city} (${uncoveredCities[0].listing_count} listings).`
+            : "All cities with listings have at least one page.",
       };
+    }
+    case "get_gsc_data": {
+      const { page_url, days } = args as { page_url?: string; days?: number };
+      const lookback = Math.min(Math.max(days ?? 28, 1), 90);
+      const since = new Date(Date.now() - lookback * 86400000).toISOString();
+      let q = admin
+        .from("gsc_query_data")
+        .select("url_path, query, impressions, clicks, position, captured_at")
+        .eq("workspace_id", workspaceId)
+        .gte("captured_at", since)
+        .order("captured_at", { ascending: false })
+        .limit(500);
+      if (page_url) {
+        const path = page_url.replace(/^https?:\/\/[^/]+/, "");
+        q = q.ilike("url_path", `%${path}%`);
+      }
+      const { data: rows } = await q;
+      if (!rows || rows.length === 0) {
+        return {
+          connected: false,
+          note: "No GSC data imported for this workspace yet. Use /app/seo/gsc-import",
+        };
+      }
+      const totalImp = rows.reduce((s, r: any) => s + (r.impressions || 0), 0);
+      const totalClicks = rows.reduce((s, r: any) => s + (r.clicks || 0), 0);
+      const avgPos = rows.length
+        ? rows.reduce((s, r: any) => s + (r.position || 0), 0) / rows.length
+        : null;
+      const topQueries = [...rows]
+        .sort((a: any, b: any) => (b.impressions || 0) - (a.impressions || 0))
+        .slice(0, 5)
+        .map((r: any) => ({ query: r.query, imp: r.impressions, pos: r.position }));
+      return {
+        connected: true,
+        days: lookback,
+        impressions: totalImp,
+        clicks: totalClicks,
+        avg_position: avgPos,
+        top_queries: topQueries,
+        sample_size: rows.length,
+      };
+    }
+    case "check_sitemap_health": {
+      const [{ data: pages }, { data: logs }] = await Promise.all([
+        admin
+          .from("tenant_pages")
+          .select("id, slug, status, updated_at")
+          .eq("workspace_id", workspaceId),
+        admin
+          .from("content_404_log")
+          .select("url_path, hit_count, last_seen_at")
+          .eq("workspace_id", workspaceId)
+          .is("resolved_at", null)
+          .order("hit_count", { ascending: false })
+          .limit(10),
+      ]);
+      const published = (pages ?? []).filter((p: any) => p.status === "published").length;
+      const drafts = (pages ?? []).filter((p: any) => p.status === "draft").length;
+      const recent404s = (logs ?? []).map((l: any) => ({
+        path: l.url_path,
+        hits: l.hit_count,
+        last: l.last_seen_at,
+      }));
+      const has404s = recent404s.length > 0;
+      return {
+        total_pages: pages?.length ?? 0,
+        published,
+        drafts,
+        unresolved_404s: recent404s.length,
+        top_404s: recent404s.slice(0, 5),
+        health_note: has404s
+          ? "Some 404s are being hit — consider redirects in missing-pages tool."
+          : "No recent unresolved 404 hits logged.",
+      };
+    }
+    case "suggest_content_additions": {
+      const { page_id } = args as { page_id: string };
+      const { data: page } = await admin
+        .from("tenant_pages")
+        .select("id, slug, title, body_markdown, meta_description")
+        .eq("workspace_id", workspaceId)
+        .eq("id", page_id)
+        .single();
+      if (!page) return { error: "Page not found" };
+      const body = (page.body_markdown ?? "") as string;
+      const wc = body.trim().split(/\s+/).filter(Boolean).length;
+      const suggestions: string[] = [];
+      if (wc < 400)
+        suggestions.push(
+          "Add a detailed section on pricing, use-cases, and local examples (aim 800+ words).",
+        );
+      if (!page.meta_description)
+        suggestions.push("Add a compelling meta description (150-155 chars) with primary keyword.");
+      if (!/\n## /i.test(body))
+        suggestions.push("Add 2-3 H2 subheadings for better scannability and SERP features.");
+      if ((body.match(/https?:\/\//g) ?? []).length < 2)
+        suggestions.push(
+          "Add 1-2 external authoritative links + more internal links to related pages.",
+        );
+      return {
+        page_slug: page.slug,
+        word_count: wc,
+        suggestions: suggestions.length
+          ? suggestions
+          : [
+              "Content looks reasonably complete; consider refreshing with fresh stats or a comparison table.",
+            ],
+      };
+    }
+    case "apply_seo_fix": {
+      const { page_id, fix_type, payload, confirmed } = args as {
+        page_id: string;
+        fix_type: string;
+        payload?: any;
+        confirmed?: boolean;
+      };
+      if (!confirmed) {
+        return {
+          error: "confirmation_required",
+          message: "Set confirmed: true after user explicitly approves the change.",
+          preview: { page_id, fix_type, payload },
+        };
+      }
+      if (fix_type === "update_meta" || fix_type === "set_title") {
+        const patch: any = {};
+        if (payload?.meta_description)
+          patch.meta_description = String(payload.meta_description).slice(0, 320);
+        if (payload?.title) patch.title = String(payload.title).slice(0, 200);
+        if (payload?.h1) patch.h1 = String(payload.h1).slice(0, 200);
+        if (Object.keys(patch).length === 0) return { error: "no_fields_to_update" };
+        const { error: upErr } = await admin
+          .from("tenant_pages")
+          .update(patch)
+          .eq("id", page_id)
+          .eq("workspace_id", workspaceId);
+        if (upErr) return { error: upErr.message };
+        return { ok: true, applied: fix_type, page_id, patch };
+      }
+      if (fix_type === "publish") {
+        const { error: upErr } = await admin
+          .from("tenant_pages")
+          .update({ status: "published", published_at: new Date().toISOString() })
+          .eq("id", page_id)
+          .eq("workspace_id", workspaceId);
+        if (upErr) return { error: upErr.message };
+        return { ok: true, applied: "publish", page_id };
+      }
+      return { error: `Unsupported fix_type for now: ${fix_type}` };
     }
     default:
       return { error: `Unknown tool: ${name}` };
@@ -263,7 +518,12 @@ async function executeTool(
 async function callOpenAICompatible(
   base: string,
   apiKey: string,
-  body: { model: string; messages: ChatMessage[]; tools: typeof TOOLS; tool_choice?: "auto" | "none" },
+  body: {
+    model: string;
+    messages: ChatMessage[];
+    tools: typeof TOOLS;
+    tool_choice?: "auto" | "none";
+  },
 ) {
   const r = await fetch(`${base}/chat/completions`, {
     method: "POST",
@@ -279,7 +539,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const PUBLISHABLE = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
+  const PUBLISHABLE =
+    Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
   const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
   const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
@@ -291,7 +552,8 @@ Deno.serve(async (req) => {
     const { data: ures } = await userClient.auth.getUser();
     if (!ures?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...cors, "Content-Type": "application/json" },
+        status: 401,
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
     const userId = ures.user.id;
@@ -300,20 +562,24 @@ Deno.serve(async (req) => {
       const raw = await req.json();
       body = RequestSchema.parse(raw);
     } catch (e) {
-      const msg = e instanceof z.ZodError
-        ? e.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
-        : "Invalid JSON body";
+      const msg =
+        e instanceof z.ZodError
+          ? e.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
+          : "Invalid JSON body";
       return new Response(JSON.stringify({ error: `Invalid request: ${msg}` }), {
-        status: 400, headers: { ...cors, "Content-Type": "application/json" },
+        status: 400,
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
     const { data: isMember } = await admin.rpc("is_workspace_member", {
-      _workspace_id: body.workspace_id, _user_id: userId,
+      _workspace_id: body.workspace_id,
+      _user_id: userId,
     });
     if (!isMember) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403, headers: { ...cors, "Content-Type": "application/json" },
+        status: 403,
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
@@ -324,16 +590,27 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (!conv || conv.workspace_id !== body.workspace_id) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403, headers: { ...cors, "Content-Type": "application/json" },
+        status: 403,
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
     // Load active system prompt
     const { data: prompt } = await admin
-      .from("coach_system_prompts").select("body").eq("is_active", true).order("version", { ascending: false }).limit(1).single();
+      .from("coach_system_prompts")
+      .select("body")
+      .eq("is_active", true)
+      .order("version", { ascending: false })
+      .limit(1)
+      .single();
 
     // Workspace summary
-    const wsOverview = await executeTool(admin, body.workspace_id, "get_workspace_overview", {}) as Record<string, unknown>;
+    const wsOverview = (await executeTool(
+      admin,
+      body.workspace_id,
+      "get_workspace_overview",
+      {},
+    )) as Record<string, unknown>;
 
     // Load history (last 20)
     const { data: history } = await admin
@@ -359,8 +636,11 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
 
     // Build messages array for LLM
     const messages: ChatMessage[] = [{ role: "system", content: systemContent }];
-    for (const m of (history ?? [])) {
-      const msg: ChatMessage = { role: m.role as ChatMessage["role"], content: (m.content ?? "") as string };
+    for (const m of history ?? []) {
+      const msg: ChatMessage = {
+        role: m.role as ChatMessage["role"],
+        content: (m.content ?? "") as string,
+      };
       if (m.tool_calls) msg.tool_calls = m.tool_calls as ChatMessage["tool_calls"];
       messages.push(msg);
     }
@@ -368,7 +648,9 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
 
     // Resolve provider key
     const { data: creds } = await admin
-      .from("tenant_ai_credentials").select("provider, status").eq("workspace_id", body.workspace_id);
+      .from("tenant_ai_credentials")
+      .select("provider, status")
+      .eq("workspace_id", body.workspace_id);
     const validByok = (creds ?? []).find((c) => c.status === "valid");
 
     // Default to the platform path (OpenRouter, billed to credits).
@@ -379,15 +661,18 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
 
     if (validByok) {
       const { data: key } = await admin.rpc("tenant_get_ai_credential", {
-        _workspace_id: body.workspace_id, _provider: validByok.provider,
+        _workspace_id: body.workspace_id,
+        _provider: validByok.provider,
       });
       if (key) {
         apiKey = key as string;
         usedByok = true;
         if (validByok.provider === "openai") {
-          apiBase = "https://api.openai.com/v1"; model = "gpt-4o-mini";
+          apiBase = "https://api.openai.com/v1";
+          model = "gpt-4o-mini";
         } else if (validByok.provider === "openrouter") {
-          apiBase = "https://openrouter.ai/api/v1"; model = "google/gemini-3.1-pro-preview";
+          apiBase = "https://openrouter.ai/api/v1";
+          model = "google/gemini-3.1-pro-preview";
         }
         // Anthropic / Google BYOK route back to the platform OpenRouter key for
         // tool-loop simplicity (v1). Future: native tool-calling adapters.
@@ -402,7 +687,8 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
 
     if (!apiKey) {
       return new Response(JSON.stringify({ error: "No AI provider configured" }), {
-        status: 500, headers: { ...cors, "Content-Type": "application/json" },
+        status: 500,
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
@@ -414,20 +700,30 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
       });
       if (!qErr) {
         platformBilling = "free_quota";
-      } else if (typeof qErr.message === "string" && qErr.message.includes("platform_ai_quota_exhausted")) {
+      } else if (
+        typeof qErr.message === "string" &&
+        qErr.message.includes("platform_ai_quota_exhausted")
+      ) {
         platformBilling = "credits";
         const estCredits = estimateCreditsBeforeCall(model, body.user_message.length * 4, 4096);
         const { data: bal } = await admin
-          .from("credit_balances").select("balance").eq("workspace_id", body.workspace_id).maybeSingle();
+          .from("credit_balances")
+          .select("balance")
+          .eq("workspace_id", body.workspace_id)
+          .maybeSingle();
         if (!bal || bal.balance < estCredits) {
           return new Response(
-            JSON.stringify({ error: "Out of AI credits. Top up in Billing to keep coaching.", code: "insufficient_credits" }),
+            JSON.stringify({
+              error: "Out of AI credits. Top up in Billing to keep coaching.",
+              code: "insufficient_credits",
+            }),
             { status: 402, headers: { ...cors, "Content-Type": "application/json" } },
           );
         }
       } else {
         return new Response(JSON.stringify({ error: qErr?.message ?? "quota_error" }), {
-          status: 500, headers: { ...cors, "Content-Type": "application/json" },
+          status: 500,
+          headers: { ...cors, "Content-Type": "application/json" },
         });
       }
     }
@@ -447,7 +743,10 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
           // Tool loop
           for (let iter = 0; iter < 8; iter++) {
             const resp = await callOpenAICompatible(apiBase, apiKey, {
-              model, messages, tools: TOOLS, tool_choice: "auto",
+              model,
+              messages,
+              tools: TOOLS,
+              tool_choice: "auto",
             });
             const choice = resp.choices?.[0];
             const msg = choice?.message;
@@ -455,17 +754,27 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
             totalCompletionTokens += resp.usage?.completion_tokens ?? 0;
 
             if (msg?.tool_calls && msg.tool_calls.length > 0) {
-              messages.push({ role: "assistant", content: msg.content ?? "", tool_calls: msg.tool_calls });
+              messages.push({
+                role: "assistant",
+                content: msg.content ?? "",
+                tool_calls: msg.tool_calls,
+              });
               for (const tc of msg.tool_calls) {
                 const toolName = tc.function.name;
                 let parsedArgs: Record<string, unknown> = {};
-                try { parsedArgs = JSON.parse(tc.function.arguments || "{}"); } catch { /* noop */ }
+                try {
+                  parsedArgs = JSON.parse(tc.function.arguments || "{}");
+                } catch {
+                  /* noop */
+                }
                 send("tool_start", { id: tc.id, name: toolName, args: parsedArgs });
                 const output = await executeTool(admin, body.workspace_id, toolName, parsedArgs);
                 toolCallRecords.push({ name: toolName, input: parsedArgs, output });
                 send("tool_result", { id: tc.id, name: toolName, output });
                 messages.push({
-                  role: "tool", tool_call_id: tc.id, name: toolName,
+                  role: "tool",
+                  tool_call_id: tc.id,
+                  name: toolName,
                   content: JSON.stringify(output).slice(0, 8000),
                 });
               }
@@ -490,7 +799,8 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
             });
 
             // Update conversation
-            await admin.from("coach_conversations")
+            await admin
+              .from("coach_conversations")
               .update({ updated_at: new Date().toISOString() })
               .eq("id", body.conversation_id);
 
@@ -510,12 +820,19 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
                 });
                 if (dErr) {
                   const { data: bal2 } = await admin
-                    .from("credit_balances").select("balance").eq("workspace_id", body.workspace_id).maybeSingle();
+                    .from("credit_balances")
+                    .select("balance")
+                    .eq("workspace_id", body.workspace_id)
+                    .maybeSingle();
                   const remaining = Math.max(0, bal2?.balance ?? 0);
                   if (remaining > 0) {
                     await admin.rpc("deduct_credits", {
-                      _workspace_id: body.workspace_id, _amount: remaining, _reason: "ai_usage",
-                      _ai_model: model, _ref_type: "coach", _ref_id: body.conversation_id,
+                      _workspace_id: body.workspace_id,
+                      _amount: remaining,
+                      _reason: "ai_usage",
+                      _ai_model: model,
+                      _ref_type: "coach",
+                      _ref_id: body.conversation_id,
                       _metadata: { provider: "platform", clamped: true },
                     });
                   }
@@ -524,11 +841,15 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
               }
             }
             await admin.from("ai_usage_log").insert({
-              workspace_id: body.workspace_id, provider: usedByok ? "byok" : "platform",
-              model, feature: "coach",
-              prompt_tokens: totalPromptTokens, completion_tokens: totalCompletionTokens,
+              workspace_id: body.workspace_id,
+              provider: usedByok ? "byok" : "platform",
+              model,
+              feature: "coach",
+              prompt_tokens: totalPromptTokens,
+              completion_tokens: totalCompletionTokens,
               total_tokens: totalPromptTokens + totalCompletionTokens,
-              used_byok: usedByok, status: "ok",
+              used_byok: usedByok,
+              status: "ok",
             });
 
             send("done", {
@@ -558,14 +879,15 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
         ...cors,
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
+        Connection: "keep-alive",
       },
     });
   } catch (e) {
     const m = e instanceof Error ? e.message : "Unknown error";
     console.error("[coach-chat] outer", m);
     return new Response(JSON.stringify({ error: m }), {
-      status: 500, headers: { ...cors, "Content-Type": "application/json" },
+      status: 500,
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   }
 });
