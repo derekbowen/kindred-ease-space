@@ -22,6 +22,9 @@ const InputSchema = z.object({
   topic: z.string().trim().min(10).max(2000),
   model: z.string().default("google/gemini-2.5-flash"),
   slug: z.string().trim().max(120).optional(),
+  city: z.string().trim().max(120).optional(),
+  state: z.string().trim().max(80).optional(),
+  categoryPlural: z.string().trim().max(80).optional(),
 });
 
 const SYSTEM = `
@@ -137,6 +140,17 @@ seo_title (≤60 chars) and seo_description (≤155 chars) optimised for the top
 
     const url_path = `/p/${slug}`;
     const pageTitle = gen.title || data.title;
+    const city = data.city?.trim() || "";
+    const state = data.state?.trim() || "";
+    const categoryPlural = data.categoryPlural?.trim() || "listings";
+    const variables: Record<string, string> = {};
+    if (city) variables.city = city;
+    if (state) variables.state = state;
+    if (categoryPlural) variables.category_plural = categoryPlural;
+    const listingFilter: Record<string, unknown> = { limit: 24, sort: "newest" };
+    if (city) listingFilter.city = city;
+    if (state) listingFilter.state = state;
+
     const { data: inserted, error: insErr } = await supabaseAdmin
       .from("tenant_pages")
       .insert({
@@ -147,8 +161,8 @@ seo_title (≤60 chars) and seo_description (≤155 chars) optimised for the top
         meta_description: (gen.seo_description || data.description || "").slice(0, 320),
         h1: pageTitle,
         body_markdown: gen.body_markdown,
-        variables: {},
-        listing_filter: { limit: 24, sort: "newest" },
+        variables,
+        listing_filter: listingFilter,
         status: "published",
         published_at: new Date().toISOString(),
       })
