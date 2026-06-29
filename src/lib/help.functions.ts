@@ -27,27 +27,29 @@ export type HelpHomeData = {
   countsBySlug: Record<string, number>;
 };
 
-export const getHelpHome = createServerFn({ method: "GET" }).handler(async (): Promise<HelpHomeData> => {
-  try {
-    const [categories, popular, recent] = await Promise.all([
-      listCategories(),
-      listPopularArticles(6),
-      listRecentArticles(4),
-    ]);
-    // Article counts per category
-    const counts: Record<string, number> = {};
-    await Promise.all(
-      categories.map(async (c) => {
-        const arts = await listArticlesByCategory(c.slug);
-        counts[c.slug] = arts.length;
-      })
-    );
-    return { categories, popular, recent, countsBySlug: counts };
-  } catch (e) {
-    console.error("[help] getHelpHome", e);
-    return { categories: [], popular: [], recent: [], countsBySlug: {} };
-  }
-});
+export const getHelpHome = createServerFn({ method: "GET" }).handler(
+  async (): Promise<HelpHomeData> => {
+    try {
+      const [categories, popular, recent] = await Promise.all([
+        listCategories(),
+        listPopularArticles(6),
+        listRecentArticles(4),
+      ]);
+      // Article counts per category
+      const counts: Record<string, number> = {};
+      await Promise.all(
+        categories.map(async (c) => {
+          const arts = await listArticlesByCategory(c.slug);
+          counts[c.slug] = arts.length;
+        }),
+      );
+      return { categories, popular, recent, countsBySlug: counts };
+    } catch (e) {
+      console.error("[help] getHelpHome", e);
+      return { categories: [], popular: [], recent: [], countsBySlug: {} };
+    }
+  },
+);
 
 export type HelpCategoryData = {
   category: HelpCategory | null;
@@ -59,7 +61,10 @@ export const getHelpCategory = createServerFn({ method: "GET" })
   .inputValidator((d: { slug: string }) => d)
   .handler(async ({ data }): Promise<HelpCategoryData> => {
     try {
-      const [category, allCats] = await Promise.all([getCategoryBySlug(data.slug), listCategories()]);
+      const [category, allCats] = await Promise.all([
+        getCategoryBySlug(data.slug),
+        listCategories(),
+      ]);
       if (!category) return { category: null, articles: [], otherCategories: allCats };
       const articles = await listArticlesByCategory(data.slug);
       return {

@@ -38,9 +38,21 @@ export function SiteFooter() {
             {t("footer.product")}
           </h3>
           <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-            <li><Link to="/" className="hover:text-foreground">{t("nav.features")}</Link></li>
-            <li><Link to="/" className="hover:text-foreground">{t("nav.pricing")}</Link></li>
-            <li><Link to="/help" className="hover:text-foreground">{t("nav.help")}</Link></li>
+            <li>
+              <Link to="/" className="hover:text-foreground">
+                {t("nav.features")}
+              </Link>
+            </li>
+            <li>
+              <Link to="/" className="hover:text-foreground">
+                {t("nav.pricing")}
+              </Link>
+            </li>
+            <li>
+              <Link to="/help" className="hover:text-foreground">
+                {t("nav.help")}
+              </Link>
+            </li>
           </ul>
         </div>
 
@@ -49,9 +61,21 @@ export function SiteFooter() {
             {t("footer.legal")}
           </h3>
           <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-            <li><Link to="/terms" className="hover:text-foreground">{t("footer.terms")}</Link></li>
-            <li><Link to="/privacy" className="hover:text-foreground">{t("footer.privacy")}</Link></li>
-            <li><Link to="/help/contact" className="hover:text-foreground">{t("footer.contact")}</Link></li>
+            <li>
+              <Link to="/terms" className="hover:text-foreground">
+                {t("footer.terms")}
+              </Link>
+            </li>
+            <li>
+              <Link to="/privacy" className="hover:text-foreground">
+                {t("footer.privacy")}
+              </Link>
+            </li>
+            <li>
+              <Link to="/help/contact" className="hover:text-foreground">
+                {t("footer.contact")}
+              </Link>
+            </li>
           </ul>
         </div>
       </div>
@@ -71,11 +95,19 @@ export function SiteFooter() {
 
       <div className="border-t border-border">
         <div className="max-w-6xl mx-auto px-6 py-5 text-xs text-muted-foreground flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-          <div>© {new Date().getFullYear()} 10000 Solutions LLC. {t("footer.rights")}</div>
+          <div>
+            © {new Date().getFullYear()} 10000 Solutions LLC. {t("footer.rights")}
+          </div>
           <nav className="flex items-center gap-4">
-            <Link to="/terms" className="hover:text-foreground">{t("footer.terms")}</Link>
-            <Link to="/privacy" className="hover:text-foreground">{t("footer.privacy")}</Link>
-            <Link to="/help/contact" className="hover:text-foreground">{t("footer.contact")}</Link>
+            <Link to="/terms" className="hover:text-foreground">
+              {t("footer.terms")}
+            </Link>
+            <Link to="/privacy" className="hover:text-foreground">
+              {t("footer.privacy")}
+            </Link>
+            <Link to="/help/contact" className="hover:text-foreground">
+              {t("footer.contact")}
+            </Link>
           </nav>
         </div>
       </div>

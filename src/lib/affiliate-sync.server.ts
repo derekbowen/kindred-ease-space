@@ -14,12 +14,18 @@ async function fetchWithRetry(input: string, init: RequestInit, attempts = 3): P
     try {
       const res = await fetch(input, init);
       if (res.status === 429 || (res.status >= 500 && res.status < 600)) {
-        if (i < attempts - 1) { await new Promise((r) => setTimeout(r, [1000, 3000, 9000][i] ?? 9000)); continue; }
+        if (i < attempts - 1) {
+          await new Promise((r) => setTimeout(r, [1000, 3000, 9000][i] ?? 9000));
+          continue;
+        }
       }
       return res;
     } catch (e) {
       lastErr = e;
-      if (i < attempts - 1) { await new Promise((r) => setTimeout(r, [1000, 3000, 9000][i] ?? 9000)); continue; }
+      if (i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, [1000, 3000, 9000][i] ?? 9000));
+        continue;
+      }
     }
   }
   throw lastErr ?? new Error("network failure");
@@ -29,7 +35,12 @@ async function getAccessToken(clientId: string, clientSecret: string): Promise<s
   const res = await fetchWithRetry(SHARETRIBE_AUTH_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "client_credentials", scope: "integ", client_id: clientId, client_secret: clientSecret }),
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      scope: "integ",
+      client_id: clientId,
+      client_secret: clientSecret,
+    }),
   });
   if (!res.ok) throw new Error(`auth_failed:${res.status}`);
   const json = (await res.json()) as { access_token?: string };
@@ -59,38 +70,62 @@ export async function runAffiliateReferralSync(workspaceId: string): Promise<Aff
   const sb = supabaseAdmin as any;
 
   const { data: settings } = await sb
-    .from("workspace_affiliate_settings").select("referrer_param").eq("workspace_id", workspaceId).maybeSingle();
+    .from("workspace_affiliate_settings")
+    .select("referrer_param")
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
   const referrerParam = settings?.referrer_param || "referrerID";
 
   const { data: integration } = await sb
-    .from("tenant_integrations").select("id, client_id").eq("workspace_id", workspaceId).eq("provider", "sharetribe").maybeSingle();
+    .from("tenant_integrations")
+    .select("id, client_id")
+    .eq("workspace_id", workspaceId)
+    .eq("provider", "sharetribe")
+    .maybeSingle();
   if (!integration) throw new Error("integration_not_found");
 
-  const { data: secretRow, error: secretErr } = await sb.rpc("tenant_get_integration_secret", { _workspace_id: workspaceId });
+  const { data: secretRow, error: secretErr } = await sb.rpc("tenant_get_integration_secret", {
+    _workspace_id: workspaceId,
+  });
   if (secretErr || !secretRow) throw new Error("secret_decrypt_failed");
 
   // Active programs keyed for quick lookup; affiliates keyed by referral_code.
-  const { data: programs } = await sb.from("affiliate_programs").select("*").eq("workspace_id", workspaceId).eq("active", true);
+  const { data: programs } = await sb
+    .from("affiliate_programs")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .eq("active", true);
   const activePrograms = (programs ?? []) as AnyRec[];
-  if (activePrograms.length === 0) return { scanned: 0, attributed: 0, newTransactions: 0, payoutsAccrued: 0 };
+  if (activePrograms.length === 0)
+    return { scanned: 0, attributed: 0, newTransactions: 0, payoutsAccrued: 0 };
 
   const { data: affiliates } = await sb
-    .from("affiliates").select("id, program_id, referral_code, status").eq("workspace_id", workspaceId).eq("status", "active");
+    .from("affiliates")
+    .select("id, program_id, referral_code, status")
+    .eq("workspace_id", workspaceId)
+    .eq("status", "active");
   const byCode = new Map<string, AnyRec>();
-  for (const a of (affiliates ?? []) as AnyRec[]) byCode.set(String(a.referral_code).toLowerCase(), a);
+  for (const a of (affiliates ?? []) as AnyRec[])
+    byCode.set(String(a.referral_code).toLowerCase(), a);
   const programById = new Map<string, AnyRec>();
   for (const p of activePrograms) programById.set(p.id, p);
 
   const token = await getAccessToken(integration.client_id, secretRow as string);
 
-  let scanned = 0, attributed = 0, newTransactions = 0, payoutsAccrued = 0;
+  let scanned = 0,
+    attributed = 0,
+    newTransactions = 0,
+    payoutsAccrued = 0;
   let page = 1;
   let totalPages = 1;
 
   do {
     // include=customer so we can read the referred user's private data inline.
     const url = `${SHARETRIBE_API_BASE}/transactions/query?per_page=100&page=${page}&include=customer`;
-    const res = await fetchWithRetry(url, { method: "GET", headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetchWithRetry(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    });
     if (!res.ok) break;
     const json = (await res.json()) as AnyRec;
     const rows: AnyRec[] = json?.data ?? [];
@@ -126,7 +161,11 @@ export async function runAffiliateReferralSync(workspaceId: string): Promise<Aff
 
       // Skip if we've already recorded this transaction.
       const { data: existing } = await sb
-        .from("affiliate_transactions").select("id").eq("workspace_id", workspaceId).eq("sharetribe_transaction_id", txId).maybeSingle();
+        .from("affiliate_transactions")
+        .select("id")
+        .eq("workspace_id", workspaceId)
+        .eq("sharetribe_transaction_id", txId)
+        .maybeSingle();
       if (existing) continue;
 
       // Upsert the referral for this referred user.

@@ -2,11 +2,7 @@
  * Server-only helpers for the canonical-URL crawl audit. Imported only by
  * *.functions.ts and the public hook route. Never reached from the client.
  */
-import {
-  CANONICAL_ORIGIN,
-  classifyUrl,
-  type UrlClassification,
-} from "@/lib/canonical";
+import { CANONICAL_ORIGIN, classifyUrl, type UrlClassification } from "@/lib/canonical";
 
 const MAX_URLS_PER_RUN = 200;
 const FETCH_TIMEOUT_MS = 10_000;
@@ -41,7 +37,11 @@ export type AuditRunSummary = {
 
 const ATTR_RE = /\b(?:href|content)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
 
-function extract(html: string, source: AuditIssue["source"], filter: (slice: string) => boolean): string[] {
+function extract(
+  html: string,
+  source: AuditIssue["source"],
+  filter: (slice: string) => boolean,
+): string[] {
   const out: string[] = [];
   // Capture full tags then extract attribute by regex — fast and dependency-free.
   const tagRe = source === "anchor" ? /<a\b[^>]*>/gi : /<(?:link|meta)\b[^>]*>/gi;
@@ -55,7 +55,13 @@ function extract(html: string, source: AuditIssue["source"], filter: (slice: str
   return out;
 }
 
-function parseHtml(html: string): { canonical: string[]; ogUrl: string[]; twitterUrl: string[]; anchors: string[]; alternates: string[] } {
+function parseHtml(html: string): {
+  canonical: string[];
+  ogUrl: string[];
+  twitterUrl: string[];
+  anchors: string[];
+  alternates: string[];
+} {
   return {
     canonical: extract(html, "canonical", (t) => /rel\s*=\s*["']canonical["']/i.test(t)),
     ogUrl: extract(html, "og:url", (t) => /property\s*=\s*["']og:url["']/i.test(t)),
@@ -195,7 +201,7 @@ export async function runFullAudit(): Promise<AuditRunSummary> {
     totals.apex += r.counts.apex;
     totals.preview += r.counts.preview;
     totals.external += r.counts.external;
-    if (r.counts.preview > 0 || r.error || (r.apexRedirectsToWww === false)) pagesWithFailures++;
+    if (r.counts.preview > 0 || r.error || r.apexRedirectsToWww === false) pagesWithFailures++;
     else if (r.counts.apex > 0) pagesWithWarnings++;
   }
 

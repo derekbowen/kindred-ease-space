@@ -22,7 +22,13 @@ function pushRecent(q: string) {
   localStorage.setItem(RECENT_KEY, JSON.stringify(list));
 }
 
-export function SearchModal({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+export function SearchModal({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<HelpArticleListItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -112,13 +118,17 @@ export function SearchModal({ open, onOpenChange }: { open: boolean; onOpenChang
             className="flex-1 h-12 bg-transparent outline-none text-sm placeholder:text-muted-foreground"
           />
           {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-          <kbd className="text-[10px] font-mono text-muted-foreground border border-border rounded px-1.5 py-0.5">ESC</kbd>
+          <kbd className="text-[10px] font-mono text-muted-foreground border border-border rounded px-1.5 py-0.5">
+            ESC
+          </kbd>
         </div>
         <div className="max-h-96 overflow-y-auto">
           {q.trim() === "" ? (
             recent.length > 0 ? (
               <div className="p-2">
-                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Recent searches</div>
+                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                  Recent searches
+                </div>
                 {recent.map((r) => (
                   <button
                     key={r}
@@ -153,7 +163,9 @@ export function SearchModal({ open, onOpenChange }: { open: boolean; onOpenChang
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium truncate">{r.title}</div>
                     {r.excerpt && (
-                      <div className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{r.excerpt}</div>
+                      <div className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                        {r.excerpt}
+                      </div>
                     )}
                   </div>
                   <span className="text-[10px] uppercase tracking-wide text-muted-foreground mt-1">

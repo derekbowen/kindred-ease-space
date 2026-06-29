@@ -51,7 +51,6 @@ export type NavItem = {
   exact?: boolean;
 };
 
-
 export type NavSection = {
   label: string;
   items: NavItem[];
@@ -72,11 +71,22 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: "/app/pages", label: "Pages", icon: LayoutTemplate },
       { to: "/app/content/quick-page-builder", label: "Quick Page Builder", icon: Sparkles },
       { to: "/app/content/generate", label: "Generate Content", icon: FileText },
-      { to: "/app/content/migration", label: "Content Migration", icon: ArrowRightLeft, stub: true },
+      {
+        to: "/app/content/migration",
+        label: "Content Migration",
+        icon: ArrowRightLeft,
+        stub: true,
+      },
       { to: "/app/content/bulk-editor", label: "Bulk Page Editor", icon: Pencil },
       { to: "/app/content/blog", label: "Blog Admin", icon: BookOpen, stub: true },
       { to: "/app/content/learning", label: "Learning Admin", icon: GraduationCap, stub: true },
-      { to: "/app/content/city-heroes", label: "City Heroes", icon: Building2, internalOnly: true, stub: true },
+      {
+        to: "/app/content/city-heroes",
+        label: "City Heroes",
+        icon: Building2,
+        internalOnly: true,
+        stub: true,
+      },
       { to: "/app/content/data-export", label: "Data Export", icon: Download },
       { to: "/app/content/data-import", label: "Data Import", icon: Download },
     ],
@@ -130,21 +140,71 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Users & Ops",
     items: [
       { to: "/app/ops/lead-inbox", label: "Lead Inbox", icon: Inbox, stub: true },
-      { to: "/app/ops/ig-lead-hunter", label: "IG Lead Hunter", icon: Inbox, internalOnly: true, stub: true },
-      { to: "/app/ops/social-lead-hunter", label: "Social Lead Hunter", icon: Inbox, internalOnly: true, stub: true },
+      {
+        to: "/app/ops/ig-lead-hunter",
+        label: "IG Lead Hunter",
+        icon: Inbox,
+        internalOnly: true,
+        stub: true,
+      },
+      {
+        to: "/app/ops/social-lead-hunter",
+        label: "Social Lead Hunter",
+        icon: Inbox,
+        internalOnly: true,
+        stub: true,
+      },
       { to: "/app/ops/email-branding", label: "Email Branding", icon: Mail, stub: true },
       { to: "/app/ops/email-verify", label: "Email Verify", icon: Mail, stub: true },
       { to: "/app/ops/site-footer", label: "Site Footer", icon: AlignEndHorizontal, stub: true },
-      { to: "/app/ops/directory-moderation", label: "Directory Moderation", icon: ShieldCheck, internalOnly: true, stub: true },
-      { to: "/app/ops/listing-claims", label: "Listing Claims", icon: ClipboardCheck, internalOnly: true, stub: true },
-      { to: "/app/ops/plan-requests", label: "Plan Requests", icon: HandCoins, internalOnly: true, stub: true },
+      {
+        to: "/app/ops/directory-moderation",
+        label: "Directory Moderation",
+        icon: ShieldCheck,
+        internalOnly: true,
+        stub: true,
+      },
+      {
+        to: "/app/ops/listing-claims",
+        label: "Listing Claims",
+        icon: ClipboardCheck,
+        internalOnly: true,
+        stub: true,
+      },
+      {
+        to: "/app/ops/plan-requests",
+        label: "Plan Requests",
+        icon: HandCoins,
+        internalOnly: true,
+        stub: true,
+      },
       { to: "/app/ops/admin-team", label: "Admin Team", icon: Users, stub: true },
 
-      { to: "/app/admin/help/articles", label: "Help Articles", icon: BookOpen, internalOnly: true },
-      { to: "/app/admin/help/categories", label: "Help Categories", icon: LayoutTemplate, internalOnly: true },
-      { to: "/app/admin/help/feedback", label: "Help Feedback", icon: ThumbsUp, internalOnly: true },
+      {
+        to: "/app/admin/help/articles",
+        label: "Help Articles",
+        icon: BookOpen,
+        internalOnly: true,
+      },
+      {
+        to: "/app/admin/help/categories",
+        label: "Help Categories",
+        icon: LayoutTemplate,
+        internalOnly: true,
+      },
+      {
+        to: "/app/admin/help/feedback",
+        label: "Help Feedback",
+        icon: ThumbsUp,
+        internalOnly: true,
+      },
       { to: "/app/admin/help/tickets", label: "Help Tickets", icon: Inbox, internalOnly: true },
-      { to: "/app/admin/email-templates", label: "Email Templates", icon: Mail, internalOnly: true },
+      {
+        to: "/app/admin/email-templates",
+        label: "Email Templates",
+        icon: Mail,
+        internalOnly: true,
+      },
     ],
   },
 ];

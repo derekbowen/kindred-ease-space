@@ -25,17 +25,24 @@ export type KeywordRow = {
 export const importGscQueries = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({
-      workspaceId: workspaceIdSchema,
-      rows: z.array(z.object({
-        url_path: z.string().min(1),
-        query: z.string().min(1).max(300),
-        clicks: z.number().int().min(0).default(0),
-        impressions: z.number().int().min(0).default(0),
-        ctr: z.number().nullable().optional(),
-        position: z.number().nullable().optional(),
-      })).min(1).max(5000),
-    }).parse(d),
+    z
+      .object({
+        workspaceId: workspaceIdSchema,
+        rows: z
+          .array(
+            z.object({
+              url_path: z.string().min(1),
+              query: z.string().min(1).max(300),
+              clicks: z.number().int().min(0).default(0),
+              impressions: z.number().int().min(0).default(0),
+              ctr: z.number().nullable().optional(),
+              position: z.number().nullable().optional(),
+            }),
+          )
+          .min(1)
+          .max(5000),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
@@ -57,14 +64,16 @@ export const importGscQueries = createServerFn({ method: "POST" })
 export const findKeywordOpportunities = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({
-      workspaceId: workspaceIdSchema,
-      minPosition: z.number().min(1).max(100).default(5),
-      maxPosition: z.number().min(1).max(100).default(20),
-      minImpressions: z.number().int().min(0).default(50),
-      limit: z.number().int().min(10).max(500).default(100),
-      pathLike: z.string().max(200).default(""),
-    }).parse(d),
+    z
+      .object({
+        workspaceId: workspaceIdSchema,
+        minPosition: z.number().min(1).max(100).default(5),
+        maxPosition: z.number().min(1).max(100).default(20),
+        minImpressions: z.number().int().min(0).default(50),
+        limit: z.number().int().min(10).max(500).default(100),
+        pathLike: z.string().max(200).default(""),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }): Promise<{ rows: KeywordRow[]; total: number }> => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
@@ -89,10 +98,21 @@ export const getKeywordStats = createServerFn({ method: "POST" })
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const ws = data.workspaceId;
     const [totalQ, oppQ, topQ] = await Promise.all([
-      sb().from("gsc_query_data").select("*", { count: "exact", head: true }).eq("workspace_id", ws),
-      sb().from("gsc_query_data").select("*", { count: "exact", head: true }).eq("workspace_id", ws)
-        .gte("position", 5).lte("position", 20).gte("impressions", 50),
-      sb().from("gsc_query_data").select("*", { count: "exact", head: true }).eq("workspace_id", ws)
+      sb()
+        .from("gsc_query_data")
+        .select("*", { count: "exact", head: true })
+        .eq("workspace_id", ws),
+      sb()
+        .from("gsc_query_data")
+        .select("*", { count: "exact", head: true })
+        .eq("workspace_id", ws)
+        .gte("position", 5)
+        .lte("position", 20)
+        .gte("impressions", 50),
+      sb()
+        .from("gsc_query_data")
+        .select("*", { count: "exact", head: true })
+        .eq("workspace_id", ws)
         .lte("position", 3),
     ]);
     return {
@@ -122,17 +142,21 @@ export type CompetitorRow = {
 export const listCompetitorPages = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({
-      workspaceId: workspaceIdSchema,
-      q: z.string().max(200).default(""),
-      limit: z.number().int().min(10).max(500).default(100),
-    }).parse(d),
+    z
+      .object({
+        workspaceId: workspaceIdSchema,
+        q: z.string().max(200).default(""),
+        limit: z.number().int().min(10).max(500).default(100),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }): Promise<{ rows: CompetitorRow[] }> => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
     let q = sb()
       .from("competitor_pages")
-      .select("id, url, domain, title, meta_description, h1, word_count, notes, last_scraped_at, updated_at")
+      .select(
+        "id, url, domain, title, meta_description, h1, word_count, notes, last_scraped_at, updated_at",
+      )
       .eq("workspace_id", data.workspaceId)
       .order("updated_at", { ascending: false })
       .limit(data.limit);
@@ -147,19 +171,28 @@ export const listCompetitorPages = createServerFn({ method: "POST" })
 export const scrapeCompetitorUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({
-      workspaceId: workspaceIdSchema,
-      url: z.string().url(),
-      notes: z.string().max(1000).optional(),
-    }).parse(d),
+    z
+      .object({
+        workspaceId: workspaceIdSchema,
+        url: z.string().url(),
+        notes: z.string().max(1000).optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
     let fcKey: string;
     try {
-      fcKey = await requireWorkspaceSecret(data.workspaceId, "FIRECRAWL_API_KEY", "FIRECRAWL_API_KEY");
+      fcKey = await requireWorkspaceSecret(
+        data.workspaceId,
+        "FIRECRAWL_API_KEY",
+        "FIRECRAWL_API_KEY",
+      );
     } catch (e) {
-      return { ok: false as const, error: e instanceof Error ? e.message : "Missing FIRECRAWL_API_KEY" };
+      return {
+        ok: false as const,
+        error: e instanceof Error ? e.message : "Missing FIRECRAWL_API_KEY",
+      };
     }
 
     const resp = await fetch("https://api.firecrawl.dev/v2/scrape", {
@@ -168,38 +201,54 @@ export const scrapeCompetitorUrl = createServerFn({ method: "POST" })
       body: JSON.stringify({ url: data.url, formats: ["markdown"], onlyMainContent: true }),
     });
     if (resp.status === 402) return { ok: false as const, error: "Firecrawl credits exhausted" };
-    if (!resp.ok) return { ok: false as const, error: `Firecrawl ${resp.status}: ${(await resp.text()).slice(0, 200)}` };
+    if (!resp.ok)
+      return {
+        ok: false as const,
+        error: `Firecrawl ${resp.status}: ${(await resp.text()).slice(0, 200)}`,
+      };
     const json = await resp.json();
     const doc = json?.data || json;
     const markdown: string = doc?.markdown || "";
     const meta = doc?.metadata || {};
     if (!markdown || markdown.trim().length < 50) {
-      return { ok: false as const, error: `Scrape returned ${markdown.length} chars. Page may block bots or render entirely client-side.` };
+      return {
+        ok: false as const,
+        error: `Scrape returned ${markdown.length} chars. Page may block bots or render entirely client-side.`,
+      };
     }
     let domain: string | null = null;
-    try { domain = new URL(data.url).hostname.replace(/^www\./, ""); } catch { /* noop */ }
+    try {
+      domain = new URL(data.url).hostname.replace(/^www\./, "");
+    } catch {
+      /* noop */
+    }
     const h1Match = markdown.match(/^#\s+(.+)$/m);
-    const headings = Array.from(markdown.matchAll(/^(#{1,3})\s+(.+)$/gm)).slice(0, 50).map((m) => ({
-      level: m[1].length,
-      text: m[2].trim(),
-    }));
+    const headings = Array.from(markdown.matchAll(/^(#{1,3})\s+(.+)$/gm))
+      .slice(0, 50)
+      .map((m) => ({
+        level: m[1].length,
+        text: m[2].trim(),
+      }));
     const word_count = markdown.split(/\s+/).filter(Boolean).length;
 
     const { data: row, error } = await sb()
       .from("competitor_pages")
-      .upsert({
-        workspace_id: data.workspaceId,
-        url: data.url,
-        domain,
-        title: meta.title || meta.ogTitle || null,
-        meta_description: meta.description || meta.ogDescription || null,
-        h1: h1Match ? h1Match[1].trim() : null,
-        word_count,
-        headings,
-        markdown: markdown.slice(0, 50000),
-        notes: data.notes ?? null,
-        last_scraped_at: new Date().toISOString(),
-      }, { onConflict: "workspace_id,url" })
+      .upsert(
+        {
+          workspace_id: data.workspaceId,
+          url: data.url,
+          domain,
+          title: meta.title || meta.ogTitle || null,
+          meta_description: meta.description || meta.ogDescription || null,
+          h1: h1Match ? h1Match[1].trim() : null,
+          word_count,
+          headings,
+          markdown: markdown.slice(0, 50000),
+          notes: data.notes ?? null,
+          last_scraped_at: new Date().toISOString(),
+        },
+        { onConflict: "workspace_id,url" },
+      )
       .select("id, url, word_count")
       .maybeSingle();
     if (error) return { ok: false as const, error: error.message };
@@ -237,11 +286,88 @@ export type LinkSuggestionRow = {
 };
 
 const STOP = new Set([
-  "the","a","an","and","or","of","in","to","for","with","on","at","by","from","is","are","was","were",
-  "be","been","being","this","that","these","those","it","its","as","but","if","then","than","so","you",
-  "your","i","we","our","they","them","their","he","she","his","her","not","no","yes","do","does","did",
-  "have","has","had","will","would","can","could","should","may","might","just","also","very","more","most",
-  "all","any","some","one","two","three","up","down","out","into","over","under","about","near","there","here",
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "of",
+  "in",
+  "to",
+  "for",
+  "with",
+  "on",
+  "at",
+  "by",
+  "from",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "being",
+  "this",
+  "that",
+  "these",
+  "those",
+  "it",
+  "its",
+  "as",
+  "but",
+  "if",
+  "then",
+  "than",
+  "so",
+  "you",
+  "your",
+  "i",
+  "we",
+  "our",
+  "they",
+  "them",
+  "their",
+  "he",
+  "she",
+  "his",
+  "her",
+  "not",
+  "no",
+  "yes",
+  "do",
+  "does",
+  "did",
+  "have",
+  "has",
+  "had",
+  "will",
+  "would",
+  "can",
+  "could",
+  "should",
+  "may",
+  "might",
+  "just",
+  "also",
+  "very",
+  "more",
+  "most",
+  "all",
+  "any",
+  "some",
+  "one",
+  "two",
+  "three",
+  "up",
+  "down",
+  "out",
+  "into",
+  "over",
+  "under",
+  "about",
+  "near",
+  "there",
+  "here",
 ]);
 
 function tokenize(text: string): Set<string> {
@@ -264,12 +390,14 @@ function jaccard(a: Set<string>, b: Set<string>): number {
 export const generateLinkSuggestions = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({
-      workspaceId: workspaceIdSchema,
-      sampleSize: z.number().int().min(20).max(2000).default(500),
-      minScore: z.number().min(0.05).max(1).default(0.18),
-      perPage: z.number().int().min(1).max(20).default(5),
-    }).parse(d),
+    z
+      .object({
+        workspaceId: workspaceIdSchema,
+        sampleSize: z.number().int().min(20).max(2000).default(500),
+        minScore: z.number().min(0.05).max(1).default(0.18),
+        perPage: z.number().int().min(1).max(20).default(5),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
@@ -284,7 +412,14 @@ export const generateLinkSuggestions = createServerFn({ method: "POST" })
       tokens: tokenize(`${p.title || ""} ${(p.body_markdown || "").slice(0, 4000)}`),
     }));
 
-    const suggestions: { workspace_id: string; from_url: string; to_url: string; anchor_text: string | null; score: number; reason: string }[] = [];
+    const suggestions: {
+      workspace_id: string;
+      from_url: string;
+      to_url: string;
+      anchor_text: string | null;
+      score: number;
+      reason: string;
+    }[] = [];
     for (let i = 0; i < tokenized.length; i++) {
       const a = tokenized[i];
       const candidates: { to_url: string; anchor_text: string | null; score: number }[] = [];
@@ -319,12 +454,14 @@ export const generateLinkSuggestions = createServerFn({ method: "POST" })
 export const listLinkSuggestions = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({
-      workspaceId: workspaceIdSchema,
-      status: z.enum(["pending", "applied", "dismissed", "all"]).default("pending"),
-      q: z.string().max(200).default(""),
-      limit: z.number().int().min(10).max(500).default(100),
-    }).parse(d),
+    z
+      .object({
+        workspaceId: workspaceIdSchema,
+        status: z.enum(["pending", "applied", "dismissed", "all"]).default("pending"),
+        q: z.string().max(200).default(""),
+        limit: z.number().int().min(10).max(500).default(100),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }): Promise<{ rows: LinkSuggestionRow[] }> => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
@@ -346,11 +483,13 @@ export const listLinkSuggestions = createServerFn({ method: "POST" })
 export const updateLinkSuggestionStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({
-      workspaceId: workspaceIdSchema,
-      ids: z.array(z.string().uuid()).min(1).max(500),
-      status: z.enum(["pending", "applied", "dismissed"]),
-    }).parse(d),
+    z
+      .object({
+        workspaceId: workspaceIdSchema,
+        ids: z.array(z.string().uuid()).min(1).max(500),
+        status: z.enum(["pending", "applied", "dismissed"]),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
@@ -359,5 +498,7 @@ export const updateLinkSuggestionStatus = createServerFn({ method: "POST" })
       .update({ status: data.status, updated_at: new Date().toISOString() })
       .eq("workspace_id", data.workspaceId)
       .in("id", data.ids);
-    return error ? { ok: false as const, error: error.message } : { ok: true as const, count: data.ids.length };
+    return error
+      ? { ok: false as const, error: error.message }
+      : { ok: true as const, count: data.ids.length };
   });

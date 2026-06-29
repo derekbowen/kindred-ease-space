@@ -35,9 +35,7 @@ export const workspaceIdSchema = z.string().uuid();
  */
 export const getWorkspaceCapabilities = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
-    z.object({ workspaceId: workspaceIdSchema }).parse(data),
-  )
+  .inputValidator((data: unknown) => z.object({ workspaceId: workspaceIdSchema }).parse(data))
   .handler(async ({ data, context }) => {
     const role = await assertWorkspaceMember(data.workspaceId, context.userId);
     return { workspaceId: data.workspaceId, role, isOwner: role === "owner" };

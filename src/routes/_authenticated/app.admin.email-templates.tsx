@@ -40,7 +40,12 @@ function EmailTemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ subject: string; html: string; text: string; isEnabled: boolean } | null>(null);
+  const [draft, setDraft] = useState<{
+    subject: string;
+    html: string;
+    text: string;
+    isEnabled: boolean;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [testEmail, setTestEmail] = useState("");
 
@@ -64,7 +69,7 @@ function EmailTemplatesPage() {
 
   const active = useMemo(
     () => templates.find((t) => t.key === activeKey) ?? null,
-    [templates, activeKey]
+    [templates, activeKey],
   );
 
   useEffect(() => {
@@ -78,7 +83,7 @@ function EmailTemplatesPage() {
       text: active.text ?? active.defaultText,
       isEnabled: active.isEnabled,
     });
-  }, [active?.key]);
+  }, [active]);
 
   const sampleVars = useMemo(() => {
     if (!active) return {};
@@ -141,7 +146,9 @@ function EmailTemplatesPage() {
     return g;
   }, [templates]);
 
-  const previewSubject = draft ? applyVars(draft.subject, sampleVars as Record<string, string>) : "";
+  const previewSubject = draft
+    ? applyVars(draft.subject, sampleVars as Record<string, string>)
+    : "";
   const previewHtml = draft ? applyVars(draft.html, sampleVars as Record<string, string>) : "";
 
   return (
@@ -159,7 +166,8 @@ function EmailTemplatesPage() {
       </div>
       <p className="mb-6 max-w-2xl text-sm text-muted-foreground">
         Customize the subject line and body of every transactional email. Use{" "}
-        <code className="rounded bg-muted px-1">{"{{placeholder}}"}</code> tokens — they're filled in at send time. Disable a template to skip sending it entirely.
+        <code className="rounded bg-muted px-1">{"{{placeholder}}"}</code> tokens — they're filled
+        in at send time. Disable a template to skip sending it entirely.
       </p>
 
       {loading ? (
@@ -291,9 +299,7 @@ function EmailTemplatesPage() {
                       <tbody>
                         {active.placeholders.map((p) => (
                           <tr key={p.name} className="border-t">
-                            <td className="px-3 py-2 font-mono text-xs">
-                              {`{{${p.name}}}`}
-                            </td>
+                            <td className="px-3 py-2 font-mono text-xs">{`{{${p.name}}}`}</td>
                             <td className="px-3 py-2 text-muted-foreground">{p.description}</td>
                             <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
                               {p.sample}
@@ -331,11 +337,7 @@ function EmailTemplatesPage() {
                       className="mt-1 w-56"
                     />
                   </div>
-                  <Button
-                    variant="secondary"
-                    onClick={onSendTest}
-                    disabled={busy || !testEmail}
-                  >
+                  <Button variant="secondary" onClick={onSendTest} disabled={busy || !testEmail}>
                     <Send className="mr-1 h-4 w-4" /> Send test
                   </Button>
                 </div>

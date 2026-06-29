@@ -30,21 +30,30 @@ function corsHeaders(): Headers {
 
 export const lookupPageByHostname = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({
-      hostname: z.string().min(3).max(253),
-      slug: z.string().min(1).max(500),
-    }).parse(d),
+    z
+      .object({
+        hostname: z.string().min(3).max(253),
+        slug: z.string().min(1).max(500),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
     setResponseHeaders(corsHeaders());
 
     let ip = "unknown";
-    try { ip = getRequestIP({ xForwardedFor: true }) || "unknown"; } catch { /* not in request ctx */ }
+    try {
+      ip = getRequestIP({ xForwardedFor: true }) || "unknown";
+    } catch {
+      /* not in request ctx */
+    }
     if (!rateLimit(ip)) {
       return { ok: false as const, error: "rate_limited" };
     }
 
-    const hostname = data.hostname.toLowerCase().trim().replace(/^www\./, "");
+    const hostname = data.hostname
+      .toLowerCase()
+      .trim()
+      .replace(/^www\./, "");
     const slug = data.slug.replace(/^\/+/, "");
 
     const { data: domain } = await sb()
@@ -81,7 +90,9 @@ export const lookupPageByHostname = createServerFn({ method: "POST" })
 
     const { data: page } = await sb()
       .from("content_pages")
-      .select("id, slug, title, body_markdown, seo_title, seo_description, hero_image_url, updated_at")
+      .select(
+        "id, slug, title, body_markdown, seo_title, seo_description, hero_image_url, updated_at",
+      )
       .eq("workspace_id", domain.workspace_id)
       .eq("slug", slug)
       .eq("status", "published")

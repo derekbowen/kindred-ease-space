@@ -53,7 +53,11 @@ export function resolvePlatformModel(requested?: string): string {
 }
 
 /** Raw provider cost (no markup) in USD-micros for a given model + token usage. */
-export function estimateCostMicros(model: string, promptTokens: number, completionTokens: number): number {
+export function estimateCostMicros(
+  model: string,
+  promptTokens: number,
+  completionTokens: number,
+): number {
   const c = MODEL_COST_PER_1K_MICROS[model] ?? MODEL_COST_PER_1K_MICROS.default;
   return Math.round((promptTokens * c.in + completionTokens * c.out) / 1000);
 }
@@ -65,12 +69,20 @@ export function creditsForCostMicros(costMicros: number): number {
 }
 
 /** Convenience: credits for a model + token usage. */
-export function creditsForUsage(model: string, promptTokens: number, completionTokens: number): number {
+export function creditsForUsage(
+  model: string,
+  promptTokens: number,
+  completionTokens: number,
+): number {
   return creditsForCostMicros(estimateCostMicros(model, promptTokens, completionTokens));
 }
 
 /** Rough pre-call credit estimate (no tokenizer): ~4 chars/token + assumed completion. */
-export function estimateCreditsBeforeCall(model: string, promptChars: number, maxTokens?: number): number {
+export function estimateCreditsBeforeCall(
+  model: string,
+  promptChars: number,
+  maxTokens?: number,
+): number {
   const promptTokens = Math.ceil(promptChars / 4);
   const completionTokens = maxTokens ?? 1024;
   return creditsForUsage(model, promptTokens, completionTokens);

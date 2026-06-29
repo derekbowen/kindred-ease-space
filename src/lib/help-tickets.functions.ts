@@ -24,14 +24,14 @@ export const adminListTickets = createServerFn({ method: "GET" })
         q: z.string().trim().max(200).optional().nullable(),
         limit: z.number().int().min(1).max(200).default(100),
       })
-      .parse(d ?? {})
+      .parse(d ?? {}),
   )
   .handler(async ({ context, data }) => {
     await assertAdmin(context.supabase, context.userId);
     let query = supabaseAdmin
       .from("support_tickets")
       .select(
-        "id,email,name,subject,message,category,priority,status,assigned_to,created_at,updated_at,resolved_at"
+        "id,email,name,subject,message,category,priority,status,assigned_to,created_at,updated_at,resolved_at",
       )
       .order("updated_at", { ascending: false })
       .limit(data.limit);
@@ -41,7 +41,7 @@ export const adminListTickets = createServerFn({ method: "GET" })
     if (data.q) {
       const like = `%${data.q.replace(/[%_]/g, "")}%`;
       query = query.or(
-        `subject.ilike.${like},email.ilike.${like},name.ilike.${like},message.ilike.${like}`
+        `subject.ilike.${like},email.ilike.${like},name.ilike.${like},message.ilike.${like}`,
       );
     }
     const { data: rows, error } = await query;
@@ -69,7 +69,7 @@ export const adminGetTicket = createServerFn({ method: "GET" })
       supabaseAdmin
         .from("support_tickets")
         .select(
-          "id,email,name,subject,message,category,priority,status,assigned_to,attachments,created_at,updated_at,resolved_at"
+          "id,email,name,subject,message,category,priority,status,assigned_to,attachments,created_at,updated_at,resolved_at",
         )
         .eq("id", data.id)
         .maybeSingle(),
@@ -93,7 +93,7 @@ export const adminUpdateTicket = createServerFn({ method: "POST" })
         status: z.enum(STATUSES).optional(),
         priority: z.enum(PRIORITIES).optional(),
       })
-      .parse(d)
+      .parse(d),
   )
   .handler(async ({ context, data }) => {
     await assertAdmin(context.supabase, context.userId);
@@ -148,9 +148,8 @@ export const adminUpdateTicket = createServerFn({ method: "POST" })
       // Notify the ticket submitter — fire-and-forget.
       if (newStatus && existing.email) {
         try {
-          const { sendEmail, ticketStatusChangedTemplate, SUPPORT_INBOX_EMAIL } = await import(
-            "@/lib/email.server"
-          );
+          const { sendEmail, ticketStatusChangedTemplate, SUPPORT_INBOX_EMAIL } =
+            await import("@/lib/email.server");
           const tpl = await ticketStatusChangedTemplate({
             ticketId: data.id,
             subject: existing.subject,
@@ -185,7 +184,7 @@ export const adminPostTicketMessage = createServerFn({ method: "POST" })
         body: z.string().trim().min(1).max(10000),
         is_internal: z.boolean().default(false),
       })
-      .parse(d)
+      .parse(d),
   )
   .handler(async ({ context, data }) => {
     await assertAdmin(context.supabase, context.userId);

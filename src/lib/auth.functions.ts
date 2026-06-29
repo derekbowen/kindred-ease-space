@@ -14,7 +14,9 @@ export const getMe = createServerFn({ method: "GET" })
 
     const { data: memberships } = await supabase
       .from("workspace_members")
-      .select("workspace_id, role, workspaces(id, slug, name, plan, subscription_status, trial_ends_at, marketplace_domain, domain_verified_at, logo_url, brand_name, brand_color)")
+      .select(
+        "workspace_id, role, workspaces(id, slug, name, plan, subscription_status, trial_ends_at, marketplace_domain, domain_verified_at, logo_url, brand_name, brand_color)",
+      )
       .eq("user_id", userId);
 
     return {

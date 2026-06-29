@@ -140,16 +140,20 @@ function mapListing(workspaceId: string, marketplaceUrl: string, raw: AnyRec, in
 
   // Resolve images via included relationships
   const imgRels: AnyRec[] = raw?.relationships?.images?.data ?? [];
-  const images = (imgRels
-    .map((rel) => {
-      const relId = jsonApiId(rel?.id);
-      return included.find((x) => x.type === "image" && jsonApiId(x.id) === relId);
-    })
-    .filter(Boolean) as AnyRec[])
+  const images = (
+    imgRels
+      .map((rel) => {
+        const relId = jsonApiId(rel?.id);
+        return included.find((x) => x.type === "image" && jsonApiId(x.id) === relId);
+      })
+      .filter(Boolean) as AnyRec[]
+  )
     .map((img) => {
       const variants = img?.attributes?.variants ?? {};
       const best =
-        variants["square-small2x"] || variants["scaled-large"] || variants["default"] ||
+        variants["square-small2x"] ||
+        variants["scaled-large"] ||
+        variants["default"] ||
         Object.values(variants)[0];
       return best
         ? {
@@ -231,7 +235,8 @@ export async function runSharetribeSyncForWorkspace(workspaceId: string): Promis
   const { data: secretRow, error: secretErr } = await sb.rpc("tenant_get_integration_secret", {
     _workspace_id: workspaceId,
   });
-  if (secretErr || !secretRow) throw new Error(`secret_decrypt_failed:${secretErr?.message ?? "missing"}`);
+  if (secretErr || !secretRow)
+    throw new Error(`secret_decrypt_failed:${secretErr?.message ?? "missing"}`);
 
   const setStatus = async (patch: AnyRec) =>
     sb.from("tenant_integrations").update(patch).eq("id", integration.id);
@@ -259,7 +264,9 @@ export async function runSharetribeSyncForWorkspace(workspaceId: string): Promis
       const included: AnyRec[] = json?.included ?? [];
       totalPages = json?.meta?.totalPages ?? 1;
 
-      const rows = data.map((d) => mapListing(workspaceId, integration.marketplace_url, d, included));
+      const rows = data.map((d) =>
+        mapListing(workspaceId, integration.marketplace_url, d, included),
+      );
       rows.forEach((r) => seenIds.add(r.sharetribe_listing_id));
 
       if (rows.length) {

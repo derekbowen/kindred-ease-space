@@ -4,7 +4,9 @@ import type { HelpCategory } from "@/lib/help.server";
 import { ArrowRight } from "lucide-react";
 
 function Icon({ name, className }: { name: string | null; className?: string }) {
-  const Cmp = name ? (Icons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[name] : null;
+  const Cmp = name
+    ? (Icons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[name]
+    : null;
   if (!Cmp) return <Icons.BookOpen className={className} />;
   return <Cmp className={className} />;
 }
@@ -29,7 +31,9 @@ export function CategoryCard({
           <Icon name={category.icon} className="h-5 w-5" />
         </div>
         {typeof count === "number" && (
-          <span className="text-xs text-muted-foreground tabular-nums">{count} article{count === 1 ? "" : "s"}</span>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {count} article{count === 1 ? "" : "s"}
+          </span>
         )}
       </div>
       <h3 className="mt-4 text-base font-semibold tracking-tight group-hover:text-orange-500 transition-colors">

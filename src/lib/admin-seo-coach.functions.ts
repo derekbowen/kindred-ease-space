@@ -8,72 +8,126 @@ const sb = () => supabaseAdmin as any;
 
 async function buildSnapshot(workspaceId: string): Promise<string> {
   const week = new Date(Date.now() - 7 * 86400_000).toISOString();
-  const safe = async <T,>(fn: () => Promise<T>, fallback: T): Promise<T> => {
-    try { return await fn(); } catch { return fallback; }
+  const safe = async <T>(fn: () => Promise<T>, fallback: T): Promise<T> => {
+    try {
+      return await fn();
+    } catch {
+      return fallback;
+    }
   };
 
   const [pages, missing, gsc, thin, noMeta] = await Promise.all([
-    safe(async () => {
-      const [
-        { count: tenantPub },
-        { count: tenantDraft },
-        { count: contentTotal },
-        { count: contentPub },
-        { count: contentPending },
-      ] = await Promise.all([
-        sb().from("tenant_pages").select("*", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("status", "published"),
-        sb().from("tenant_pages").select("*", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("status", "draft"),
-        sb().from("content_pages").select("*", { count: "exact", head: true }).eq("workspace_id", workspaceId),
-        sb().from("content_pages").select("*", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("status", "published"),
-        sb().from("content_pages").select("*", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("status", "pending"),
-      ]);
-      const { fetchPublishedPages } = await import("@/lib/page-data.helpers.server");
-      const recent = await fetchPublishedPages(workspaceId, { limit: 5000 });
-      const publishedLast7d = recent.filter((p) => p.updated_at >= week).length;
-      const published = (tenantPub ?? 0) + (contentPub ?? 0);
-      return {
-        total: published + (contentPending ?? 0) + (tenantDraft ?? 0) + Math.max(0, (contentTotal ?? 0) - (contentPub ?? 0) - (contentPending ?? 0)),
-        published,
-        pending: (contentPending ?? 0) + (tenantDraft ?? 0),
-        publishedLast7d,
-        tenantPublished: tenantPub ?? 0,
-      };
-    }, { total: 0, published: 0, pending: 0, publishedLast7d: 0, tenantPublished: 0 }),
+    safe(
+      async () => {
+        const [
+          { count: tenantPub },
+          { count: tenantDraft },
+          { count: contentTotal },
+          { count: contentPub },
+          { count: contentPending },
+        ] = await Promise.all([
+          sb()
+            .from("tenant_pages")
+            .select("*", { count: "exact", head: true })
+            .eq("workspace_id", workspaceId)
+            .eq("status", "published"),
+          sb()
+            .from("tenant_pages")
+            .select("*", { count: "exact", head: true })
+            .eq("workspace_id", workspaceId)
+            .eq("status", "draft"),
+          sb()
+            .from("content_pages")
+            .select("*", { count: "exact", head: true })
+            .eq("workspace_id", workspaceId),
+          sb()
+            .from("content_pages")
+            .select("*", { count: "exact", head: true })
+            .eq("workspace_id", workspaceId)
+            .eq("status", "published"),
+          sb()
+            .from("content_pages")
+            .select("*", { count: "exact", head: true })
+            .eq("workspace_id", workspaceId)
+            .eq("status", "pending"),
+        ]);
+        const { fetchPublishedPages } = await import("@/lib/page-data.helpers.server");
+        const recent = await fetchPublishedPages(workspaceId, { limit: 5000 });
+        const publishedLast7d = recent.filter((p) => p.updated_at >= week).length;
+        const published = (tenantPub ?? 0) + (contentPub ?? 0);
+        return {
+          total:
+            published +
+            (contentPending ?? 0) +
+            (tenantDraft ?? 0) +
+            Math.max(0, (contentTotal ?? 0) - (contentPub ?? 0) - (contentPending ?? 0)),
+          published,
+          pending: (contentPending ?? 0) + (tenantDraft ?? 0),
+          publishedLast7d,
+          tenantPublished: tenantPub ?? 0,
+        };
+      },
+      { total: 0, published: 0, pending: 0, publishedLast7d: 0, tenantPublished: 0 },
+    ),
 
     safe(async () => {
-      const { count } = await sb().from("content_404_log")
+      const { count } = await sb()
+        .from("content_404_log")
         .select("*", { count: "exact", head: true })
         .eq("workspace_id", workspaceId)
         .is("resolved_at", null);
       return count ?? 0;
     }, 0),
 
-    safe(async () => {
-      const { data } = await sb().from("gsc_query_data")
-        .select("url_path, clicks, impressions, position, captured_at")
-        .eq("workspace_id", workspaceId)
-        .gte("captured_at", week).limit(5000);
-      const rows = data || [];
-      const clicks = rows.reduce((a: number, r: any) => a + (r.clicks || 0), 0);
-      const impr = rows.reduce((a: number, r: any) => a + (r.impressions || 0), 0);
-      const byPage: Record<string, number> = {};
-      rows.forEach((r: any) => { byPage[r.url_path] = (byPage[r.url_path] || 0) + (r.clicks || 0); });
-      const top = Object.entries(byPage).sort((a, b) => b[1] - a[1]).slice(0, 5);
-      const lastCaptured = rows.length ? rows.map((r: any) => r.captured_at).sort().pop() : null;
-      return { clicks, impr, top, lastCaptured };
-    }, { clicks: 0, impr: 0, top: [] as Array<[string, number]>, lastCaptured: null as string | null }),
+    safe(
+      async () => {
+        const { data } = await sb()
+          .from("gsc_query_data")
+          .select("url_path, clicks, impressions, position, captured_at")
+          .eq("workspace_id", workspaceId)
+          .gte("captured_at", week)
+          .limit(5000);
+        const rows = data || [];
+        const clicks = rows.reduce((a: number, r: any) => a + (r.clicks || 0), 0);
+        const impr = rows.reduce((a: number, r: any) => a + (r.impressions || 0), 0);
+        const byPage: Record<string, number> = {};
+        rows.forEach((r: any) => {
+          byPage[r.url_path] = (byPage[r.url_path] || 0) + (r.clicks || 0);
+        });
+        const top = Object.entries(byPage)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5);
+        const lastCaptured = rows.length
+          ? rows
+              .map((r: any) => r.captured_at)
+              .sort()
+              .pop()
+          : null;
+        return { clicks, impr, top, lastCaptured };
+      },
+      {
+        clicks: 0,
+        impr: 0,
+        top: [] as Array<[string, number]>,
+        lastCaptured: null as string | null,
+      },
+    ),
 
-    safe(async () => {
-      const { fetchPublishedPages } = await import("@/lib/page-data.helpers.server");
-      const all = await fetchPublishedPages(workspaceId, { limit: 2000 });
-      let thinCount = 0, empty = 0;
-      for (const r of all) {
-        const w = (r.body_markdown || "").split(/\s+/).filter(Boolean).length;
-        if (w === 0) empty++;
-        else if (w < 500) thinCount++;
-      }
-      return { thin: thinCount, empty };
-    }, { thin: 0, empty: 0 }),
+    safe(
+      async () => {
+        const { fetchPublishedPages } = await import("@/lib/page-data.helpers.server");
+        const all = await fetchPublishedPages(workspaceId, { limit: 2000 });
+        let thinCount = 0,
+          empty = 0;
+        for (const r of all) {
+          const w = (r.body_markdown || "").split(/\s+/).filter(Boolean).length;
+          if (w === 0) empty++;
+          else if (w < 500) thinCount++;
+        }
+        return { thin: thinCount, empty };
+      },
+      { thin: 0, empty: 0 },
+    ),
 
     safe(async () => {
       const { fetchPublishedPages } = await import("@/lib/page-data.helpers.server");
@@ -121,51 +175,76 @@ Your first message in a NEW chat: greet briefly, name the single most urgent iss
 export const seoCoachChat = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({
-      workspaceId: workspaceIdSchema,
-      messages: z.array(z.object({
-        role: z.enum(["user", "assistant"]),
-        content: z.string().min(1).max(8000),
-      })).min(1).max(40),
-      completedRoutes: z.array(z.string().max(120)).max(40).optional(),
-    }).parse(d),
+    z
+      .object({
+        workspaceId: workspaceIdSchema,
+        messages: z
+          .array(
+            z.object({
+              role: z.enum(["user", "assistant"]),
+              content: z.string().min(1).max(8000),
+            }),
+          )
+          .min(1)
+          .max(40),
+        completedRoutes: z.array(z.string().max(120)).max(40).optional(),
+      })
+      .parse(d),
   )
-  .handler(async ({ data, context }): Promise<{ ok: true; reply: string } | { ok: false; error: string }> => {
-    await assertWorkspaceMember(data.workspaceId, context.userId);
-    // BYOK first, platform env-var fallback.
-    const { getWorkspaceSecret } = await import("@/lib/workspace-secrets.server");
-    const apiKey = await getWorkspaceSecret(data.workspaceId, "LOVABLE_API_KEY", "LOVABLE_API_KEY");
-    if (!apiKey) return { ok: false, error: "No AI key configured. Add a BYOK key under Settings → API Keys." };
+  .handler(
+    async ({
+      data,
+      context,
+    }): Promise<{ ok: true; reply: string } | { ok: false; error: string }> => {
+      await assertWorkspaceMember(data.workspaceId, context.userId);
+      // BYOK first, platform env-var fallback.
+      const { getWorkspaceSecret } = await import("@/lib/workspace-secrets.server");
+      const apiKey = await getWorkspaceSecret(
+        data.workspaceId,
+        "LOVABLE_API_KEY",
+        "LOVABLE_API_KEY",
+      );
+      if (!apiKey)
+        return {
+          ok: false,
+          error: "No AI key configured. Add a BYOK key under Settings → API Keys.",
+        };
 
-    const snapshot = await buildSnapshot(data.workspaceId);
-    const completedNote = data.completedRoutes?.length
-      ? `STEPS THE USER HAS ALREADY COMPLETED THIS SESSION (do NOT recommend them again — move to the next priority): ${data.completedRoutes.join(", ")}`
-      : "No steps completed yet this session.";
+      const snapshot = await buildSnapshot(data.workspaceId);
+      const completedNote = data.completedRoutes?.length
+        ? `STEPS THE USER HAS ALREADY COMPLETED THIS SESSION (do NOT recommend them again — move to the next priority): ${data.completedRoutes.join(", ")}`
+        : "No steps completed yet this session.";
 
-    const messages = [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "system", content: snapshot },
-      { role: "system", content: completedNote },
-      ...data.messages.map((m) => ({ role: m.role, content: m.content })),
-    ];
+      const messages = [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: snapshot },
+        { role: "system", content: completedNote },
+        ...data.messages.map((m) => ({ role: m.role, content: m.content })),
+      ];
 
-    try {
-      const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "google/gemini-2.5-flash", messages }),
-      });
-      if (resp.status === 402) return { ok: false, error: "AI credits exhausted — top up in Settings → Workspace → Usage." };
-      if (resp.status === 429) return { ok: false, error: "Rate limited. Try again in a moment." };
-      if (!resp.ok) {
-        const t = await resp.text();
-        return { ok: false, error: `AI gateway ${resp.status}: ${t.slice(0, 200)}` };
+      try {
+        const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ model: "google/gemini-2.5-flash", messages }),
+        });
+        if (resp.status === 402)
+          return {
+            ok: false,
+            error: "AI credits exhausted — top up in Settings → Workspace → Usage.",
+          };
+        if (resp.status === 429)
+          return { ok: false, error: "Rate limited. Try again in a moment." };
+        if (!resp.ok) {
+          const t = await resp.text();
+          return { ok: false, error: `AI gateway ${resp.status}: ${t.slice(0, 200)}` };
+        }
+        const json = await resp.json();
+        const reply = json?.choices?.[0]?.message?.content?.trim();
+        if (!reply) return { ok: false, error: "AI returned empty reply" };
+        return { ok: true, reply };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : "Unknown error" };
       }
-      const json = await resp.json();
-      const reply = json?.choices?.[0]?.message?.content?.trim();
-      if (!reply) return { ok: false, error: "AI returned empty reply" };
-      return { ok: true, reply };
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : "Unknown error" };
-    }
-  });
+    },
+  );

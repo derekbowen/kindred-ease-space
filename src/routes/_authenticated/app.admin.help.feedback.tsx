@@ -61,11 +61,12 @@ function AdminHelpFeedbackPage() {
   const articles = useMemo<ArticleStat[]>(() => {
     if (!data) return [];
     const q = query.trim().toLowerCase();
-    let rows = data.articles.filter((a) =>
-      !q ||
-      a.title.toLowerCase().includes(q) ||
-      a.slug.toLowerCase().includes(q) ||
-      a.category_slug.toLowerCase().includes(q)
+    let rows = data.articles.filter(
+      (a) =>
+        !q ||
+        a.title.toLowerCase().includes(q) ||
+        a.slug.toLowerCase().includes(q) ||
+        a.category_slug.toLowerCase().includes(q),
     );
     rows = [...rows].sort((a, b) => {
       switch (sort) {
@@ -101,7 +102,7 @@ function AdminHelpFeedbackPage() {
 
   const totals = data?.totals;
   const overallTotal = (totals?.helpful ?? 0) + (totals?.not_helpful ?? 0);
-  const overallRatio = overallTotal > 0 ? (totals!.helpful / overallTotal) : null;
+  const overallRatio = overallTotal > 0 ? totals!.helpful / overallTotal : null;
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
@@ -231,7 +232,9 @@ function ArticleRow({ a }: { a: ArticleStat }) {
             >
               {a.title}
             </Link>
-            <Badge variant="outline" className="text-[10px]">{a.category_slug}</Badge>
+            <Badge variant="outline" className="text-[10px]">
+              {a.category_slug}
+            </Badge>
             <Badge
               variant={a.status === "published" ? "default" : "secondary"}
               className="text-[10px] capitalize"
@@ -249,8 +252,14 @@ function ArticleRow({ a }: { a: ArticleStat }) {
           <p className="mt-1 text-xs text-muted-foreground">/{a.slug}</p>
         </div>
         <div className="flex flex-wrap items-center gap-4 text-sm">
-          <Stat icon={<ThumbsUp className="h-3.5 w-3.5 text-emerald-600" />} value={a.helpful_count} />
-          <Stat icon={<ThumbsDown className="h-3.5 w-3.5 text-destructive" />} value={a.not_helpful_count} />
+          <Stat
+            icon={<ThumbsUp className="h-3.5 w-3.5 text-emerald-600" />}
+            value={a.helpful_count}
+          />
+          <Stat
+            icon={<ThumbsDown className="h-3.5 w-3.5 text-destructive" />}
+            value={a.not_helpful_count}
+          />
           <div className={`text-base font-semibold ${ratioTone(a.helpful_ratio)}`}>
             {pct(a.helpful_ratio)}
           </div>
@@ -275,7 +284,9 @@ function ArticleRow({ a }: { a: ArticleStat }) {
           <ul className="space-y-1.5">
             {a.top_issues.map((iss) => (
               <li key={iss.key} className="flex items-start gap-2 text-sm">
-                <Badge variant="secondary" className="shrink-0">×{iss.count}</Badge>
+                <Badge variant="secondary" className="shrink-0">
+                  ×{iss.count}
+                </Badge>
                 <span className="text-muted-foreground">{iss.sample}</span>
               </li>
             ))}

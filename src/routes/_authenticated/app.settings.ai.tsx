@@ -29,11 +29,34 @@ export const Route = createFileRoute("/_authenticated/app/settings/ai")({
   component: AiSettingsPage,
 });
 
-const PROVIDER_META: Record<AiProvider, { label: string; placeholder: string; help: string; defaultModel: string }> = {
-  openai: { label: "OpenAI", placeholder: "sk-...", help: "Get a key at platform.openai.com/api-keys", defaultModel: "gpt-5-mini" },
-  anthropic: { label: "Anthropic (Claude)", placeholder: "sk-ant-...", help: "Get a key at console.anthropic.com/settings/keys", defaultModel: "claude-haiku-4-5" },
-  google: { label: "Google AI (Gemini)", placeholder: "AIza...", help: "Get a key at aistudio.google.com/apikey", defaultModel: "gemini-2.5-flash" },
-  openrouter: { label: "OpenRouter", placeholder: "sk-or-...", help: "Get a key at openrouter.ai/keys", defaultModel: "google/gemini-2.5-flash" },
+const PROVIDER_META: Record<
+  AiProvider,
+  { label: string; placeholder: string; help: string; defaultModel: string }
+> = {
+  openai: {
+    label: "OpenAI",
+    placeholder: "sk-...",
+    help: "Get a key at platform.openai.com/api-keys",
+    defaultModel: "gpt-5-mini",
+  },
+  anthropic: {
+    label: "Anthropic (Claude)",
+    placeholder: "sk-ant-...",
+    help: "Get a key at console.anthropic.com/settings/keys",
+    defaultModel: "claude-haiku-4-5",
+  },
+  google: {
+    label: "Google AI (Gemini)",
+    placeholder: "AIza...",
+    help: "Get a key at aistudio.google.com/apikey",
+    defaultModel: "gemini-2.5-flash",
+  },
+  openrouter: {
+    label: "OpenRouter",
+    placeholder: "sk-or-...",
+    help: "Get a key at openrouter.ai/keys",
+    defaultModel: "google/gemini-2.5-flash",
+  },
 };
 
 function AiSettingsPage() {
@@ -98,12 +121,15 @@ function AiSettingsPage() {
       });
       if (r.ok) {
         toast.success(`${meta.label} key saved. Test it to start using it.`);
-        setApiKey(""); setModel("");
+        setApiKey("");
+        setModel("");
         await refresh(workspaceId);
       } else {
         toast.error(r.error);
       }
-    } finally { setBusy(null); }
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function runTest(p: AiProvider) {
@@ -114,7 +140,9 @@ function AiSettingsPage() {
       if (r.ok) toast.success(`${PROVIDER_META[p].label} key is valid.`);
       else toast.error(`${PROVIDER_META[p].label}: ${r.error}`);
       await refresh(workspaceId);
-    } finally { setBusy(null); }
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function remove(p: AiProvider) {
@@ -123,9 +151,13 @@ function AiSettingsPage() {
     setBusy(`del-${p}`);
     try {
       const r = await del({ data: { workspaceId, provider: p } });
-      if (r.ok) { toast.success("Deleted."); await refresh(workspaceId); }
-      else toast.error(r.error);
-    } finally { setBusy(null); }
+      if (r.ok) {
+        toast.success("Deleted.");
+        await refresh(workspaceId);
+      } else toast.error(r.error);
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
@@ -133,8 +165,8 @@ function AiSettingsPage() {
       <div>
         <h1 className="text-2xl font-bold">AI Providers</h1>
         <p className="text-sm text-muted-foreground">
-          Bring your own API keys. Stored encrypted in Supabase Vault and only decrypted server-side at call time.
-          Keys are never logged — only the last four characters are shown.
+          Bring your own API keys. Stored encrypted in Supabase Vault and only decrypted server-side
+          at call time. Keys are never logged — only the last four characters are shown.
         </p>
       </div>
 
@@ -144,24 +176,39 @@ function AiSettingsPage() {
       {/* Usage dashboard */}
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
-          <CardHeader className="pb-2"><CardDescription>This month</CardDescription></CardHeader>
+          <CardHeader className="pb-2">
+            <CardDescription>This month</CardDescription>
+          </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">${(usage?.monthCostUsd ?? 0).toFixed(2)}</div>
-            <div className="text-xs text-muted-foreground">{usage?.monthCalls ?? 0} calls · {usage?.monthTokens.toLocaleString() ?? 0} tokens</div>
+            <div className="text-xs text-muted-foreground">
+              {usage?.monthCalls ?? 0} calls · {usage?.monthTokens.toLocaleString() ?? 0} tokens
+            </div>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2"><CardDescription>Your keys (BYOK)</CardDescription></CardHeader>
+          <CardHeader className="pb-2">
+            <CardDescription>Your keys (BYOK)</CardDescription>
+          </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">${(usage?.byok.costUsd ?? 0).toFixed(2)}</div>
-            <div className="text-xs text-muted-foreground">{usage?.byok.calls ?? 0} calls · billed to your provider</div>
+            <div className="text-xs text-muted-foreground">
+              {usage?.byok.calls ?? 0} calls · billed to your provider
+            </div>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2"><CardDescription>Free tier remaining</CardDescription></CardHeader>
+          <CardHeader className="pb-2">
+            <CardDescription>Free tier remaining</CardDescription>
+          </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{usage?.quotaRemaining ?? 20} <span className="text-sm font-normal text-muted-foreground">/ generations</span></div>
-            <div className="text-xs text-muted-foreground">{usage?.quotaLifetimeUsed ?? 0} used lifetime · add a key for unlimited</div>
+            <div className="text-2xl font-bold">
+              {usage?.quotaRemaining ?? 20}{" "}
+              <span className="text-sm font-normal text-muted-foreground">/ generations</span>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {usage?.quotaLifetimeUsed ?? 0} used lifetime · add a key for unlimited
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -170,11 +217,16 @@ function AiSettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Configured providers</CardTitle>
-          <CardDescription>{rows.length} of {AI_PROVIDERS.length} configured. The first valid key is used by default.</CardDescription>
+          <CardDescription>
+            {rows.length} of {AI_PROVIDERS.length} configured. The first valid key is used by
+            default.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {rows.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">No providers yet. Add one below to skip the platform quota.</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No providers yet. Add one below to skip the platform quota.
+            </p>
           ) : (
             <div className="divide-y">
               {rows.map((r) => (
@@ -184,18 +236,46 @@ function AiSettingsPage() {
                     <div className="text-xs text-muted-foreground">••••{r.last_four}</div>
                   </div>
                   <div className="min-w-[120px]">
-                    {r.status === "valid" && <Badge className="gap-1 bg-emerald-500/15 text-emerald-600 border-emerald-500/30"><CheckCircle2 className="h-3 w-3" />Valid</Badge>}
-                    {r.status === "invalid" && <Badge variant="destructive" className="gap-1"><AlertCircle className="h-3 w-3" />Invalid</Badge>}
+                    {r.status === "valid" && (
+                      <Badge className="gap-1 bg-emerald-500/15 text-emerald-600 border-emerald-500/30">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Valid
+                      </Badge>
+                    )}
+                    {r.status === "invalid" && (
+                      <Badge variant="destructive" className="gap-1">
+                        <AlertCircle className="h-3 w-3" />
+                        Invalid
+                      </Badge>
+                    )}
                     {r.status === "untested" && <Badge variant="outline">Untested</Badge>}
                   </div>
                   <div className="flex-1 text-xs text-muted-foreground">
-                    {r.last_error ? <span className="text-destructive">{r.last_error}</span> :
-                      r.last_tested_at ? `Tested ${new Date(r.last_tested_at).toLocaleString()}` : "Never tested"}
+                    {r.last_error ? (
+                      <span className="text-destructive">{r.last_error}</span>
+                    ) : r.last_tested_at ? (
+                      `Tested ${new Date(r.last_tested_at).toLocaleString()}`
+                    ) : (
+                      "Never tested"
+                    )}
                   </div>
-                  <Button size="sm" variant="outline" disabled={!isOwner || busy === `test-${r.provider}`} onClick={() => runTest(r.provider)} className="gap-2">
-                    {busy === `test-${r.provider}` && <Loader2 className="h-3 w-3 animate-spin" />}Test
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!isOwner || busy === `test-${r.provider}`}
+                    onClick={() => runTest(r.provider)}
+                    className="gap-2"
+                  >
+                    {busy === `test-${r.provider}` && <Loader2 className="h-3 w-3 animate-spin" />}
+                    Test
                   </Button>
-                  <Button size="sm" variant="ghost" disabled={!isOwner || busy === `del-${r.provider}`} onClick={() => remove(r.provider)} className="gap-1 text-destructive hover:text-destructive">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!isOwner || busy === `del-${r.provider}`}
+                    onClick={() => remove(r.provider)}
+                    className="gap-1 text-destructive hover:text-destructive"
+                  >
                     <Trash2 className="h-3 w-3" />
                   </Button>
                 </div>
@@ -209,7 +289,9 @@ function AiSettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Add or update a key</CardTitle>
-          <CardDescription>Owner-only. The full key is never shown again after saving.</CardDescription>
+          <CardDescription>
+            Owner-only. The full key is never shown again after saving.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -221,7 +303,11 @@ function AiSettingsPage() {
                 onChange={(e) => setProvider(e.target.value as AiProvider)}
                 disabled={!isOwner}
               >
-                {AI_PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_META[p].label}</option>)}
+                {AI_PROVIDERS.map((p) => (
+                  <option key={p} value={p}>
+                    {PROVIDER_META[p].label}
+                  </option>
+                ))}
               </select>
               <p className="text-xs text-muted-foreground">{PROVIDER_META[provider].help}</p>
             </div>
@@ -245,9 +331,15 @@ function AiSettingsPage() {
               placeholder={PROVIDER_META[provider].defaultModel}
               disabled={!isOwner}
             />
-            <p className="text-xs text-muted-foreground">Used by AI features when they don't specify a model.</p>
+            <p className="text-xs text-muted-foreground">
+              Used by AI features when they don't specify a model.
+            </p>
           </div>
-          <Button onClick={save} disabled={busy === "save" || !workspaceId || !isOwner || !apiKey.trim()} className="gap-2">
+          <Button
+            onClick={save}
+            disabled={busy === "save" || !workspaceId || !isOwner || !apiKey.trim()}
+            className="gap-2"
+          >
             {busy === "save" && <Loader2 className="h-4 w-4 animate-spin" />}Save key
           </Button>
         </CardContent>
@@ -279,15 +371,27 @@ function AiSettingsPage() {
                 <tbody>
                   {usage.recent.map((r, i) => (
                     <tr key={i} className="border-b last:border-0">
-                      <td className="py-2 pr-4 text-xs text-muted-foreground">{new Date(r.created_at).toLocaleString()}</td>
+                      <td className="py-2 pr-4 text-xs text-muted-foreground">
+                        {new Date(r.created_at).toLocaleString()}
+                      </td>
                       <td className="py-2 pr-4 text-xs">{r.feature ?? "—"}</td>
-                      <td className="py-2 pr-4 text-xs">{r.provider}{r.used_byok ? " (BYOK)" : ""}</td>
+                      <td className="py-2 pr-4 text-xs">
+                        {r.provider}
+                        {r.used_byok ? " (BYOK)" : ""}
+                      </td>
                       <td className="py-2 pr-4 font-mono text-xs">{r.model}</td>
                       <td className="py-2 pr-4 text-xs">{r.total_tokens.toLocaleString()}</td>
-                      <td className="py-2 pr-4 text-xs">${(r.cost_usd_micros / 1_000_000).toFixed(4)}</td>
+                      <td className="py-2 pr-4 text-xs">
+                        ${(r.cost_usd_micros / 1_000_000).toFixed(4)}
+                      </td>
                       <td className="py-2 text-xs">
-                        {r.status === "ok" ? <span className="text-emerald-600">ok</span> :
-                          <span className="text-destructive" title={r.error ?? ""}>{r.status}</span>}
+                        {r.status === "ok" ? (
+                          <span className="text-emerald-600">ok</span>
+                        ) : (
+                          <span className="text-destructive" title={r.error ?? ""}>
+                            {r.status}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}

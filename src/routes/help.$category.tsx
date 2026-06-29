@@ -29,7 +29,9 @@ export const Route = createFileRoute("/help/$category")({
   notFoundComponent: () => (
     <div className="max-w-2xl mx-auto px-6 py-20 text-center">
       <h1 className="text-2xl font-semibold">Category not found</h1>
-      <Link to="/help" className="text-orange-500 hover:underline mt-4 inline-block">← Back to Help Center</Link>
+      <Link to="/help" className="text-orange-500 hover:underline mt-4 inline-block">
+        ← Back to Help Center
+      </Link>
     </div>
   ),
 });
@@ -54,13 +56,17 @@ function CategoryPage() {
             <p className="text-sm text-muted-foreground">No articles yet.</p>
           ) : (
             <div className="border border-border rounded-lg bg-card px-3">
-              {articles.map((a: any) => <ArticleRow key={a.id} article={a} />)}
+              {articles.map((a: any) => (
+                <ArticleRow key={a.id} article={a} />
+              ))}
             </div>
           )}
         </div>
 
         <aside className="space-y-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Other categories</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+            Other categories
+          </h2>
           {otherCategories.map((c: any) => (
             <Link
               key={c.id}

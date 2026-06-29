@@ -30,22 +30,29 @@ function InternalLinksPage() {
   const list = useServerFn(listLinkSuggestions);
   const upd = useServerFn(updateLinkSuggestionStatus);
 
-  useEffect(() => { getMe().then((me) => setWorkspaceId(me.memberships[0]?.workspace_id ?? null)); }, []);
+  useEffect(() => {
+    getMe().then((me) => setWorkspaceId(me.memberships[0]?.workspace_id ?? null));
+  }, []);
 
   async function reload(ws: string) {
     const r = await list({ data: { workspaceId: ws, status, q, limit: 200 } });
     setRows(r.rows);
   }
-  useEffect(() => { if (workspaceId) reload(workspaceId); /* eslint-disable-next-line */ }, [workspaceId, status]);
+  useEffect(() => {
+    if (workspaceId) reload(workspaceId); /* eslint-disable-next-line */
+  }, [workspaceId, status]);
 
   async function regenerate() {
     if (!workspaceId) return;
-    setBusy(true); setMsg(null);
+    setBusy(true);
+    setMsg(null);
     try {
       const r = await gen({ data: { workspaceId, sampleSize: 500, minScore: 0.18, perPage: 5 } });
       setMsg(r.ok ? `Generated ${r.count} suggestions.` : `Error: ${r.error}`);
       await reload(workspaceId);
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function setRowStatus(id: string, newStatus: "applied" | "dismissed") {
@@ -58,11 +65,19 @@ function InternalLinksPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Internal Link Suggestions</h1>
-        <p className="text-sm text-muted-foreground">Topic-overlap suggestions across your published pages.</p>
+        <p className="text-sm text-muted-foreground">
+          Topic-overlap suggestions across your published pages.
+        </p>
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Generate</CardTitle><CardDescription>Scans up to 500 published pages, computes Jaccard similarity, stores up to 5 suggestions per source.</CardDescription></CardHeader>
+        <CardHeader>
+          <CardTitle>Generate</CardTitle>
+          <CardDescription>
+            Scans up to 500 published pages, computes Jaccard similarity, stores up to 5 suggestions
+            per source.
+          </CardDescription>
+        </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-3">
           <Button onClick={regenerate} disabled={busy || !workspaceId} className="gap-2">
             {busy && <Loader2 className="h-4 w-4 animate-spin" />} Regenerate suggestions
@@ -80,7 +95,11 @@ function InternalLinksPage() {
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
               <Label>Status</Label>
-              <select className="h-9 rounded-md border bg-background px-2 text-sm" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
+              <select
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+                value={status}
+                onChange={(e) => setStatus(e.target.value as typeof status)}
+              >
                 <option value="pending">Pending</option>
                 <option value="applied">Applied</option>
                 <option value="dismissed">Dismissed</option>
@@ -89,13 +108,25 @@ function InternalLinksPage() {
             </div>
             <div className="space-y-1">
               <Label>Search</Label>
-              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="url contains..." className="w-64" onKeyDown={(e) => { if (e.key === "Enter" && workspaceId) reload(workspaceId); }} />
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="url contains..."
+                className="w-64"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && workspaceId) reload(workspaceId);
+                }}
+              />
             </div>
-            <Button variant="outline" onClick={() => workspaceId && reload(workspaceId)}>Apply filters</Button>
+            <Button variant="outline" onClick={() => workspaceId && reload(workspaceId)}>
+              Apply filters
+            </Button>
           </div>
 
           {rows.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">No suggestions yet. Click "Regenerate" above.</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No suggestions yet. Click "Regenerate" above.
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -120,8 +151,20 @@ function InternalLinksPage() {
                       <td className="py-2">
                         {r.status === "pending" && (
                           <div className="flex gap-2">
-                            <Button size="sm" variant="outline" onClick={() => setRowStatus(r.id, "applied")}>Mark applied</Button>
-                            <Button size="sm" variant="ghost" onClick={() => setRowStatus(r.id, "dismissed")}>Dismiss</Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setRowStatus(r.id, "applied")}
+                            >
+                              Mark applied
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setRowStatus(r.id, "dismissed")}
+                            >
+                              Dismiss
+                            </Button>
                           </div>
                         )}
                       </td>

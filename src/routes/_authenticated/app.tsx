@@ -38,8 +38,9 @@ function AppShell() {
     getMe()
       .then(setMe)
       .catch((e) => {
-        const status = (e as { status?: number; response?: { status?: number } })?.status
-          ?? (e as { response?: { status?: number } })?.response?.status;
+        const status =
+          (e as { status?: number; response?: { status?: number } })?.status ??
+          (e as { response?: { status?: number } })?.response?.status;
         if (status === 401) {
           navigate({ to: "/login", search: { next: location.pathname } });
           return;
@@ -94,7 +95,9 @@ function AppShell() {
                   className="h-7 w-7 rounded flex items-center justify-center text-white text-xs font-bold"
                   style={{ background: activeWorkspace?.brand_color ?? "hsl(var(--primary))" }}
                 >
-                  {(activeWorkspace?.brand_name || activeWorkspace?.name || "F").slice(0, 1).toUpperCase()}
+                  {(activeWorkspace?.brand_name || activeWorkspace?.name || "F")
+                    .slice(0, 1)
+                    .toUpperCase()}
                 </div>
               )}
               <div className="text-sm min-w-0">
@@ -136,7 +139,10 @@ function AppShell() {
                                 <Icon className="h-4 w-4" />
                                 <span className="flex-1 truncate">{item.label}</span>
                                 {item.internalOnly && (
-                                  <Badge variant="secondary" className="ml-auto h-4 px-1 text-[10px]">
+                                  <Badge
+                                    variant="secondary"
+                                    className="ml-auto h-4 px-1 text-[10px]"
+                                  >
                                     internal
                                   </Badge>
                                 )}
@@ -155,7 +161,6 @@ function AppShell() {
                 </SidebarGroup>
               );
             })}
-
           </SidebarContent>
           <SidebarFooter className="border-t border-sidebar-border">
             <div className="px-2 py-2 text-xs text-muted-foreground truncate">{me?.email}</div>
@@ -169,11 +174,15 @@ function AppShell() {
             <SidebarTrigger />
             {activeWorkspace?.plan && (
               <Badge variant="outline" className="capitalize">
-                {activeWorkspace.subscription_status === "trialing" ? "Trial" : activeWorkspace.plan}
+                {activeWorkspace.subscription_status === "trialing"
+                  ? "Trial"
+                  : activeWorkspace.plan}
               </Badge>
             )}
             {activeWorkspace?.marketplace_domain && (
-              <span className="text-xs text-muted-foreground">{activeWorkspace.marketplace_domain}</span>
+              <span className="text-xs text-muted-foreground">
+                {activeWorkspace.marketplace_domain}
+              </span>
             )}
           </header>
           <main className="flex-1 w-full max-w-6xl min-w-0 px-4 py-4 sm:px-6 sm:py-6">

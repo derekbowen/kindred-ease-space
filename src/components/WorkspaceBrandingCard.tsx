@@ -84,7 +84,10 @@ export function WorkspaceBrandingCard({ workspaceId, initial, onSaved }: Props) 
     <Card>
       <CardHeader>
         <CardTitle>Branding</CardTitle>
-        <CardDescription>Your logo, name and accent color appear in the admin sidebar and outbound emails — so the product feels like yours.</CardDescription>
+        <CardDescription>
+          Your logo, name and accent color appear in the admin sidebar and outbound emails — so the
+          product feels like yours.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="flex items-center gap-4">
@@ -101,8 +104,20 @@ export function WorkspaceBrandingCard({ workspaceId, initial, onSaved }: Props) 
             )}
           </div>
           <div className="flex flex-col gap-2">
-            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden onChange={onFile} />
-            <Button type="button" variant="outline" size="sm" onClick={onPickFile} disabled={uploading}>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+              hidden
+              onChange={onFile}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onPickFile}
+              disabled={uploading}
+            >
               {uploading ? "Uploading…" : "Upload logo"}
             </Button>
             {logoUrl && (
@@ -115,7 +130,13 @@ export function WorkspaceBrandingCard({ workspaceId, initial, onSaved }: Props) 
 
         <div className="space-y-2">
           <Label htmlFor="brand-name">Brand name</Label>
-          <Input id="brand-name" value={brandName} onChange={(e) => setBrandName(e.target.value)} placeholder="e.g. Pool Rental Near Me" maxLength={60} />
+          <Input
+            id="brand-name"
+            value={brandName}
+            onChange={(e) => setBrandName(e.target.value)}
+            placeholder="e.g. Pool Rental Near Me"
+            maxLength={60}
+          />
         </div>
 
         <div className="space-y-2">
@@ -128,7 +149,11 @@ export function WorkspaceBrandingCard({ workspaceId, initial, onSaved }: Props) 
               onChange={(e) => setBrandColor(e.target.value)}
               className="h-10 w-14 rounded border border-border bg-transparent cursor-pointer"
             />
-            <Input value={brandColor} onChange={(e) => setBrandColor(e.target.value)} className="max-w-[140px] font-mono" />
+            <Input
+              value={brandColor}
+              onChange={(e) => setBrandColor(e.target.value)}
+              className="max-w-[140px] font-mono"
+            />
           </div>
         </div>
 

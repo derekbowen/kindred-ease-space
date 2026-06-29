@@ -47,7 +47,10 @@ const TOOL_SCHEMA = {
         title: { type: "string" },
         seo_title: { type: "string", description: "≤60 chars" },
         seo_description: { type: "string", description: "≤155 chars" },
-        body_markdown: { type: "string", description: "Full markdown body, 600-1200 words, no frontmatter" },
+        body_markdown: {
+          type: "string",
+          description: "Full markdown body, 600-1200 words, no frontmatter",
+        },
       },
       required: ["title", "seo_title", "seo_description", "body_markdown"],
       additionalProperties: false,
@@ -63,8 +66,13 @@ export const createQuickPage = createServerFn({ method: "POST" })
 
     // BYOK first, platform env-var fallback.
     const { getWorkspaceSecret } = await import("@/lib/workspace-secrets.server");
-    const apiKey = await getWorkspaceSecret(data.workspaceId, "OPENROUTER_API_KEY", "OPENROUTER_API_KEY");
-    if (!apiKey) throw new Error("No AI key configured. Add a BYOK OpenRouter key under Settings → API Keys.");
+    const apiKey = await getWorkspaceSecret(
+      data.workspaceId,
+      "OPENROUTER_API_KEY",
+      "OPENROUTER_API_KEY",
+    );
+    if (!apiKey)
+      throw new Error("No AI key configured. Add a BYOK OpenRouter key under Settings → API Keys.");
     const model = resolvePlatformModel(data.model);
 
     // Bill the platform credit system (same model as ai-proxy): free trial
@@ -75,9 +83,15 @@ export const createQuickPage = createServerFn({ method: "POST" })
     });
     if (!qErr) {
       billing = "free_quota";
-    } else if (typeof qErr.message === "string" && qErr.message.includes("platform_ai_quota_exhausted")) {
+    } else if (
+      typeof qErr.message === "string" &&
+      qErr.message.includes("platform_ai_quota_exhausted")
+    ) {
       const { data: bal } = await supabaseAdmin
-        .from("credit_balances").select("balance").eq("workspace_id", data.workspaceId).maybeSingle();
+        .from("credit_balances")
+        .select("balance")
+        .eq("workspace_id", data.workspaceId)
+        .maybeSingle();
       if (!bal || bal.balance <= 0) {
         throw new Error("Out of AI credits. Top up in Billing to keep generating.");
       }
@@ -147,7 +161,7 @@ seo_title (≤60 chars) and seo_description (≤155 chars) optimised for the top
     if (city) variables.city = city;
     if (state) variables.state = state;
     if (categoryPlural) variables.category_plural = categoryPlural;
-    const listingFilter: Record<string, unknown> = { limit: 24, sort: "newest" };
+    const listingFilter: any = { limit: 24, sort: "newest" };
     if (city) listingFilter.city = city;
     if (state) listingFilter.state = state;
 

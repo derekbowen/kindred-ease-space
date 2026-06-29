@@ -10,7 +10,11 @@ export const Route = createFileRoute("/reset-password")({
   head: () => ({
     meta: [
       { title: "Reset password — founders.click" },
-      { name: "description", content: "Reset the password on your founders.click account. Request a secure recovery link by email, then set a new password to regain access." },
+      {
+        name: "description",
+        content:
+          "Reset the password on your founders.click account. Request a secure recovery link by email, then set a new password to regain access.",
+      },
     ],
   }),
   component: ResetPasswordPage,
@@ -74,7 +78,13 @@ function ResetPasswordPage() {
           <form onSubmit={onRequest} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+              <Input
+                id="email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </div>
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting ? "Sending…" : "Send reset link"}
@@ -84,7 +94,14 @@ function ResetPasswordPage() {
           <form onSubmit={onUpdate} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="newPassword">New password</Label>
-              <Input id="newPassword" type="password" required minLength={8} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+              <Input
+                id="newPassword"
+                type="password"
+                required
+                minLength={8}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
             </div>
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting ? "Updating…" : "Update password"}
@@ -92,7 +109,9 @@ function ResetPasswordPage() {
           </form>
         )}
         <div className="text-center text-sm text-muted-foreground">
-          <Link to="/login" className="hover:text-foreground">Back to sign in</Link>
+          <Link to="/login" className="hover:text-foreground">
+            Back to sign in
+          </Link>
         </div>
       </div>
     </div>

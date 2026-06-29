@@ -29,7 +29,9 @@ function AffiliateDashboard() {
   const [starting, setStarting] = useState(false);
 
   useEffect(() => {
-    getMe().then((me) => setWorkspaceId(me?.memberships?.[0]?.workspace_id ?? null)).catch(() => {});
+    getMe()
+      .then((me) => setWorkspaceId(me?.memberships?.[0]?.workspace_id ?? null))
+      .catch(() => {});
   }, []);
 
   const { data, isLoading } = useQuery({
@@ -39,7 +41,16 @@ function AffiliateDashboard() {
   });
 
   if (!workspaceId || isLoading) {
-    return <div className="space-y-4"><Skeleton className="h-8 w-64" /><div className="grid grid-cols-2 md:grid-cols-4 gap-4">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-24" />)}</div></div>;
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-64" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
+        </div>
+      </div>
+    );
   }
 
   const addon = data?.addon;
@@ -55,8 +66,9 @@ function AffiliateDashboard() {
           <CardHeader>
             <CardTitle>Turn your members into a sales force</CardTitle>
             <CardDescription>
-              Run referral/affiliate programs on your Sharetribe marketplace — track referred sign-ups
-              and transactions, manage affiliates, and issue payouts. Start a free 14-day trial.
+              Run referral/affiliate programs on your Sharetribe marketplace — track referred
+              sign-ups and transactions, manage affiliates, and issue payouts. Start a free 14-day
+              trial.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
@@ -77,7 +89,9 @@ function AffiliateDashboard() {
             >
               {starting ? "Starting…" : "Start free trial"}
             </Button>
-            <Button variant="outline" asChild><Link to="/app/addons">View add-ons</Link></Button>
+            <Button variant="outline" asChild>
+              <Link to="/app/addons">View add-ons</Link>
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -102,13 +116,17 @@ function AffiliateDashboard() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Affiliate Dashboard</h1>
         {addon?.status === "trialing" && (
-          <span className="text-xs rounded-full bg-orange-500/10 text-orange-500 px-3 py-1">Trial</span>
+          <span className="text-xs rounded-full bg-orange-500/10 text-orange-500 px-3 py-1">
+            Trial
+          </span>
         )}
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {cards.map((c) => (
           <Card key={c.label}>
-            <CardHeader className="pb-1"><CardDescription>{c.label}</CardDescription></CardHeader>
+            <CardHeader className="pb-1">
+              <CardDescription>{c.label}</CardDescription>
+            </CardHeader>
             <CardContent className="text-2xl font-bold">{c.value}</CardContent>
           </Card>
         ))}
@@ -119,12 +137,21 @@ function AffiliateDashboard() {
         </CardHeader>
         <CardContent>
           {series.every((s) => s.gmv === 0) ? (
-            <p className="text-sm text-muted-foreground">No transaction data yet. It appears once transactions sync from Sharetribe.</p>
+            <p className="text-sm text-muted-foreground">
+              No transaction data yet. It appears once transactions sync from Sharetribe.
+            </p>
           ) : (
             <div className="flex items-end gap-1 h-40">
               {series.map((s) => (
-                <div key={s.month} className="flex-1 flex flex-col items-center gap-1" title={`${s.month}: ${fmtMoney(s.gmv, currency)}`}>
-                  <div className="w-full rounded-t bg-orange-500/70" style={{ height: `${(s.gmv / maxGmv) * 100}%`, minHeight: s.gmv > 0 ? 2 : 0 }} />
+                <div
+                  key={s.month}
+                  className="flex-1 flex flex-col items-center gap-1"
+                  title={`${s.month}: ${fmtMoney(s.gmv, currency)}`}
+                >
+                  <div
+                    className="w-full rounded-t bg-orange-500/70"
+                    style={{ height: `${(s.gmv / maxGmv) * 100}%`, minHeight: s.gmv > 0 ? 2 : 0 }}
+                  />
                   <span className="text-[9px] text-muted-foreground">{s.month.slice(5)}</span>
                 </div>
               ))}

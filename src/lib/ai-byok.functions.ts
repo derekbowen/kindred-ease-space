@@ -2,7 +2,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { assertWorkspaceMember, assertWorkspaceOwner, workspaceIdSchema } from "./admin-helpers.functions";
+import {
+  assertWorkspaceMember,
+  assertWorkspaceOwner,
+  workspaceIdSchema,
+} from "./admin-helpers.functions";
 
 export const AI_PROVIDERS = ["openai", "anthropic", "google", "openrouter"] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
@@ -111,13 +115,17 @@ async function fetchVaultKey(workspaceId: string, provider: AiProvider): Promise
   return (data as string | null) ?? null;
 }
 
-async function testProviderKey(provider: AiProvider, apiKey: string): Promise<{ ok: true } | { ok: false; error: string }> {
+async function testProviderKey(
+  provider: AiProvider,
+  apiKey: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     if (provider === "openai") {
       const r = await fetch("https://api.openai.com/v1/models", {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
-      if (!r.ok) return { ok: false, error: `OpenAI ${r.status}: ${(await r.text()).slice(0, 200)}` };
+      if (!r.ok)
+        return { ok: false, error: `OpenAI ${r.status}: ${(await r.text()).slice(0, 200)}` };
       return { ok: true };
     }
     if (provider === "anthropic") {
@@ -134,21 +142,24 @@ async function testProviderKey(provider: AiProvider, apiKey: string): Promise<{ 
           messages: [{ role: "user", content: "hi" }],
         }),
       });
-      if (!r.ok) return { ok: false, error: `Anthropic ${r.status}: ${(await r.text()).slice(0, 200)}` };
+      if (!r.ok)
+        return { ok: false, error: `Anthropic ${r.status}: ${(await r.text()).slice(0, 200)}` };
       return { ok: true };
     }
     if (provider === "google") {
       const r = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
       );
-      if (!r.ok) return { ok: false, error: `Google ${r.status}: ${(await r.text()).slice(0, 200)}` };
+      if (!r.ok)
+        return { ok: false, error: `Google ${r.status}: ${(await r.text()).slice(0, 200)}` };
       return { ok: true };
     }
     if (provider === "openrouter") {
       const r = await fetch("https://openrouter.ai/api/v1/auth/key", {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
-      if (!r.ok) return { ok: false, error: `OpenRouter ${r.status}: ${(await r.text()).slice(0, 200)}` };
+      if (!r.ok)
+        return { ok: false, error: `OpenRouter ${r.status}: ${(await r.text()).slice(0, 200)}` };
       return { ok: true };
     }
     return { ok: false, error: "Unknown provider" };
@@ -192,7 +203,9 @@ export const getAiUsageSummary = createServerFn({ method: "POST" })
 
     const { data: rows } = await supabaseAdmin
       .from("ai_usage_log")
-      .select("created_at, provider, model, feature, total_tokens, cost_usd_micros, used_byok, status, error")
+      .select(
+        "created_at, provider, model, feature, total_tokens, cost_usd_micros, used_byok, status, error",
+      )
       .eq("workspace_id", data.workspaceId)
       .gte("created_at", monthStart.toISOString())
       .order("created_at", { ascending: false })

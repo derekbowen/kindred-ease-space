@@ -37,17 +37,18 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({
           error: "assistant_unavailable",
-          message: "The help assistant is temporarily unavailable. Browse the help center at /help in the meantime.",
+          message:
+            "The help assistant is temporarily unavailable. Browse the help center at /help in the meantime.",
         }),
         { status: 503, headers: { ...cors, "Content-Type": "application/json" } },
       );
     }
 
-
     const { messages } = (await req.json()) as { messages: Msg[] };
     if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: "messages required" }), {
-        status: 400, headers: { ...cors, "Content-Type": "application/json" },
+        status: 400,
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
@@ -55,7 +56,10 @@ Deno.serve(async (req) => {
     const query = (lastUser?.content ?? "").slice(0, 2000);
 
     // Retrieve top help chunks
-    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const admin = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
     let context = "";
     const sources: { title: string; url: string }[] = [];
     if (query.trim().length > 2) {
@@ -71,7 +75,10 @@ Deno.serve(async (req) => {
           context = matches
             .map((m: any, i: number) => {
               const url = `${SITE}/help/${m.category_slug}/${m.article_slug}`;
-              if (!seen.has(url)) { seen.add(url); sources.push({ title: m.article_title, url }); }
+              if (!seen.has(url)) {
+                seen.add(url);
+                sources.push({ title: m.article_title, url });
+              }
               return `[Source ${i + 1}: ${m.article_title}]\n${m.content}`;
             })
             .join("\n\n---\n\n");
@@ -94,23 +101,29 @@ ${context || "(no relevant articles found)"}`;
       body: JSON.stringify({
         model: CHAT_MODEL,
         stream: true,
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...messages.slice(-10),
-        ],
+        messages: [{ role: "system", content: systemPrompt }, ...messages.slice(-10)],
       }),
     });
 
     if (!upstream.ok) {
       if (upstream.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit. Please try again in a moment." }), { status: 429, headers: { ...cors, "Content-Type": "application/json" } });
+        return new Response(
+          JSON.stringify({ error: "Rate limit. Please try again in a moment." }),
+          { status: 429, headers: { ...cors, "Content-Type": "application/json" } },
+        );
       }
       if (upstream.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted. Please contact support." }), { status: 402, headers: { ...cors, "Content-Type": "application/json" } });
+        return new Response(
+          JSON.stringify({ error: "AI credits exhausted. Please contact support." }),
+          { status: 402, headers: { ...cors, "Content-Type": "application/json" } },
+        );
       }
       const t = await upstream.text();
       console.error("ai gateway", upstream.status, t);
-      return new Response(JSON.stringify({ error: "AI gateway error" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "AI gateway error" }), {
+        status: 500,
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
     }
 
     // Prepend sources as a custom SSE event before piping the upstream stream.
@@ -129,10 +142,18 @@ ${context || "(no relevant articles found)"}`;
     });
 
     return new Response(stream, {
-      headers: { ...cors, "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
+      headers: {
+        ...cors,
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
     });
   } catch (e) {
     console.error("[help-assistant-chat]", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown" }), {
+      status: 500,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
   }
 });

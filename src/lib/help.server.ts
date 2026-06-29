@@ -76,7 +76,9 @@ export async function getCategoryBySlug(slug: string): Promise<HelpCategory | nu
 export async function listArticlesByCategory(categorySlug: string): Promise<HelpArticleListItem[]> {
   const { data, error } = await supabaseAdmin
     .from("help_articles")
-    .select("id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at")
+    .select(
+      "id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at",
+    )
     .is("workspace_id", null)
     .eq("category_slug", categorySlug)
     .eq("status", "published")
@@ -89,10 +91,15 @@ export async function listArticlesByCategory(categorySlug: string): Promise<Help
   return (data ?? []) as HelpArticleListItem[];
 }
 
-export async function getArticleBySlug(categorySlug: string, articleSlug: string): Promise<HelpArticleFull | null> {
+export async function getArticleBySlug(
+  categorySlug: string,
+  articleSlug: string,
+): Promise<HelpArticleFull | null> {
   const { data, error } = await supabaseAdmin
     .from("help_articles")
-    .select("id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at,content,author_name,author_avatar_url,helpful_count,not_helpful_count,related_article_ids,tags")
+    .select(
+      "id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at,content,author_name,author_avatar_url,helpful_count,not_helpful_count,related_article_ids,tags",
+    )
     .is("workspace_id", null)
     .eq("category_slug", categorySlug)
     .eq("slug", articleSlug)
@@ -109,7 +116,9 @@ export async function getRelatedArticles(ids: string[]): Promise<HelpArticleList
   if (!ids?.length) return [];
   const { data, error } = await supabaseAdmin
     .from("help_articles")
-    .select("id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at")
+    .select(
+      "id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at",
+    )
     .in("id", ids)
     .eq("status", "published")
     .limit(4);
@@ -123,7 +132,9 @@ export async function getRelatedArticles(ids: string[]): Promise<HelpArticleList
 export async function listPopularArticles(limit = 6): Promise<HelpArticleListItem[]> {
   const { data, error } = await supabaseAdmin
     .from("help_articles")
-    .select("id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at")
+    .select(
+      "id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at",
+    )
     .is("workspace_id", null)
     .eq("status", "published")
     .order("view_count", { ascending: false })
@@ -138,7 +149,9 @@ export async function listPopularArticles(limit = 6): Promise<HelpArticleListIte
 export async function listRecentArticles(limit = 4): Promise<HelpArticleListItem[]> {
   const { data, error } = await supabaseAdmin
     .from("help_articles")
-    .select("id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at")
+    .select(
+      "id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at",
+    )
     .is("workspace_id", null)
     .eq("status", "published")
     .order("updated_at", { ascending: false })
@@ -150,7 +163,9 @@ export async function listRecentArticles(limit = 4): Promise<HelpArticleListItem
   return (data ?? []) as HelpArticleListItem[];
 }
 
-export async function listAllPublishedArticleSlugs(): Promise<Array<{ category_slug: string; slug: string; updated_at: string }>> {
+export async function listAllPublishedArticleSlugs(): Promise<
+  Array<{ category_slug: string; slug: string; updated_at: string }>
+> {
   const { data, error } = await supabaseAdmin
     .from("help_articles")
     .select("category_slug,slug,updated_at")
@@ -177,7 +192,10 @@ export async function searchArticles(query: string, limit = 25): Promise<HelpArt
   return (data ?? []) as HelpArticleListItem[];
 }
 
-export async function suggestArticleTitles(query: string, limit = 5): Promise<HelpTitleSuggestion[]> {
+export async function suggestArticleTitles(
+  query: string,
+  limit = 5,
+): Promise<HelpTitleSuggestion[]> {
   const q = query.trim();
   if (q.length < 2) return [];
   const { data, error } = await supabaseAdmin.rpc("help_suggest_titles", {
@@ -265,7 +283,11 @@ export async function incrementArticleView(articleId: string): Promise<void> {
     .eq("id", articleId);
 }
 
-export async function logSearchQuery(query: string, resultsCount: number, sessionId?: string | null): Promise<void> {
+export async function logSearchQuery(
+  query: string,
+  resultsCount: number,
+  sessionId?: string | null,
+): Promise<void> {
   const { error } = await supabaseAdmin.from("help_search_queries").insert({
     query: query.slice(0, 500),
     results_count: resultsCount,

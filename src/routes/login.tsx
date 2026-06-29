@@ -13,7 +13,11 @@ export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
       { title: "Sign in — founders.click" },
-      { name: "description", content: "Sign in to your founders.click workspace to manage SEO, content generation, lead inbox, and marketplace ops in one dashboard." },
+      {
+        name: "description",
+        content:
+          "Sign in to your founders.click workspace to manage SEO, content generation, lead inbox, and marketplace ops in one dashboard.",
+      },
     ],
   }),
   validateSearch: searchSchema,
@@ -70,14 +74,29 @@ function LoginPage() {
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Input
+              id="email"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Password</Label>
-            <Input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+            <Input
+              id="password"
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
           </div>
           {error && (
-            <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p
+              role="alert"
+              className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
               {error}
             </p>
           )}
@@ -90,11 +109,15 @@ function LoginPage() {
         </Button>
         <div className="text-center text-sm text-muted-foreground space-y-1">
           <div>
-            <Link to="/reset-password" className="hover:text-foreground">Forgot password?</Link>
+            <Link to="/reset-password" className="hover:text-foreground">
+              Forgot password?
+            </Link>
           </div>
           <div>
             New here?{" "}
-            <Link to="/signup" className="text-orange-500 hover:underline">Create an account</Link>
+            <Link to="/signup" className="text-orange-500 hover:underline">
+              Create an account
+            </Link>
           </div>
         </div>
       </div>

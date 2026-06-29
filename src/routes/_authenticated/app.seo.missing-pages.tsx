@@ -7,7 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Loader2 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import {
-  list404s, resolve404, redirect404,
+  list404s,
+  resolve404,
+  redirect404,
   type Content404Row,
 } from "@/lib/admin-404-log.functions";
 
@@ -43,7 +45,9 @@ function MissingPagesPage() {
     }
   }
 
-  useEffect(() => { if (workspaceId) load(); /* eslint-disable-next-line */ }, [workspaceId, unresolvedOnly]);
+  useEffect(() => {
+    if (workspaceId) load(); /* eslint-disable-next-line */
+  }, [workspaceId, unresolvedOnly]);
 
   async function handleResolve(id: string) {
     if (!workspaceId) return;
@@ -51,7 +55,9 @@ function MissingPagesPage() {
     try {
       await markResolved({ data: { workspaceId, id } });
       setRows((rs) => rs.filter((r) => r.id !== id));
-    } finally { setBusyId(null); }
+    } finally {
+      setBusyId(null);
+    }
   }
 
   async function handleRedirect(id: string) {
@@ -62,7 +68,9 @@ function MissingPagesPage() {
     try {
       const res = await setRedirect({ data: { workspaceId, id, target } });
       if (res.ok) setRows((rs) => rs.filter((r) => r.id !== id));
-    } finally { setBusyId(null); }
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (
@@ -103,7 +111,12 @@ function MissingPagesPage() {
                       <div className="font-mono text-sm">{r.url_path}</div>
                       <div className="text-xs text-muted-foreground">
                         {r.hit_count} hits · last {new Date(r.last_seen_at).toLocaleString()}
-                        {r.referrer && <> · ref: <span className="font-mono">{r.referrer.slice(0, 60)}</span></>}
+                        {r.referrer && (
+                          <>
+                            {" "}
+                            · ref: <span className="font-mono">{r.referrer.slice(0, 60)}</span>
+                          </>
+                        )}
                       </div>
                     </div>
                     <Button
@@ -119,7 +132,9 @@ function MissingPagesPage() {
                     <Input
                       placeholder="/p/redirect-target or https://…"
                       value={redirectTargets[r.id] ?? ""}
-                      onChange={(e) => setRedirectTargets((m) => ({ ...m, [r.id]: e.target.value }))}
+                      onChange={(e) =>
+                        setRedirectTargets((m) => ({ ...m, [r.id]: e.target.value }))
+                      }
                       className="text-xs"
                     />
                     <Button

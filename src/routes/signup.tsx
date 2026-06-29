@@ -10,7 +10,10 @@ export const Route = createFileRoute("/signup")({
   head: () => ({
     meta: [
       { title: "Start your free trial — founders.click" },
-      { name: "description", content: "Create a founders.click workspace and start your 14-day free trial." },
+      {
+        name: "description",
+        content: "Create a founders.click workspace and start your 14-day free trial.",
+      },
     ],
   }),
   component: SignupPage,
@@ -79,8 +82,9 @@ function SignupPage() {
         {confirmEmail ? (
           <div className="space-y-4 text-center">
             <p className="text-sm text-muted-foreground">
-              We sent a confirmation link to <span className="font-medium text-foreground">{email}</span>. Click it to
-              activate your workspace, then sign in.
+              We sent a confirmation link to{" "}
+              <span className="font-medium text-foreground">{email}</span>. Click it to activate
+              your workspace, then sign in.
             </p>
             <Button asChild className="w-full">
               <Link to="/login">Go to sign in</Link>
@@ -88,30 +92,45 @@ function SignupPage() {
           </div>
         ) : (
           <>
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="name">Your name</Label>
-            <Input id="name" required value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <Input id="password" type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
-          </div>
-          <Button type="submit" className="w-full" disabled={submitting}>
-            {submitting ? "Creating account…" : "Start free trial"}
-          </Button>
-        </form>
-        <Button variant="outline" className="w-full" onClick={onGoogle}>
-          Continue with Google
-        </Button>
-        <div className="text-center text-sm text-muted-foreground">
-          Already have an account?{" "}
-          <Link to="/login" className="text-orange-500 hover:underline">Sign in</Link>
-        </div>
+            <form onSubmit={onSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Your name</Label>
+                <Input id="name" required value={name} onChange={(e) => setName(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  required
+                  minLength={8}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={submitting}>
+                {submitting ? "Creating account…" : "Start free trial"}
+              </Button>
+            </form>
+            <Button variant="outline" className="w-full" onClick={onGoogle}>
+              Continue with Google
+            </Button>
+            <div className="text-center text-sm text-muted-foreground">
+              Already have an account?{" "}
+              <Link to="/login" className="text-orange-500 hover:underline">
+                Sign in
+              </Link>
+            </div>
           </>
         )}
       </div>

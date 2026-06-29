@@ -15,11 +15,7 @@ import {
 import { Plus, MessageSquare, Pencil, Trash2, Search, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import {
-  createConversation,
-  renameConversation,
-  deleteConversation,
-} from "@/lib/coach.functions";
+import { createConversation, renameConversation, deleteConversation } from "@/lib/coach.functions";
 
 export type ConversationListItem = {
   id: string;
@@ -53,7 +49,10 @@ export function CoachConversationList({
       qc.invalidateQueries({ queryKey: ["coach-conversations", workspaceId] });
       onSelect(r.conversation!.id as string);
     },
-    onError: (e) => toast.error("Failed to create conversation", { description: e instanceof Error ? e.message : String(e) }),
+    onError: (e) =>
+      toast.error("Failed to create conversation", {
+        description: e instanceof Error ? e.message : String(e),
+      }),
   });
 
   const rename = useMutation({
@@ -64,7 +63,8 @@ export function CoachConversationList({
       setRenaming(null);
       toast.success("Renamed");
     },
-    onError: (e) => toast.error("Rename failed", { description: e instanceof Error ? e.message : String(e) }),
+    onError: (e) =>
+      toast.error("Rename failed", { description: e instanceof Error ? e.message : String(e) }),
   });
 
   const remove = useMutation({
@@ -75,18 +75,30 @@ export function CoachConversationList({
       setDeleting(null);
       toast.success("Conversation deleted");
     },
-    onError: (e) => toast.error("Delete failed", { description: e instanceof Error ? e.message : String(e) }),
+    onError: (e) =>
+      toast.error("Delete failed", { description: e instanceof Error ? e.message : String(e) }),
   });
 
   const filtered = filter.trim()
-    ? conversations.filter((c) => (c.title ?? "Untitled").toLowerCase().includes(filter.toLowerCase()))
+    ? conversations.filter((c) =>
+        (c.title ?? "Untitled").toLowerCase().includes(filter.toLowerCase()),
+      )
     : conversations;
 
   return (
     <div className="flex flex-col h-full">
       <div className="p-3 border-b border-border space-y-2">
-        <Button size="sm" className="w-full justify-start" onClick={() => create.mutate()} disabled={create.isPending}>
-          {create.isPending ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-2" />}
+        <Button
+          size="sm"
+          className="w-full justify-start"
+          onClick={() => create.mutate()}
+          disabled={create.isPending}
+        >
+          {create.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+          ) : (
+            <Plus className="h-3.5 w-3.5 mr-2" />
+          )}
           New conversation
         </Button>
         <div className="relative">
@@ -104,7 +116,9 @@ export function CoachConversationList({
         {loading && conversations.length === 0 ? (
           <p className="text-xs text-muted-foreground p-2">Loading…</p>
         ) : filtered.length === 0 ? (
-          <p className="text-xs text-muted-foreground p-2">{conversations.length === 0 ? "No conversations yet." : "No matches."}</p>
+          <p className="text-xs text-muted-foreground p-2">
+            {conversations.length === 0 ? "No conversations yet." : "No matches."}
+          </p>
         ) : (
           filtered.map((c) => (
             <ConversationRow
@@ -112,7 +126,10 @@ export function CoachConversationList({
               conv={c}
               active={c.id === activeId}
               onSelect={() => onSelect(c.id)}
-              onRename={() => { setRenameValue(c.title ?? ""); setRenaming(c); }}
+              onRename={() => {
+                setRenameValue(c.title ?? "");
+                setRenaming(c);
+              }}
               onDelete={() => setDeleting(c)}
             />
           ))
@@ -120,11 +137,18 @@ export function CoachConversationList({
       </div>
 
       {/* Rename dialog */}
-      <AlertDialog open={!!renaming} onOpenChange={(o) => { if (!o) setRenaming(null); }}>
+      <AlertDialog
+        open={!!renaming}
+        onOpenChange={(o) => {
+          if (!o) setRenaming(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Rename conversation</AlertDialogTitle>
-            <AlertDialogDescription>Choose a name that helps you find this conversation later.</AlertDialogDescription>
+            <AlertDialogDescription>
+              Choose a name that helps you find this conversation later.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <Input
             value={renameValue}
@@ -151,7 +175,12 @@ export function CoachConversationList({
       </AlertDialog>
 
       {/* Delete dialog */}
-      <AlertDialog open={!!deleting} onOpenChange={(o) => { if (!o) setDeleting(null); }}>
+      <AlertDialog
+        open={!!deleting}
+        onOpenChange={(o) => {
+          if (!o) setDeleting(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
@@ -162,7 +191,10 @@ export function CoachConversationList({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={remove.isPending}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); if (deleting) remove.mutate(deleting.id); }}
+              onClick={(e) => {
+                e.preventDefault();
+                if (deleting) remove.mutate(deleting.id);
+              }}
               disabled={remove.isPending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
@@ -177,7 +209,11 @@ export function CoachConversationList({
 }
 
 function ConversationRow({
-  conv, active, onSelect, onRename, onDelete,
+  conv,
+  active,
+  onSelect,
+  onRename,
+  onDelete,
 }: {
   conv: ConversationListItem;
   active: boolean;
@@ -191,7 +227,9 @@ function ConversationRow({
     <div
       className={cn(
         "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm",
-        active ? "bg-primary/10 text-foreground" : "hover:bg-muted text-muted-foreground hover:text-foreground",
+        active
+          ? "bg-primary/10 text-foreground"
+          : "hover:bg-muted text-muted-foreground hover:text-foreground",
       )}
       onClick={onSelect}
     >
@@ -202,14 +240,20 @@ function ConversationRow({
       </div>
       <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition">
         <button
-          onClick={(e) => { e.stopPropagation(); onRename(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRename();
+          }}
           className="p-1 rounded hover:bg-background"
           aria-label="Rename"
         >
           <Pencil className="h-3 w-3" />
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
           className="p-1 rounded hover:bg-background text-destructive"
           aria-label="Delete"
         >

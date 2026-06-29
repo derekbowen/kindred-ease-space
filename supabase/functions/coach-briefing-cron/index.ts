@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
 
     const results: Array<{ workspace_id: string; ok: boolean; error?: string }> = [];
 
-    for (const ws of (workspaces ?? [])) {
+    for (const ws of workspaces ?? []) {
       try {
         // Skip if briefing already exists for today
         const { data: existing } = await admin
@@ -66,16 +66,28 @@ Deno.serve(async (req) => {
 
         // Gather signals
         const [pages, listings] = await Promise.all([
-          admin.from("tenant_pages").select("id, slug, title, status, meta_description, body_markdown, listing_filter")
+          admin
+            .from("tenant_pages")
+            .select("id, slug, title, status, meta_description, body_markdown, listing_filter")
             .eq("workspace_id", ws.id),
           admin.from("tenant_listings").select("id, city, category").eq("workspace_id", ws.id),
         ]);
-        const allPages = (pages.data ?? []) as Array<{ id: string; slug: string; title: string; status: string; meta_description: string | null; body_markdown: string | null; listing_filter: { city?: string } | null }>;
+        const allPages = (pages.data ?? []) as Array<{
+          id: string;
+          slug: string;
+          title: string;
+          status: string;
+          meta_description: string | null;
+          body_markdown: string | null;
+          listing_filter: { city?: string } | null;
+        }>;
         const published = allPages.filter((p) => p.status === "published");
         const drafts = allPages.filter((p) => p.status === "draft");
 
         // Thin pages
-        const thinPages = published.filter((p) => ((p.body_markdown ?? "").split(/\s+/).filter(Boolean).length) < 300);
+        const thinPages = published.filter(
+          (p) => (p.body_markdown ?? "").split(/\s+/).filter(Boolean).length < 300,
+        );
         // Missing meta
         const missingMeta = published.filter((p) => !p.meta_description);
 
@@ -87,7 +99,8 @@ Deno.serve(async (req) => {
         }
         const cityCounts = new Map<string, number>();
         for (const l of (listings.data ?? []) as Array<{ city: string | null }>) {
-          if (l.city) cityCounts.set(l.city.toLowerCase(), (cityCounts.get(l.city.toLowerCase()) ?? 0) + 1);
+          if (l.city)
+            cityCounts.set(l.city.toLowerCase(), (cityCounts.get(l.city.toLowerCase()) ?? 0) + 1);
         }
         const uncoveredCities = [...cityCounts.entries()]
           .filter(([c]) => !cityCoverage.has(c))
@@ -102,7 +115,10 @@ Deno.serve(async (req) => {
           thin_examples: thinPages.slice(0, 3).map((p) => ({ id: p.id, slug: p.slug })),
           missing_meta: missingMeta.length,
           missing_meta_examples: missingMeta.slice(0, 3).map((p) => ({ id: p.id, slug: p.slug })),
-          uncovered_cities: uncoveredCities.map(([city, count]) => ({ city, listing_count: count })),
+          uncovered_cities: uncoveredCities.map(([city, count]) => ({
+            city,
+            listing_count: count,
+          })),
           total_listings: listings.data?.length ?? 0,
         };
 
@@ -111,7 +127,10 @@ Deno.serve(async (req) => {
         if (OPENROUTER_API_KEY) {
           const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
-            headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+            headers: {
+              Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+              "Content-Type": "application/json",
+            },
             body: JSON.stringify({
               model: BRIEFING_MODEL,
               messages: [
@@ -129,40 +148,58 @@ Deno.serve(async (req) => {
             try {
               const parsed = JSON.parse(j.choices?.[0]?.message?.content ?? "{}");
               insights = Array.isArray(parsed.insights) ? parsed.insights.slice(0, 3) : [];
-            } catch { /* leave empty */ }
+            } catch {
+              /* leave empty */
+            }
           }
         }
 
         // Fallback if LLM failed
         if (insights.length === 0) {
-          if (thinPages.length > 0) insights.push({
-            title: `${thinPages.length} thin pages need content`,
-            description: `Pages under 300 words rarely rank. Start with /p/${thinPages[0].slug}.`,
-            priority: "high", action_type: "fix_thin_page",
-            action_payload: { page_id: thinPages[0].id },
-          });
-          if (uncoveredCities.length > 0) insights.push({
-            title: `Create page for ${uncoveredCities[0][0]}`,
-            description: `${uncoveredCities[0][1]} listings in ${uncoveredCities[0][0]} have no dedicated page.`,
-            priority: "high", action_type: "create_city_page",
-            action_payload: { city: uncoveredCities[0][0] },
-          });
-          if (missingMeta.length > 0) insights.push({
-            title: `${missingMeta.length} pages missing meta description`,
-            description: `Quick win — add meta descriptions to boost CTR.`,
-            priority: "medium", action_type: "add_meta",
-            action_payload: { page_ids: missingMeta.slice(0, 5).map((p) => p.id) },
-          });
+          if (thinPages.length > 0)
+            insights.push({
+              title: `${thinPages.length} thin pages need content`,
+              description: `Pages under 300 words rarely rank. Start with /p/${thinPages[0].slug}.`,
+              priority: "high",
+              action_type: "fix_thin_page",
+              action_payload: { page_id: thinPages[0].id },
+            });
+          if (uncoveredCities.length > 0)
+            insights.push({
+              title: `Create page for ${uncoveredCities[0][0]}`,
+              description: `${uncoveredCities[0][1]} listings in ${uncoveredCities[0][0]} have no dedicated page.`,
+              priority: "high",
+              action_type: "create_city_page",
+              action_payload: { city: uncoveredCities[0][0] },
+            });
+          if (missingMeta.length > 0)
+            insights.push({
+              title: `${missingMeta.length} pages missing meta description`,
+              description: `Quick win — add meta descriptions to boost CTR.`,
+              priority: "medium",
+              action_type: "add_meta",
+              action_payload: { page_ids: missingMeta.slice(0, 5).map((p) => p.id) },
+            });
         }
 
-        await admin.from("coach_daily_briefings").upsert({
-          workspace_id: ws.id, briefing_date: today, insights,
-          generated_at: new Date().toISOString(), viewed_at: null,
-        }, { onConflict: "workspace_id,briefing_date" });
+        await admin.from("coach_daily_briefings").upsert(
+          {
+            workspace_id: ws.id,
+            briefing_date: today,
+            insights,
+            generated_at: new Date().toISOString(),
+            viewed_at: null,
+          },
+          { onConflict: "workspace_id,briefing_date" },
+        );
 
         results.push({ workspace_id: ws.id as string, ok: true });
       } catch (e) {
-        results.push({ workspace_id: ws.id as string, ok: false, error: e instanceof Error ? e.message : "unknown" });
+        results.push({
+          workspace_id: ws.id as string,
+          ok: false,
+          error: e instanceof Error ? e.message : "unknown",
+        });
       }
     }
 
@@ -173,7 +210,8 @@ Deno.serve(async (req) => {
     const m = e instanceof Error ? e.message : "Unknown error";
     console.error("[coach-briefing-cron]", m);
     return new Response(JSON.stringify({ error: m }), {
-      status: 500, headers: { ...cors, "Content-Type": "application/json" },
+      status: 500,
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   }
 });

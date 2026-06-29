@@ -20,11 +20,7 @@ import {
   Eye,
 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
-import {
-  listPageTemplates,
-  getTenantPage,
-  upsertTenantPage,
-} from "@/lib/tenant-pages.functions";
+import { listPageTemplates, getTenantPage, upsertTenantPage } from "@/lib/tenant-pages.functions";
 import { getPageBuilderContext } from "@/lib/page-builder.functions";
 import { InlineCoach } from "@/components/coach/InlineCoach";
 import { PageLivePreview } from "@/components/pages/PageLivePreview";
@@ -89,7 +85,7 @@ function EditPage() {
       setTemplates(tpls);
       if (isNew && tpls[0]) setTemplateId(tpls[0].id);
       if (wsId) {
-        ctxFn({ data: { workspaceId: wsId } }).then((r) => {
+        ctxFn({ data: { workspaceId: wsId } }).then((r: any) => {
           setDomain(r.domain);
         });
       }
@@ -127,9 +123,9 @@ function EditPage() {
       setListingCount(0);
       return;
     }
-    ctxFn({ data: { workspaceId } }).then((r) => {
+    ctxFn({ data: { workspaceId } }).then((r: any) => {
       const match = r.cities.find(
-        (c) => c.city.toLowerCase() === city.toLowerCase() && (!state || c.state === state),
+        (c: any) => c.city.toLowerCase() === city.toLowerCase() && (!state || c.state === state),
       );
       setListingCount(match?.listingCount ?? 0);
     });
@@ -247,7 +243,12 @@ function EditPage() {
                       : "border-border hover:border-primary/40",
                   )}
                 >
-                  <Icon className={cn("mt-0.5 h-5 w-5 shrink-0", selected ? "text-primary" : "text-muted-foreground")} />
+                  <Icon
+                    className={cn(
+                      "mt-0.5 h-5 w-5 shrink-0",
+                      selected ? "text-primary" : "text-muted-foreground",
+                    )}
+                  />
                   <div>
                     <p className="font-medium text-sm">{t.name}</p>
                     <p className="text-xs text-muted-foreground">{t.description}</p>
@@ -320,7 +321,9 @@ function EditPage() {
               maxLength={320}
               rows={3}
             />
-            <p className="text-xs text-muted-foreground">{metaDescription.length}/320 · aim for 120–160</p>
+            <p className="text-xs text-muted-foreground">
+              {metaDescription.length}/320 · aim for 120–160
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label>H1 headline</Label>
@@ -333,7 +336,12 @@ function EditPage() {
               maxLength={200}
             />
           </div>
-          <PageSeoPreview title={title} slug={slug} metaDescription={metaDescription} domain={domain} />
+          <PageSeoPreview
+            title={title}
+            slug={slug}
+            metaDescription={metaDescription}
+            domain={domain}
+          />
         </TabsContent>
 
         <TabsContent value="listings" className="mt-4 space-y-4">
@@ -370,8 +378,8 @@ function EditPage() {
           </div>
           {city && (
             <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{listingCount}</span> synced listings match{" "}
-              {city}
+              <span className="font-medium text-foreground">{listingCount}</span> synced listings
+              match {city}
               {state ? `, ${state}` : ""}
             </p>
           )}
@@ -405,6 +413,7 @@ function EditPage() {
   return (
     <div className="h-[calc(100vh-4rem)] min-h-[600px]">
       <div className="hidden h-full xl:block">
+        {/* @ts-expect-error - react-resizable-panels Group direction typing through wrapper */}
         <ResizablePanelGroup direction="horizontal">
           <ResizablePanel defaultSize={52} minSize={36}>
             {editorForm}

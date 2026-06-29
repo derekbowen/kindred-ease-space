@@ -67,7 +67,8 @@ function DomainsPage() {
 
   async function onAdd() {
     if (!workspaceId || !hostname.trim()) return;
-    setBusy(true); setMsg(null);
+    setBusy(true);
+    setMsg(null);
     try {
       const r = await add({ data: { workspaceId, hostname: hostname.trim() } });
       if (r.ok) {
@@ -76,7 +77,9 @@ function DomainsPage() {
       } else {
         setMsg(r.error);
       }
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function onVerify(id: string) {
@@ -90,7 +93,9 @@ function DomainsPage() {
       } else {
         setErrors((e) => ({ ...e, [id]: r.error }));
       }
-    } finally { setVerifyingId(null); }
+    } finally {
+      setVerifyingId(null);
+    }
   }
 
   async function onDelete(id: string) {
@@ -115,7 +120,9 @@ function DomainsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Add a domain</CardTitle>
-          <CardDescription>Enter the bare hostname like <code>example.com</code>. Owner only.</CardDescription>
+          <CardDescription>
+            Enter the bare hostname like <code>example.com</code>. Owner only.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap items-end gap-3">
@@ -125,11 +132,17 @@ function DomainsPage() {
                 value={hostname}
                 onChange={(e) => setHostname(e.target.value)}
                 placeholder="example.com"
-                onKeyDown={(e) => { if (e.key === "Enter") onAdd(); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") onAdd();
+                }}
                 disabled={!isOwner}
               />
             </div>
-            <Button onClick={onAdd} disabled={busy || !workspaceId || !isOwner || !hostname.trim()} className="gap-2">
+            <Button
+              onClick={onAdd}
+              disabled={busy || !workspaceId || !isOwner || !hostname.trim()}
+              className="gap-2"
+            >
               {busy && <Loader2 className="h-4 w-4 animate-spin" />} Add domain
             </Button>
           </div>
@@ -139,7 +152,11 @@ function DomainsPage() {
 
       <div className="space-y-4">
         {rows.length === 0 && (
-          <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">No domains yet.</CardContent></Card>
+          <Card>
+            <CardContent className="py-8 text-center text-sm text-muted-foreground">
+              No domains yet.
+            </CardContent>
+          </Card>
         )}
 
         {rows.map((d) => (
@@ -154,7 +171,13 @@ function DomainsPage() {
                   </span>
                 )}
               </div>
-              <Button variant="ghost" size="sm" onClick={() => onDelete(d.id)} className="text-destructive" disabled={!isOwner}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onDelete(d.id)}
+                className="text-destructive"
+                disabled={!isOwner}
+              >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </CardHeader>
@@ -172,9 +195,16 @@ function DomainsPage() {
                 <details className="rounded-md border bg-muted/30 p-3 text-sm">
                   <summary className="cursor-pointer font-medium">DNS setup</summary>
                   <div className="mt-2 space-y-1 text-muted-foreground">
-                    <p>Point a CNAME from <code>{d.hostname}</code> to <code>proxy.founders.click</code>.</p>
+                    <p>
+                      Point a CNAME from <code>{d.hostname}</code> to{" "}
+                      <code>proxy.founders.click</code>.
+                    </p>
                     <p>SSL provisions automatically within ~10 minutes.</p>
-                    {d.ssl_status && <p>SSL status: <code>{d.ssl_status}</code></p>}
+                    {d.ssl_status && (
+                      <p>
+                        SSL status: <code>{d.ssl_status}</code>
+                      </p>
+                    )}
                   </div>
                 </details>
               )}
@@ -187,8 +217,20 @@ function DomainsPage() {
 }
 
 function VerifySection({
-  hostname, token, busy, error, onVerify, canVerify,
-}: { hostname: string; token: string; busy: boolean; error?: string; onVerify: () => void; canVerify: boolean }) {
+  hostname,
+  token,
+  busy,
+  error,
+  onVerify,
+  canVerify,
+}: {
+  hostname: string;
+  token: string;
+  busy: boolean;
+  error?: string;
+  onVerify: () => void;
+  canVerify: boolean;
+}) {
   return (
     <div className="space-y-3">
       <h3 className="font-semibold">Verify {hostname}</h3>
@@ -202,7 +244,7 @@ function VerifySection({
             Create a file at this path on your site that returns the token as plain text.
           </p>
           <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">
-{`Path:    https://${hostname}/.well-known/founders-click-verify
+            {`Path:    https://${hostname}/.well-known/founders-click-verify
 Content: ${token}`}
           </pre>
         </TabsContent>
@@ -211,7 +253,7 @@ Content: ${token}`}
             Add this TXT record at your DNS provider. DNS propagation can take 5–60 minutes.
           </p>
           <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">
-{`Name:  _founders-click.${hostname}
+            {`Name:  _founders-click.${hostname}
 Type:  TXT
 Value: ${token}`}
           </pre>

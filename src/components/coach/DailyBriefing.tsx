@@ -28,12 +28,21 @@ type Insight = {
 
 type ActionKey = "fix_thin_page" | "add_meta" | "create_city_page" | "add_internal_links";
 
-const ACTION_META: Record<ActionKey, { label: string; icon: React.ComponentType<{ className?: string }>; confirmTitle: string; confirmBody: (ins: Insight) => string }> = {
+const ACTION_META: Record<
+  ActionKey,
+  {
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    confirmTitle: string;
+    confirmBody: (ins: Insight) => string;
+  }
+> = {
   fix_thin_page: {
     label: "Do it",
     icon: Wrench,
     confirmTitle: "Apply fix to this page?",
-    confirmBody: () => "We'll expand the page body using AI and overwrite the existing markdown. This action is logged and can be reverted from the page editor's history.",
+    confirmBody: () =>
+      "We'll expand the page body using AI and overwrite the existing markdown. This action is logged and can be reverted from the page editor's history.",
   },
   add_meta: {
     label: "Do it",
@@ -49,13 +58,15 @@ const ACTION_META: Record<ActionKey, { label: string; icon: React.ComponentType<
     label: "Do it",
     icon: FileText,
     confirmTitle: "Generate this city page?",
-    confirmBody: (ins) => `We'll create a draft page for ${String(ins.action_payload?.city ?? "this city")} (status: draft, not in sitemap). Review it before publishing.`,
+    confirmBody: (ins) =>
+      `We'll create a draft page for ${String(ins.action_payload?.city ?? "this city")} (status: draft, not in sitemap). Review it before publishing.`,
   },
   add_internal_links: {
     label: "Do it",
     icon: Link2,
     confirmTitle: "Add internal links to this page?",
-    confirmBody: () => "We'll add 3-6 contextual internal links to other published pages and overwrite the page body.",
+    confirmBody: () =>
+      "We'll add 3-6 contextual internal links to other published pages and overwrite the page body.",
   },
 };
 
@@ -63,7 +74,11 @@ export function DailyBriefing({ workspaceId }: { workspaceId: string }) {
   const qc = useQueryClient();
   const [generating, setGenerating] = useState(false);
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
-  const [pending, setPending] = useState<{ insight: Insight; index: number; action: ActionKey } | null>(null);
+  const [pending, setPending] = useState<{
+    insight: Insight;
+    index: number;
+    action: ActionKey;
+  } | null>(null);
   const [running, setRunning] = useState(false);
   const [completed, setCompleted] = useState<Set<number>>(new Set());
 
@@ -116,7 +131,10 @@ export function DailyBriefing({ workspaceId }: { workspaceId: string }) {
       setCompleted((s) => new Set(s).add(pending.index));
       setPending(null);
     } catch (e) {
-      toast.error("Action failed", { id: t, description: e instanceof Error ? e.message : String(e) });
+      toast.error("Action failed", {
+        id: t,
+        description: e instanceof Error ? e.message : String(e),
+      });
     } finally {
       setRunning(false);
     }
@@ -134,7 +152,11 @@ export function DailyBriefing({ workspaceId }: { workspaceId: string }) {
             <CardDescription className="text-xs">Top actions ranked by impact</CardDescription>
           </div>
           <Button variant="ghost" size="sm" onClick={onGenerate} disabled={generating}>
-            {generating ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            {generating ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3 w-3" />
+            )}
             <span className="ml-1.5 text-xs">Refresh</span>
           </Button>
         </CardHeader>
@@ -158,16 +180,26 @@ export function DailyBriefing({ workspaceId }: { workspaceId: string }) {
                 const Icon = meta?.icon;
                 const done = completed.has(i);
                 return (
-                  <div key={i} className="flex gap-3 p-3 rounded-md border border-border bg-background/50">
+                  <div
+                    key={i}
+                    className="flex gap-3 p-3 rounded-md border border-border bg-background/50"
+                  >
                     <div className="flex-1 space-y-2">
                       <div className="flex items-center gap-2">
                         <h4 className="text-sm font-medium">{ins.title ?? "Insight"}</h4>
                         {ins.priority && (
-                          <Badge variant={ins.priority === "high" ? "default" : "secondary"} className="h-4 text-[10px]">
+                          <Badge
+                            variant={ins.priority === "high" ? "default" : "secondary"}
+                            className="h-4 text-[10px]"
+                          >
                             {ins.priority}
                           </Badge>
                         )}
-                        {done && <Badge variant="outline" className="h-4 text-[10px]">Done</Badge>}
+                        {done && (
+                          <Badge variant="outline" className="h-4 text-[10px]">
+                            Done
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-xs text-muted-foreground">{ins.description}</p>
                       {meta && !done && (
@@ -182,7 +214,11 @@ export function DailyBriefing({ workspaceId }: { workspaceId: string }) {
                         </Button>
                       )}
                     </div>
-                    <button onClick={() => onDismiss(i)} className="text-muted-foreground hover:text-foreground self-start" aria-label="Dismiss">
+                    <button
+                      onClick={() => onDismiss(i)}
+                      className="text-muted-foreground hover:text-foreground self-start"
+                      aria-label="Dismiss"
+                    >
                       <X className="h-3 w-3" />
                     </button>
                   </div>
@@ -193,17 +229,30 @@ export function DailyBriefing({ workspaceId }: { workspaceId: string }) {
         </CardContent>
       </Card>
 
-      <AlertDialog open={!!pending} onOpenChange={(o) => { if (!o && !running) setPending(null); }}>
+      <AlertDialog
+        open={!!pending}
+        onOpenChange={(o) => {
+          if (!o && !running) setPending(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{pending ? ACTION_META[pending.action].confirmTitle : ""}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {pending ? ACTION_META[pending.action].confirmTitle : ""}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {pending ? ACTION_META[pending.action].confirmBody(pending.insight) : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={running}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={(e) => { e.preventDefault(); void confirmAction(); }} disabled={running}>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmAction();
+              }}
+              disabled={running}
+            >
               {running ? <Loader2 className="h-3 w-3 animate-spin mr-1.5" /> : null}
               Confirm
             </AlertDialogAction>

@@ -12,11 +12,16 @@ export function SiteHeader() {
           founders<span className="text-brand">.click</span>
         </Link>
         <nav className="hidden md:flex items-center gap-5 text-sm text-muted-foreground">
-          <Link to="/help" className="hover:text-foreground">{t("nav.help")}</Link>
+          <Link to="/help" className="hover:text-foreground">
+            {t("nav.help")}
+          </Link>
         </nav>
         <div className="ml-auto flex items-center gap-3">
           <LanguageSwitcher className="hidden sm:inline-flex" />
-          <Link to="/login" className="hidden sm:inline-flex text-sm text-muted-foreground hover:text-foreground">
+          <Link
+            to="/login"
+            className="hidden sm:inline-flex text-sm text-muted-foreground hover:text-foreground"
+          >
             {t("nav.signin")}
           </Link>
           <Button asChild size="sm">

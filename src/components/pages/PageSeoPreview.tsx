@@ -16,7 +16,8 @@ function truncate(s: string, n: number) {
 }
 
 export function PageSeoPreview({ title, slug, metaDescription, domain }: Props) {
-  const displayHost = domain?.replace(/^https?:\/\//, "").replace(/\/$/, "") || "your-marketplace.com";
+  const displayHost =
+    domain?.replace(/^https?:\/\//, "").replace(/\/$/, "") || "your-marketplace.com";
   const path = slug ? `/p/${slug}` : "/p/your-slug";
   const canonical = `https://${displayHost.replace(/^www\./, "")}${path}`;
 
@@ -24,10 +25,15 @@ export function PageSeoPreview({ title, slug, metaDescription, domain }: Props) 
     const out: { level: "warn" | "error" | "ok"; msg: string }[] = [];
     if (!title.trim()) out.push({ level: "error", msg: "Add a page title" });
     if (!slug.trim()) out.push({ level: "error", msg: "Add a URL slug" });
-    if (!metaDescription.trim()) out.push({ level: "warn", msg: "Meta description empty — Google will auto-generate one" });
-    if (title.length > 60) out.push({ level: "warn", msg: `Title is ${title.length} chars — Google truncates near 60` });
+    if (!metaDescription.trim())
+      out.push({ level: "warn", msg: "Meta description empty — Google will auto-generate one" });
+    if (title.length > 60)
+      out.push({ level: "warn", msg: `Title is ${title.length} chars — Google truncates near 60` });
     if (metaDescription.length > 160)
-      out.push({ level: "warn", msg: `Description is ${metaDescription.length} chars — truncates near 160` });
+      out.push({
+        level: "warn",
+        msg: `Description is ${metaDescription.length} chars — truncates near 160`,
+      });
     if (slug && !/^[a-z0-9][a-z0-9-]*$/.test(slug))
       out.push({ level: "error", msg: "Slug: lowercase letters, numbers, hyphens only" });
     if (out.length === 0) out.push({ level: "ok", msg: "SEO looks solid — ship it" });
@@ -51,7 +57,11 @@ export function PageSeoPreview({ title, slug, metaDescription, domain }: Props) 
           {issues.map((i, idx) => {
             const Icon = i.level === "ok" ? CheckCircle2 : AlertCircle;
             const color =
-              i.level === "ok" ? "text-emerald-500" : i.level === "error" ? "text-destructive" : "text-amber-500";
+              i.level === "ok"
+                ? "text-emerald-500"
+                : i.level === "error"
+                  ? "text-destructive"
+                  : "text-amber-500";
             return (
               <li key={idx} className="flex items-start gap-1.5 text-xs">
                 <Icon className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${color}`} />

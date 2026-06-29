@@ -1,6 +1,11 @@
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { creditsForTier, resolvePlanTierFromPrice, ADDON_CATALOG, isAddonKey } from "../_shared/stripe-catalog.ts";
+import {
+  creditsForTier,
+  resolvePlanTierFromPrice,
+  ADDON_CATALOG,
+  isAddonKey,
+} from "../_shared/stripe-catalog.ts";
 
 Deno.serve(async (req) => {
   // Initialize per-request, not at module scope. A missing/rotated
@@ -77,21 +82,30 @@ Deno.serve(async (req) => {
             await admin.from("workspace_affiliate_settings").upsert(
               {
                 workspace_id,
-                addon_status: sub.status === "trialing" ? "trialing" : entitled ? "active" : "canceled",
+                addon_status:
+                  sub.status === "trialing" ? "trialing" : entitled ? "active" : "canceled",
                 addon_tier: sub.metadata?.addon_tier || "standard",
               },
               { onConflict: "workspace_id" },
             );
           } else {
             const status = entitled ? "active" : "canceled";
-            const { data: existing } = await admin.from("addon_requests")
-              .select("id").eq("workspace_id", workspace_id).eq("addon_key", addonKey).limit(1).maybeSingle();
+            const { data: existing } = await admin
+              .from("addon_requests")
+              .select("id")
+              .eq("workspace_id", workspace_id)
+              .eq("addon_key", addonKey)
+              .limit(1)
+              .maybeSingle();
             if (existing) {
               await admin.from("addon_requests").update({ status }).eq("id", existing.id);
             } else {
               await admin.from("addon_requests").insert({
-                workspace_id, addon_key: addonKey, addon_name: ADDON_CATALOG[addonKey].name,
-                price_cents: ADDON_CATALOG[addonKey].priceCents, status,
+                workspace_id,
+                addon_key: addonKey,
+                addon_name: ADDON_CATALOG[addonKey].name,
+                price_cents: ADDON_CATALOG[addonKey].priceCents,
+                status,
               });
             }
           }
@@ -99,27 +113,33 @@ Deno.serve(async (req) => {
         }
 
         const priceId = sub.items.data[0]?.price.id ?? null;
-        const tier = sub.metadata?.plan_tier ?? await resolvePlanTierFromPrice(stripe, priceId);
+        const tier = sub.metadata?.plan_tier ?? (await resolvePlanTierFromPrice(stripe, priceId));
         // current_period_end can be absent on some subscription states; guard
         // against new Date(NaN) which would throw and force endless Stripe retries.
         const periodEnd =
           typeof sub.current_period_end === "number"
             ? new Date(sub.current_period_end * 1000).toISOString()
             : null;
-        await admin.from("subscriptions").upsert({
-          workspace_id,
-          stripe_subscription_id: sub.id,
-          stripe_price_id: priceId,
-          plan_tier: tier,
-          status: sub.status,
-          current_period_end: periodEnd,
-          cancel_at_period_end: sub.cancel_at_period_end,
-        }, { onConflict: "stripe_subscription_id" });
-        await admin.from("workspaces").update({
-          plan: tier,
-          subscription_status: sub.status,
-          current_period_end: periodEnd,
-        }).eq("id", workspace_id);
+        await admin.from("subscriptions").upsert(
+          {
+            workspace_id,
+            stripe_subscription_id: sub.id,
+            stripe_price_id: priceId,
+            plan_tier: tier,
+            status: sub.status,
+            current_period_end: periodEnd,
+            cancel_at_period_end: sub.cancel_at_period_end,
+          },
+          { onConflict: "stripe_subscription_id" },
+        );
+        await admin
+          .from("workspaces")
+          .update({
+            plan: tier,
+            subscription_status: sub.status,
+            current_period_end: periodEnd,
+          })
+          .eq("id", workspace_id);
         break;
       }
       case "invoice.paid": {
@@ -133,8 +153,11 @@ Deno.serve(async (req) => {
         // month's credits would be silently lost.
         let workspace_id: string | null = null;
         let plan_tier: string | null = null;
-        const { data: sub } = await admin.from("subscriptions")
-          .select("workspace_id, plan_tier").eq("stripe_subscription_id", subId).maybeSingle();
+        const { data: sub } = await admin
+          .from("subscriptions")
+          .select("workspace_id, plan_tier")
+          .eq("stripe_subscription_id", subId)
+          .maybeSingle();
         if (sub?.workspace_id) {
           workspace_id = sub.workspace_id;
           plan_tier = sub.plan_tier;
@@ -144,13 +167,18 @@ Deno.serve(async (req) => {
           if (stripeSub.metadata?.addon_key) break;
           workspace_id = stripeSub.metadata?.workspace_id ?? null;
           const priceId = stripeSub.items.data[0]?.price.id ?? null;
-          plan_tier = stripeSub.metadata?.plan_tier ?? (await resolvePlanTierFromPrice(stripe, priceId));
+          plan_tier =
+            stripeSub.metadata?.plan_tier ?? (await resolvePlanTierFromPrice(stripe, priceId));
         }
         if (!workspace_id) break;
 
         // Skip proration/update invoices — only grant on normal cycle or first invoice.
         const billingReason = inv.billing_reason;
-        if (billingReason && billingReason !== "subscription_cycle" && billingReason !== "subscription_create") {
+        if (
+          billingReason &&
+          billingReason !== "subscription_cycle" &&
+          billingReason !== "subscription_create"
+        ) {
           break;
         }
 
@@ -177,20 +205,31 @@ Deno.serve(async (req) => {
         const workspace_id = sub.metadata?.workspace_id;
         if (addonKey && isAddonKey(addonKey) && workspace_id) {
           if (addonKey.startsWith("affiliate")) {
-            await admin.from("workspace_affiliate_settings").update({ addon_status: "canceled" }).eq("workspace_id", workspace_id);
+            await admin
+              .from("workspace_affiliate_settings")
+              .update({ addon_status: "canceled" })
+              .eq("workspace_id", workspace_id);
           } else {
-            await admin.from("addon_requests").update({ status: "canceled" }).eq("workspace_id", workspace_id).eq("addon_key", addonKey);
+            await admin
+              .from("addon_requests")
+              .update({ status: "canceled" })
+              .eq("workspace_id", workspace_id)
+              .eq("addon_key", addonKey);
           }
           break;
         }
-        await admin.from("subscriptions")
+        await admin
+          .from("subscriptions")
           .update({ status: "canceled", cancel_at_period_end: false })
           .eq("stripe_subscription_id", sub.id);
         const workspace_id = sub.metadata?.workspace_id;
         if (workspace_id) {
-          await admin.from("workspaces").update({
-            subscription_status: "canceled",
-          }).eq("id", workspace_id);
+          await admin
+            .from("workspaces")
+            .update({
+              subscription_status: "canceled",
+            })
+            .eq("id", workspace_id);
         }
         break;
       }

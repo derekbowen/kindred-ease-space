@@ -113,7 +113,10 @@ export function CityHub({ page }: { page: PublicTenantPage }) {
                         )}
                       </div>
                       <div className="p-4">
-                        <h3 className="font-semibold leading-snug line-clamp-2 group-hover:text-primary transition-colors" itemProp="name">
+                        <h3
+                          className="font-semibold leading-snug line-clamp-2 group-hover:text-primary transition-colors"
+                          itemProp="name"
+                        >
                           {l.title}
                         </h3>
                         {(l.city || l.state) && (
@@ -122,7 +125,10 @@ export function CityHub({ page }: { page: PublicTenantPage }) {
                           </p>
                         )}
                         {l.description && (
-                          <p className="mt-2 text-sm text-muted-foreground line-clamp-2" itemProp="description">
+                          <p
+                            className="mt-2 text-sm text-muted-foreground line-clamp-2"
+                            itemProp="description"
+                          >
                             {l.description}
                           </p>
                         )}

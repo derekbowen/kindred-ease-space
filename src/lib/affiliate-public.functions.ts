@@ -11,7 +11,10 @@ const buckets = new Map<string, { count: number; resetAt: number }>();
 function rateLimit(ip: string, limit = 60, windowMs = 60_000): boolean {
   const now = Date.now();
   const b = buckets.get(ip);
-  if (!b || b.resetAt < now) { buckets.set(ip, { count: 1, resetAt: now + windowMs }); return true; }
+  if (!b || b.resetAt < now) {
+    buckets.set(ip, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
   b.count += 1;
   return b.count <= limit;
 }
@@ -29,7 +32,9 @@ export const getPublicAffiliateForm = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<{ form: PublicAffiliateForm | null }> => {
     const { data: settings } = await sb()
       .from("workspace_affiliate_settings")
-      .select("workspace_id, form_slug, addon_status, workspaces:workspace_id(name, brand_name, logo_url, brand_color)")
+      .select(
+        "workspace_id, form_slug, addon_status, workspaces:workspace_id(name, brand_name, logo_url, brand_color)",
+      )
       .eq("form_slug", data.slug)
       .maybeSingle();
     if (!settings || (settings.addon_status !== "active" && settings.addon_status !== "trialing")) {
@@ -55,17 +60,24 @@ export const getPublicAffiliateForm = createServerFn({ method: "GET" })
 /** Public application submission from the hosted sign-up page. */
 export const submitAffiliateApplication = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({
-      slug: z.string().trim().min(1).max(60),
-      programId: z.string().uuid(),
-      name: z.string().trim().min(2).max(120),
-      email: z.string().trim().email().max(200),
-    }).parse(d),
+    z
+      .object({
+        slug: z.string().trim().min(1).max(60),
+        programId: z.string().uuid(),
+        name: z.string().trim().min(2).max(120),
+        email: z.string().trim().email().max(200),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
     let ip = "unknown";
-    try { ip = getRequestIP({ xForwardedFor: true }) || "unknown"; } catch { /* not in request ctx */ }
-    if (!rateLimit(ip)) return { ok: false as const, error: "Too many requests. Please try again shortly." };
+    try {
+      ip = getRequestIP({ xForwardedFor: true }) || "unknown";
+    } catch {
+      /* not in request ctx */
+    }
+    if (!rateLimit(ip))
+      return { ok: false as const, error: "Too many requests. Please try again shortly." };
 
     const { data: settings } = await sb()
       .from("workspace_affiliate_settings")
@@ -82,7 +94,8 @@ export const submitAffiliateApplication = createServerFn({ method: "POST" })
       .eq("workspace_id", settings.workspace_id)
       .eq("active", true)
       .maybeSingle();
-    if (!program) return { ok: false as const, error: "That program is no longer accepting applications." };
+    if (!program)
+      return { ok: false as const, error: "That program is no longer accepting applications." };
 
     const { error } = await sb().from("affiliate_applications").insert({
       workspace_id: settings.workspace_id,
@@ -91,6 +104,7 @@ export const submitAffiliateApplication = createServerFn({ method: "POST" })
       email: data.email,
       status: "pending",
     });
-    if (error) return { ok: false as const, error: "Could not submit your application. Please try again." };
+    if (error)
+      return { ok: false as const, error: "Could not submit your application. Please try again." };
     return { ok: true as const };
   });

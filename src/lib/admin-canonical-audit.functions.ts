@@ -40,7 +40,11 @@ export const runCanonicalAudit = createServerFn({ method: "POST" })
       return summary;
     } catch (err) {
       console.error("[canonical-audit] run failed:", err);
-      return { ...EMPTY_SUMMARY, startedAt: new Date().toISOString(), finishedAt: new Date().toISOString() };
+      return {
+        ...EMPTY_SUMMARY,
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+      };
     }
   });
 
@@ -52,7 +56,9 @@ export const getLatestCanonicalAudit = createServerFn({ method: "GET" })
     try {
       const { data: row, error } = await supabaseAdmin
         .from("canonical_audit_runs")
-        .select("started_at, finished_at, total_pages, pages_with_failures, pages_with_warnings, totals, pages")
+        .select(
+          "started_at, finished_at, total_pages, pages_with_failures, pages_with_warnings, totals, pages",
+        )
         .order("started_at", { ascending: false })
         .limit(1)
         .maybeSingle();

@@ -55,29 +55,27 @@ export const saveEmailTemplate = createServerFn({ method: "POST" })
         text: z.string().max(50000).optional().nullable(),
         isEnabled: z.boolean().default(true),
       })
-      .parse(d)
+      .parse(d),
   )
   .handler(async ({ context, data }) => {
     await assertAdmin(context.supabase, context.userId);
     const { TEMPLATE_DEFINITIONS, clearEmailTemplateCache } = await import("./email.server");
     const def = TEMPLATE_DEFINITIONS.find((t) => t.key === data.key);
     if (!def) throw new Error("Unknown template");
-    const { error } = await supabaseAdmin
-      .from("email_templates")
-      .upsert(
-        {
-          key: data.key,
-          name: def.name,
-          description: def.description,
-          subject: data.subject,
-          html: data.html,
-          text: data.text ?? null,
-          placeholders: def.placeholders.map((p) => p.name),
-          is_enabled: data.isEnabled,
-          updated_by: context.userId,
-        },
-        { onConflict: "key" }
-      );
+    const { error } = await supabaseAdmin.from("email_templates").upsert(
+      {
+        key: data.key,
+        name: def.name,
+        description: def.description,
+        subject: data.subject,
+        html: data.html,
+        text: data.text ?? null,
+        placeholders: def.placeholders.map((p) => p.name),
+        is_enabled: data.isEnabled,
+        updated_by: context.userId,
+      },
+      { onConflict: "key" },
+    );
     if (error) throw error;
     clearEmailTemplateCache(data.key);
     return { ok: true };
@@ -89,10 +87,7 @@ export const resetEmailTemplate = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     await assertAdmin(context.supabase, context.userId);
     const { clearEmailTemplateCache } = await import("./email.server");
-    const { error } = await supabaseAdmin
-      .from("email_templates")
-      .delete()
-      .eq("key", data.key);
+    const { error } = await supabaseAdmin.from("email_templates").delete().eq("key", data.key);
     if (error) throw error;
     clearEmailTemplateCache(data.key);
     return { ok: true };
@@ -109,20 +104,19 @@ export const sendTestEmailTemplate = createServerFn({ method: "POST" })
         html: z.string().min(1),
         text: z.string().optional().nullable(),
       })
-      .parse(d)
+      .parse(d),
   )
   .handler(async ({ context, data }) => {
     await assertAdmin(context.supabase, context.userId);
-    const { sendEmail, getTemplateDefinition, renderTemplatePreview } = await import(
-      "./email.server"
-    );
+    const { sendEmail, getTemplateDefinition, renderTemplatePreview } =
+      await import("./email.server");
     const def = getTemplateDefinition(data.key);
     if (!def) throw new Error("Unknown template");
     const sampleVars = Object.fromEntries(def.placeholders.map((p) => [p.name, p.sample]));
     const rendered = renderTemplatePreview(
       def,
       { subject: data.subject, html: data.html, text: data.text },
-      sampleVars
+      sampleVars,
     );
     const res = await sendEmail({
       to: data.to,
@@ -147,13 +141,12 @@ export const sendHelpFeedbackFollowUp = createServerFn({ method: "POST" })
         recipientName: z.string().max(120).optional().nullable(),
         comment: z.string().max(4000).optional().nullable(),
       })
-      .parse(d)
+      .parse(d),
   )
   .handler(async ({ context, data }) => {
     await assertAdmin(context.supabase, context.userId);
-    const { sendEmail, helpFeedbackFollowUpTemplate, SUPPORT_INBOX_EMAIL } = await import(
-      "./email.server"
-    );
+    const { sendEmail, helpFeedbackFollowUpTemplate, SUPPORT_INBOX_EMAIL } =
+      await import("./email.server");
     const { data: art } = await supabaseAdmin
       .from("help_articles")
       .select("title,slug")

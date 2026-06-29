@@ -96,7 +96,10 @@ async function callGoogle(apiKey: string, body: Body) {
   const model = body.model ?? PROVIDER_DEFAULT_MODEL.google;
   const contents = body.messages
     .filter((m) => m.role !== "system")
-    .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+    .map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    }));
   const system = body.messages.find((m) => m.role === "system")?.content;
   const r = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
@@ -131,7 +134,8 @@ Deno.serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const PUBLISHABLE = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
+    const PUBLISHABLE =
+      Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY")!;
     const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -144,23 +148,27 @@ Deno.serve(async (req) => {
     const { data: ures } = await userClient.auth.getUser();
     if (!ures?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...cors, "Content-Type": "application/json" },
+        status: 401,
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
     const userId = ures.user.id;
     const body = (await req.json()) as Body;
     if (!body?.workspaceId || !Array.isArray(body?.messages)) {
       return new Response(JSON.stringify({ error: "workspaceId and messages required" }), {
-        status: 400, headers: { ...cors, "Content-Type": "application/json" },
+        status: 400,
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
     const { data: isMember } = await admin.rpc("is_workspace_member", {
-      _workspace_id: body.workspaceId, _user_id: userId,
+      _workspace_id: body.workspaceId,
+      _user_id: userId,
     });
     if (!isMember) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403, headers: { ...cors, "Content-Type": "application/json" },
+        status: 403,
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
@@ -198,7 +206,10 @@ Deno.serve(async (req) => {
       });
       if (!qErr) {
         platformBilling = "free_quota";
-      } else if (typeof qErr.message === "string" && qErr.message.includes("platform_ai_quota_exhausted")) {
+      } else if (
+        typeof qErr.message === "string" &&
+        qErr.message.includes("platform_ai_quota_exhausted")
+      ) {
         // 2. Trial exhausted — bill purchased credits. Pre-check the balance so we
         //    don't pay OpenRouter for a client who can't cover it. No hard cap:
         //    a zero balance just means "top up to continue".
@@ -206,32 +217,43 @@ Deno.serve(async (req) => {
         const promptChars = body.messages.reduce((n, m) => n + (m.content?.length ?? 0), 0);
         const estCredits = estimateCreditsBeforeCall(model, promptChars, body.maxTokens);
         const { data: bal } = await admin
-          .from("credit_balances").select("balance").eq("workspace_id", body.workspaceId).maybeSingle();
+          .from("credit_balances")
+          .select("balance")
+          .eq("workspace_id", body.workspaceId)
+          .maybeSingle();
         if (!bal || bal.balance < estCredits) {
           const msg = "Out of AI credits. Top up in Billing to keep generating.";
           await admin.from("ai_usage_log").insert({
-            workspace_id: body.workspaceId, user_id: userId, provider: "platform",
-            model, feature: body.feature ?? null,
-            status: "insufficient_credits", error: msg, used_byok: false,
+            workspace_id: body.workspaceId,
+            user_id: userId,
+            provider: "platform",
+            model,
+            feature: body.feature ?? null,
+            status: "insufficient_credits",
+            error: msg,
+            used_byok: false,
           });
           return new Response(JSON.stringify({ error: msg, code: "insufficient_credits" }), {
-            status: 402, headers: { ...cors, "Content-Type": "application/json" },
+            status: 402,
+            headers: { ...cors, "Content-Type": "application/json" },
           });
         }
       } else {
         throw new Error(qErr.message);
       }
 
-      const r = await callOpenAICompatible(
-        OPENROUTER_BASE,
-        OPENROUTER_API_KEY,
-        { model, messages: body.messages, max_tokens: body.maxTokens, temperature: body.temperature },
-      );
+      const r = await callOpenAICompatible(OPENROUTER_BASE, OPENROUTER_API_KEY, {
+        model,
+        messages: body.messages,
+        max_tokens: body.maxTokens,
+        temperature: body.temperature,
+      });
       result = { ...r, model };
     } else {
       // BYOK path: read decrypted key from vault via security-definer RPC.
       const { data: apiKey, error: keyErr } = await admin.rpc("tenant_get_ai_credential", {
-        _workspace_id: body.workspaceId, _provider: provider,
+        _workspace_id: body.workspaceId,
+        _provider: provider,
       });
       if (keyErr || !apiKey) {
         throw new Error(`No ${provider} key stored. Add one in Settings → AI.`);
@@ -239,19 +261,21 @@ Deno.serve(async (req) => {
       usedByok = true;
       if (provider === "openai") {
         const model = body.model ?? PROVIDER_DEFAULT_MODEL.openai;
-        const r = await callOpenAICompatible(
-          "https://api.openai.com/v1",
-          apiKey as string,
-          { model, messages: body.messages, max_tokens: body.maxTokens, temperature: body.temperature },
-        );
+        const r = await callOpenAICompatible("https://api.openai.com/v1", apiKey as string, {
+          model,
+          messages: body.messages,
+          max_tokens: body.maxTokens,
+          temperature: body.temperature,
+        });
         result = { ...r, model };
       } else if (provider === "openrouter") {
         const model = body.model ?? PROVIDER_DEFAULT_MODEL.openrouter;
-        const r = await callOpenAICompatible(
-          "https://openrouter.ai/api/v1",
-          apiKey as string,
-          { model, messages: body.messages, max_tokens: body.maxTokens, temperature: body.temperature },
-        );
+        const r = await callOpenAICompatible("https://openrouter.ai/api/v1", apiKey as string, {
+          model,
+          messages: body.messages,
+          max_tokens: body.maxTokens,
+          temperature: body.temperature,
+        });
         result = { ...r, model };
       } else if (provider === "anthropic") {
         result = await callAnthropic(apiKey as string, body);
@@ -260,7 +284,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    const costMicros = estimateCostMicros(result.model, result.promptTokens, result.completionTokens);
+    const costMicros = estimateCostMicros(
+      result.model,
+      result.promptTokens,
+      result.completionTokens,
+    );
 
     // Settle credits AFTER a successful call (cost-accurate, and no charge on
     // failure). Only the purchased-credit platform path bills; BYOK and the free
@@ -281,12 +309,19 @@ Deno.serve(async (req) => {
         // Actual exceeded balance at settle time (rare) — clamp to what's left
         // rather than failing a response the client already received.
         const { data: bal2 } = await admin
-          .from("credit_balances").select("balance").eq("workspace_id", body.workspaceId).maybeSingle();
+          .from("credit_balances")
+          .select("balance")
+          .eq("workspace_id", body.workspaceId)
+          .maybeSingle();
         const remaining = Math.max(0, bal2?.balance ?? 0);
         if (remaining > 0) {
           await admin.rpc("deduct_credits", {
-            _workspace_id: body.workspaceId, _amount: remaining, _reason: "ai_usage",
-            _ai_model: result.model, _ref_type: body.feature ?? "ai", _ref_id: null,
+            _workspace_id: body.workspaceId,
+            _amount: remaining,
+            _reason: "ai_usage",
+            _ai_model: result.model,
+            _ref_type: body.feature ?? "ai",
+            _ref_id: null,
             _metadata: { provider: "platform", clamped: true },
           });
         }
@@ -295,18 +330,32 @@ Deno.serve(async (req) => {
     }
 
     await admin.from("ai_usage_log").insert({
-      workspace_id: body.workspaceId, user_id: userId,
-      provider, model: result.model, feature: body.feature ?? null,
-      prompt_tokens: result.promptTokens, completion_tokens: result.completionTokens,
+      workspace_id: body.workspaceId,
+      user_id: userId,
+      provider,
+      model: result.model,
+      feature: body.feature ?? null,
+      prompt_tokens: result.promptTokens,
+      completion_tokens: result.completionTokens,
       total_tokens: result.promptTokens + result.completionTokens,
-      cost_usd_micros: costMicros, used_byok: usedByok, status: "ok",
+      cost_usd_micros: costMicros,
+      used_byok: usedByok,
+      status: "ok",
     });
 
-    return new Response(JSON.stringify({
-      text: result.text, model: result.model, provider,
-      usedByok, promptTokens: result.promptTokens, completionTokens: result.completionTokens,
-      costUsd: costMicros / 1_000_000, creditsCharged,
-    }), { headers: { ...cors, "Content-Type": "application/json" } });
+    return new Response(
+      JSON.stringify({
+        text: result.text,
+        model: result.model,
+        provider,
+        usedByok,
+        promptTokens: result.promptTokens,
+        completionTokens: result.completionTokens,
+        costUsd: costMicros / 1_000_000,
+        creditsCharged,
+      }),
+      { headers: { ...cors, "Content-Type": "application/json" } },
+    );
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     console.error("[ai-proxy]", msg);
@@ -317,11 +366,18 @@ Deno.serve(async (req) => {
       const admin = createClient(SUPABASE_URL, SERVICE_KEY);
       await admin.from("ai_usage_log").insert({
         workspace_id: "00000000-0000-0000-0000-000000000000",
-        provider: "platform", model: "unknown", status: "error", error: msg.slice(0, 500), used_byok: false,
+        provider: "platform",
+        model: "unknown",
+        status: "error",
+        error: msg.slice(0, 500),
+        used_byok: false,
       });
-    } catch { /* noop */ }
+    } catch {
+      /* noop */
+    }
     return new Response(JSON.stringify({ error: msg }), {
-      status: 500, headers: { ...cors, "Content-Type": "application/json" },
+      status: 500,
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   }
 });

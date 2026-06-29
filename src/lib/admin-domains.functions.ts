@@ -2,7 +2,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { assertWorkspaceMember, assertWorkspaceOwner, workspaceIdSchema } from "./admin-helpers.functions";
+import {
+  assertWorkspaceMember,
+  assertWorkspaceOwner,
+  workspaceIdSchema,
+} from "./admin-helpers.functions";
 
 const sb = () => supabaseAdmin as any;
 
@@ -19,7 +23,10 @@ export type WorkspaceDomainRow = {
 
 function normalizeHostname(input: string): string {
   let h = (input || "").trim().toLowerCase();
-  h = h.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/:\d+$/, "");
+  h = h
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "")
+    .replace(/:\d+$/, "");
   return h;
 }
 
@@ -31,7 +38,10 @@ function isValidHostname(h: string): boolean {
 }
 
 function genToken(): string {
-  return (crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "")).slice(0, 64);
+  return (crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "")).slice(
+    0,
+    64,
+  );
 }
 
 export const listWorkspaceDomains = createServerFn({ method: "POST" })
@@ -42,7 +52,9 @@ export const listWorkspaceDomains = createServerFn({ method: "POST" })
     const isOwner = role === "owner";
     const { data: rows } = await sb()
       .from("workspace_domains")
-      .select("id, hostname, verified, verified_at, ssl_status, created_at, verification_token, verification_method")
+      .select(
+        "id, hostname, verified, verified_at, ssl_status, created_at, verification_token, verification_method",
+      )
       .eq("workspace_id", data.workspaceId)
       .order("created_at", { ascending: false });
     return {
@@ -111,7 +123,10 @@ export const addWorkspaceDomain = createServerFn({ method: "POST" })
     };
   });
 
-async function tryFileVerify(hostname: string, token: string): Promise<{ ok: boolean; error?: string }> {
+async function tryFileVerify(
+  hostname: string,
+  token: string,
+): Promise<{ ok: boolean; error?: string }> {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 10_000);
@@ -130,7 +145,10 @@ async function tryFileVerify(hostname: string, token: string): Promise<{ ok: boo
   }
 }
 
-async function tryDnsVerify(hostname: string, token: string): Promise<{ ok: boolean; error?: string }> {
+async function tryDnsVerify(
+  hostname: string,
+  token: string,
+): Promise<{ ok: boolean; error?: string }> {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 10_000);
@@ -142,9 +160,14 @@ async function tryDnsVerify(hostname: string, token: string): Promise<{ ok: bool
     if (!res.ok) return { ok: false, error: `DNS lookup failed (HTTP ${res.status})` };
     const json: any = await res.json();
     const answers: any[] = json?.Answer || [];
-    const txts = answers.map((a) => String(a.data || "").replace(/^"|"$/g, "").replace(/"\s*"/g, ""));
+    const txts = answers.map((a) =>
+      String(a.data || "")
+        .replace(/^"|"$/g, "")
+        .replace(/"\s*"/g, ""),
+    );
     if (txts.length === 0) return { ok: false, error: "no TXT record found" };
-    if (!txts.some((t) => t.includes(token))) return { ok: false, error: "token mismatch in DNS TXT" };
+    if (!txts.some((t) => t.includes(token)))
+      return { ok: false, error: "token mismatch in DNS TXT" };
     return { ok: true };
   } catch (e: any) {
     return { ok: false, error: `DNS lookup failed: ${e?.message || "network error"}` };

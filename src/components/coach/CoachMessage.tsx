@@ -74,7 +74,12 @@ export function CoachMessage({ msg, dense = false }: { msg: CoachMsg; dense?: bo
   if (msg.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className={cn("bg-primary text-primary-foreground rounded-lg px-3 py-2 text-sm max-w-[85%] whitespace-pre-wrap break-words", dense && "text-xs")}>
+        <div
+          className={cn(
+            "bg-primary text-primary-foreground rounded-lg px-3 py-2 text-sm max-w-[85%] whitespace-pre-wrap break-words",
+            dense && "text-xs",
+          )}
+        >
           {msg.content}
         </div>
       </div>
@@ -97,7 +102,9 @@ export function CoachMessage({ msg, dense = false }: { msg: CoachMsg; dense?: bo
         <div className="space-y-1">
           {msg.tool_calls
             .filter((tc) => tc.name !== "citations")
-            .map((tc, i) => <ToolCallCard key={i} tc={tc} />)}
+            .map((tc, i) => (
+              <ToolCallCard key={i} tc={tc} />
+            ))}
         </div>
       )}
 
@@ -106,7 +113,9 @@ export function CoachMessage({ msg, dense = false }: { msg: CoachMsg; dense?: bo
           <ReactMarkdown
             components={{
               a: ({ href, children }) => (
-                <a href={href} target="_blank" rel="noopener noreferrer" className="underline">{children}</a>
+                <a href={href} target="_blank" rel="noopener noreferrer" className="underline">
+                  {children}
+                </a>
               ),
             }}
           >

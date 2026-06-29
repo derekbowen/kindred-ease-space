@@ -36,14 +36,18 @@ function ContentHealthPage() {
     }
   }
 
-  useEffect(() => { if (workspaceId) run(); /* eslint-disable-next-line */ }, [workspaceId]);
+  useEffect(() => {
+    if (workspaceId) run(); /* eslint-disable-next-line */
+  }, [workspaceId]);
 
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Content Health</h1>
-          <p className="text-sm text-muted-foreground">Find published pages with missing or thin body content.</p>
+          <p className="text-sm text-muted-foreground">
+            Find published pages with missing or thin body content.
+          </p>
         </div>
         <InlineCoach
           workspaceId={workspaceId}
@@ -55,14 +59,25 @@ function ContentHealthPage() {
       <Card>
         <CardHeader>
           <CardTitle>Scan</CardTitle>
-          <CardDescription>Workspace-scoped scan of <code>content_pages</code> where <code>status='published'</code>.</CardDescription>
+          <CardDescription>
+            Workspace-scoped scan of <code>content_pages</code> where{" "}
+            <code>status='published'</code>.
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-4">
           <div className="space-y-1">
             <Label htmlFor="min">Min body length (chars)</Label>
-            <Input id="min" type="number" min={0} max={10000} value={minLength}
-              onChange={(e) => setMinLength(Math.max(0, Math.min(10000, Number(e.target.value) || 500)))}
-              className="w-28" />
+            <Input
+              id="min"
+              type="number"
+              min={0}
+              max={10000}
+              value={minLength}
+              onChange={(e) =>
+                setMinLength(Math.max(0, Math.min(10000, Number(e.target.value) || 500)))
+              }
+              className="w-28"
+            />
           </div>
           <Button onClick={run} disabled={loading || !workspaceId} className="gap-2">
             {loading && <Loader2 className="h-4 w-4 animate-spin" />} Scan
@@ -86,7 +101,9 @@ function ContentHealthPage() {
             </CardHeader>
             <CardContent>
               {report.rows.length === 0 ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">All published pages pass the threshold.</p>
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  All published pages pass the threshold.
+                </p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -103,11 +120,15 @@ function ContentHealthPage() {
                         <tr key={r.id} className="border-b last:border-0">
                           <td className="py-2 pr-4">
                             <div className="font-medium">{r.title ?? "(untitled)"}</div>
-                            <div className="font-mono text-xs text-muted-foreground">{r.url_path}</div>
+                            <div className="font-mono text-xs text-muted-foreground">
+                              {r.url_path}
+                            </div>
                           </td>
                           <td className="py-2 pr-4 font-mono text-xs">{r.reason}</td>
                           <td className="py-2 pr-4">{r.body_len}</td>
-                          <td className="py-2 text-xs text-muted-foreground">{r.template_type ?? "—"}</td>
+                          <td className="py-2 text-xs text-muted-foreground">
+                            {r.template_type ?? "—"}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

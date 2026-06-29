@@ -1,12 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
-import {
-  Settings,
-  Sparkles,
-  Plug,
-  Globe,
-  KeyRound,
-} from "lucide-react";
+import { Settings, Sparkles, Plug, Globe, KeyRound } from "lucide-react";
 
 const LINKS = [
   { to: "/app/settings", label: "Workspace", icon: Settings, exact: true },

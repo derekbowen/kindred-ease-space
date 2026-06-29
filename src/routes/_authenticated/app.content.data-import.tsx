@@ -62,7 +62,8 @@ function TableImporter({ workspaceId, table }: { workspaceId: string | null; tab
       <CardHeader>
         <CardTitle className="font-mono text-base">{table}</CardTitle>
         <CardDescription>
-          Upload a CSV. <code>workspace_id</code> is forced to the active workspace — never trust the file's value.
+          Upload a CSV. <code>workspace_id</code> is forced to the active workspace — never trust
+          the file's value.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -93,12 +94,20 @@ function TableImporter({ workspaceId, table }: { workspaceId: string | null; tab
           </button>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => go(true)} disabled={busy !== null || !workspaceId}>
+          <Button
+            variant="outline"
+            onClick={() => go(true)}
+            disabled={busy !== null || !workspaceId}
+          >
             {busy === "dry" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Dry-run
           </Button>
           <Button onClick={() => go(false)} disabled={busy !== null || !workspaceId}>
-            {busy === "import" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+            {busy === "import" ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="mr-2 h-4 w-4" />
+            )}
             Import
           </Button>
         </div>
@@ -127,9 +136,13 @@ function TableImporter({ workspaceId, table }: { workspaceId: string | null; tab
             )}
             {result.chunkErrors.length > 0 && (
               <details>
-                <summary className="cursor-pointer">Chunk errors ({result.chunkErrors.length})</summary>
+                <summary className="cursor-pointer">
+                  Chunk errors ({result.chunkErrors.length})
+                </summary>
                 <ul className="mt-2 space-y-1 text-xs">
-                  {result.chunkErrors.map((e, i) => <li key={i}>{e}</li>)}
+                  {result.chunkErrors.map((e, i) => (
+                    <li key={i}>{e}</li>
+                  ))}
                 </ul>
               </details>
             )}

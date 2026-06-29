@@ -91,7 +91,9 @@ export function SetupChecklist({ status }: { status: SetupStatus }) {
             <div
               key={step.id}
               className={`flex items-start gap-3 rounded-md border p-3 ${
-                step.done ? "border-border/50 bg-background/40 opacity-80" : "border-border bg-background"
+                step.done
+                  ? "border-border/50 bg-background/40 opacity-80"
+                  : "border-border bg-background"
               }`}
             >
               {step.done ? (

@@ -25,9 +25,7 @@ export const listWorkspaceSecrets = createServerFn({ method: "POST" })
       rows: (rows || []).map((r: any) => ({
         id: r.id,
         key_name: r.key_name,
-        preview: r.last_four
-          ? `••••${r.last_four} (${r.value_length ?? 0} chars)`
-          : "(empty)",
+        preview: r.last_four ? `••••${r.last_four} (${r.value_length ?? 0} chars)` : "(empty)",
         updated_at: r.updated_at,
       })),
     };
@@ -36,11 +34,17 @@ export const listWorkspaceSecrets = createServerFn({ method: "POST" })
 export const upsertWorkspaceSecret = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({
-      workspaceId: workspaceIdSchema,
-      keyName: z.string().min(2).max(80).regex(/^[A-Z0-9_]+$/, "Use UPPER_SNAKE_CASE"),
-      value: z.string().min(8).max(4000),
-    }).parse(d),
+    z
+      .object({
+        workspaceId: workspaceIdSchema,
+        keyName: z
+          .string()
+          .min(2)
+          .max(80)
+          .regex(/^[A-Z0-9_]+$/, "Use UPPER_SNAKE_CASE"),
+        value: z.string().min(8).max(4000),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceOwner(data.workspaceId, context.userId);

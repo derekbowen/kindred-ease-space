@@ -41,7 +41,9 @@ function SettingsPage() {
 
   useEffect(() => {
     if (!workspaceId) return;
-    loadCtx({ data: { workspaceId } }).then(setCtx).catch(() => setCtx(null));
+    loadCtx({ data: { workspaceId } })
+      .then(setCtx)
+      .catch(() => setCtx(null));
   }, [workspaceId, loadCtx, reloadKey]);
 
   useEffect(() => {
@@ -49,7 +51,7 @@ function SettingsPage() {
       setName(ws.name ?? "");
       setDomain(ws.marketplace_domain ?? "");
     }
-  }, [ws?.id, ws?.name, ws?.marketplace_domain]);
+  }, [ws]);
 
   const hasVerifiedDomain =
     Boolean(ws?.domain_verified_at) || (ctx?.domains ?? []).some((d) => d.verified);
@@ -205,7 +207,8 @@ function SettingsPage() {
             <span className="text-muted-foreground">Name:</span> {me?.profile?.display_name ?? "—"}
           </div>
           <div>
-            <span className="text-muted-foreground">Role:</span> {ctx?.role ?? me?.memberships?.[0]?.role ?? "—"}
+            <span className="text-muted-foreground">Role:</span>{" "}
+            {ctx?.role ?? me?.memberships?.[0]?.role ?? "—"}
           </div>
         </CardContent>
       </Card>

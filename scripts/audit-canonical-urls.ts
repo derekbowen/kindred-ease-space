@@ -88,7 +88,9 @@ function audit(): Violation[] {
       };
 
       // Skip pure comment lines for some rules — they're docs.
-      const commentMask = lines.map((l) => l.trimStart().startsWith("//") || l.trimStart().startsWith("*"));
+      const commentMask = lines.map(
+        (l) => l.trimStart().startsWith("//") || l.trimStart().startsWith("*"),
+      );
       const isInComment = (idx: number) => {
         let pos = 0;
         for (let i = 0; i < lines.length; i++) {
@@ -139,7 +141,9 @@ for (const v of violations) {
   byFile.get(v.file)!.push(v);
 }
 
-console.error(`❌ Canonical URL audit: ${violations.length} violation(s) in ${byFile.size} file(s)\n`);
+console.error(
+  `❌ Canonical URL audit: ${violations.length} violation(s) in ${byFile.size} file(s)\n`,
+);
 for (const [file, vs] of byFile) {
   console.error(`  ${file}`);
   for (const v of vs) {

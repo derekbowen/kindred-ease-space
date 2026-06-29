@@ -44,4 +44,3 @@ export function HelpHeader() {
 export function HelpFooter() {
   return <SiteFooter />;
 }
-

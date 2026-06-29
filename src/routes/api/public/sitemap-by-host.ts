@@ -4,8 +4,9 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 const sb = () => supabaseAdmin as any;
 
 function escapeXml(s: string): string {
-  return s.replace(/[<>&'"]/g, (c) =>
-    ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[c]!,
+  return s.replace(
+    /[<>&'"]/g,
+    (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[c]!,
   );
 }
 
@@ -26,7 +27,10 @@ export const Route = createFileRoute("/api/public/sitemap-by-host")({
       GET: async ({ request }) => {
         const url = new URL(request.url);
         const raw = (url.searchParams.get("hostname") || "").toLowerCase().trim();
-        const hostname = raw.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "");
+        const hostname = raw
+          .replace(/^https?:\/\//, "")
+          .replace(/\/.*$/, "")
+          .replace(/^www\./, "");
         if (!hostname || !hostname.includes(".")) {
           return new Response("hostname required", { status: 400 });
         }
@@ -70,7 +74,9 @@ export const Route = createFileRoute("/api/public/sitemap-by-host")({
           .map((p: any) => {
             const slug = String(p.slug || "").replace(/^\/+/, "");
             const loc = `https://${hostname}/p/${escapeXml(slug)}`;
-            const lastmod = p.updated_at ? new Date(p.updated_at).toISOString() : new Date().toISOString();
+            const lastmod = p.updated_at
+              ? new Date(p.updated_at).toISOString()
+              : new Date().toISOString();
             return `  <url><loc>${loc}</loc><lastmod>${lastmod}</lastmod></url>`;
           })
           .join("\n");

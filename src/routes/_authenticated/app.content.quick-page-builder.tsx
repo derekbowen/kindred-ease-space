@@ -6,7 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import {
   Sparkles,
@@ -66,7 +72,7 @@ function QuickPageBuilder() {
 
   useEffect(() => {
     if (!workspaceId) return;
-    loadCtx({ data: { workspaceId } }).then((r) =>
+    loadCtx({ data: { workspaceId } }).then((r: any) =>
       setCtx({ domain: r.domain, cities: r.cities, gaps: r.gaps, stats: r.stats }),
     );
   }, [workspaceId, loadCtx]);
@@ -131,7 +137,7 @@ function QuickPageBuilder() {
       setCity("");
       setState("");
       if (workspaceId) {
-        loadCtx({ data: { workspaceId } }).then((r) =>
+        loadCtx({ data: { workspaceId } }).then((r: any) =>
           setCtx({ domain: r.domain, cities: r.cities, gaps: r.gaps, stats: r.stats }),
         );
       }
@@ -156,9 +162,12 @@ function QuickPageBuilder() {
                 <Sparkles className="h-3 w-3" /> AI Page Builder
               </Badge>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Ship SEO pages in 60 seconds</h1>
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+              Ship SEO pages in 60 seconds
+            </h1>
             <p className="max-w-xl text-sm text-muted-foreground">
-              Describe the page, we write on-brand copy, wire up your listing grid, and publish live at{" "}
+              Describe the page, we write on-brand copy, wire up your listing grid, and publish live
+              at{" "}
               <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">/p/{"{slug}"}</code>.
             </p>
           </div>
@@ -182,7 +191,9 @@ function QuickPageBuilder() {
               <MapPin className="h-4 w-4 text-amber-500" />
               Cities with listings but no page yet
             </CardTitle>
-            <CardDescription>One click pre-fills a city hub brief — highest ROI pages first.</CardDescription>
+            <CardDescription>
+              One click pre-fills a city hub brief — highest ROI pages first.
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
             {ctx.gaps.map((g) => (
@@ -210,7 +221,9 @@ function QuickPageBuilder() {
           <Card>
             <CardHeader>
               <CardTitle>Page type</CardTitle>
-              <CardDescription>Pick a template — we tune the AI brief automatically.</CardDescription>
+              <CardDescription>
+                Pick a template — we tune the AI brief automatically.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -230,10 +243,7 @@ function QuickPageBuilder() {
                       )}
                     >
                       <div
-                        className={cn(
-                          "absolute inset-0 bg-gradient-to-br opacity-60",
-                          p.accent,
-                        )}
+                        className={cn("absolute inset-0 bg-gradient-to-br opacity-60", p.accent)}
                       />
                       <div className="relative">
                         <Icon
@@ -293,8 +303,7 @@ function QuickPageBuilder() {
                   />
                   {slug && (
                     <p className="text-xs text-muted-foreground">
-                      Live URL:{" "}
-                      <code className="rounded bg-muted px-1 font-mono">/p/{slug}</code>
+                      Live URL: <code className="rounded bg-muted px-1 font-mono">/p/{slug}</code>
                     </p>
                   )}
                 </div>
@@ -315,7 +324,10 @@ function QuickPageBuilder() {
                   <Textarea
                     id="topic"
                     rows={5}
-                    placeholder={activePreset.buildTopic({ city, state }) || "Describe the angle, audience, facts to include…"}
+                    placeholder={
+                      activePreset.buildTopic({ city, state }) ||
+                      "Describe the angle, audience, facts to include…"
+                    }
                     value={topic}
                     onChange={(e) => setTopic(e.target.value)}
                   />
@@ -329,9 +341,15 @@ function QuickPageBuilder() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="google/gemini-3.1-pro-preview">Gemini 3.1 Pro — best quality</SelectItem>
-                      <SelectItem value="google/gemini-3.5-flash">Gemini 3.5 Flash — balanced</SelectItem>
-                      <SelectItem value="google/gemini-3-flash-preview">Gemini 3 Flash — fast & cheap</SelectItem>
+                      <SelectItem value="google/gemini-3.1-pro-preview">
+                        Gemini 3.1 Pro — best quality
+                      </SelectItem>
+                      <SelectItem value="google/gemini-3.5-flash">
+                        Gemini 3.5 Flash — balanced
+                      </SelectItem>
+                      <SelectItem value="google/gemini-3-flash-preview">
+                        Gemini 3 Flash — fast & cheap
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -366,7 +384,11 @@ function QuickPageBuilder() {
 
                 <div className="flex flex-wrap items-center gap-3 pt-2">
                   <Button type="submit" disabled={!canSubmit} size="lg" className="gap-2">
-                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    {busy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4" />
+                    )}
                     {busy ? "Generating…" : "Generate & publish"}
                   </Button>
                   <Button asChild variant="ghost" size="sm">

@@ -8,7 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { getMe } from "@/lib/auth.functions";
-import { getAffiliateSettings, listApplications, decideApplication } from "@/lib/affiliates.functions";
+import {
+  getAffiliateSettings,
+  listApplications,
+  decideApplication,
+} from "@/lib/affiliates.functions";
 
 export const Route = createFileRoute("/_authenticated/app/affiliates/customise")({
   head: () => ({ meta: [{ title: "Customise — founders.click" }] }),
@@ -21,7 +25,9 @@ function CustomisePage() {
   const decide = useServerFn(decideApplication);
 
   useEffect(() => {
-    getMe().then((me) => setWorkspaceId(me?.memberships?.[0]?.workspace_id ?? null)).catch(() => {});
+    getMe()
+      .then((me) => setWorkspaceId(me?.memberships?.[0]?.workspace_id ?? null))
+      .catch(() => {});
   }, []);
 
   const settings = useQuery({
@@ -44,10 +50,14 @@ function CustomisePage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Branding</CardTitle>
-          <CardDescription>Affiliate sign-up pages and emails use your workspace brand (logo + colors).</CardDescription>
+          <CardDescription>
+            Affiliate sign-up pages and emails use your workspace brand (logo + colors).
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button variant="outline" asChild><Link to="/app/settings">Edit workspace branding</Link></Button>
+          <Button variant="outline" asChild>
+            <Link to="/app/settings">Edit workspace branding</Link>
+          </Button>
         </CardContent>
       </Card>
 
@@ -60,12 +70,21 @@ function CustomisePage() {
           {slug ? (
             <button
               className="font-mono text-sm text-orange-500 hover:underline"
-              onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/apply/${slug}`); toast.success("Sign-up link copied"); }}
+              onClick={() => {
+                navigator.clipboard?.writeText(`${window.location.origin}/apply/${slug}`);
+                toast.success("Sign-up link copied");
+              }}
             >
               {typeof window !== "undefined" ? window.location.origin : ""}/apply/{slug} · copy
             </button>
           ) : (
-            <p className="text-sm text-muted-foreground">Set a sign-up form slug in <Link to="/app/affiliates/settings" className="text-orange-500 hover:underline">Affiliate Settings</Link> to enable your public page.</p>
+            <p className="text-sm text-muted-foreground">
+              Set a sign-up form slug in{" "}
+              <Link to="/app/affiliates/settings" className="text-orange-500 hover:underline">
+                Affiliate Settings
+              </Link>{" "}
+              to enable your public page.
+            </p>
           )}
         </CardContent>
       </Card>
@@ -76,19 +95,59 @@ function CustomisePage() {
           <CardDescription>Approve to turn an applicant into an active affiliate.</CardDescription>
         </CardHeader>
         <CardContent>
-          {apps.isLoading ? <Skeleton className="h-20" /> : (apps.data?.applications ?? []).length === 0 ? (
+          {apps.isLoading ? (
+            <Skeleton className="h-20" />
+          ) : (apps.data?.applications ?? []).length === 0 ? (
             <p className="text-sm text-muted-foreground">No pending applications.</p>
           ) : (
             <div className="space-y-2">
               {apps.data!.applications.map((a: any) => (
-                <div key={a.id} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                <div
+                  key={a.id}
+                  className="flex items-center justify-between rounded-md border border-border px-3 py-2"
+                >
                   <div>
-                    <div className="text-sm font-medium">{a.name} <Badge variant="outline" className="ml-1">{a.program_name}</Badge></div>
+                    <div className="text-sm font-medium">
+                      {a.name}{" "}
+                      <Badge variant="outline" className="ml-1">
+                        {a.program_name}
+                      </Badge>
+                    </div>
                     <div className="text-xs text-muted-foreground">{a.email}</div>
                   </div>
                   <div className="space-x-1">
-                    <Button size="sm" onClick={async () => { try { await decide({ data: { workspaceId: workspaceId!, id: a.id, approve: true } }); await qc.invalidateQueries({ queryKey: ["affiliate-apps", workspaceId] }); toast.success("Approved"); } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); } }}>Approve</Button>
-                    <Button size="sm" variant="ghost" onClick={async () => { try { await decide({ data: { workspaceId: workspaceId!, id: a.id, approve: false } }); await qc.invalidateQueries({ queryKey: ["affiliate-apps", workspaceId] }); } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); } }}>Reject</Button>
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await decide({
+                            data: { workspaceId: workspaceId!, id: a.id, approve: true },
+                          });
+                          await qc.invalidateQueries({ queryKey: ["affiliate-apps", workspaceId] });
+                          toast.success("Approved");
+                        } catch (e) {
+                          toast.error(e instanceof Error ? e.message : "Failed");
+                        }
+                      }}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={async () => {
+                        try {
+                          await decide({
+                            data: { workspaceId: workspaceId!, id: a.id, approve: false },
+                          });
+                          await qc.invalidateQueries({ queryKey: ["affiliate-apps", workspaceId] });
+                        } catch (e) {
+                          toast.error(e instanceof Error ? e.message : "Failed");
+                        }
+                      }}
+                    >
+                      Reject
+                    </Button>
                   </div>
                 </div>
               ))}

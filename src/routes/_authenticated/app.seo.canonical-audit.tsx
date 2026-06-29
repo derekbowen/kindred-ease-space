@@ -6,10 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, RefreshCw, AlertTriangle, CheckCircle2, AlertCircle } from "lucide-react";
-import {
-  getLatestCanonicalAudit,
-  runCanonicalAudit,
-} from "@/lib/admin-canonical-audit.functions";
+import { getLatestCanonicalAudit, runCanonicalAudit } from "@/lib/admin-canonical-audit.functions";
 
 export const Route = createFileRoute("/_authenticated/app/seo/canonical-audit")({
   head: () => ({ meta: [{ title: "Canonical URL Audit — founders.click" }] }),
@@ -45,17 +42,21 @@ function CanonicalAuditPage() {
           <h1 className="text-2xl font-semibold">Canonical URL Audit</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Crawls the live site and verifies every <code>canonical</code>, <code>og:url</code>, and{" "}
-            <code>&lt;a href&gt;</code> points to <code>https://www.founders.click</code>. Apex redirects are checked too.
+            <code>&lt;a href&gt;</code> points to <code>https://www.founders.click</code>. Apex
+            redirects are checked too.
           </p>
         </div>
-        <Button
-          onClick={() => runMutation.mutate()}
-          disabled={runMutation.isPending}
-        >
+        <Button onClick={() => runMutation.mutate()} disabled={runMutation.isPending}>
           {runMutation.isPending ? (
-            <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Running…</>
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Running…
+            </>
           ) : (
-            <><RefreshCw className="h-4 w-4 mr-2" />Run audit now</>
+            <>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Run audit now
+            </>
           )}
         </Button>
       </div>
@@ -68,14 +69,30 @@ function CanonicalAuditPage() {
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Stat label="Pages crawled" value={data.totalPages} />
-            <Stat label="Failing" value={data.pagesWithFailures} tone={data.pagesWithFailures ? "fail" : "ok"} />
-            <Stat label="Warnings" value={data.pagesWithWarnings} tone={data.pagesWithWarnings ? "warn" : "ok"} />
+            <Stat
+              label="Failing"
+              value={data.pagesWithFailures}
+              tone={data.pagesWithFailures ? "fail" : "ok"}
+            />
+            <Stat
+              label="Warnings"
+              value={data.pagesWithWarnings}
+              tone={data.pagesWithWarnings ? "warn" : "ok"}
+            />
             <Stat label="Last run" value={new Date(data.startedAt).toLocaleString()} small />
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Stat label="Canonical URLs" value={data.totals.canonical} tone="ok" />
-            <Stat label="Apex hits" value={data.totals.apex} tone={data.totals.apex ? "warn" : "ok"} />
-            <Stat label="Preview-host hits" value={data.totals.preview} tone={data.totals.preview ? "fail" : "ok"} />
+            <Stat
+              label="Apex hits"
+              value={data.totals.apex}
+              tone={data.totals.apex ? "warn" : "ok"}
+            />
+            <Stat
+              label="Preview-host hits"
+              value={data.totals.preview}
+              tone={data.totals.preview ? "fail" : "ok"}
+            />
             <Stat label="External (allowed)" value={data.totals.external} small />
           </div>
 
@@ -103,14 +120,32 @@ function CanonicalAuditPage() {
   );
 }
 
-function Stat({ label, value, tone, small }: { label: string; value: string | number; tone?: "ok" | "warn" | "fail"; small?: boolean }) {
+function Stat({
+  label,
+  value,
+  tone,
+  small,
+}: {
+  label: string;
+  value: string | number;
+  tone?: "ok" | "warn" | "fail";
+  small?: boolean;
+}) {
   const color =
-    tone === "fail" ? "text-destructive" : tone === "warn" ? "text-amber-500" : tone === "ok" ? "text-emerald-500" : "";
+    tone === "fail"
+      ? "text-destructive"
+      : tone === "warn"
+        ? "text-amber-500"
+        : tone === "ok"
+          ? "text-emerald-500"
+          : "";
   return (
     <Card>
       <CardContent className="pt-4 pb-3">
         <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
-        <div className={`mt-1 ${small ? "text-sm" : "text-2xl"} font-semibold ${color}`}>{value}</div>
+        <div className={`mt-1 ${small ? "text-sm" : "text-2xl"} font-semibold ${color}`}>
+          {value}
+        </div>
       </CardContent>
     </Card>
   );
@@ -125,19 +160,26 @@ function ResultGroup({
   title: string;
   icon: React.ReactNode;
   empty: string;
-  pages: NonNullable<ReturnType<typeof getLatestCanonicalAudit> extends Promise<infer R> ? R : never>["pages"];
+  pages: NonNullable<
+    ReturnType<typeof getLatestCanonicalAudit> extends Promise<infer R> ? R : never
+  >["pages"];
 }) {
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
-          {icon}{title} <Badge variant="secondary" className="ml-auto">{pages.length}</Badge>
+          {icon}
+          {title}{" "}
+          <Badge variant="secondary" className="ml-auto">
+            {pages.length}
+          </Badge>
         </CardTitle>
       </CardHeader>
       <CardContent>
         {pages.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CheckCircle2 className="h-4 w-4 text-emerald-500" />{empty}
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+            {empty}
           </div>
         ) : (
           <ScrollArea className="max-h-96">
@@ -145,7 +187,12 @@ function ResultGroup({
               {pages.map((p) => (
                 <li key={p.url} className="border rounded-md p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <a href={p.url} target="_blank" rel="noreferrer" className="font-mono text-xs truncate hover:underline">
+                    <a
+                      href={p.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono text-xs truncate hover:underline"
+                    >
                       {p.url}
                     </a>
                     <Badge variant={p.ok ? "secondary" : "destructive"}>{p.status || "ERR"}</Badge>
@@ -170,7 +217,9 @@ function ResultGroup({
                         </li>
                       ))}
                       {p.issues.length > 12 ? (
-                        <li className="text-xs text-muted-foreground">…and {p.issues.length - 12} more</li>
+                        <li className="text-xs text-muted-foreground">
+                          …and {p.issues.length - 12} more
+                        </li>
                       ) : null}
                     </ul>
                   ) : null}

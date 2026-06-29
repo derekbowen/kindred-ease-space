@@ -32,14 +32,17 @@ function DashboardPage() {
         }
         if (attempt < 12) setTimeout(() => poll(attempt + 1), 400);
       } catch (err) {
-        const status = (err as { status?: number; response?: { status?: number } })?.status
-          ?? (err as { response?: { status?: number } })?.response?.status;
+        const status =
+          (err as { status?: number; response?: { status?: number } })?.status ??
+          (err as { response?: { status?: number } })?.response?.status;
         if (status === 401) navigate({ to: "/login", search: { next: "/app" } });
         else console.error("getMe failed", err);
       }
     };
     poll();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [navigate]);
 
   const { data, isLoading } = useQuery({
@@ -66,7 +69,9 @@ function DashboardPage() {
   const balance = data?.balance;
   const stats = data?.stats;
   const trialEnd = ws?.trial_ends_at ? new Date(ws.trial_ends_at) : null;
-  const daysLeft = trialEnd ? Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : null;
+  const daysLeft = trialEnd
+    ? Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : null;
 
   const setupStatus = {
     sharetribeConnected: stats?.sharetribeConnected ?? false,
@@ -88,8 +93,12 @@ function DashboardPage() {
         <Card className="border-orange-500/30 bg-orange-500/5">
           <CardContent className="py-4 flex items-center justify-between">
             <div>
-              <div className="font-medium">Trial — {daysLeft} day{daysLeft === 1 ? "" : "s"} left</div>
-              <div className="text-xs text-muted-foreground">Pick a plan to keep generating after the trial ends.</div>
+              <div className="font-medium">
+                Trial — {daysLeft} day{daysLeft === 1 ? "" : "s"} left
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Pick a plan to keep generating after the trial ends.
+              </div>
             </div>
             <Button asChild>
               <Link to="/app/billing">Choose a plan</Link>
@@ -115,7 +124,9 @@ function DashboardPage() {
               ? `${balance.monthly_allowance.toLocaleString()} included / mo`
               : "Top up in Billing to keep generating"}
             {" · "}
-            <Link to="/app/billing" className="hover:text-foreground">Billing →</Link>
+            <Link to="/app/billing" className="hover:text-foreground">
+              Billing →
+            </Link>
           </CardContent>
         </Card>
 
@@ -128,9 +139,13 @@ function DashboardPage() {
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
             {(stats?.publishedPages ?? 0) === 0 ? (
-              <Link to="/app/pages/new" className="hover:text-foreground">Create your first page →</Link>
+              <Link to="/app/pages/new" className="hover:text-foreground">
+                Create your first page →
+              </Link>
             ) : (
-              <Link to="/app/pages" className="hover:text-foreground">Manage pages →</Link>
+              <Link to="/app/pages" className="hover:text-foreground">
+                Manage pages →
+              </Link>
             )}
           </CardContent>
         </Card>
@@ -150,10 +165,14 @@ function DashboardPage() {
                   ? ` · last sync ${new Date(stats.lastSharetribeSync).toLocaleDateString()}`
                   : ""}
                 {" · "}
-                <Link to="/app/settings/integrations/sharetribe" className="hover:text-foreground">Integration →</Link>
+                <Link to="/app/settings/integrations/sharetribe" className="hover:text-foreground">
+                  Integration →
+                </Link>
               </>
             ) : (
-              <Link to="/app/settings/integrations/sharetribe" className="hover:text-foreground">Connect Sharetribe →</Link>
+              <Link to="/app/settings/integrations/sharetribe" className="hover:text-foreground">
+                Connect Sharetribe →
+              </Link>
             )}
           </CardContent>
         </Card>
@@ -164,7 +183,9 @@ function DashboardPage() {
           <CardTitle className="flex items-center gap-2 text-base">
             <BarChart3 className="h-4 w-4" /> Search performance
           </CardTitle>
-          <CardDescription>Import Google Search Console data to track clicks and impressions here.</CardDescription>
+          <CardDescription>
+            Import Google Search Console data to track clicks and impressions here.
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" asChild>

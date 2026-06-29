@@ -50,7 +50,11 @@ function TableCard({ workspaceId, table }: { workspaceId: string | null; table: 
       </CardHeader>
       <CardContent className="space-y-3">
         <Button onClick={handleExport} disabled={busy || !workspaceId}>
-          {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+          {busy ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Download className="mr-2 h-4 w-4" />
+          )}
           Export CSV
         </Button>
         {status && <p className="text-sm text-muted-foreground">{status}</p>}
@@ -68,7 +72,9 @@ function DataExportPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Data export</h1>
-        <p className="text-sm text-muted-foreground">Download workspace-scoped tables for backup or analysis.</p>
+        <p className="text-sm text-muted-foreground">
+          Download workspace-scoped tables for backup or analysis.
+        </p>
       </div>
       {!workspaceId && <p className="text-sm text-muted-foreground">Loading workspace…</p>}
       <div className="grid gap-4 md:grid-cols-2">

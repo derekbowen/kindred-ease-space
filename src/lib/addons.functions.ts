@@ -2,7 +2,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { assertWorkspaceMember, assertWorkspaceOwner, workspaceIdSchema } from "@/lib/admin-helpers.functions";
+import {
+  assertWorkspaceMember,
+  assertWorkspaceOwner,
+  workspaceIdSchema,
+} from "@/lib/admin-helpers.functions";
 
 const sb = () => supabaseAdmin as any;
 
@@ -87,7 +91,9 @@ export const getAddons = createServerFn({ method: "GET" })
 export const requestAddon = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({ workspaceId: workspaceIdSchema, addonKey: z.string().trim().min(2).max(60) }).parse(d),
+    z
+      .object({ workspaceId: workspaceIdSchema, addonKey: z.string().trim().min(2).max(60) })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceOwner(data.workspaceId, context.userId);

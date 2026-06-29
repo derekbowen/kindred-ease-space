@@ -14,7 +14,11 @@ export const Route = createFileRoute("/help/search")({
   loader: ({ deps }) => searchHelp({ data: { q: deps.q } }),
   head: ({ loaderData }) => ({
     meta: [
-      { title: loaderData?.query ? `Search: ${loaderData.query} — founders.click Help` : "Search — founders.click Help" },
+      {
+        title: loaderData?.query
+          ? `Search: ${loaderData.query} — founders.click Help`
+          : "Search — founders.click Help",
+      },
       { name: "robots", content: "noindex" },
     ],
     links: [{ rel: "canonical", href: canonicalUrl("/help/search") }],
@@ -54,9 +58,7 @@ function SearchPage() {
             <strong className="text-foreground">"{query}"</strong>
           </p>
 
-          {suggestions.length > 0 && (
-            <DidYouMean query={query} suggestions={suggestions} compact />
-          )}
+          {suggestions.length > 0 && <DidYouMean query={query} suggestions={suggestions} compact />}
 
           <div className="border border-border rounded-lg bg-card px-3">
             {results.map((a: any) => (
@@ -136,7 +138,17 @@ function NoResults({
 }: {
   query: string;
   suggestions: { title: string; slug: string; category_slug: string }[];
-  popular: { id: string; slug: string; title: string; category_slug: string; excerpt: string | null; reading_time_minutes: number | null; view_count: number; published_at: string | null; updated_at: string }[];
+  popular: {
+    id: string;
+    slug: string;
+    title: string;
+    category_slug: string;
+    excerpt: string | null;
+    reading_time_minutes: number | null;
+    view_count: number;
+    published_at: string | null;
+    updated_at: string;
+  }[];
 }) {
   return (
     <div>
@@ -174,8 +186,12 @@ function NoResults({
           Search tips
         </h3>
         <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-          <li>Use one or two specific keywords (e.g. "billing" instead of "how do I pay my invoice")</li>
-          <li>Try different wording — synonyms like "login" / "sign in" are matched automatically</li>
+          <li>
+            Use one or two specific keywords (e.g. "billing" instead of "how do I pay my invoice")
+          </li>
+          <li>
+            Try different wording — synonyms like "login" / "sign in" are matched automatically
+          </li>
           <li>Check spelling — we'll suggest close matches when we find them</li>
         </ul>
       </div>
@@ -199,7 +215,17 @@ function NoResults({
 function EmptyState({
   popular,
 }: {
-  popular: { id: string; slug: string; title: string; category_slug: string; excerpt: string | null; reading_time_minutes: number | null; view_count: number; published_at: string | null; updated_at: string }[];
+  popular: {
+    id: string;
+    slug: string;
+    title: string;
+    category_slug: string;
+    excerpt: string | null;
+    reading_time_minutes: number | null;
+    view_count: number;
+    published_at: string | null;
+    updated_at: string;
+  }[];
 }) {
   return (
     <div>

@@ -54,7 +54,10 @@ export const getCityClickReport = createServerFn({ method: "POST" })
     const totalClicks = all.length;
     const uniqueVisitors = new Set(all.map((r) => r.visitor_hash).filter(Boolean)).size;
 
-    const byCity = new Map<string, { clicks: number; visitors: Set<string>; referrers: Map<string, number> }>();
+    const byCity = new Map<
+      string,
+      { clicks: number; visitors: Set<string>; referrers: Map<string, number> }
+    >();
     for (const r of all) {
       const slug = r.to_city_slug;
       if (!slug) continue;

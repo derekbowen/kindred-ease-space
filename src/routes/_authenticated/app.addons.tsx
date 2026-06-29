@@ -31,7 +31,9 @@ function AddonsPage() {
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
-    getMe().then((me) => setWorkspaceId(me?.memberships?.[0]?.workspace_id ?? null)).catch(() => {});
+    getMe()
+      .then((me) => setWorkspaceId(me?.memberships?.[0]?.workspace_id ?? null))
+      .catch(() => {});
   }, []);
 
   const { data, isLoading, refetch } = useQuery({
@@ -73,11 +75,18 @@ function AddonsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Add-ons</h1>
-        <p className="text-sm text-muted-foreground">Bolt extra capabilities onto your marketplace. Managed add-ons are set up for you after purchase.</p>
+        <p className="text-sm text-muted-foreground">
+          Bolt extra capabilities onto your marketplace. Managed add-ons are set up for you after
+          purchase.
+        </p>
       </div>
 
       {isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2">{[0, 1].map((i) => <Skeleton key={i} className="h-64" />)}</div>
+        <div className="grid gap-4 md:grid-cols-2">
+          {[0, 1].map((i) => (
+            <Skeleton key={i} className="h-64" />
+          ))}
+        </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {(data?.catalog ?? []).map((a) => {
@@ -96,18 +105,32 @@ function AddonsPage() {
                   <p className="text-sm text-muted-foreground">{a.description}</p>
                   <ul className="space-y-1.5 text-sm">
                     {a.bullets.map((b) => (
-                      <li key={b} className="flex items-start gap-2"><Check className="mt-0.5 h-4 w-4 text-emerald-500 shrink-0" />{b}</li>
+                      <li key={b} className="flex items-start gap-2">
+                        <Check className="mt-0.5 h-4 w-4 text-emerald-500 shrink-0" />
+                        {b}
+                      </li>
                     ))}
                   </ul>
                   <div className="mt-auto pt-2">
                     <div className="mb-3 text-2xl font-bold">
-                      ${(a.priceCents / 100).toFixed(0)}<span className="text-sm font-normal text-muted-foreground">/{a.cadence}</span>
+                      ${(a.priceCents / 100).toFixed(0)}
+                      <span className="text-sm font-normal text-muted-foreground">
+                        /{a.cadence}
+                      </span>
                     </div>
                     {active ? (
-                      <Button disabled className="w-full" variant="outline">Active</Button>
+                      <Button disabled className="w-full" variant="outline">
+                        Active
+                      </Button>
                     ) : (
-                      <Button className="w-full" disabled={busy === a.key} onClick={() => checkout(a.key)}>
-                        {busy === a.key ? "Redirecting…" : `Get it — $${(a.priceCents / 100).toFixed(0)}/${a.cadence}`}
+                      <Button
+                        className="w-full"
+                        disabled={busy === a.key}
+                        onClick={() => checkout(a.key)}
+                      >
+                        {busy === a.key
+                          ? "Redirecting…"
+                          : `Get it — $${(a.priceCents / 100).toFixed(0)}/${a.cadence}`}
                       </Button>
                     )}
                     {isAffiliate && (

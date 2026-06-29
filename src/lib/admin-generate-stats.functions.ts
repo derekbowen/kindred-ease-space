@@ -47,9 +47,7 @@ function bucketReason(raw: string): string {
 
 export const getGenerateStats = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z.object({ workspaceId: workspaceIdSchema }).parse(d),
-  )
+  .inputValidator((d: unknown) => z.object({ workspaceId: workspaceIdSchema }).parse(d))
   .handler(async ({ data, context }): Promise<GenStats> => {
     const workspaceId = data.workspaceId;
     try {
@@ -59,30 +57,64 @@ export const getGenerateStats = createServerFn({ method: "POST" })
     }
 
     try {
-      const [genCount, pendCount, pausedCount, allPending, allPaused, recentContent, recentTenant, recentErr] =
-        await Promise.all([
-          supabaseAdmin.from("content_plan").select("*", { count: "exact", head: true })
-            .eq("workspace_id", workspaceId).eq("status", "generated"),
-          supabaseAdmin.from("content_plan").select("*", { count: "exact", head: true })
-            .eq("workspace_id", workspaceId).eq("status", "pending"),
-          supabaseAdmin.from("content_plan").select("*", { count: "exact", head: true })
-            .eq("workspace_id", workspaceId).eq("status", "paused"),
-          supabaseAdmin.from("content_plan").select("priority_tier")
-            .eq("workspace_id", workspaceId).eq("status", "pending").limit(2000),
-          supabaseAdmin.from("content_plan").select("priority_tier,last_error")
-            .eq("workspace_id", workspaceId).eq("status", "paused").limit(2000),
-          supabaseAdmin.from("content_pages").select("slug,title,created_at")
-            .eq("workspace_id", workspaceId)
-            .order("created_at", { ascending: false }).limit(20),
-          supabaseAdmin.from("tenant_pages").select("slug,title,created_at")
-            .eq("workspace_id", workspaceId)
-            .order("created_at", { ascending: false }).limit(20),
-          supabaseAdmin.from("content_plan").select("slug,priority_tier,updated_at,last_error,status")
-            .eq("workspace_id", workspaceId)
-            .in("status", ["pending", "paused"])
-            .not("last_error", "is", null)
-            .order("updated_at", { ascending: false }).limit(15),
-        ]);
+      const [
+        genCount,
+        pendCount,
+        pausedCount,
+        allPending,
+        allPaused,
+        recentContent,
+        recentTenant,
+        recentErr,
+      ] = await Promise.all([
+        supabaseAdmin
+          .from("content_plan")
+          .select("*", { count: "exact", head: true })
+          .eq("workspace_id", workspaceId)
+          .eq("status", "generated"),
+        supabaseAdmin
+          .from("content_plan")
+          .select("*", { count: "exact", head: true })
+          .eq("workspace_id", workspaceId)
+          .eq("status", "pending"),
+        supabaseAdmin
+          .from("content_plan")
+          .select("*", { count: "exact", head: true })
+          .eq("workspace_id", workspaceId)
+          .eq("status", "paused"),
+        supabaseAdmin
+          .from("content_plan")
+          .select("priority_tier")
+          .eq("workspace_id", workspaceId)
+          .eq("status", "pending")
+          .limit(2000),
+        supabaseAdmin
+          .from("content_plan")
+          .select("priority_tier,last_error")
+          .eq("workspace_id", workspaceId)
+          .eq("status", "paused")
+          .limit(2000),
+        supabaseAdmin
+          .from("content_pages")
+          .select("slug,title,created_at")
+          .eq("workspace_id", workspaceId)
+          .order("created_at", { ascending: false })
+          .limit(20),
+        supabaseAdmin
+          .from("tenant_pages")
+          .select("slug,title,created_at")
+          .eq("workspace_id", workspaceId)
+          .order("created_at", { ascending: false })
+          .limit(20),
+        supabaseAdmin
+          .from("content_plan")
+          .select("slug,priority_tier,updated_at,last_error,status")
+          .eq("workspace_id", workspaceId)
+          .in("status", ["pending", "paused"])
+          .not("last_error", "is", null)
+          .order("updated_at", { ascending: false })
+          .limit(15),
+      ]);
 
       const countErrors = [genCount, pendCount, pausedCount].filter((r) => r.error);
       if (countErrors.length) {
@@ -116,10 +148,18 @@ export const getGenerateStats = createServerFn({ method: "POST" })
 
       const since = new Date(Date.now() - 14 * 86400_000).toISOString();
       const [{ data: dayContent }, { data: dayTenant }] = await Promise.all([
-        supabaseAdmin.from("content_pages").select("created_at")
-          .eq("workspace_id", workspaceId).gte("created_at", since).limit(10000),
-        supabaseAdmin.from("tenant_pages").select("created_at")
-          .eq("workspace_id", workspaceId).gte("created_at", since).limit(10000),
+        supabaseAdmin
+          .from("content_pages")
+          .select("created_at")
+          .eq("workspace_id", workspaceId)
+          .gte("created_at", since)
+          .limit(10000),
+        supabaseAdmin
+          .from("tenant_pages")
+          .select("created_at")
+          .eq("workspace_id", workspaceId)
+          .gte("created_at", since)
+          .limit(10000),
       ]);
       const dayMap = new Map<string, number>();
       for (const r of [...(dayContent ?? []), ...(dayTenant ?? [])]) {

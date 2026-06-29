@@ -82,21 +82,19 @@ export const connectSharetribe = createServerFn({ method: "POST" })
       return { ok: false as const, error: "Failed to encrypt credentials" };
     }
 
-    const { error: upsertErr } = await (supabaseAdmin as any)
-      .from("tenant_integrations")
-      .upsert(
-        {
-          workspace_id: data.workspaceId,
-          provider: "sharetribe",
-          marketplace_url: marketplaceUrl,
-          marketplace_id: data.marketplaceId,
-          client_id: data.clientId,
-          client_secret_vault_id: vaultId,
-          status: "connected",
-          last_sync_error: null,
-        },
-        { onConflict: "workspace_id,provider" },
-      );
+    const { error: upsertErr } = await (supabaseAdmin as any).from("tenant_integrations").upsert(
+      {
+        workspace_id: data.workspaceId,
+        provider: "sharetribe",
+        marketplace_url: marketplaceUrl,
+        marketplace_id: data.marketplaceId,
+        client_id: data.clientId,
+        client_secret_vault_id: vaultId,
+        status: "connected",
+        last_sync_error: null,
+      },
+      { onConflict: "workspace_id,provider" },
+    );
     if (upsertErr) {
       console.error("[connectSharetribe] upsert error", upsertErr);
       return { ok: false as const, error: "Failed to save integration" };
@@ -116,7 +114,10 @@ export const disconnectSharetribe = createServerFn({ method: "POST" })
       .delete()
       .eq("workspace_id", data.workspaceId)
       .eq("provider", "sharetribe");
-    await (supabaseAdmin as any).from("tenant_listings").delete().eq("workspace_id", data.workspaceId);
+    await (supabaseAdmin as any)
+      .from("tenant_listings")
+      .delete()
+      .eq("workspace_id", data.workspaceId);
     return { ok: true as const };
   });
 

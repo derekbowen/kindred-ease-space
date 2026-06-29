@@ -40,7 +40,11 @@ export function resolvePlatformModel(requested?: string): string {
   return PLATFORM_DEFAULT_MODEL;
 }
 
-export function estimateCostMicros(model: string, promptTokens: number, completionTokens: number): number {
+export function estimateCostMicros(
+  model: string,
+  promptTokens: number,
+  completionTokens: number,
+): number {
   const c = MODEL_COST_PER_1K_MICROS[model] ?? MODEL_COST_PER_1K_MICROS.default;
   return Math.round((promptTokens * c.in + completionTokens * c.out) / 1000);
 }
@@ -50,6 +54,10 @@ export function creditsForCostMicros(costMicros: number): number {
   return Math.max(1, Math.ceil((costMicros * AI_CREDIT_MARKUP) / AI_CREDIT_VALUE_MICROS));
 }
 
-export function creditsForUsage(model: string, promptTokens: number, completionTokens: number): number {
+export function creditsForUsage(
+  model: string,
+  promptTokens: number,
+  completionTokens: number,
+): number {
   return creditsForCostMicros(estimateCostMicros(model, promptTokens, completionTokens));
 }

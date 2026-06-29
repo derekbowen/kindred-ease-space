@@ -7,11 +7,14 @@ import { sendEmail, welcomeEmailTemplate } from "@/lib/email.server";
 type ProvisionResult = { workspace_id: string; created: boolean; slug: string | null };
 
 function isMissingProvisionRpc(message: string) {
-  return /provision_workspace_for_user/i.test(message) && /(does not exist|could not find)/i.test(message);
+  return (
+    /provision_workspace_for_user/i.test(message) &&
+    /(does not exist|could not find)/i.test(message)
+  );
 }
 
 async function provisionWorkspace(
-  supabase: { rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }> },
+  supabase: any,
   userId: string,
   args: {
     name: string;
@@ -102,7 +105,10 @@ export const createWorkspace = createServerFn({ method: "POST" })
         .replace(/^-|-$/g, "")
         .slice(0, 40) || "workspace";
     const slug = `${slugBase}-${Math.random().toString(36).slice(2, 8)}`;
-    const domain = data.marketplaceDomain.toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    const domain = data.marketplaceDomain
+      .toLowerCase()
+      .replace(/^https?:\/\//, "")
+      .replace(/\/.*$/, "");
 
     let ws: ProvisionResult;
     try {
@@ -114,7 +120,11 @@ export const createWorkspace = createServerFn({ method: "POST" })
       });
     } catch (e) {
       console.error("[createWorkspace] provision error", e);
-      throw new Error(e instanceof Error ? `Couldn't create workspace: ${e.message}` : "Failed to create workspace.");
+      throw new Error(
+        e instanceof Error
+          ? `Couldn't create workspace: ${e.message}`
+          : "Failed to create workspace.",
+      );
     }
 
     // Fire-and-forget welcome email — never block workspace creation.
@@ -123,17 +133,19 @@ export const createWorkspace = createServerFn({ method: "POST" })
       welcomeEmailTemplate({
         name: data.name,
         workspaceSlug: ws.slug ?? slug,
-      }).then((tpl) => {
-        if (!tpl) return;
-        return sendEmail({
-          to: userEmail,
-          subject: tpl.subject,
-          html: tpl.html,
-          text: tpl.text,
-          idempotencyKey: `welcome-${ws.workspace_id}`,
-          meta: { workspace_id: ws.workspace_id, kind: "welcome" },
-        });
-      }).catch((err) => console.error("[createWorkspace] welcome email failed", err));
+      })
+        .then((tpl) => {
+          if (!tpl) return;
+          return sendEmail({
+            to: userEmail,
+            subject: tpl.subject,
+            html: tpl.html,
+            text: tpl.text,
+            idempotencyKey: `welcome-${ws.workspace_id}`,
+            meta: { workspace_id: ws.workspace_id, kind: "welcome" },
+          });
+        })
+        .catch((err) => console.error("[createWorkspace] welcome email failed", err));
     }
 
     return { workspaceId: ws.workspace_id, slug: ws.slug ?? slug };
@@ -159,11 +171,12 @@ export const ensureWorkspace = createServerFn({ method: "POST" })
     } catch (e) {
       console.error("[ensureWorkspace] provision error", e);
       throw new Error(
-        e instanceof Error ? `Couldn't set up your workspace: ${e.message}` : "Couldn't set up your workspace.",
+        e instanceof Error
+          ? `Couldn't set up your workspace: ${e.message}`
+          : "Couldn't set up your workspace.",
       );
     }
   });
-
 
 /** Editable workspace profile — the optional "setup portal" (name + domain). */
 export const updateWorkspaceProfile = createServerFn({ method: "POST" })
@@ -188,14 +201,24 @@ export const updateWorkspaceProfile = createServerFn({ method: "POST" })
     if (data.name !== undefined) patch.name = data.name;
     if (data.marketplaceDomain !== undefined) {
       const normalized = data.marketplaceDomain
-        ? data.marketplaceDomain.toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/:\d+$/, "")
+        ? data.marketplaceDomain
+            .toLowerCase()
+            .replace(/^https?:\/\//, "")
+            .replace(/\/.*$/, "")
+            .replace(/:\d+$/, "")
         : "";
-      if (normalized && !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(normalized)) {
+      if (
+        normalized &&
+        !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(normalized)
+      ) {
         throw new Error("Invalid domain — use a hostname like yourmarketplace.com");
       }
       patch.marketplace_domain = normalized || null;
     }
-    const { error } = await supabaseAdmin.from("workspaces").update(patch).eq("id", data.workspaceId);
+    const { error } = await supabaseAdmin
+      .from("workspaces")
+      .update(patch)
+      .eq("id", data.workspaceId);
     if (error) throw new Error(error.message);
     return { ok: true as const };
   });
@@ -222,7 +245,9 @@ export const getWorkspaceOverview = createServerFn({ method: "GET" })
     ] = await Promise.all([
       supabase
         .from("workspaces")
-        .select("id, name, plan, subscription_status, trial_ends_at, marketplace_domain, domain_verified_at, current_period_end")
+        .select(
+          "id, name, plan, subscription_status, trial_ends_at, marketplace_domain, domain_verified_at, current_period_end",
+        )
         .eq("id", data.workspaceId)
         .single(),
       supabase
@@ -288,7 +313,11 @@ export const updateWorkspaceBranding = createServerFn({ method: "POST" })
     });
     if (!isOwner) throw new Error("Not allowed");
 
-    const patch: { brand_name?: string | null; brand_color?: string | null; logo_url?: string | null } = {};
+    const patch: {
+      brand_name?: string | null;
+      brand_color?: string | null;
+      logo_url?: string | null;
+    } = {};
     if (data.brandName !== undefined) patch.brand_name = data.brandName || null;
     if (data.brandColor !== undefined) patch.brand_color = data.brandColor || null;
     if (data.logoUrl !== undefined) patch.logo_url = data.logoUrl || null;

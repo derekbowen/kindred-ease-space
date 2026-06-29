@@ -34,7 +34,10 @@ export function HelpfulFeedback({ articleId }: { articleId: string }) {
       <div className="flex items-center gap-3">
         <span className="text-sm font-medium">Was this helpful?</span>
         <button
-          onClick={() => { setState("yes"); send(true); }}
+          onClick={() => {
+            setState("yes");
+            send(true);
+          }}
           disabled={submitting}
           className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:border-orange-500 hover:text-orange-500 transition-colors"
         >

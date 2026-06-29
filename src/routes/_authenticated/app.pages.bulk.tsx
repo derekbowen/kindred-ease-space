@@ -25,12 +25,15 @@ function parseCSV(text: string): Record<string, string>[] {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
   const headers = lines[0].split(",").map((s) => s.trim());
-  return lines.slice(1).filter((l) => l.trim()).map((line) => {
-    const cells = line.split(",").map((s) => s.trim());
-    const row: Record<string, string> = {};
-    headers.forEach((h, i) => (row[h] = cells[i] ?? ""));
-    return row;
-  });
+  return lines
+    .slice(1)
+    .filter((l) => l.trim())
+    .map((line) => {
+      const cells = line.split(",").map((s) => s.trim());
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => (row[h] = cells[i] ?? ""));
+      return row;
+    });
 }
 
 function BulkPage() {
@@ -124,7 +127,8 @@ function BulkPage() {
           <CardHeader>
             <CardTitle>CSV input</CardTitle>
             <CardDescription>
-              Columns: <code className="text-xs">slug, title, city, state, category_plural</code> — up to 500 rows.
+              Columns: <code className="text-xs">slug, title, city, state, category_plural</code> —
+              up to 500 rows.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -137,12 +141,22 @@ function BulkPage() {
             <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
               <div>
                 <p className="text-sm font-medium">Publish immediately</p>
-                <p className="text-xs text-muted-foreground">Off = save as drafts for review first</p>
+                <p className="text-xs text-muted-foreground">
+                  Off = save as drafts for review first
+                </p>
               </div>
               <Switch checked={publish} onCheckedChange={setPublish} />
             </div>
-            <Button onClick={onRun} disabled={busy || rows.length === 0} className="w-full sm:w-auto">
-              {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+            <Button
+              onClick={onRun}
+              disabled={busy || rows.length === 0}
+              className="w-full sm:w-auto"
+            >
+              {busy ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4 mr-2" />
+              )}
               {publish ? `Publish ${rows.length} pages` : `Create ${rows.length} drafts`}
             </Button>
           </CardContent>
@@ -167,7 +181,8 @@ function BulkPage() {
                       <p className="truncate font-medium">{r.title || "—"}</p>
                       <p className="font-mono text-[11px] text-muted-foreground">
                         /p/{r.slug}
-                        {(r.city || r.state) && ` · ${[r.city, r.state].filter(Boolean).join(", ")}`}
+                        {(r.city || r.state) &&
+                          ` · ${[r.city, r.state].filter(Boolean).join(", ")}`}
                       </p>
                     </div>
                     <Badge variant="outline" className="shrink-0 text-[10px]">
@@ -176,7 +191,9 @@ function BulkPage() {
                   </div>
                 ))}
                 {rows.length > 8 && (
-                  <p className="text-center text-xs text-muted-foreground">+{rows.length - 8} more</p>
+                  <p className="text-center text-xs text-muted-foreground">
+                    +{rows.length - 8} more
+                  </p>
                 )}
               </div>
             )}

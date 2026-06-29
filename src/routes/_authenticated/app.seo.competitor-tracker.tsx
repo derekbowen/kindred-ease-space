@@ -9,7 +9,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import {
-  listCompetitorPages, scrapeCompetitorUrl, deleteCompetitor,
+  listCompetitorPages,
+  scrapeCompetitorUrl,
+  deleteCompetitor,
   type CompetitorRow,
 } from "@/lib/admin-seo-tools.functions";
 
@@ -30,8 +32,12 @@ function CompetitorTrackerPage() {
   const scrape = useServerFn(scrapeCompetitorUrl);
   const del = useServerFn(deleteCompetitor);
 
-  useEffect(() => { getMe().then((me) => setWorkspaceId(me.memberships[0]?.workspace_id ?? null)); }, []);
-  useEffect(() => { if (workspaceId) reload(workspaceId); /* eslint-disable-next-line */ }, [workspaceId]);
+  useEffect(() => {
+    getMe().then((me) => setWorkspaceId(me.memberships[0]?.workspace_id ?? null));
+  }, []);
+  useEffect(() => {
+    if (workspaceId) reload(workspaceId); /* eslint-disable-next-line */
+  }, [workspaceId]);
 
   async function reload(ws: string) {
     const r = await list({ data: { workspaceId: ws, q, limit: 100 } });
@@ -40,12 +46,21 @@ function CompetitorTrackerPage() {
 
   async function doScrape() {
     if (!workspaceId || !url.trim()) return;
-    setBusy(true); setMsg(null);
+    setBusy(true);
+    setMsg(null);
     try {
-      const r = await scrape({ data: { workspaceId, url: url.trim(), notes: notes.trim() || undefined } });
-      if (r.ok) { setMsg(`Scraped ${r.word_count} words.`); setUrl(""); setNotes(""); await reload(workspaceId); }
-      else setMsg(r.error);
-    } finally { setBusy(false); }
+      const r = await scrape({
+        data: { workspaceId, url: url.trim(), notes: notes.trim() || undefined },
+      });
+      if (r.ok) {
+        setMsg(`Scraped ${r.word_count} words.`);
+        setUrl("");
+        setNotes("");
+        await reload(workspaceId);
+      } else setMsg(r.error);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function remove(id: string) {
@@ -61,17 +76,36 @@ function CompetitorTrackerPage() {
         <h1 className="text-2xl font-bold">Competitor Tracker</h1>
         <p className="text-sm text-muted-foreground">
           Scrape competitor pages with Firecrawl. Requires <code>FIRECRAWL_API_KEY</code> in{" "}
-          <a className="underline" href="/app/settings/api-keys">Settings → API Keys</a>.
+          <a className="underline" href="/app/settings/api-keys">
+            Settings → API Keys
+          </a>
+          .
         </p>
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Add a competitor URL</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Add a competitor URL</CardTitle>
+        </CardHeader>
         <CardContent className="space-y-3">
-          <div className="space-y-1"><Label>URL</Label><Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://competitor.com/page" /></div>
-          <div className="space-y-1"><Label>Notes (optional)</Label><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} /></div>
+          <div className="space-y-1">
+            <Label>URL</Label>
+            <Input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://competitor.com/page"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>Notes (optional)</Label>
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+          </div>
           <div className="flex items-center gap-3">
-            <Button onClick={doScrape} disabled={busy || !workspaceId || !url.trim()} className="gap-2">
+            <Button
+              onClick={doScrape}
+              disabled={busy || !workspaceId || !url.trim()}
+              className="gap-2"
+            >
               {busy && <Loader2 className="h-4 w-4 animate-spin" />} Scrape
             </Button>
             {msg && <span className="text-sm text-muted-foreground">{msg}</span>}
@@ -86,16 +120,36 @@ function CompetitorTrackerPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-end gap-3">
-            <div className="space-y-1"><Label>Search</Label><Input value={q} onChange={(e) => setQ(e.target.value)} className="w-64" onKeyDown={(e) => { if (e.key === "Enter" && workspaceId) reload(workspaceId); }} /></div>
-            <Button variant="outline" onClick={() => workspaceId && reload(workspaceId)}>Refresh</Button>
+            <div className="space-y-1">
+              <Label>Search</Label>
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                className="w-64"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && workspaceId) reload(workspaceId);
+                }}
+              />
+            </div>
+            <Button variant="outline" onClick={() => workspaceId && reload(workspaceId)}>
+              Refresh
+            </Button>
           </div>
           {rows.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">No competitor pages yet.</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No competitor pages yet.
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="border-b text-left text-xs uppercase text-muted-foreground">
-                  <tr><th className="py-2 pr-4">Domain</th><th className="py-2 pr-4">Title</th><th className="py-2 pr-4">Words</th><th className="py-2 pr-4">Last scraped</th><th className="py-2"></th></tr>
+                  <tr>
+                    <th className="py-2 pr-4">Domain</th>
+                    <th className="py-2 pr-4">Title</th>
+                    <th className="py-2 pr-4">Words</th>
+                    <th className="py-2 pr-4">Last scraped</th>
+                    <th className="py-2"></th>
+                  </tr>
                 </thead>
                 <tbody>
                   {rows.map((r) => (
@@ -103,11 +157,19 @@ function CompetitorTrackerPage() {
                       <td className="py-2 pr-4 font-mono text-xs">{r.domain}</td>
                       <td className="py-2 pr-4">
                         <div className="font-medium">{r.title || "(untitled)"}</div>
-                        <div className="font-mono text-xs text-muted-foreground truncate max-w-md">{r.url}</div>
+                        <div className="font-mono text-xs text-muted-foreground truncate max-w-md">
+                          {r.url}
+                        </div>
                       </td>
                       <td className="py-2 pr-4">{r.word_count}</td>
-                      <td className="py-2 pr-4 text-xs text-muted-foreground">{r.last_scraped_at ? new Date(r.last_scraped_at).toLocaleString() : "—"}</td>
-                      <td className="py-2"><Button size="sm" variant="ghost" onClick={() => remove(r.id)}>Delete</Button></td>
+                      <td className="py-2 pr-4 text-xs text-muted-foreground">
+                        {r.last_scraped_at ? new Date(r.last_scraped_at).toLocaleString() : "—"}
+                      </td>
+                      <td className="py-2">
+                        <Button size="sm" variant="ghost" onClick={() => remove(r.id)}>
+                          Delete
+                        </Button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

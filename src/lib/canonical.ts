@@ -50,13 +50,15 @@ export function isCanonicalUrl(url: string): boolean {
   }
 }
 
-export type UrlClassification = "canonical" | "apex" | "preview" | "external-allowed" | "external" | "invalid";
+export type UrlClassification =
+  "canonical" | "apex" | "preview" | "external-allowed" | "external" | "invalid";
 
 /** Classify any URL string for audit reporting. */
 export function classifyUrl(url: string): UrlClassification {
   if (!url) return "invalid";
   if (url.startsWith("/") && !url.startsWith("//")) return "canonical";
-  if (url.startsWith("#") || url.startsWith("mailto:") || url.startsWith("tel:")) return "canonical";
+  if (url.startsWith("#") || url.startsWith("mailto:") || url.startsWith("tel:"))
+    return "canonical";
   let u: URL;
   try {
     u = new URL(url);
@@ -67,6 +69,7 @@ export function classifyUrl(url: string): UrlClassification {
   const host = u.hostname.toLowerCase();
   if (host === "founders.click") return "apex";
   if (host.endsWith(".lovable.app") || host.endsWith(".lovable-project.com")) return "preview";
-  if (ALLOWED_EXTERNAL_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) return "external-allowed";
+  if (ALLOWED_EXTERNAL_HOSTS.some((h) => host === h || host.endsWith(`.${h}`)))
+    return "external-allowed";
   return "external";
 }

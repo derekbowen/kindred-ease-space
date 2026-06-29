@@ -40,7 +40,9 @@ export const getSettingsContext = createServerFn({ method: "GET" })
     ] = await Promise.all([
       sb()
         .from("workspaces")
-        .select("id, name, marketplace_domain, domain_verified_at, brand_name, brand_color, logo_url")
+        .select(
+          "id, name, marketplace_domain, domain_verified_at, brand_name, brand_color, logo_url",
+        )
         .eq("id", data.workspaceId)
         .maybeSingle(),
       sb()
@@ -57,10 +59,7 @@ export const getSettingsContext = createServerFn({ method: "GET" })
       isOwner
         ? sb().from("workspace_secrets").select("key_name").eq("workspace_id", data.workspaceId)
         : Promise.resolve({ data: [] }),
-      sb()
-        .from("tenant_ai_credentials")
-        .select("provider")
-        .eq("workspace_id", data.workspaceId),
+      sb().from("tenant_ai_credentials").select("provider").eq("workspace_id", data.workspaceId),
     ]);
 
     return {

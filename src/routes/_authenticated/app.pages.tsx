@@ -55,18 +55,20 @@ function PagesList() {
   useEffect(() => {
     if (!workspaceId) return;
     setLoading(true);
-    Promise.all([
-      list({ data: { workspaceId } }),
-      ctxFn({ data: { workspaceId } }),
-    ])
-      .then(([r, ctx]) => {
-        setRows(r.pages as Row[]);
-        setStats({
-          published: ctx.stats.publishedPages,
-          drafts: ctx.stats.draftPages,
-          cityGaps: ctx.stats.cityGaps,
-        });
-      })
+    Promise.all([list({ data: { workspaceId } }), ctxFn({ data: { workspaceId } })])
+      .then(
+        ([r, ctx]: [
+          { pages?: Row[] },
+          { stats: { publishedPages: number; draftPages: number; cityGaps: number } },
+        ]) => {
+          setRows(r.pages as Row[]);
+          setStats({
+            published: ctx.stats.publishedPages,
+            drafts: ctx.stats.draftPages,
+            cityGaps: ctx.stats.cityGaps,
+          });
+        },
+      )
       .finally(() => setLoading(false));
   }, [workspaceId, list, ctxFn]);
 
@@ -98,15 +100,20 @@ function PagesList() {
               <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Your SEO surface</h1>
             </div>
             <p className="max-w-lg text-sm text-muted-foreground">
-              Programmatic landing pages wired to your Sharetribe listings. Every published page lives at{" "}
-              <code className="rounded bg-muted px-1 font-mono text-xs">/p/{"{slug}"}</code> on your domain.
+              Programmatic landing pages wired to your Sharetribe listings. Every published page
+              lives at{" "}
+              <code className="rounded bg-muted px-1 font-mono text-xs">/p/{"{slug}"}</code> on your
+              domain.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => navigate({ to: "/app/pages/bulk" })}>
               <Upload className="h-4 w-4 mr-2" /> Bulk import
             </Button>
-            <Button variant="outline" onClick={() => navigate({ to: "/app/content/quick-page-builder" })}>
+            <Button
+              variant="outline"
+              onClick={() => navigate({ to: "/app/content/quick-page-builder" })}
+            >
               <Sparkles className="h-4 w-4 mr-2" /> AI builder
             </Button>
             <Button onClick={() => navigate({ to: "/app/pages/new" })}>
@@ -121,7 +128,10 @@ function PagesList() {
             { label: "Drafts", value: stats.drafts, accent: "text-muted-foreground" },
             { label: "City gaps", value: stats.cityGaps, accent: "text-amber-500" },
           ].map((s) => (
-            <div key={s.label} className="rounded-lg border border-border/60 bg-background/60 px-3 py-2">
+            <div
+              key={s.label}
+              className="rounded-lg border border-border/60 bg-background/60 px-3 py-2"
+            >
               <p className={cn("text-2xl font-bold tabular-nums", s.accent)}>{s.value}</p>
               <p className="text-[11px] text-muted-foreground">{s.label}</p>
             </div>
@@ -182,7 +192,10 @@ function PagesList() {
               <CardContent className="p-0">
                 <div className="border-b border-border/40 bg-gradient-to-br from-muted/30 to-transparent px-4 py-3">
                   <div className="flex items-start justify-between gap-2">
-                    <Badge variant={r.status === "published" ? "default" : "secondary"} className="shrink-0">
+                    <Badge
+                      variant={r.status === "published" ? "default" : "secondary"}
+                      className="shrink-0"
+                    >
                       {r.status}
                     </Badge>
                     <span className="text-[10px] text-muted-foreground">

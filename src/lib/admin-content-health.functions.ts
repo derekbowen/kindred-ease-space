@@ -44,7 +44,9 @@ export const scanContentHealth = createServerFn({ method: "POST" })
     if (data.onlyInSitemap) pages = pages.filter((p) => p.in_sitemap);
 
     const affected: ContentHealthRow[] = [];
-    let missing = 0, blank = 0, thin = 0;
+    let missing = 0,
+      blank = 0,
+      thin = 0;
 
     for (const r of pages) {
       const body = r.body_markdown ?? "";

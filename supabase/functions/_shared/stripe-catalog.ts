@@ -46,7 +46,13 @@ export const CREDIT_PACK = {
 // affiliate tiers are self-serve (entitlement is flipped on by the webhook).
 export type AddonKey = "dmchamp" | "affiliate-lite" | "affiliate-standard" | "affiliate-pro";
 
-type AddonDefinition = { catalogKey: string; name: string; description: string; priceCents: number; tier?: string };
+type AddonDefinition = {
+  catalogKey: string;
+  name: string;
+  description: string;
+  priceCents: number;
+  tier?: string;
+};
 
 export const ADDON_CATALOG: Record<AddonKey, AddonDefinition> = {
   dmchamp: {
@@ -84,7 +90,11 @@ export function isAddonKey(k: unknown): k is AddonKey {
 
 export async function ensureAddonPrice(stripe: Stripe, addonKey: AddonKey) {
   const def = ADDON_CATALOG[addonKey];
-  const meta = { kind: "addon", addon_key: addonKey, ...(def.tier ? { addon_tier: def.tier } : {}) };
+  const meta = {
+    kind: "addon",
+    addon_key: addonKey,
+    ...(def.tier ? { addon_tier: def.tier } : {}),
+  };
   const product = await ensureProduct(stripe, {
     catalogKey: def.catalogKey,
     name: def.name,
@@ -93,7 +103,8 @@ export async function ensureAddonPrice(stripe: Stripe, addonKey: AddonKey) {
   });
   const prices = await stripe.prices.list({ product: product.id, active: true, limit: 100 });
   const existing = prices.data.find(
-    (p) => p.currency === "usd" && p.unit_amount === def.priceCents && p.recurring?.interval === "month",
+    (p) =>
+      p.currency === "usd" && p.unit_amount === def.priceCents && p.recurring?.interval === "month",
   );
   if (existing) return existing;
   return stripe.prices.create({
@@ -107,10 +118,17 @@ export async function ensureAddonPrice(stripe: Stripe, addonKey: AddonKey) {
 
 async function ensureProduct(
   stripe: Stripe,
-  params: { catalogKey: string; name: string; description: string; metadata?: Record<string, string> },
+  params: {
+    catalogKey: string;
+    name: string;
+    description: string;
+    metadata?: Record<string, string>;
+  },
 ) {
   const products = await stripe.products.list({ active: true, limit: 100 });
-  const existing = products.data.find((product) => product.metadata?.catalog_key === params.catalogKey);
+  const existing = products.data.find(
+    (product) => product.metadata?.catalog_key === params.catalogKey,
+  );
 
   if (existing) return existing;
 
@@ -173,7 +191,10 @@ export async function ensureCreditPackPrice(stripe: Stripe) {
 
   const prices = await stripe.prices.list({ product: product.id, active: true, limit: 100 });
   const existing = prices.data.find(
-    (price) => price.currency === "usd" && price.unit_amount === CREDIT_PACK.unitAmountCents && !price.recurring,
+    (price) =>
+      price.currency === "usd" &&
+      price.unit_amount === CREDIT_PACK.unitAmountCents &&
+      !price.recurring,
   );
 
   if (existing) return existing;

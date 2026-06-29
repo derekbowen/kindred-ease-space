@@ -38,12 +38,7 @@ export function InlineCoach({
         <Sparkles className="h-3.5 w-3.5 mr-1.5" />
         {label}
       </Button>
-      <CoachPanel
-        open={open}
-        onOpenChange={setOpen}
-        workspaceId={workspaceId}
-        context={context}
-      />
+      <CoachPanel open={open} onOpenChange={setOpen} workspaceId={workspaceId} context={context} />
     </>
   );
 }

@@ -24,7 +24,6 @@ function rateLimit(ip: string, limit = 120, windowMs = 60_000): boolean {
   return b.count <= limit;
 }
 
-
 function clientIp(request: Request): string {
   const xff = request.headers.get("x-forwarded-for");
   if (xff) return xff.split(",")[0]!.trim();

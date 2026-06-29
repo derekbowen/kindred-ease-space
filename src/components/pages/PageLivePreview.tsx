@@ -39,8 +39,8 @@ export function PageLivePreview({ page, domain }: { page: PreviewPage; domain?: 
           <p className="mt-2 text-sm text-muted-foreground">
             {count > 0 ? (
               <>
-                <span className="font-medium text-foreground">{count}</span> {categoryPlural} available
-                in {page.city}
+                <span className="font-medium text-foreground">{count}</span> {categoryPlural}{" "}
+                available in {page.city}
               </>
             ) : (
               <>Listing grid pulls from your synced Sharetribe inventory</>
@@ -67,10 +67,7 @@ export function PageLivePreview({ page, domain }: { page: PreviewPage; domain?: 
         {page.city && (
           <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {Array.from({ length: Math.min(3, Math.max(1, count)) }).map((_, i) => (
-              <div
-                key={i}
-                className="overflow-hidden rounded-lg border border-border/60 bg-card"
-              >
+              <div key={i} className="overflow-hidden rounded-lg border border-border/60 bg-card">
                 <div className="aspect-video bg-gradient-to-br from-primary/10 via-muted/30 to-primary/5" />
                 <div className="space-y-1.5 p-2.5">
                   <div className="h-2.5 w-4/5 rounded bg-muted" />

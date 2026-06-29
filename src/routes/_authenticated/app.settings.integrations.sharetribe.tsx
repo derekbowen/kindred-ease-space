@@ -183,9 +183,7 @@ function SharetribeIntegrationPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Connected</CardTitle>
-              <Badge
-                variant={integration.status === "connected" ? "default" : "destructive"}
-              >
+              <Badge variant={integration.status === "connected" ? "default" : "destructive"}>
                 {integration.status}
               </Badge>
             </div>

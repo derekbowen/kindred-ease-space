@@ -53,7 +53,7 @@ function AdminHelpArticlesPage() {
         else toast.error("Failed to load articles", { description: String(String(e)) });
       })
       .finally(() => setLoading(false));
-  }, [listFn, catsFn, toast]);
+  }, [listFn, catsFn]);
 
   const onCreate = async () => {
     if (!cats.length) {
@@ -104,7 +104,7 @@ function AdminHelpArticlesPage() {
     (r) =>
       !q.trim() ||
       r.title.toLowerCase().includes(q.toLowerCase()) ||
-      r.slug.toLowerCase().includes(q.toLowerCase())
+      r.slug.toLowerCase().includes(q.toLowerCase()),
   );
 
   return (
@@ -113,7 +113,10 @@ function AdminHelpArticlesPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Help articles</h1>
           <p className="text-sm text-muted-foreground">
-            Platform help center content. <Link to="/app/admin/help/categories" className="underline">Manage categories</Link>
+            Platform help center content.{" "}
+            <Link to="/app/admin/help/categories" className="underline">
+              Manage categories
+            </Link>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -128,11 +131,19 @@ function AdminHelpArticlesPage() {
             onClick={async () => {
               const t = toast.loading("Re-indexing articles for AI assistant…");
               try {
-                const { data, error } = await supabase.functions.invoke("help-assistant-embed", { body: {} });
+                const { data, error } = await supabase.functions.invoke("help-assistant-embed", {
+                  body: {},
+                });
                 if (error) throw error;
-                toast.success(`Indexed ${data?.articles ?? 0} articles (${data?.chunks ?? 0} chunks)`, { id: t });
+                toast.success(
+                  `Indexed ${data?.articles ?? 0} articles (${data?.chunks ?? 0} chunks)`,
+                  { id: t },
+                );
               } catch (e) {
-                toast.error("Re-index failed", { id: t, description: e instanceof Error ? e.message : String(e) });
+                toast.error("Re-index failed", {
+                  id: t,
+                  description: e instanceof Error ? e.message : String(e),
+                });
               }
             }}
           >
@@ -147,8 +158,15 @@ function AdminHelpArticlesPage() {
       <Card className="p-4">
         <div className="flex items-center gap-2 mb-4">
           <Search className="h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search by title or slug…" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-sm" />
-          <span className="text-xs text-muted-foreground ml-auto">{filtered.length} of {rows.length}</span>
+          <Input
+            placeholder="Search by title or slug…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            className="max-w-sm"
+          />
+          <span className="text-xs text-muted-foreground ml-auto">
+            {filtered.length} of {rows.length}
+          </span>
         </div>
         <Table>
           <TableHeader>
@@ -164,24 +182,48 @@ function AdminHelpArticlesPage() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  Loading…
+                </TableCell>
+              </TableRow>
             ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No articles. Click "New article" to start.</TableCell></TableRow>
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  No articles. Click "New article" to start.
+                </TableCell>
+              </TableRow>
             ) : (
               filtered.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>
-                    <Link to="/app/admin/help/articles/$id" params={{ id: r.id }} className="font-medium hover:underline">
+                    <Link
+                      to="/app/admin/help/articles/$id"
+                      params={{ id: r.id }}
+                      className="font-medium hover:underline"
+                    >
                       {r.title}
                     </Link>
                     <div className="text-xs text-muted-foreground">/{r.slug}</div>
                   </TableCell>
                   <TableCell className="text-sm">{r.category_slug}</TableCell>
                   <TableCell>
-                    <Badge variant={r.status === "published" ? "default" : r.status === "draft" ? "secondary" : "outline"}>
+                    <Badge
+                      variant={
+                        r.status === "published"
+                          ? "default"
+                          : r.status === "draft"
+                            ? "secondary"
+                            : "outline"
+                      }
+                    >
                       {r.status}
                     </Badge>
-                    {r.is_popular && <Badge variant="outline" className="ml-1">popular</Badge>}
+                    {r.is_popular && (
+                      <Badge variant="outline" className="ml-1">
+                        popular
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell className="text-right text-sm">{r.view_count}</TableCell>
                   <TableCell className="text-right text-sm">
@@ -192,7 +234,9 @@ function AdminHelpArticlesPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <Link to="/app/admin/help/articles/$id" params={{ id: r.id }}>
-                      <Button size="icon" variant="ghost"><Pencil className="h-4 w-4" /></Button>
+                      <Button size="icon" variant="ghost">
+                        <Pencil className="h-4 w-4" />
+                      </Button>
                     </Link>
                     <Button size="icon" variant="ghost" onClick={() => onDelete(r.id, r.title)}>
                       <Trash2 className="h-4 w-4" />

@@ -18,15 +18,16 @@ export const listConversations = createServerFn({ method: "POST" })
     return { conversations: rows ?? [] };
   });
 
-
 export const createConversation = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(z.object({
-    workspaceId: z.string().uuid(),
-    title: z.string().max(200).optional(),
-    contextType: z.string().optional(),
-    contextRefId: z.string().uuid().optional(),
-  }).parse)
+  .inputValidator(
+    z.object({
+      workspaceId: z.string().uuid(),
+      title: z.string().max(200).optional(),
+      contextType: z.string().optional(),
+      contextRefId: z.string().uuid().optional(),
+    }).parse,
+  )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { data: row, error } = await supabase
@@ -46,10 +47,12 @@ export const createConversation = createServerFn({ method: "POST" })
 
 export const renameConversation = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(z.object({
-    conversationId: z.string().uuid(),
-    title: z.string().trim().min(1).max(200),
-  }).parse)
+  .inputValidator(
+    z.object({
+      conversationId: z.string().uuid(),
+      title: z.string().trim().min(1).max(200),
+    }).parse,
+  )
   .handler(async ({ data, context }) => {
     const { supabase } = context;
     const { error } = await supabase
@@ -102,7 +105,6 @@ export const getTodayBriefing = createServerFn({ method: "POST" })
     return { briefing: row };
   });
 
-
 export const generateBriefingNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ workspaceId: z.string().uuid() }).parse)
@@ -130,11 +132,13 @@ export const generateBriefingNow = createServerFn({ method: "POST" })
 
 export const dismissInsight = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(z.object({
-    workspaceId: z.string().uuid(),
-    briefingId: z.string().uuid(),
-    insightIndex: z.number(),
-  }).parse)
+  .inputValidator(
+    z.object({
+      workspaceId: z.string().uuid(),
+      briefingId: z.string().uuid(),
+      insightIndex: z.number(),
+    }).parse,
+  )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { assertWorkspaceMember } = await import("@/lib/admin-helpers.functions");

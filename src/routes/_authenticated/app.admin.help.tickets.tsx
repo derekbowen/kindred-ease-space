@@ -121,7 +121,9 @@ function AdminTicketsPage() {
 
   const refresh = useCallback(() => {
     setLoading(true);
-    listFn({ data: { status: statusFilter, priority: priorityFilter, q: query || null, limit: 100 } })
+    listFn({
+      data: { status: statusFilter, priority: priorityFilter, q: query || null, limit: 100 },
+    })
       .then((d) => {
         setTickets(d.tickets as Ticket[]);
         setStatusCounts(d.statusCounts);
@@ -258,10 +260,7 @@ function AdminTicketsPage() {
                         {t.email}
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                        <Badge
-                          variant={statusVariant(t.status)}
-                          className="text-[10px] capitalize"
-                        >
+                        <Badge variant={statusVariant(t.status)} className="text-[10px] capitalize">
                           {t.status.replace("_", " ")}
                         </Badge>
                         <span className={`text-[10px] capitalize ${priorityTone(t.priority)}`}>
@@ -340,7 +339,7 @@ function TicketDetail({
   onChange: () => void;
 }) {
   const [data, setData] = useState<{ ticket: Ticket | null; messages: TicketMessage[] } | null>(
-    null
+    null,
   );
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState("");
@@ -420,9 +419,7 @@ function TicketDetail({
     );
   }
   if (!ticket) {
-    return (
-      <Card className="p-8 text-center text-sm text-muted-foreground">Ticket not found.</Card>
-    );
+    return <Card className="p-8 text-center text-sm text-muted-foreground">Ticket not found.</Card>;
   }
 
   return (
@@ -432,7 +429,8 @@ function TicketDetail({
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold">{ticket.subject}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              From <span className="font-medium text-foreground">{ticket.name ?? ticket.email}</span>{" "}
+              From{" "}
+              <span className="font-medium text-foreground">{ticket.name ?? ticket.email}</span>{" "}
               &lt;{ticket.email}&gt; · {fmtDate(ticket.created_at)}
               {ticket.category && ` · ${ticket.category}`}
             </p>
@@ -513,11 +511,7 @@ function TicketDetail({
             <Lock className="h-3 w-3" /> Internal note
           </label>
           <Button type="submit" disabled={!reply.trim() || posting}>
-            {posting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
+            {posting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             {internal ? "Add note" : "Log message"}
           </Button>
         </div>
@@ -558,8 +552,8 @@ function MessageBubble({
         internal
           ? "border-amber-300/60 bg-amber-50 dark:bg-amber-950/20"
           : fromUser
-          ? "bg-muted/40"
-          : "bg-background"
+            ? "bg-muted/40"
+            : "bg-background"
       }`}
     >
       <div className="mb-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">

@@ -45,7 +45,9 @@ function BulkEditorPage() {
     }
   }
 
-  useEffect(() => { if (workspaceId) load(); /* eslint-disable-next-line */ }, [workspaceId]);
+  useEffect(() => {
+    if (workspaceId) load(); /* eslint-disable-next-line */
+  }, [workspaceId]);
 
   async function toggleSitemap(row: ContentPageRow) {
     if (!workspaceId) return;
@@ -88,7 +90,11 @@ function BulkEditorPage() {
             onKeyDown={(e) => e.key === "Enter" && load()}
           />
           <Button onClick={load} disabled={loading || !workspaceId} className="gap-2">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Search className="h-4 w-4" />
+            )}
             Search
           </Button>
         </CardContent>
@@ -121,11 +127,15 @@ function BulkEditorPage() {
                     <tr key={r.id} className="border-b last:border-0">
                       <td className="py-2 pr-4">
                         <div className="font-medium">{r.title ?? "(untitled)"}</div>
-                        <div className="font-mono text-xs text-muted-foreground">{r.url_path ?? r.slug ?? r.id}</div>
+                        <div className="font-mono text-xs text-muted-foreground">
+                          {r.url_path ?? r.slug ?? r.id}
+                        </div>
                       </td>
                       <td className="py-2 pr-4 text-xs text-muted-foreground">{r.source}</td>
                       <td className="py-2 pr-4 font-mono text-xs">{r.status}</td>
-                      <td className="py-2 pr-4 text-xs text-muted-foreground">{r.template_type ?? "—"}</td>
+                      <td className="py-2 pr-4 text-xs text-muted-foreground">
+                        {r.template_type ?? "—"}
+                      </td>
                       <td className="py-2 pr-4">
                         {r.source === "tenant" ? (
                           <span className="text-xs text-muted-foreground">Always on</span>
@@ -136,7 +146,13 @@ function BulkEditorPage() {
                             disabled={savingId === r.id}
                             onClick={() => toggleSitemap(r)}
                           >
-                            {savingId === r.id ? <Loader2 className="h-3 w-3 animate-spin" /> : r.in_sitemap ? "On" : "Off"}
+                            {savingId === r.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : r.in_sitemap ? (
+                              "On"
+                            ) : (
+                              "Off"
+                            )}
                           </Button>
                         )}
                       </td>

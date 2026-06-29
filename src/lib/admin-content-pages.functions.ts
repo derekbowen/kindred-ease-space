@@ -23,12 +23,14 @@ export type ContentPageRow = {
 export const listContentPages = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({
-      workspaceId: workspaceIdSchema,
-      search: z.string().max(200).optional(),
-      status: z.string().max(40).optional(),
-      limit: z.number().int().min(1).max(200).default(50),
-    }).parse(d),
+    z
+      .object({
+        workspaceId: workspaceIdSchema,
+        search: z.string().max(200).optional(),
+        status: z.string().max(40).optional(),
+        limit: z.number().int().min(1).max(200).default(50),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceMember(data.workspaceId, (context as any).userId);
@@ -80,16 +82,18 @@ export const listContentPages = createServerFn({ method: "POST" })
 export const updateContentPageBasics = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({
-      workspaceId: workspaceIdSchema,
-      id: z.string().uuid(),
-      source: z.enum(["tenant", "content"]).default("content"),
-      title: z.string().max(300).optional(),
-      seo_title: z.string().max(300).optional(),
-      seo_description: z.string().max(500).optional(),
-      status: z.string().max(40).optional(),
-      in_sitemap: z.boolean().optional(),
-    }).parse(d),
+    z
+      .object({
+        workspaceId: workspaceIdSchema,
+        id: z.string().uuid(),
+        source: z.enum(["tenant", "content"]).default("content"),
+        title: z.string().max(300).optional(),
+        seo_title: z.string().max(300).optional(),
+        seo_description: z.string().max(500).optional(),
+        status: z.string().max(40).optional(),
+        in_sitemap: z.boolean().optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceMember(data.workspaceId, (context as any).userId);

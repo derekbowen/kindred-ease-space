@@ -14,30 +14,45 @@ export const Route = createFileRoute("/_authenticated/app/seo/link-checker")({
 
 function LinkCheckerPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
-  const [report, setReport] = useState<{ totalPagesScanned: number; totalLinks: number; broken: BrokenLink[] } | null>(null);
+  const [report, setReport] = useState<{
+    totalPagesScanned: number;
+    totalLinks: number;
+    broken: BrokenLink[];
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const scan = useServerFn(scanInternalLinks);
 
-  useEffect(() => { getMe().then((me) => setWorkspaceId(me.memberships[0]?.workspace_id ?? null)); }, []);
+  useEffect(() => {
+    getMe().then((me) => setWorkspaceId(me.memberships[0]?.workspace_id ?? null));
+  }, []);
 
   async function run() {
     if (!workspaceId) return;
     setBusy(true);
-    try { setReport(await scan({ data: { workspaceId, sampleSize: 500 } })); }
-    finally { setBusy(false); }
+    try {
+      setReport(await scan({ data: { workspaceId, sampleSize: 500 } }));
+    } finally {
+      setBusy(false);
+    }
   }
 
-  useEffect(() => { if (workspaceId) run(); /* eslint-disable-next-line */ }, [workspaceId]);
+  useEffect(() => {
+    if (workspaceId) run(); /* eslint-disable-next-line */
+  }, [workspaceId]);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Internal Link Checker</h1>
-        <p className="text-sm text-muted-foreground">Scans your published pages for broken or unpublished internal markdown links.</p>
+        <p className="text-sm text-muted-foreground">
+          Scans your published pages for broken or unpublished internal markdown links.
+        </p>
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Scan</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Scan</CardTitle>
+        </CardHeader>
         <CardContent>
           <Button onClick={run} disabled={busy || !workspaceId} className="gap-2">
             {busy && <Loader2 className="h-4 w-4 animate-spin" />} Re-scan
@@ -53,14 +68,26 @@ function LinkCheckerPage() {
             <Stat label="Broken" value={report.broken.length} />
           </div>
           <Card>
-            <CardHeader><CardTitle>Broken links</CardTitle><CardDescription>Targets that don't resolve to a published content page in this workspace.</CardDescription></CardHeader>
+            <CardHeader>
+              <CardTitle>Broken links</CardTitle>
+              <CardDescription>
+                Targets that don't resolve to a published content page in this workspace.
+              </CardDescription>
+            </CardHeader>
             <CardContent>
               {report.broken.length === 0 ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">No broken internal links 🎉</p>
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  No broken internal links 🎉
+                </p>
               ) : (
                 <table className="w-full text-sm">
                   <thead className="border-b text-left text-xs uppercase text-muted-foreground">
-                    <tr><th className="py-2 pr-4">From</th><th className="py-2 pr-4">→ To</th><th className="py-2 pr-4">Anchor</th><th className="py-2">Reason</th></tr>
+                    <tr>
+                      <th className="py-2 pr-4">From</th>
+                      <th className="py-2 pr-4">→ To</th>
+                      <th className="py-2 pr-4">Anchor</th>
+                      <th className="py-2">Reason</th>
+                    </tr>
                   </thead>
                   <tbody>
                     {report.broken.map((b, i) => (

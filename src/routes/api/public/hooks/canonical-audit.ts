@@ -30,10 +30,7 @@ export const Route = createFileRoute("/api/public/hooks/canonical-audit")({
           ? authHeader.slice(7).trim()
           : "";
         const provided =
-          bearer ||
-          request.headers.get("x-cron-secret") ||
-          request.headers.get("apikey") ||
-          "";
+          bearer || request.headers.get("x-cron-secret") || request.headers.get("apikey") || "";
         if (!expected || !provided || !safeEqual(provided, expected)) {
           return new Response(JSON.stringify({ error: "Unauthorized" }), {
             status: 401,

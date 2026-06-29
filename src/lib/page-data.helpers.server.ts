@@ -54,39 +54,35 @@ export async function fetchPublishedPages(
     contentQ.order("updated_at", { ascending: false }).limit(limit),
   ]);
 
-  const tenant = (tenantRows ?? []).map(
-    (r: any): ScannablePage => ({
-      id: r.id,
-      source: "tenant",
-      slug: r.slug,
-      url_path: tenantUrlPath(r.slug),
-      title: r.title,
-      body_markdown: r.body_markdown,
-      meta_description: r.meta_description,
-      status: r.status,
-      in_sitemap: true,
-      updated_at: r.updated_at,
-      template_type: "city_hub",
-      category: "tenant_page",
-    }),
-  );
+  const tenant = (tenantRows ?? []).map((r: any): ScannablePage => ({
+    id: r.id,
+    source: "tenant",
+    slug: r.slug,
+    url_path: tenantUrlPath(r.slug),
+    title: r.title,
+    body_markdown: r.body_markdown,
+    meta_description: r.meta_description,
+    status: r.status,
+    in_sitemap: true,
+    updated_at: r.updated_at,
+    template_type: "city_hub",
+    category: "tenant_page",
+  }));
 
-  const content = (contentRows ?? []).map(
-    (r: any): ScannablePage => ({
-      id: r.id,
-      source: "content",
-      slug: r.slug,
-      url_path: r.url_path || (r.slug ? tenantUrlPath(r.slug) : ""),
-      title: r.title,
-      body_markdown: r.body_markdown,
-      meta_description: r.seo_description,
-      status: r.status,
-      in_sitemap: !!r.in_sitemap,
-      updated_at: r.updated_at,
-      template_type: r.template_type,
-      category: r.category ?? "content",
-    }),
-  );
+  const content = (contentRows ?? []).map((r: any): ScannablePage => ({
+    id: r.id,
+    source: "content",
+    slug: r.slug,
+    url_path: r.url_path || (r.slug ? tenantUrlPath(r.slug) : ""),
+    title: r.title,
+    body_markdown: r.body_markdown,
+    meta_description: r.seo_description,
+    status: r.status,
+    in_sitemap: !!r.in_sitemap,
+    updated_at: r.updated_at,
+    template_type: r.template_type,
+    category: r.category ?? "content",
+  }));
 
   const seen = new Set<string>();
   const merged: ScannablePage[] = [];

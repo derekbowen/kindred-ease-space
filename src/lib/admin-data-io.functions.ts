@@ -18,9 +18,7 @@ function toCsv(rows: Record<string, unknown>[]): string {
   if (rows.length === 0) return "";
   const cols = Object.keys(rows[0]);
   return (
-    cols.join(",") +
-    "\n" +
-    rows.map((r) => cols.map((c) => csvEscape(r[c])).join(",")).join("\n")
+    cols.join(",") + "\n" + rows.map((r) => cols.map((c) => csvEscape(r[c])).join(",")).join("\n")
   );
 }
 
@@ -132,7 +130,10 @@ export const getImportSchema = createServerFn({ method: "POST" })
 const importInput = z.object({
   workspaceId: workspaceIdSchema,
   table: z.enum(TABLES),
-  csv: z.string().min(1).max(25 * 1024 * 1024),
+  csv: z
+    .string()
+    .min(1)
+    .max(25 * 1024 * 1024),
   mode: z.enum(["upsert", "insert"]).default("upsert"),
   conflictColumn: z.string().optional(),
   dryRun: z.boolean().optional(),
@@ -166,7 +167,10 @@ export const importTable = createServerFn({ method: "POST" })
       // Force tenant
       obj.workspace_id = workspaceId;
 
-      if (header.includes(conflictColumn) && (obj[conflictColumn] == null || obj[conflictColumn] === "")) {
+      if (
+        header.includes(conflictColumn) &&
+        (obj[conflictColumn] == null || obj[conflictColumn] === "")
+      ) {
         rowErrors.push({ row: csvRowNum, reason: `Missing required "${conflictColumn}"` });
         return;
       }
@@ -260,7 +264,10 @@ export const importTable = createServerFn({ method: "POST" })
         if (rowErr) {
           rowErrors.push({
             row: safeNums[j],
-            key: safeChunk[j][conflictColumn] != null ? String(safeChunk[j][conflictColumn]) : undefined,
+            key:
+              safeChunk[j][conflictColumn] != null
+                ? String(safeChunk[j][conflictColumn])
+                : undefined,
             reason: `DB: ${rowErr.message}`,
           });
         } else inserted++;

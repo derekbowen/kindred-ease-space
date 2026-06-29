@@ -1,6 +1,11 @@
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { ensureCreditPackPrice, ensureSubscriptionPrice, ensureAddonPrice, isAddonKey } from "../_shared/stripe-catalog.ts";
+import {
+  ensureCreditPackPrice,
+  ensureSubscriptionPrice,
+  ensureAddonPrice,
+  isAddonKey,
+} from "../_shared/stripe-catalog.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,14 +19,22 @@ Deno.serve(async (req) => {
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2024-06-20" });
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: corsHeaders });
+    if (!authHeader)
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: corsHeaders,
+      });
 
     const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: userData } = await userClient.auth.getUser();
     const user = userData.user;
-    if (!user) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: corsHeaders });
+    if (!user)
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: corsHeaders,
+      });
 
     const admin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const { workspace_id, mode, quantity: rawQuantity, tier, addon_key } = await req.json();
@@ -31,16 +44,28 @@ Deno.serve(async (req) => {
     const validModes = ["credits", "subscription", "addon"] as const;
     const validTiers = ["starter", "pro", "scale"] as const;
     if (!workspace_id || typeof workspace_id !== "string") {
-      return new Response(JSON.stringify({ error: "invalid_request" }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "invalid_request" }), {
+        status: 400,
+        headers: corsHeaders,
+      });
     }
     if (!validModes.includes(mode)) {
-      return new Response(JSON.stringify({ error: "invalid_mode" }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "invalid_mode" }), {
+        status: 400,
+        headers: corsHeaders,
+      });
     }
     if (mode === "subscription" && !validTiers.includes(tier)) {
-      return new Response(JSON.stringify({ error: "invalid_tier" }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "invalid_tier" }), {
+        status: 400,
+        headers: corsHeaders,
+      });
     }
     if (mode === "addon" && !isAddonKey(addon_key)) {
-      return new Response(JSON.stringify({ error: "invalid_addon" }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "invalid_addon" }), {
+        status: 400,
+        headers: corsHeaders,
+      });
     }
 
     const { data: member } = await admin
@@ -49,9 +74,13 @@ Deno.serve(async (req) => {
       .eq("workspace_id", workspace_id)
       .eq("user_id", user.id)
       .maybeSingle();
-    if (!member) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: corsHeaders });
+    if (!member)
+      return new Response(JSON.stringify({ error: "forbidden" }), {
+        status: 403,
+        headers: corsHeaders,
+      });
 
-    let { data: cust } = await admin
+    const { data: cust } = await admin
       .from("stripe_customers")
       .select("stripe_customer_id")
       .eq("workspace_id", workspace_id)
@@ -117,6 +146,9 @@ Deno.serve(async (req) => {
     });
   } catch (e) {
     console.error("create-checkout error", e);
-    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
+      status: 500,
+      headers: corsHeaders,
+    });
   }
 });

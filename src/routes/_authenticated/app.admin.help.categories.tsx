@@ -44,7 +44,7 @@ function AdminHelpCategoriesPage() {
         else toast.error("Load failed", { description: String(String(e)) });
       })
       .finally(() => setLoading(false));
-  }, [listFn, toast]);
+  }, [listFn]);
 
   const move = async (idx: number, dir: -1 | 1) => {
     const next = [...rows];
@@ -109,14 +109,23 @@ function AdminHelpCategoriesPage() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
           <Link to="/app/admin/help/articles">
-            <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4 mr-1" /> Articles</Button>
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="h-4 w-4 mr-1" /> Articles
+            </Button>
           </Link>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Help categories</h1>
-            <p className="text-sm text-muted-foreground">Drag-to-reorder via arrows. Slug is used in the URL.</p>
+            <p className="text-sm text-muted-foreground">
+              Drag-to-reorder via arrows. Slug is used in the URL.
+            </p>
           </div>
         </div>
-        <Button size="sm" onClick={() => setEditing({ slug: "", name: "", sort_order: rows.length, is_published: true })}>
+        <Button
+          size="sm"
+          onClick={() =>
+            setEditing({ slug: "", name: "", sort_order: rows.length, is_published: true })
+          }
+        >
           <Plus className="h-4 w-4 mr-2" /> New category
         </Button>
       </div>
@@ -129,32 +138,58 @@ function AdminHelpCategoriesPage() {
               <Label>Slug</Label>
               <Input
                 value={editing.slug ?? ""}
-                onChange={(e) => setEditing({ ...editing, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-") })}
+                onChange={(e) =>
+                  setEditing({
+                    ...editing,
+                    slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+                  })
+                }
                 placeholder="getting-started"
               />
             </div>
             <div>
               <Label>Name</Label>
-              <Input value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+              <Input
+                value={editing.name ?? ""}
+                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+              />
             </div>
           </div>
           <div>
             <Label>Description</Label>
-            <Textarea rows={2} value={editing.description ?? ""} onChange={(e) => setEditing({ ...editing, description: e.target.value })} />
+            <Textarea
+              rows={2}
+              value={editing.description ?? ""}
+              onChange={(e) => setEditing({ ...editing, description: e.target.value })}
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Icon (lucide name)</Label>
-              <Input value={editing.icon ?? ""} onChange={(e) => setEditing({ ...editing, icon: e.target.value })} placeholder="rocket" />
+              <Input
+                value={editing.icon ?? ""}
+                onChange={(e) => setEditing({ ...editing, icon: e.target.value })}
+                placeholder="rocket"
+              />
             </div>
             <div className="flex items-end justify-between gap-4">
-              <Label htmlFor="pub" className="cursor-pointer">Published</Label>
-              <Switch id="pub" checked={editing.is_published ?? true} onCheckedChange={(v) => setEditing({ ...editing, is_published: v })} />
+              <Label htmlFor="pub" className="cursor-pointer">
+                Published
+              </Label>
+              <Switch
+                id="pub"
+                checked={editing.is_published ?? true}
+                onCheckedChange={(v) => setEditing({ ...editing, is_published: v })}
+              />
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={onSave}><Save className="h-4 w-4 mr-1" /> Save</Button>
-            <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+            <Button size="sm" onClick={onSave}>
+              <Save className="h-4 w-4 mr-1" /> Save
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
           </div>
         </Card>
       )}
@@ -168,19 +203,37 @@ function AdminHelpCategoriesPage() {
           rows.map((c, i) => (
             <div key={c.id} className="flex items-center gap-3 p-3">
               <div className="flex flex-col">
-                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => move(i, -1)} disabled={i === 0}>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6"
+                  onClick={() => move(i, -1)}
+                  disabled={i === 0}
+                >
                   <ArrowUp className="h-3 w-3" />
                 </Button>
-                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => move(i, 1)} disabled={i === rows.length - 1}>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6"
+                  onClick={() => move(i, 1)}
+                  disabled={i === rows.length - 1}
+                >
                   <ArrowDown className="h-3 w-3" />
                 </Button>
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-medium">{c.name}</div>
-                <div className="text-xs text-muted-foreground truncate">/{c.slug} · {c.description || "—"}</div>
+                <div className="text-xs text-muted-foreground truncate">
+                  /{c.slug} · {c.description || "—"}
+                </div>
               </div>
-              {!c.is_published && <span className="text-xs text-muted-foreground">unpublished</span>}
-              <Button size="sm" variant="ghost" onClick={() => setEditing(c)}>Edit</Button>
+              {!c.is_published && (
+                <span className="text-xs text-muted-foreground">unpublished</span>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => setEditing(c)}>
+                Edit
+              </Button>
               <Button size="icon" variant="ghost" onClick={() => onDelete(c)}>
                 <Trash2 className="h-4 w-4" />
               </Button>

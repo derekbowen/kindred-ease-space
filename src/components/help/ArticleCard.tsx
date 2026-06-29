@@ -2,7 +2,13 @@ import { Link } from "@tanstack/react-router";
 import { Clock } from "lucide-react";
 import type { HelpArticleListItem } from "@/lib/help.server";
 
-export function ArticleCard({ article, showCategory = false }: { article: HelpArticleListItem; showCategory?: boolean }) {
+export function ArticleCard({
+  article,
+  showCategory = false,
+}: {
+  article: HelpArticleListItem;
+  showCategory?: boolean;
+}) {
   return (
     <Link
       to="/help/$category/$article"
@@ -39,17 +45,18 @@ export function ArticleRow({ article }: { article: HelpArticleListItem }) {
       className="group flex items-start gap-4 py-4 border-b border-border last:border-0 hover:bg-accent/30 -mx-3 px-3 rounded transition-colors"
     >
       <div className="flex-1 min-w-0">
-        <h3 className="text-sm font-medium group-hover:text-orange-500 transition-colors">{article.title}</h3>
-        {snippet && (
-          article.headline ? (
+        <h3 className="text-sm font-medium group-hover:text-orange-500 transition-colors">
+          {article.title}
+        </h3>
+        {snippet &&
+          (article.headline ? (
             <p
               className="mt-1 text-sm text-muted-foreground line-clamp-2 [&_mark]:bg-orange-500/15 [&_mark]:text-foreground [&_mark]:rounded [&_mark]:px-0.5"
               dangerouslySetInnerHTML={{ __html: snippet }}
             />
           ) : (
             <p className="mt-1 text-sm text-muted-foreground line-clamp-1">{snippet}</p>
-          )
-        )}
+          ))}
         <p className="mt-1 text-[11px] uppercase tracking-wider text-muted-foreground/70">
           {article.category_slug.replace(/-/g, " ")}
         </p>

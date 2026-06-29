@@ -91,7 +91,11 @@ export const Route = createFileRoute("/api/public/page-lookup")({
         const hostname = normalizeHostname(parsed.data.hostname);
         const slug = parsed.data.slug.replace(/^\/+/, "");
         if (!hostname.includes(".")) {
-          return json(400, { ok: false, error: "invalid_hostname" }, { "Cache-Control": "no-store" });
+          return json(
+            400,
+            { ok: false, error: "invalid_hostname" },
+            { "Cache-Control": "no-store" },
+          );
         }
 
         const { data: domain } = await sb()
@@ -132,7 +136,9 @@ export const Route = createFileRoute("/api/public/page-lookup")({
 
         const { data: page } = await sb()
           .from("content_pages")
-          .select("id, slug, title, body_markdown, seo_title, seo_description, hero_image_url, updated_at")
+          .select(
+            "id, slug, title, body_markdown, seo_title, seo_description, hero_image_url, updated_at",
+          )
           .eq("workspace_id", domain.workspace_id)
           .eq("slug", slug)
           .eq("status", "published")

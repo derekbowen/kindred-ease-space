@@ -4,7 +4,9 @@ import { LOCALES, LOCALE_LABELS, useT, type Locale } from "@/lib/i18n";
 export function LanguageSwitcher({ className = "" }: { className?: string }) {
   const { locale, setLocale, t } = useT();
   return (
-    <label className={`inline-flex items-center gap-1.5 text-sm text-muted-foreground ${className}`}>
+    <label
+      className={`inline-flex items-center gap-1.5 text-sm text-muted-foreground ${className}`}
+    >
       <Globe className="h-4 w-4" aria-hidden />
       <span className="sr-only">{t("lang.label")}</span>
       <select

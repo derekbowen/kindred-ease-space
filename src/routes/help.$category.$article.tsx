@@ -52,7 +52,12 @@ export const Route = createFileRoute("/help/$category/$article")({
             "@type": "BreadcrumbList",
             itemListElement: [
               { "@type": "ListItem", position: 1, name: "Help", item: canonicalUrl("/help") },
-              { "@type": "ListItem", position: 2, name: params.category, item: canonicalUrl(`/help/${params.category}`) },
+              {
+                "@type": "ListItem",
+                position: 2,
+                name: params.category,
+                item: canonicalUrl(`/help/${params.category}`),
+              },
               { "@type": "ListItem", position: 3, name: a.title, item: url },
             ],
           }),
@@ -64,7 +69,9 @@ export const Route = createFileRoute("/help/$category/$article")({
   notFoundComponent: () => (
     <div className="max-w-2xl mx-auto px-6 py-20 text-center">
       <h1 className="text-2xl font-semibold">Article not found</h1>
-      <Link to="/help" className="text-orange-500 hover:underline mt-4 inline-block">← Back to Help Center</Link>
+      <Link to="/help" className="text-orange-500 hover:underline mt-4 inline-block">
+        ← Back to Help Center
+      </Link>
     </div>
   ),
 });
@@ -84,14 +91,17 @@ function ArticlePage() {
 
       <header className="mb-8 pb-8 border-b border-border">
         <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">{article.title}</h1>
-        {article.excerpt && (
-          <p className="mt-3 text-lg text-muted-foreground">{article.excerpt}</p>
-        )}
+        {article.excerpt && <p className="mt-3 text-lg text-muted-foreground">{article.excerpt}</p>}
         <div className="mt-5 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
           {article.author_name && <span>By {article.author_name}</span>}
           <span className="inline-flex items-center gap-1.5">
             <Calendar className="h-3 w-3" />
-            Updated {new Date(article.updated_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+            Updated{" "}
+            {new Date(article.updated_at).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
           </span>
           {article.reading_time_minutes && (
             <span className="inline-flex items-center gap-1.5">
@@ -111,7 +121,9 @@ function ArticlePage() {
         <section className="mt-12">
           <h2 className="text-base font-semibold mb-4">Related articles</h2>
           <div className="grid sm:grid-cols-2 gap-3">
-            {related.map((a: any) => <ArticleCard key={a.id} article={a} />)}
+            {related.map((a: any) => (
+              <ArticleCard key={a.id} article={a} />
+            ))}
           </div>
         </section>
       )}
@@ -120,7 +132,9 @@ function ArticlePage() {
         <MessageCircle className="h-5 w-5 text-orange-500 mt-0.5" />
         <div className="flex-1">
           <h3 className="text-sm font-semibold">Still need help?</h3>
-          <p className="text-sm text-muted-foreground mt-0.5">Our team replies within 1 business day.</p>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Our team replies within 1 business day.
+          </p>
         </div>
         <Link
           to="/help/contact"

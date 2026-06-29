@@ -92,7 +92,7 @@ function EditArticlePage() {
       })
       .catch((e) => toast.error("Failed to load", { description: String(String(e)) }))
       .finally(() => setLoading(false));
-  }, [id, getFn, catsFn, navigate, toast]);
+  }, [id, getFn, catsFn, navigate]);
 
   const update = <K extends keyof ArticleForm>(k: K, v: ArticleForm[K]) => {
     setForm((f) => (f ? { ...f, [k]: v } : f));
@@ -116,7 +116,10 @@ function EditArticlePage() {
           is_popular: f.is_popular,
           seo_title: f.seo_title || null,
           seo_description: f.seo_description || null,
-          tags: f.tags.split(",").map((t) => t.trim()).filter(Boolean),
+          tags: f.tags
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean),
           author_name: f.author_name || null,
         },
       });
@@ -146,7 +149,11 @@ function EditArticlePage() {
   }, [form]);
 
   if (loading || !form) {
-    return <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
   }
 
   return (
@@ -154,23 +161,41 @@ function EditArticlePage() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
           <Link to="/app/admin/help/articles">
-            <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4 mr-1" /> Back</Button>
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="h-4 w-4 mr-1" /> Back
+            </Button>
           </Link>
           <div>
-            <h1 className="text-xl font-bold tracking-tight truncate max-w-md">{form.title || "Untitled"}</h1>
+            <h1 className="text-xl font-bold tracking-tight truncate max-w-md">
+              {form.title || "Untitled"}
+            </h1>
             <p className="text-xs text-muted-foreground">
-              {dirty ? "Unsaved changes" : lastSaved ? `Saved ${lastSaved.toLocaleTimeString()}` : "All changes saved"}
+              {dirty
+                ? "Unsaved changes"
+                : lastSaved
+                  ? `Saved ${lastSaved.toLocaleTimeString()}`
+                  : "All changes saved"}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {form.status === "published" && (
-            <Link to="/help/$category/$article" params={{ category: form.category_slug, article: form.slug }} target="_blank">
-              <Button size="sm" variant="outline"><ExternalLink className="h-4 w-4 mr-1" /> View live</Button>
+            <Link
+              to="/help/$category/$article"
+              params={{ category: form.category_slug, article: form.slug }}
+              target="_blank"
+            >
+              <Button size="sm" variant="outline">
+                <ExternalLink className="h-4 w-4 mr-1" /> View live
+              </Button>
             </Link>
           )}
           <Button size="sm" onClick={() => save()} disabled={saving}>
-            {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+            {saving ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-1" />
+            )}
             Save
           </Button>
         </div>
@@ -181,26 +206,52 @@ function EditArticlePage() {
           <Card className="p-4 space-y-4">
             <div>
               <Label htmlFor="title">Title</Label>
-              <Input id="title" value={form.title} onChange={(e) => update("title", e.target.value)} className="text-lg font-semibold" />
+              <Input
+                id="title"
+                value={form.title}
+                onChange={(e) => update("title", e.target.value)}
+                className="text-lg font-semibold"
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="slug">Slug</Label>
-                <Input id="slug" value={form.slug} onChange={(e) => update("slug", e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))} />
+                <Input
+                  id="slug"
+                  value={form.slug}
+                  onChange={(e) =>
+                    update("slug", e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))
+                  }
+                />
               </div>
               <div>
                 <Label htmlFor="category">Category</Label>
-                <Select value={form.category_slug} onValueChange={(v) => update("category_slug", v)}>
-                  <SelectTrigger id="category"><SelectValue /></SelectTrigger>
+                <Select
+                  value={form.category_slug}
+                  onValueChange={(v) => update("category_slug", v)}
+                >
+                  <SelectTrigger id="category">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    {cats.map((c) => <SelectItem key={c.slug} value={c.slug}>{c.name}</SelectItem>)}
+                    {cats.map((c) => (
+                      <SelectItem key={c.slug} value={c.slug}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div>
               <Label htmlFor="excerpt">Excerpt</Label>
-              <Textarea id="excerpt" rows={2} value={form.excerpt} onChange={(e) => update("excerpt", e.target.value)} placeholder="One-sentence summary shown in cards and search" />
+              <Textarea
+                id="excerpt"
+                rows={2}
+                value={form.excerpt}
+                onChange={(e) => update("excerpt", e.target.value)}
+                placeholder="One-sentence summary shown in cards and search"
+              />
             </div>
           </Card>
 
@@ -234,7 +285,10 @@ function EditArticlePage() {
                 content={form.content}
                 seoTitle={form.seo_title}
                 seoDescription={form.seo_description}
-                tags={form.tags.split(",").map((t) => t.trim()).filter(Boolean)}
+                tags={form.tags
+                  .split(",")
+                  .map((t) => t.trim())
+                  .filter(Boolean)}
                 authorName={form.author_name}
                 publishedAt={meta.published_at}
                 updatedAt={meta.updated_at}
@@ -247,8 +301,13 @@ function EditArticlePage() {
           <Card className="p-4 space-y-4">
             <div>
               <Label>Status</Label>
-              <Select value={form.status} onValueChange={(v) => update("status", v as ArticleForm["status"])}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select
+                value={form.status}
+                onValueChange={(v) => update("status", v as ArticleForm["status"])}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="draft">Draft</SelectItem>
                   <SelectItem value="published">Published</SelectItem>
@@ -257,16 +316,31 @@ function EditArticlePage() {
               </Select>
             </div>
             <div className="flex items-center justify-between">
-              <Label htmlFor="popular" className="cursor-pointer">Mark as popular</Label>
-              <Switch id="popular" checked={form.is_popular} onCheckedChange={(v) => update("is_popular", v)} />
+              <Label htmlFor="popular" className="cursor-pointer">
+                Mark as popular
+              </Label>
+              <Switch
+                id="popular"
+                checked={form.is_popular}
+                onCheckedChange={(v) => update("is_popular", v)}
+              />
             </div>
             <div>
               <Label htmlFor="tags">Tags</Label>
-              <Input id="tags" value={form.tags} onChange={(e) => update("tags", e.target.value)} placeholder="comma, separated, tags" />
+              <Input
+                id="tags"
+                value={form.tags}
+                onChange={(e) => update("tags", e.target.value)}
+                placeholder="comma, separated, tags"
+              />
             </div>
             <div>
               <Label htmlFor="author">Author name</Label>
-              <Input id="author" value={form.author_name} onChange={(e) => update("author_name", e.target.value)} />
+              <Input
+                id="author"
+                value={form.author_name}
+                onChange={(e) => update("author_name", e.target.value)}
+              />
             </div>
           </Card>
 
@@ -274,13 +348,26 @@ function EditArticlePage() {
             <h3 className="text-sm font-semibold">SEO</h3>
             <div>
               <Label htmlFor="seo_title">SEO title</Label>
-              <Input id="seo_title" value={form.seo_title} onChange={(e) => update("seo_title", e.target.value)} maxLength={70} />
+              <Input
+                id="seo_title"
+                value={form.seo_title}
+                onChange={(e) => update("seo_title", e.target.value)}
+                maxLength={70}
+              />
               <p className="text-xs text-muted-foreground mt-1">{form.seo_title.length}/70</p>
             </div>
             <div>
               <Label htmlFor="seo_desc">SEO description</Label>
-              <Textarea id="seo_desc" rows={3} value={form.seo_description} onChange={(e) => update("seo_description", e.target.value)} maxLength={160} />
-              <p className="text-xs text-muted-foreground mt-1">{form.seo_description.length}/160</p>
+              <Textarea
+                id="seo_desc"
+                rows={3}
+                value={form.seo_description}
+                onChange={(e) => update("seo_description", e.target.value)}
+                maxLength={160}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {form.seo_description.length}/160
+              </p>
             </div>
           </Card>
         </div>

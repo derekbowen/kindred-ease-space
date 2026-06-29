@@ -52,7 +52,7 @@ export function clearEmailTemplateCache(key?: string) {
 async function renderTemplate(
   key: string,
   defaults: { subject: string; html: string; text: string },
-  vars: Record<string, string | undefined | null>
+  vars: Record<string, string | undefined | null>,
 ): Promise<RenderedEmail | null> {
   const override = await loadTemplateOverride(key);
   if (override && override.is_enabled === false) return null;
@@ -87,10 +87,7 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
     return { ok: false, error: "EMAILIT_API_KEY not configured" };
   }
 
-  const from =
-    params.from ||
-    process.env.FROM_EMAIL ||
-    "founders.click <noreply@founders.click>";
+  const from = params.from || process.env.FROM_EMAIL || "founders.click <noreply@founders.click>";
 
   const body: Record<string, unknown> = {
     from,
@@ -135,8 +132,7 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
 // --- Templates ---------------------------------------------------------
 
 const BRAND = "founders.click";
-const APP_URL =
-  process.env.PUBLIC_APP_URL || "https://founders.click";
+const APP_URL = process.env.PUBLIC_APP_URL || "https://founders.click";
 
 const baseStyle = `font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#0f172a;line-height:1.55;max-width:560px;margin:0 auto;padding:24px;`;
 const btnStyle = `display:inline-block;background:#0f172a;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;`;
@@ -201,15 +197,35 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
     defaultText: `New support ticket\n\nFrom: {{whoText}}\nPriority: {{priority}}{{categoryLineText}}\n\nSubject: {{subject}}\n\n{{message}}\n\nOpen inbox: {{ticketUrl}}\nTicket ID: {{ticketId}}`,
     placeholders: [
       { name: "subject", description: "Ticket subject", sample: "Cannot publish page" },
-      { name: "message", description: "Original message body", sample: "I keep getting an error..." },
-      { name: "who", description: "Submitter HTML (Name <email>)", sample: "Alex &lt;alex@x.com&gt;" },
+      {
+        name: "message",
+        description: "Original message body",
+        sample: "I keep getting an error...",
+      },
+      {
+        name: "who",
+        description: "Submitter HTML (Name <email>)",
+        sample: "Alex &lt;alex@x.com&gt;",
+      },
       { name: "whoText", description: "Submitter plain text", sample: "Alex <alex@x.com>" },
       { name: "priority", description: "Priority", sample: "high" },
       { name: "priorityUpper", description: "Priority uppercase", sample: "HIGH" },
-      { name: "categoryLine", description: "Optional category line (HTML)", sample: " · <strong>Category:</strong> billing" },
-      { name: "categoryLineText", description: "Optional category line (text)", sample: "\nCategory: billing" },
+      {
+        name: "categoryLine",
+        description: "Optional category line (HTML)",
+        sample: " · <strong>Category:</strong> billing",
+      },
+      {
+        name: "categoryLineText",
+        description: "Optional category line (text)",
+        sample: "\nCategory: billing",
+      },
       { name: "ticketId", description: "Ticket ID", sample: "abc-123" },
-      { name: "ticketUrl", description: "Admin inbox URL", sample: `${APP_URL}/app/admin/help/tickets` },
+      {
+        name: "ticketUrl",
+        description: "Admin inbox URL",
+        sample: `${APP_URL}/app/admin/help/tickets`,
+      },
     ],
   },
   {
@@ -252,14 +268,19 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
       { name: "name", description: "Recipient name", sample: "Alex" },
       { name: "subject", description: "Ticket subject", sample: "Cannot publish page" },
       { name: "statusLabel", description: "New status label", sample: "Resolved" },
-      { name: "statusBody", description: "Status-specific copy", sample: "We've marked this ticket as resolved." },
+      {
+        name: "statusBody",
+        description: "Status-specific copy",
+        sample: "We've marked this ticket as resolved.",
+      },
       { name: "ticketId", description: "Ticket ID", sample: "abc-123" },
     ],
   },
   {
     key: "help_feedback_followup",
     name: "Help feedback follow-up",
-    description: "Sent to a user who left negative feedback on a help article so staff can ask what was missing.",
+    description:
+      "Sent to a user who left negative feedback on a help article so staff can ask what was missing.",
     category: "help",
     defaultSubject: `Following up on your feedback about "{{articleTitle}}"`,
     defaultHtml: `<div style="${baseStyle}">
@@ -276,8 +297,16 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
       { name: "name", description: "Recipient name (optional)", sample: "Alex" },
       { name: "articleTitle", description: "Article title", sample: "How billing works" },
       { name: "articleUrl", description: "Public article URL", sample: `${APP_URL}/help/billing` },
-      { name: "commentBlock", description: "Quoted feedback block (HTML)", sample: '<blockquote>Couldn\'t find pricing tiers</blockquote>' },
-      { name: "commentBlockText", description: "Quoted feedback (plain text)", sample: '> Couldn\'t find pricing tiers\n\n' },
+      {
+        name: "commentBlock",
+        description: "Quoted feedback block (HTML)",
+        sample: "<blockquote>Couldn't find pricing tiers</blockquote>",
+      },
+      {
+        name: "commentBlockText",
+        description: "Quoted feedback (plain text)",
+        sample: "> Couldn't find pricing tiers\n\n",
+      },
       { name: "staffName", description: "Staff signing the email", sample: "Sam" },
     ],
   },
@@ -291,21 +320,21 @@ export function getTemplateDefinition(key: string) {
 
 async function buildEmail(
   key: string,
-  vars: Record<string, string | undefined | null>
+  vars: Record<string, string | undefined | null>,
 ): Promise<RenderedEmail | null> {
   const def = TPL_BY_KEY.get(key);
   if (!def) return null;
   return renderTemplate(
     key,
     { subject: def.defaultSubject, html: def.defaultHtml, text: def.defaultText },
-    vars
+    vars,
   );
 }
 
 export function renderTemplatePreview(
   def: TemplateDefinition,
   override: { subject?: string | null; html?: string | null; text?: string | null } | null,
-  vars: Record<string, string | undefined | null>
+  vars: Record<string, string | undefined | null>,
 ): RenderedEmail {
   return {
     subject: applyVars(override?.subject || def.defaultSubject, vars),
@@ -328,8 +357,7 @@ export async function welcomeEmailTemplate(opts: { name?: string; workspaceSlug:
 
 // --- Support ticket templates -----------------------------------------
 
-export const SUPPORT_INBOX_EMAIL =
-  process.env.SUPPORT_INBOX_EMAIL || "support@founders.click";
+export const SUPPORT_INBOX_EMAIL = process.env.SUPPORT_INBOX_EMAIL || "support@founders.click";
 
 function escapeHtml(s: string): string {
   return s
@@ -384,10 +412,22 @@ export async function ticketReceivedUserTemplate(opts: {
 
 const STATUS_COPY: Record<string, { label: string; body: string }> = {
   open: { label: "Open", body: "Your ticket is back in our queue and we'll respond shortly." },
-  in_progress: { label: "In progress", body: "We're actively working on your ticket and will follow up with an update." },
-  waiting: { label: "Waiting on you", body: "We need a bit more information from you to keep moving. Please reply to your last message when you can." },
-  resolved: { label: "Resolved", body: "We've marked this ticket as resolved. If anything is still off, reply and we'll reopen it." },
-  closed: { label: "Closed", body: "This ticket is now closed. You can always reply to start a new conversation." },
+  in_progress: {
+    label: "In progress",
+    body: "We're actively working on your ticket and will follow up with an update.",
+  },
+  waiting: {
+    label: "Waiting on you",
+    body: "We need a bit more information from you to keep moving. Please reply to your last message when you can.",
+  },
+  resolved: {
+    label: "Resolved",
+    body: "We've marked this ticket as resolved. If anything is still off, reply and we'll reopen it.",
+  },
+  closed: {
+    label: "Closed",
+    body: "This ticket is now closed. You can always reply to start a new conversation.",
+  },
 };
 
 export async function ticketStatusChangedTemplate(opts: {
@@ -396,7 +436,10 @@ export async function ticketStatusChangedTemplate(opts: {
   name?: string | null;
   newStatus: string;
 }) {
-  const copy = STATUS_COPY[opts.newStatus] ?? { label: opts.newStatus, body: `Status updated to ${opts.newStatus}.` };
+  const copy = STATUS_COPY[opts.newStatus] ?? {
+    label: opts.newStatus,
+    body: `Status updated to ${opts.newStatus}.`,
+  };
   const greeting = opts.name ? `Hi ${escapeHtml(opts.name)},` : "Hi,";
   return buildEmail("ticket_status_changed", {
     ticketId: opts.ticketId,
@@ -430,4 +473,3 @@ export async function helpFeedbackFollowUpTemplate(opts: {
     staffName: opts.staffName ?? "",
   });
 }
-
