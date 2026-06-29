@@ -71,7 +71,32 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
       .eq("status", "published")
       .maybeSingle();
 
-    if (!page) return { page: null, host };
+    if (!page) {
+      // Legacy content_pages rows (pre-unification) still need to render at /p/{slug}.
+      const { data: legacy } = await sb()
+        .from("content_pages")
+        .select("id, slug, title, seo_title, seo_description, body_markdown, workspaces:workspace_id(name)")
+        .eq("workspace_id", workspaceId)
+        .eq("slug", data.slug)
+        .eq("status", "published")
+        .maybeSingle();
+      if (!legacy) return { page: null, host };
+      return {
+        page: {
+          id: legacy.id,
+          slug: legacy.slug ?? data.slug,
+          title: legacy.seo_title || legacy.title || data.slug,
+          meta_description: legacy.seo_description,
+          h1: legacy.title,
+          body_markdown: legacy.body_markdown,
+          variables: {},
+          template_slug: "city_hub",
+          workspace_name: (legacy.workspaces as any)?.name ?? "",
+          listings: [],
+        },
+        host,
+      };
+    }
 
     const f = (page.listing_filter ?? {}) as Record<string, any>;
     let q = sb()

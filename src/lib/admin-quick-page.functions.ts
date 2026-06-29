@@ -4,15 +4,15 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
 import { OPENROUTER_BASE, resolvePlatformModel, creditsForUsage } from "@/lib/ai-pricing";
+import {
+  findUniqueTenantSlug,
+  getActiveTemplateId,
+  slugifyPage,
+} from "@/lib/tenant-page-helpers.server";
 
 /**
- * Workspace-scoped "quick page" creator. The caller picks a workspace they
- * belong to, types a title + topic, and we generate a markdown page via the
- * Lovable AI gateway and insert it into content_pages with workspace_id set
- * so the existing RLS keeps it scoped to their workspace.
- *
- * Ported from the PRNM admin engine (single-tenant) and retrofitted for
- * the founders.click multi-tenant model.
+ * Workspace-scoped "quick page" creator. Generates markdown via OpenRouter
+ * and publishes directly to tenant_pages so /p/{slug} serves the page.
  */
 
 const InputSchema = z.object({
@@ -23,15 +23,6 @@ const InputSchema = z.object({
   model: z.string().default("google/gemini-2.5-flash"),
   slug: z.string().trim().max(120).optional(),
 });
-
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[\u2018\u2019']/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
-}
 
 const SYSTEM = `
 You write SEO-optimised brand content for a marketplace business.
@@ -91,24 +82,10 @@ export const createQuickPage = createServerFn({ method: "POST" })
       throw new Error(qErr.message);
     }
 
-    const baseSlug = slugify(data.slug || data.title);
+    const baseSlug = slugifyPage(data.slug || data.title);
     if (!baseSlug) throw new Error("Could not derive slug from title");
-
-    // Find a unique slug WITHIN this workspace (different workspaces can share slugs)
-    let slug = baseSlug;
-    let suffix = 1;
-    while (true) {
-      const { data: existing } = await supabaseAdmin
-        .from("content_pages")
-        .select("id")
-        .eq("workspace_id", data.workspaceId)
-        .eq("url_path", `/p/${slug}`)
-        .maybeSingle();
-      if (!existing) break;
-      suffix += 1;
-      slug = `${baseSlug}-${suffix}`;
-      if (suffix > 50) throw new Error("Could not find a unique slug");
-    }
+    const slug = await findUniqueTenantSlug(data.workspaceId, baseSlug);
+    const templateId = await getActiveTemplateId("city_hub");
 
     const userPrompt = `Write a brand page.
 
@@ -159,24 +136,23 @@ seo_title (≤60 chars) and seo_description (≤155 chars) optimised for the top
     }
 
     const url_path = `/p/${slug}`;
+    const pageTitle = gen.title || data.title;
     const { data: inserted, error: insErr } = await supabaseAdmin
-      .from("content_pages")
+      .from("tenant_pages")
       .insert({
         workspace_id: data.workspaceId,
+        template_id: templateId,
         slug,
-        url_path,
-        title: gen.title || data.title,
-        seo_title: (gen.seo_title || data.title).slice(0, 70),
-        seo_description: (gen.seo_description || data.description || "").slice(0, 160),
+        title: pageTitle,
+        meta_description: (gen.seo_description || data.description || "").slice(0, 320),
+        h1: pageTitle,
         body_markdown: gen.body_markdown,
-        category: "Resource/Article Page",
-        template_type: "resource",
+        variables: {},
+        listing_filter: { limit: 24, sort: "newest" },
         status: "published",
-        in_sitemap: true,
-        locale: "en",
-        priority: 0,
+        published_at: new Date().toISOString(),
       })
-      .select("id, url_path, title, slug")
+      .select("id, slug, title")
       .single();
     if (insErr) throw new Error(insErr.message);
 
@@ -209,7 +185,7 @@ seo_title (≤60 chars) and seo_description (≤155 chars) optimised for the top
 
     return {
       ok: true,
-      page: inserted,
+      page: { ...inserted, url_path },
       words: gen.body_markdown.split(/\s+/).length,
       creditsCharged,
     };

@@ -44,27 +44,62 @@ export const auditPage = createServerFn({ method: "POST" })
 
     const path = normalizeAuditPath(data.url_path);
 
-    const { data: page } = await sb()
-      .from("content_pages")
-      .select("url_path, title, seo_description, body_markdown")
+    const slug = path.replace(/^\/p\//, "").replace(/^\//, "");
+    let page: { url_path: string; title: string; seo_description: string | null; body_markdown: string | null } | null =
+      null;
+
+    const { data: tenantPage } = await sb()
+      .from("tenant_pages")
+      .select("slug, title, meta_description, body_markdown, status")
       .eq("workspace_id", data.workspaceId)
-      .eq("url_path", path)
+      .eq("slug", slug)
       .maybeSingle();
+    if (tenantPage) {
+      page = {
+        url_path: `/p/${tenantPage.slug}`,
+        title: tenantPage.title,
+        seo_description: tenantPage.meta_description,
+        body_markdown: tenantPage.body_markdown,
+      };
+    } else {
+      const { data: legacy } = await sb()
+        .from("content_pages")
+        .select("url_path, title, seo_description, body_markdown")
+        .eq("workspace_id", data.workspaceId)
+        .eq("url_path", path)
+        .maybeSingle();
+      page = legacy;
+    }
 
     if (!page) {
-      const rawNeedle = path.replace(/^\//, "").split("/").pop() || path;
-      // Strip PostgREST metacharacters to prevent .or() filter injection.
+      const rawNeedle = slug || path.replace(/^\//, "");
       const needle = rawNeedle.replace(/[%_,()*]/g, "");
-      const { data: similar } = await sb()
-        .from("content_pages")
-        .select("url_path, title, status")
-        .eq("workspace_id", data.workspaceId)
-        .or(`url_path.ilike.%${needle}%,title.ilike.%${needle}%`)
-        .limit(8);
+      const [{ data: tenantSimilar }, { data: legacySimilar }] = await Promise.all([
+        sb()
+          .from("tenant_pages")
+          .select("slug, title, status")
+          .eq("workspace_id", data.workspaceId)
+          .or(`slug.ilike.%${needle}%,title.ilike.%${needle}%`)
+          .limit(8),
+        sb()
+          .from("content_pages")
+          .select("url_path, title, status")
+          .eq("workspace_id", data.workspaceId)
+          .or(`url_path.ilike.%${needle}%,title.ilike.%${needle}%`)
+          .limit(8),
+      ]);
+      const suggestions = [
+        ...(tenantSimilar || []).map((r: any) => ({
+          url_path: `/p/${r.slug}`,
+          title: r.title,
+          status: r.status,
+        })),
+        ...(legacySimilar || []),
+      ].slice(0, 8);
       return {
         ok: false as const,
         error: `Page not found for "${path}".`,
-        suggestions: (similar || []).map((r: any) => ({ url_path: r.url_path, title: r.title, status: r.status })),
+        suggestions,
       };
     }
 

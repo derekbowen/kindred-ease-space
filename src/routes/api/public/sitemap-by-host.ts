@@ -39,16 +39,31 @@ export const Route = createFileRoute("/api/public/sitemap-by-host")({
           .maybeSingle();
         if (!domain) return new Response("not found", { status: 404 });
 
-        const { data: pages } = await sb()
-          .from("content_pages")
-          .select("slug, updated_at")
-          .eq("workspace_id", domain.workspace_id)
-          .eq("status", "published")
-          .eq("in_sitemap", true)
-          .order("updated_at", { ascending: false })
-          .limit(50_000);
+        const [{ data: tenantPages }, { data: legacyPages }] = await Promise.all([
+          sb()
+            .from("tenant_pages")
+            .select("slug, updated_at")
+            .eq("workspace_id", domain.workspace_id)
+            .eq("status", "published")
+            .order("updated_at", { ascending: false })
+            .limit(50_000),
+          sb()
+            .from("content_pages")
+            .select("slug, updated_at")
+            .eq("workspace_id", domain.workspace_id)
+            .eq("status", "published")
+            .eq("in_sitemap", true)
+            .order("updated_at", { ascending: false })
+            .limit(50_000),
+        ]);
 
-        const rows = pages || [];
+        const seen = new Set<string>();
+        const rows = [...(tenantPages || []), ...(legacyPages || [])].filter((p: any) => {
+          const slug = String(p.slug || "").replace(/^\/+/, "");
+          if (!slug || seen.has(slug)) return false;
+          seen.add(slug);
+          return true;
+        });
         if (rows.length === 0) return emptySitemapResponse();
 
         const urls = rows

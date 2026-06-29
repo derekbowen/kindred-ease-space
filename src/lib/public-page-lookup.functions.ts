@@ -55,6 +55,30 @@ export const lookupPageByHostname = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!domain) return { ok: false as const, error: "domain_not_found" };
 
+    const { data: tenantPage } = await sb()
+      .from("tenant_pages")
+      .select("id, slug, title, body_markdown, meta_description, updated_at")
+      .eq("workspace_id", domain.workspace_id)
+      .eq("slug", slug)
+      .eq("status", "published")
+      .maybeSingle();
+
+    if (tenantPage) {
+      return {
+        ok: true as const,
+        page: {
+          id: tenantPage.id,
+          slug: tenantPage.slug,
+          title: tenantPage.title,
+          body_markdown: tenantPage.body_markdown,
+          seo_title: tenantPage.title,
+          seo_description: tenantPage.meta_description,
+          hero_image_url: null,
+          updated_at: tenantPage.updated_at,
+        },
+      };
+    }
+
     const { data: page } = await sb()
       .from("content_pages")
       .select("id, slug, title, body_markdown, seo_title, seo_description, hero_image_url, updated_at")

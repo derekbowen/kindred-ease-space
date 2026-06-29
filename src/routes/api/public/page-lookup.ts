@@ -102,6 +102,34 @@ export const Route = createFileRoute("/api/public/page-lookup")({
           .maybeSingle();
         if (!domain) return json(200, { ok: false, error: "domain_not_found" });
 
+        const { data: tenantPage } = await sb()
+          .from("tenant_pages")
+          .select("id, slug, title, body_markdown, meta_description, updated_at")
+          .eq("workspace_id", domain.workspace_id)
+          .eq("slug", slug)
+          .eq("status", "published")
+          .maybeSingle();
+
+        if (tenantPage) {
+          return json(
+            200,
+            {
+              ok: true,
+              page: {
+                id: tenantPage.id,
+                slug: tenantPage.slug,
+                title: tenantPage.title,
+                body_markdown: tenantPage.body_markdown,
+                seo_title: tenantPage.title,
+                seo_description: tenantPage.meta_description,
+                hero_image_url: null,
+                updated_at: tenantPage.updated_at,
+              },
+            },
+            { "Cache-Control": "public, max-age=60" },
+          );
+        }
+
         const { data: page } = await sb()
           .from("content_pages")
           .select("id, slug, title, body_markdown, seo_title, seo_description, hero_image_url, updated_at")
@@ -112,7 +140,7 @@ export const Route = createFileRoute("/api/public/page-lookup")({
           .maybeSingle();
         if (!page) return json(200, { ok: false, error: "page_not_found" });
 
-        return json(200, { ok: true, page });
+        return json(200, { ok: true, page }, { "Cache-Control": "public, max-age=60" });
       },
     },
   },

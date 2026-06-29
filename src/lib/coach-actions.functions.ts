@@ -3,6 +3,7 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
+import { getActiveTemplateId, slugifyPage } from "@/lib/tenant-page-helpers.server";
 
 /**
  * Confirmed mutation runner for coach insight actions.
@@ -50,16 +51,12 @@ async function callAI(systemPrompt: string, userPrompt: string, apiKey: string):
   return j.choices?.[0]?.message?.content?.trim() ?? "";
 }
 
-function slugify(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
-}
-
 async function fixThinPage(workspaceId: string, payload: Record<string, unknown>, apiKey: string): Promise<ActionResult> {
   const pageId = String(payload.page_id ?? "");
   if (!pageId) throw new Error("Missing page_id");
   const { data: page, error } = await supabaseAdmin
-    .from("content_pages")
-    .select("id, title, slug, body_markdown, description, category")
+    .from("tenant_pages")
+    .select("id, title, slug, body_markdown, meta_description")
     .eq("id", pageId)
     .eq("workspace_id", workspaceId)
     .maybeSingle();
@@ -68,12 +65,12 @@ async function fixThinPage(workspaceId: string, payload: Record<string, unknown>
 
   const expanded = await callAI(
     "You expand thin SEO pages. Return Markdown only, 600-1000 words, no frontmatter, use ## and ### headings, end with a CTA paragraph.",
-    `Expand this page. Title: "${page.title}". Existing body:\n\n${page.body_markdown ?? page.description ?? ""}`,
+    `Expand this page. Title: "${page.title}". Existing body:\n\n${page.body_markdown ?? page.meta_description ?? ""}`,
     apiKey,
   );
 
   const { error: upErr } = await supabaseAdmin
-    .from("content_pages")
+    .from("tenant_pages")
     .update({ body_markdown: expanded })
     .eq("id", pageId)
     .eq("workspace_id", workspaceId);
@@ -87,8 +84,8 @@ async function addMeta(workspaceId: string, payload: Record<string, unknown>, ap
   if (ids.length === 0) throw new Error("Missing page_ids");
 
   const { data: pages, error } = await supabaseAdmin
-    .from("content_pages")
-    .select("id, title, body_markdown, description")
+    .from("tenant_pages")
+    .select("id, title, body_markdown, meta_description")
     .in("id", ids)
     .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
@@ -97,15 +94,18 @@ async function addMeta(workspaceId: string, payload: Record<string, unknown>, ap
   for (const p of pages ?? []) {
     const out = await callAI(
       'You write SEO meta. Return STRICT JSON: {"seo_title":"...","seo_description":"..."} with seo_title ≤60 chars and seo_description ≤155 chars. No prose.',
-      `Page title: "${p.title}". Body excerpt:\n${(p.body_markdown ?? p.description ?? "").slice(0, 1200)}`,
+      `Page title: "${p.title}". Body excerpt:\n${(p.body_markdown ?? p.meta_description ?? "").slice(0, 1200)}`,
       apiKey,
     );
     let parsed: { seo_title?: string; seo_description?: string } = {};
     try { parsed = JSON.parse(out.replace(/```json|```/g, "").trim()); } catch { /* skip */ }
     if (!parsed.seo_title || !parsed.seo_description) continue;
     const { error: upErr } = await supabaseAdmin
-      .from("content_pages")
-      .update({ seo_title: parsed.seo_title.slice(0, 60), seo_description: parsed.seo_description.slice(0, 155) })
+      .from("tenant_pages")
+      .update({
+        title: parsed.seo_title.slice(0, 200),
+        meta_description: parsed.seo_description.slice(0, 320),
+      })
       .eq("id", p.id)
       .eq("workspace_id", workspaceId);
     if (!upErr) updated += 1;
@@ -116,16 +116,20 @@ async function addMeta(workspaceId: string, payload: Record<string, unknown>, ap
 async function createCityPage(workspaceId: string, payload: Record<string, unknown>, apiKey: string): Promise<ActionResult> {
   const city = String(payload.city ?? "").trim();
   if (!city) throw new Error("Missing city");
+  const state = String(payload.state ?? "").trim();
   const title = `Pool Rental in ${city}`;
-  const slug = slugify(city);
+  const baseSlug = slugifyPage(city);
+  if (!baseSlug) throw new Error("Could not derive slug from city");
 
   const { data: existing } = await supabaseAdmin
-    .from("content_pages")
+    .from("tenant_pages")
     .select("id")
     .eq("workspace_id", workspaceId)
-    .eq("slug", slug)
+    .eq("slug", baseSlug)
     .maybeSingle();
-  if (existing) throw new Error(`A page with slug "${slug}" already exists`);
+  if (existing) throw new Error(`A page with slug "${baseSlug}" already exists`);
+
+  const templateId = await getActiveTemplateId("city_hub");
 
   const body = await callAI(
     "You write SEO city pages for a pool rental marketplace. Return Markdown only, 700-1100 words, ## and ### headings, friendly tone, end with a CTA paragraph.",
@@ -141,24 +145,31 @@ async function createCityPage(workspaceId: string, payload: Record<string, unkno
   let seo: { seo_title?: string; seo_description?: string } = {};
   try { seo = JSON.parse(seoOut.replace(/```json|```/g, "").trim()); } catch { /* fall back */ }
 
+  const pageTitle = (seo.seo_title ?? title).slice(0, 200);
   const { data: inserted, error: insErr } = await supabaseAdmin
-    .from("content_pages")
+    .from("tenant_pages")
     .insert({
       workspace_id: workspaceId,
-      title,
-      slug,
-      category: "city",
+      template_id: templateId,
+      title: pageTitle,
+      slug: baseSlug,
+      h1: title,
+      meta_description: (seo.seo_description ?? `Pool rentals in ${city}.`).slice(0, 320),
       body_markdown: body,
-      seo_title: (seo.seo_title ?? title).slice(0, 60),
-      seo_description: (seo.seo_description ?? `Pool rentals in ${city}.`).slice(0, 155),
-      status: "draft",
-      in_sitemap: false,
+      variables: { city, ...(state ? { state } : {}), category_plural: "pools" },
+      listing_filter: { city, ...(state ? { state } : {}), limit: 24, sort: "newest" },
+      status: "published",
+      published_at: new Date().toISOString(),
     })
     .select("id, slug")
     .single();
   if (insErr) throw new Error(insErr.message);
 
-  return { ok: true, summary: `Drafted "${title}" (${body.length} chars)`, details: { pageId: inserted.id, slug: inserted.slug } };
+  return {
+    ok: true,
+    summary: `Published "${title}" at /p/${inserted.slug}`,
+    details: { pageId: inserted.id, slug: inserted.slug },
+  };
 }
 
 async function addInternalLinks(workspaceId: string, payload: Record<string, unknown>, apiKey: string): Promise<ActionResult> {
@@ -166,7 +177,7 @@ async function addInternalLinks(workspaceId: string, payload: Record<string, unk
   if (!pageId) throw new Error("Missing page_id");
 
   const { data: page, error } = await supabaseAdmin
-    .from("content_pages")
+    .from("tenant_pages")
     .select("id, title, slug, body_markdown")
     .eq("id", pageId)
     .eq("workspace_id", workspaceId)
@@ -174,19 +185,17 @@ async function addInternalLinks(workspaceId: string, payload: Record<string, unk
   if (error) throw new Error(error.message);
   if (!page || !page.body_markdown) throw new Error("Page not found or has no body");
 
-  // Pull a candidate set of link targets from the same workspace
   const { data: candidates } = await supabaseAdmin
-    .from("content_pages")
-    .select("title, slug, category")
+    .from("tenant_pages")
+    .select("title, slug")
     .eq("workspace_id", workspaceId)
     .eq("status", "published")
     .neq("id", pageId)
-    .not("slug", "is", null)
     .limit(50);
 
   const targets = (candidates ?? [])
     .filter((c) => c.slug)
-    .map((c) => `- /p/${c.slug} — ${c.title} (${c.category ?? "page"})`).join("\n");
+    .map((c) => `- /p/${c.slug} — ${c.title}`).join("\n");
 
   if (!targets) throw new Error("No internal link candidates available");
 
@@ -203,7 +212,7 @@ async function addInternalLinks(workspaceId: string, payload: Record<string, unk
   if (added === 0) throw new Error("Model did not add any new internal links");
 
   const { error: upErr } = await supabaseAdmin
-    .from("content_pages")
+    .from("tenant_pages")
     .update({ body_markdown: updated })
     .eq("id", pageId)
     .eq("workspace_id", workspaceId);
