@@ -273,19 +273,14 @@ export const generateLinkSuggestions = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
-    const { data: pages } = await sb()
-      .from("content_pages")
-      .select("url_path, title, body_markdown")
-      .eq("workspace_id", data.workspaceId)
-      .eq("status", "published")
-      .order("updated_at", { ascending: false })
-      .limit(data.sampleSize);
-    if (!pages?.length) return { ok: false as const, error: "No published pages to analyze" };
+    const { fetchPublishedPages } = await import("@/lib/page-data.helpers.server");
+    const pages = await fetchPublishedPages(data.workspaceId, { limit: data.sampleSize });
+    if (!pages.length) return { ok: false as const, error: "No published pages to analyze" };
 
-    const tokenized = (pages as any[]).map((p) => ({
-      url: p.url_path as string,
-      title: p.title as string | null,
-      body: p.body_markdown as string,
+    const tokenized = pages.map((p) => ({
+      url: p.url_path,
+      title: p.title,
+      body: p.body_markdown ?? "",
       tokens: tokenize(`${p.title || ""} ${(p.body_markdown || "").slice(0, 4000)}`),
     }));
 

@@ -3,6 +3,9 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
+import { recordPage404, tenantUrlPath } from "@/lib/page-data.helpers.server";
+
+const sb = () => supabaseAdmin as any;
 
 export interface Content404Row {
   id: string;
@@ -27,7 +30,7 @@ export const list404s = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }): Promise<{ rows: Content404Row[] }> => {
     await assertWorkspaceMember(data.workspaceId, (context as any).userId);
-    let q = (supabaseAdmin as any)
+    let q = sb()
       .from("content_404_log")
       .select("id,url_path,slug,referrer,hit_count,first_seen_at,last_seen_at,resolved_at,resolution_notes")
       .eq("workspace_id", data.workspaceId)
@@ -35,7 +38,7 @@ export const list404s = createServerFn({ method: "POST" })
       .limit(data.limit);
     if (data.unresolvedOnly) q = q.is("resolved_at", null);
     const { data: rows, error } = await q;
-    if (error) return { rows: [] };
+    if (error) throw new Error(error.message);
     return { rows: (rows ?? []) as Content404Row[] };
   });
 
@@ -50,7 +53,7 @@ export const resolve404 = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceMember(data.workspaceId, (context as any).userId);
-    const { error } = await (supabaseAdmin as any)
+    const { error } = await sb()
       .from("content_404_log")
       .update({
         resolved_at: new Date().toISOString(),
@@ -73,8 +76,8 @@ export const redirect404 = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceMember(data.workspaceId, (context as any).userId);
-    const sb = supabaseAdmin as any;
-    const { data: row, error: rowErr } = await sb
+
+    const { data: row, error: rowErr } = await sb()
       .from("content_404_log")
       .select("url_path, slug")
       .eq("id", data.id)
@@ -86,32 +89,59 @@ export const redirect404 = createServerFn({ method: "POST" })
       ? data.target : `/${data.target}`;
 
     const slug = (row.slug || row.url_path.replace(/^\/p\//, "")).slice(0, 200);
-    const { data: existing } = await sb
+    const url_path = row.url_path || tenantUrlPath(slug);
+
+    const { data: existing } = await sb()
       .from("content_pages")
       .select("id")
-      .eq("url_path", row.url_path)
+      .eq("url_path", url_path)
       .eq("workspace_id", data.workspaceId)
       .maybeSingle();
 
     if (existing) {
-      await sb.from("content_pages")
-        .update({ redirect_to: target, status: "redirect" })
+      const { error: upErr } = await sb()
+        .from("content_pages")
+        .update({ redirect_to: target, status: "redirect", in_sitemap: false })
         .eq("id", existing.id)
         .eq("workspace_id", data.workspaceId);
+      if (upErr) return { ok: false, error: upErr.message };
     } else {
-      await sb.from("content_pages").insert({
+      const { error: insErr } = await sb().from("content_pages").insert({
         workspace_id: data.workspaceId,
-        url_path: row.url_path, slug, redirect_to: target, status: "redirect",
-        title: `Redirect → ${target}`, in_sitemap: false, template_type: "redirect",
+        url_path,
+        slug,
+        redirect_to: target,
+        status: "redirect",
+        title: `Redirect → ${target}`,
+        in_sitemap: false,
+        template_type: "redirect",
+        category: "redirect",
       });
+      if (insErr) return { ok: false, error: insErr.message };
     }
 
-    await sb.from("content_404_log")
+    const { error: logErr } = await sb()
+      .from("content_404_log")
       .update({
         resolved_at: new Date().toISOString(),
         resolution_notes: `redirect → ${target}`,
       })
       .eq("id", data.id)
       .eq("workspace_id", data.workspaceId);
+    if (logErr) return { ok: false, error: logErr.message };
+
     return { ok: true, target };
+  });
+
+/** Called from public page loader when a /p/{slug} request 404s on a known host. */
+export const logPublic404 = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z.object({
+      workspaceId: workspaceIdSchema,
+      slug: z.string().min(1).max(200),
+    }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    await recordPage404(data.workspaceId, data.slug);
+    return { ok: true as const };
   });

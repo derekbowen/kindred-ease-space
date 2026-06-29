@@ -1,5 +1,6 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { useCallback, useEffect, useState } from "react";
+import { z } from "zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,8 +9,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { getMe } from "@/lib/auth.functions";
 import { toast } from "sonner";
 
+const billingSearchSchema = z.object({
+  success: z.coerce.string().optional(),
+  canceled: z.coerce.string().optional(),
+  session_id: z.string().optional(),
+});
+
 export const Route = createFileRoute("/_authenticated/app/billing")({
   head: () => ({ meta: [{ title: "Billing & Credits — founders.click" }] }),
+  validateSearch: billingSearchSchema,
   component: BillingPage,
 });
 
@@ -21,30 +29,55 @@ const TIERS: Tier[] = [
 ];
 
 function BillingPage() {
+  const navigate = useNavigate();
+  const search = useSearch({ from: "/_authenticated/app/billing" });
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [balance, setBalance] = useState<number>(0);
   const [sub, setSub] = useState<{ plan_tier: string; status: string; current_period_end: string | null } | null>(null);
   const [packQty, setPackQty] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const loadBilling = useCallback(async (wsId: string) => {
+    const [{ data: bal, error: balErr }, { data: subRow, error: subErr }] = await Promise.all([
+      supabase.from("credit_balances").select("balance").eq("workspace_id", wsId).maybeSingle(),
+      supabase.from("subscriptions").select("plan_tier, status, current_period_end").eq("workspace_id", wsId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    ]);
+    if (balErr) throw balErr;
+    if (subErr) throw subErr;
+    setBalance(bal?.balance ?? 0);
+    setSub(subRow);
+  }, []);
 
   useEffect(() => {
     (async () => {
       try {
         const me = await getMe();
         const wsId = me.memberships?.[0]?.workspace_id ?? null;
-        if (!wsId) return;
+        if (!wsId) {
+          setLoadError("No workspace found for your account.");
+          return;
+        }
         setWorkspaceId(wsId);
-        const [{ data: bal }, { data: subRow }] = await Promise.all([
-          supabase.from("credit_balances").select("balance").eq("workspace_id", wsId).maybeSingle(),
-          supabase.from("subscriptions").select("plan_tier, status, current_period_end").eq("workspace_id", wsId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-        ]);
-        setBalance(bal?.balance ?? 0);
-        setSub(subRow);
+        await loadBilling(wsId);
       } catch (e) {
-        console.error("billing load failed", e);
+        const msg = e instanceof Error ? e.message : "Failed to load billing";
+        setLoadError(msg);
+        toast.error(msg);
       }
     })();
-  }, []);
+  }, [loadBilling]);
+
+  useEffect(() => {
+    if (search.success) {
+      toast.success("Payment received — your plan or credits will update shortly.");
+      if (workspaceId) loadBilling(workspaceId).catch(() => {});
+      navigate({ to: "/app/billing", search: {}, replace: true });
+    } else if (search.canceled) {
+      toast.info("Checkout canceled.");
+      navigate({ to: "/app/billing", search: {}, replace: true });
+    }
+  }, [search.success, search.canceled, workspaceId, loadBilling, navigate]);
 
   async function checkout(mode: "subscription" | "credits", quantity = 1, tier?: Tier["key"]) {
     if (!workspaceId) return toast.error("No workspace");
@@ -55,8 +88,9 @@ function BillingPage() {
       });
       if (error) throw error;
       if (data?.url) window.location.href = data.url;
+      else throw new Error("No checkout URL returned");
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e instanceof Error ? e.message : "Checkout failed");
     } finally {
       setLoading(false);
     }
@@ -71,8 +105,9 @@ function BillingPage() {
       });
       if (error) throw error;
       if (data?.url) window.location.href = data.url;
+      else throw new Error("No checkout URL returned");
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e instanceof Error ? e.message : "Checkout failed");
     } finally {
       setLoading(false);
     }
@@ -83,6 +118,7 @@ function BillingPage() {
       <div>
         <h1 className="text-2xl font-bold">Billing & Credits</h1>
         <p className="text-sm text-muted-foreground">Pick a plan. Top up extra credits at $10 per 1,000.</p>
+        {loadError && <p className="text-sm text-destructive mt-2">{loadError}</p>}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

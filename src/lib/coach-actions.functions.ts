@@ -103,7 +103,6 @@ async function addMeta(workspaceId: string, payload: Record<string, unknown>, ap
     const { error: upErr } = await supabaseAdmin
       .from("tenant_pages")
       .update({
-        title: parsed.seo_title.slice(0, 200),
         meta_description: parsed.seo_description.slice(0, 320),
       })
       .eq("id", p.id)

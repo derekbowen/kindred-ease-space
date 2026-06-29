@@ -23,14 +23,16 @@ function randomCode(len = 8): string {
 
 /** Ensure a settings row exists and return it. */
 async function ensureSettings(workspaceId: string) {
-  const { data } = await sb()
+  const { data, error } = await sb()
     .from("workspace_affiliate_settings").select("*").eq("workspace_id", workspaceId).maybeSingle();
+  if (error) throw new Error(error.message);
   if (data) return data;
-  const { data: created } = await sb()
+  const { data: created, error: insErr } = await sb()
     .from("workspace_affiliate_settings")
     .insert({ workspace_id: workspaceId })
     .select("*")
     .maybeSingle();
+  if (insErr) throw new Error(insErr.message);
   return created ?? { workspace_id: workspaceId, addon_status: "inactive", currency: "USD", referrer_param: "referrerID" };
 }
 
@@ -228,7 +230,8 @@ export const listAffiliates = createServerFn({ method: "GET" })
       const s = data.search.replace(/[%_,()*]/g, "");
       if (s) q = q.or(`name.ilike.%${s}%,email.ilike.%${s}%`);
     }
-    const { data: rows } = await q;
+    const { data: rows, error: listErr } = await q;
+    if (listErr) throw new Error(listErr.message);
 
     // Per-affiliate GMV / revenue / payouts paid.
     const { data: txns } = await sb()
@@ -452,18 +455,39 @@ export const decideApplication = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceOwner(data.workspaceId, context.userId);
-    const { data: app } = await sb()
+    await assertAddon(data.workspaceId);
+    const { data: app, error: appErr } = await sb()
       .from("affiliate_applications").select("*").eq("id", data.id).eq("workspace_id", data.workspaceId).maybeSingle();
+    if (appErr) throw new Error(appErr.message);
     if (!app) throw new Error("Application not found");
+    if (app.status !== "pending") throw new Error("Application already decided");
+
     if (data.approve) {
-      const code = randomCode();
-      await sb().from("affiliates").insert({
+      const { data: existing } = await sb()
+        .from("affiliates")
+        .select("id")
+        .eq("workspace_id", data.workspaceId)
+        .eq("email", app.email)
+        .maybeSingle();
+      if (existing) throw new Error("An affiliate with this email already exists");
+
+      let code = randomCode();
+      for (let i = 0; i < 5; i++) {
+        const { data: ex } = await sb()
+          .from("affiliates").select("id").eq("workspace_id", data.workspaceId).eq("referral_code", code).maybeSingle();
+        if (!ex) break;
+        code = randomCode();
+      }
+      const { error: affErr } = await sb().from("affiliates").insert({
         workspace_id: data.workspaceId, program_id: app.program_id,
         name: app.name, email: app.email, referral_code: code, status: "active",
       });
-      await sb().from("affiliate_applications").update({ status: "approved" }).eq("id", data.id);
+      if (affErr) throw new Error(affErr.message);
+      const { error: upErr } = await sb().from("affiliate_applications").update({ status: "approved" }).eq("id", data.id);
+      if (upErr) throw new Error(upErr.message);
     } else {
-      await sb().from("affiliate_applications").update({ status: "rejected" }).eq("id", data.id);
+      const { error: rejErr } = await sb().from("affiliate_applications").update({ status: "rejected" }).eq("id", data.id);
+      if (rejErr) throw new Error(rejErr.message);
     }
     return { ok: true as const };
   });

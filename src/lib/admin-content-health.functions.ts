@@ -1,8 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
+import { fetchPublishedPages } from "@/lib/page-data.helpers.server";
 
 export interface ContentHealthRow {
   id: string;
@@ -15,6 +15,7 @@ export interface ContentHealthRow {
   body_len: number;
   reason: "missing" | "blank" | "thin";
   updated_at: string;
+  source: "tenant" | "content";
 }
 
 export interface ContentHealthReport {
@@ -38,26 +39,15 @@ export const scanContentHealth = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data, context }): Promise<ContentHealthReport> => {
     await assertWorkspaceMember(data.workspaceId, (context as any).userId);
-    const sb = supabaseAdmin as any;
 
-    let q = sb
-      .from("content_pages")
-      .select(
-        "id, url_path, slug, title, template_type, locale, in_sitemap, updated_at, body_markdown",
-        { count: "exact" },
-      )
-      .eq("workspace_id", data.workspaceId)
-      .eq("status", "published");
-    if (data.onlyInSitemap) q = q.eq("in_sitemap", true);
-
-    const { data: rows, count } = await q
-      .order("url_path", { ascending: true })
-      .limit(10000);
+    let pages = await fetchPublishedPages(data.workspaceId, { limit: 10000 });
+    if (data.onlyInSitemap) pages = pages.filter((p) => p.in_sitemap);
 
     const affected: ContentHealthRow[] = [];
     let missing = 0, blank = 0, thin = 0;
-    for (const r of (rows || []) as any[]) {
-      const body = r.body_markdown || "";
+
+    for (const r of pages) {
+      const body = r.body_markdown ?? "";
       const len = body.trim().length;
       let reason: "missing" | "blank" | "thin" | null = null;
       if (r.body_markdown === null) reason = "missing";
@@ -69,22 +59,23 @@ export const scanContentHealth = createServerFn({ method: "POST" })
       else thin++;
       affected.push({
         id: r.id,
-        url_path: r.url_path || "",
+        url_path: r.url_path,
         slug: r.slug,
         title: r.title,
         template_type: r.template_type,
-        locale: r.locale || "en",
-        in_sitemap: !!r.in_sitemap,
+        locale: "en",
+        in_sitemap: r.in_sitemap,
         body_len: len,
         reason,
         updated_at: r.updated_at,
+        source: r.source,
       });
     }
 
     affected.sort((a, b) => a.body_len - b.body_len || a.url_path.localeCompare(b.url_path));
 
     return {
-      totalPublished: count || 0,
+      totalPublished: pages.length,
       totalAffected: affected.length,
       byReason: { missing, blank, thin },
       rows: affected.slice(0, data.limit),

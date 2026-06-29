@@ -5,7 +5,7 @@ import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.fu
 import { z } from "zod";
 
 // Tables exposed to the admin data-io tool. All are workspace-scoped.
-const TABLES = ["content_plan", "content_pages"] as const;
+const TABLES = ["content_plan", "content_pages", "tenant_pages"] as const;
 type TableName = (typeof TABLES)[number];
 
 // ---------- CSV helpers ----------
@@ -125,7 +125,7 @@ export const getImportSchema = createServerFn({ method: "POST" })
     const workspaceId = data.workspaceId;
     await assertWorkspaceMember(workspaceId, (context as any).userId);
     const tableColumns = await getTableColumns(data.table, workspaceId);
-    const conflictColumn = data.table === "content_plan" ? "slug" : "id";
+    const conflictColumn = data.table === "content_plan" ? "workspace_id,slug" : "id";
     return { tableColumns, conflictColumn };
   });
 
@@ -149,7 +149,7 @@ export const importTable = createServerFn({ method: "POST" })
     const header = parsed[0];
     const dataRows = parsed.slice(1);
     const conflictColumn =
-      data.conflictColumn || (data.table === "content_plan" ? "slug" : "id");
+      data.conflictColumn || (data.table === "content_plan" ? "workspace_id,slug" : "id");
 
     const rowErrors: { row: number; key?: string; reason: string }[] = [];
     const validRows: Record<string, any>[] = [];

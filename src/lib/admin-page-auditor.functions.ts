@@ -53,6 +53,7 @@ export const auditPage = createServerFn({ method: "POST" })
       .select("slug, title, meta_description, body_markdown, status")
       .eq("workspace_id", data.workspaceId)
       .eq("slug", slug)
+      .eq("status", "published")
       .maybeSingle();
     if (tenantPage) {
       page = {

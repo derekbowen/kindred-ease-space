@@ -59,14 +59,25 @@ export const getAddons = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => z.object({ workspaceId: workspaceIdSchema }).parse(d))
   .handler(async ({ data, context }) => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
-    const { data: reqs } = await sb()
-      .from("addon_requests")
-      .select("addon_key, status, created_at")
-      .eq("workspace_id", data.workspaceId)
-      .order("created_at", { ascending: false });
+    const [{ data: reqs }, { data: affSettings }] = await Promise.all([
+      sb()
+        .from("addon_requests")
+        .select("addon_key, status, created_at")
+        .eq("workspace_id", data.workspaceId)
+        .order("created_at", { ascending: false }),
+      sb()
+        .from("workspace_affiliate_settings")
+        .select("addon_status")
+        .eq("workspace_id", data.workspaceId)
+        .maybeSingle(),
+    ]);
     const statusByKey = new Map<string, string>();
     for (const r of (reqs ?? []) as Array<{ addon_key: string; status: string }>) {
       if (!statusByKey.has(r.addon_key)) statusByKey.set(r.addon_key, r.status);
+    }
+    const affStatus = (affSettings as { addon_status?: string } | null)?.addon_status;
+    if (affStatus === "active" || affStatus === "trialing") {
+      statusByKey.set("affiliate-standard", "active");
     }
     return {
       catalog: ADDON_CATALOG.map((a) => ({ ...a, requestStatus: statusByKey.get(a.key) ?? null })),

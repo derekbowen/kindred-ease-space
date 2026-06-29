@@ -59,7 +59,7 @@ export const getGenerateStats = createServerFn({ method: "POST" })
     }
 
     try {
-      const [genCount, pendCount, pausedCount, allPending, allPaused, recentPages, recentErr] =
+      const [genCount, pendCount, pausedCount, allPending, allPaused, recentContent, recentTenant, recentErr] =
         await Promise.all([
           supabaseAdmin.from("content_plan").select("*", { count: "exact", head: true })
             .eq("workspace_id", workspaceId).eq("status", "generated"),
@@ -74,12 +74,20 @@ export const getGenerateStats = createServerFn({ method: "POST" })
           supabaseAdmin.from("content_pages").select("slug,title,created_at")
             .eq("workspace_id", workspaceId)
             .order("created_at", { ascending: false }).limit(20),
+          supabaseAdmin.from("tenant_pages").select("slug,title,created_at")
+            .eq("workspace_id", workspaceId)
+            .order("created_at", { ascending: false }).limit(20),
           supabaseAdmin.from("content_plan").select("slug,priority_tier,updated_at,last_error,status")
             .eq("workspace_id", workspaceId)
             .in("status", ["pending", "paused"])
             .not("last_error", "is", null)
             .order("updated_at", { ascending: false }).limit(15),
         ]);
+
+      const countErrors = [genCount, pendCount, pausedCount].filter((r) => r.error);
+      if (countErrors.length) {
+        throw new Error(countErrors[0]!.error!.message);
+      }
 
       const tally = (rows: Array<Record<string, unknown>>, key: string, fallback: string) => {
         const m = new Map<string, number>();
@@ -107,17 +115,32 @@ export const getGenerateStats = createServerFn({ method: "POST" })
         .slice(0, 6);
 
       const since = new Date(Date.now() - 14 * 86400_000).toISOString();
-      const { data: dayRows } = await supabaseAdmin
-        .from("content_pages")
-        .select("created_at")
-        .eq("workspace_id", workspaceId)
-        .gte("created_at", since)
-        .limit(10000);
+      const [{ data: dayContent }, { data: dayTenant }] = await Promise.all([
+        supabaseAdmin.from("content_pages").select("created_at")
+          .eq("workspace_id", workspaceId).gte("created_at", since).limit(10000),
+        supabaseAdmin.from("tenant_pages").select("created_at")
+          .eq("workspace_id", workspaceId).gte("created_at", since).limit(10000),
+      ]);
       const dayMap = new Map<string, number>();
-      for (const r of dayRows ?? []) {
+      for (const r of [...(dayContent ?? []), ...(dayTenant ?? [])]) {
         const d = new Date(r.created_at as string).toISOString().slice(0, 10);
         dayMap.set(d, (dayMap.get(d) ?? 0) + 1);
       }
+
+      const recentMerged = [
+        ...(recentContent.data ?? []).map((r) => ({
+          slug: r.slug as string,
+          title: (r.title as string | null) ?? null,
+          created_at: r.created_at as string,
+        })),
+        ...(recentTenant.data ?? []).map((r) => ({
+          slug: r.slug as string,
+          title: (r.title as string | null) ?? null,
+          created_at: r.created_at as string,
+        })),
+      ]
+        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+        .slice(0, 20);
       const perDay = Array.from(dayMap.entries())
         .map(([day, n]) => ({ day, n }))
         .sort((a, b) => (a.day < b.day ? -1 : 1));
@@ -132,11 +155,7 @@ export const getGenerateStats = createServerFn({ method: "POST" })
         pendingByTier,
         pausedByTier,
         topPausedReasons,
-        recentInserts: (recentPages.data ?? []).map((r) => ({
-          slug: r.slug as string,
-          title: (r.title as string | null) ?? null,
-          created_at: r.created_at as string,
-        })),
+        recentInserts: recentMerged,
         recentErrors: (recentErr.data ?? []).map((r) => ({
           slug: r.slug as string,
           tier: (r.priority_tier as string | null) ?? null,

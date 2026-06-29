@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { recordPage404 } from "@/lib/page-data.helpers.server";
 
 const sb = () => supabaseAdmin as any;
 
@@ -49,7 +50,7 @@ export type PublicTenantPage = {
 
 export const getPublicTenantPage = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ slug: z.string().min(1).max(200) }).parse(d))
-  .handler(async ({ data }): Promise<{ page: PublicTenantPage | null; host: string | null }> => {
+  .handler(async ({ data }): Promise<{ page: PublicTenantPage | null; host: string | null; redirect?: string }> => {
     const host = resolveRequestHost() ?? null;
     let workspaceId: string | null = null;
 
@@ -60,6 +61,17 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
     }
 
     if (!workspaceId) return { page: null, host };
+
+    const { data: redirectRow } = await sb()
+      .from("content_pages")
+      .select("redirect_to")
+      .eq("workspace_id", workspaceId)
+      .eq("status", "redirect")
+      .or(`slug.eq.${data.slug},url_path.eq./p/${data.slug}`)
+      .maybeSingle();
+    if (redirectRow?.redirect_to) {
+      return { page: null, host, redirect: redirectRow.redirect_to as string };
+    }
 
     const { data: page } = await sb()
       .from("tenant_pages")
@@ -80,7 +92,10 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
         .eq("slug", data.slug)
         .eq("status", "published")
         .maybeSingle();
-      if (!legacy) return { page: null, host };
+      if (!legacy) {
+        await recordPage404(workspaceId, data.slug);
+        return { page: null, host };
+      }
       return {
         page: {
           id: legacy.id,

@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Search } from "lucide-react";
+import { toast } from "sonner";
 import { getMe } from "@/lib/auth.functions";
 import {
   listContentPages,
@@ -37,6 +38,8 @@ function BulkEditorPage() {
     try {
       const r = await fetchRows({ data: { workspaceId, search: search || undefined, limit: 100 } });
       setRows(r.rows);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to load pages");
     } finally {
       setLoading(false);
     }
@@ -46,10 +49,18 @@ function BulkEditorPage() {
 
   async function toggleSitemap(row: ContentPageRow) {
     if (!workspaceId) return;
+    if (row.source === "tenant") {
+      toast.info("Live tenant pages are always included in your sitemap.");
+      return;
+    }
     setSavingId(row.id);
     try {
-      await saveRow({ data: { workspaceId, id: row.id, in_sitemap: !row.in_sitemap } });
+      await saveRow({
+        data: { workspaceId, id: row.id, source: row.source, in_sitemap: !row.in_sitemap },
+      });
       setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, in_sitemap: !r.in_sitemap } : r)));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSavingId(null);
     }
@@ -60,7 +71,7 @@ function BulkEditorPage() {
       <div>
         <h1 className="text-2xl font-bold">Bulk Page Editor</h1>
         <p className="text-sm text-muted-foreground">
-          Search and triage every page in your workspace's <code>content_pages</code>.
+          Search and triage every published page — live tenant pages and legacy content rows.
         </p>
       </div>
 
@@ -98,6 +109,7 @@ function BulkEditorPage() {
                 <thead className="border-b text-left text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="py-2 pr-4">Title / Slug</th>
+                    <th className="py-2 pr-4">Source</th>
                     <th className="py-2 pr-4">Status</th>
                     <th className="py-2 pr-4">Template</th>
                     <th className="py-2 pr-4">Sitemap</th>
@@ -111,17 +123,22 @@ function BulkEditorPage() {
                         <div className="font-medium">{r.title ?? "(untitled)"}</div>
                         <div className="font-mono text-xs text-muted-foreground">{r.url_path ?? r.slug ?? r.id}</div>
                       </td>
+                      <td className="py-2 pr-4 text-xs text-muted-foreground">{r.source}</td>
                       <td className="py-2 pr-4 font-mono text-xs">{r.status}</td>
                       <td className="py-2 pr-4 text-xs text-muted-foreground">{r.template_type ?? "—"}</td>
                       <td className="py-2 pr-4">
-                        <Button
-                          size="sm"
-                          variant={r.in_sitemap ? "default" : "outline"}
-                          disabled={savingId === r.id}
-                          onClick={() => toggleSitemap(r)}
-                        >
-                          {savingId === r.id ? <Loader2 className="h-3 w-3 animate-spin" /> : r.in_sitemap ? "On" : "Off"}
-                        </Button>
+                        {r.source === "tenant" ? (
+                          <span className="text-xs text-muted-foreground">Always on</span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant={r.in_sitemap ? "default" : "outline"}
+                            disabled={savingId === r.id}
+                            onClick={() => toggleSitemap(r)}
+                          >
+                            {savingId === r.id ? <Loader2 className="h-3 w-3 animate-spin" /> : r.in_sitemap ? "On" : "Off"}
+                          </Button>
+                        )}
                       </td>
                       <td className="py-2 text-xs text-muted-foreground">
                         {new Date(r.updated_at).toLocaleDateString()}

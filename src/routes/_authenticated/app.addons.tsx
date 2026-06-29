@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,12 +12,21 @@ import { supabase } from "@/integrations/supabase/client";
 import { getMe } from "@/lib/auth.functions";
 import { getAddons } from "@/lib/addons.functions";
 
+const addonsSearchSchema = z.object({
+  success: z.coerce.string().optional(),
+  canceled: z.coerce.string().optional(),
+  session_id: z.string().optional(),
+});
+
 export const Route = createFileRoute("/_authenticated/app/addons")({
   head: () => ({ meta: [{ title: "Add-ons — founders.click" }] }),
+  validateSearch: addonsSearchSchema,
   component: AddonsPage,
 });
 
 function AddonsPage() {
+  const navigate = useNavigate();
+  const search = useSearch({ from: "/_authenticated/app/addons" });
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -24,11 +34,22 @@ function AddonsPage() {
     getMe().then((me) => setWorkspaceId(me?.memberships?.[0]?.workspace_id ?? null)).catch(() => {});
   }, []);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ["addons", workspaceId],
     queryFn: () => getAddons({ data: { workspaceId: workspaceId! } }),
     enabled: !!workspaceId,
   });
+
+  useEffect(() => {
+    if (search.success) {
+      toast.success("Add-on purchase received — it will activate shortly.");
+      refetch();
+      navigate({ to: "/app/addons", search: {}, replace: true });
+    } else if (search.canceled) {
+      toast.info("Checkout canceled.");
+      navigate({ to: "/app/addons", search: {}, replace: true });
+    }
+  }, [search.success, search.canceled, navigate, refetch]);
 
   // Map the add-on to its Stripe price key, then redirect to Checkout.
   const checkout = async (catalogKey: string) => {

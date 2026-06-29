@@ -137,11 +137,14 @@ export const dismissInsight = createServerFn({ method: "POST" })
   }).parse)
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    await supabase.from("coach_action_log").insert({
+    const { assertWorkspaceMember } = await import("@/lib/admin-helpers.functions");
+    await assertWorkspaceMember(data.workspaceId, userId);
+    const { error } = await supabase.from("coach_action_log").insert({
       workspace_id: data.workspaceId,
       user_id: userId,
       action_type: "dismissed_insight",
       details: { briefing_id: data.briefingId, insight_index: data.insightIndex },
     });
+    if (error) throw new Error(error.message);
     return { ok: true };
   });

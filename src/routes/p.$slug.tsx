@@ -1,4 +1,4 @@
-import { createFileRoute, notFound, useRouter } from "@tanstack/react-router";
+import { createFileRoute, notFound, redirect, useRouter } from "@tanstack/react-router";
 import { getPublicTenantPage } from "@/lib/public-tenant-page.functions";
 import { CityHub } from "@/components/templates/CityHub";
 import { canonicalUrl } from "@/lib/canonical";
@@ -9,6 +9,9 @@ export const Route = createFileRoute("/p/$slug")({
     // `window.location.host` is undefined during SSR, which would 404 every
     // crawler / first-paint hit on tenant custom domains.
     const r = await getPublicTenantPage({ data: { slug: params.slug } });
+    if (r.redirect) {
+      throw redirect({ href: r.redirect });
+    }
     if (!r.page) throw notFound();
     return { page: r.page, path: location.pathname, host: r.host };
   },

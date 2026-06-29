@@ -14,14 +14,31 @@ async function buildSnapshot(workspaceId: string): Promise<string> {
 
   const [pages, missing, gsc, thin, noMeta] = await Promise.all([
     safe(async () => {
-      const [{ count: total }, { count: pub }, { count: pending }, { count: last7 }] = await Promise.all([
+      const [
+        { count: tenantPub },
+        { count: tenantDraft },
+        { count: contentTotal },
+        { count: contentPub },
+        { count: contentPending },
+      ] = await Promise.all([
+        sb().from("tenant_pages").select("*", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("status", "published"),
+        sb().from("tenant_pages").select("*", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("status", "draft"),
         sb().from("content_pages").select("*", { count: "exact", head: true }).eq("workspace_id", workspaceId),
         sb().from("content_pages").select("*", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("status", "published"),
         sb().from("content_pages").select("*", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("status", "pending"),
-        sb().from("content_pages").select("*", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("status", "published").gte("updated_at", week),
       ]);
-      return { total: total ?? 0, published: pub ?? 0, pending: pending ?? 0, publishedLast7d: last7 ?? 0 };
-    }, { total: 0, published: 0, pending: 0, publishedLast7d: 0 }),
+      const { fetchPublishedPages } = await import("@/lib/page-data.helpers.server");
+      const recent = await fetchPublishedPages(workspaceId, { limit: 5000 });
+      const publishedLast7d = recent.filter((p) => p.updated_at >= week).length;
+      const published = (tenantPub ?? 0) + (contentPub ?? 0);
+      return {
+        total: published + (contentPending ?? 0) + (tenantDraft ?? 0) + Math.max(0, (contentTotal ?? 0) - (contentPub ?? 0) - (contentPending ?? 0)),
+        published,
+        pending: (contentPending ?? 0) + (tenantDraft ?? 0),
+        publishedLast7d,
+        tenantPublished: tenantPub ?? 0,
+      };
+    }, { total: 0, published: 0, pending: 0, publishedLast7d: 0, tenantPublished: 0 }),
 
     safe(async () => {
       const { count } = await sb().from("content_404_log")
@@ -47,30 +64,26 @@ async function buildSnapshot(workspaceId: string): Promise<string> {
     }, { clicks: 0, impr: 0, top: [] as Array<[string, number]>, lastCaptured: null as string | null }),
 
     safe(async () => {
-      const { data } = await sb().from("content_pages")
-        .select("body_markdown")
-        .eq("workspace_id", workspaceId)
-        .eq("status", "published").limit(2000);
+      const { fetchPublishedPages } = await import("@/lib/page-data.helpers.server");
+      const all = await fetchPublishedPages(workspaceId, { limit: 2000 });
       let thinCount = 0, empty = 0;
-      (data || []).forEach((r: any) => {
+      for (const r of all) {
         const w = (r.body_markdown || "").split(/\s+/).filter(Boolean).length;
         if (w === 0) empty++;
         else if (w < 500) thinCount++;
-      });
+      }
       return { thin: thinCount, empty };
     }, { thin: 0, empty: 0 }),
 
     safe(async () => {
-      const { count } = await sb().from("content_pages")
-        .select("*", { count: "exact", head: true })
-        .eq("workspace_id", workspaceId)
-        .eq("status", "published").is("seo_description", null);
-      return count ?? 0;
+      const { fetchPublishedPages } = await import("@/lib/page-data.helpers.server");
+      const all = await fetchPublishedPages(workspaceId, { limit: 2000 });
+      return all.filter((p) => !p.meta_description?.trim()).length;
     }, 0),
   ]);
 
   return `LIVE SEO SNAPSHOT (as of ${new Date().toISOString()}):
-- Content pages: ${pages.total} total, ${pages.published} published, ${pages.pending} pending, ${pages.publishedLast7d} published in last 7d
+- Live pages: ${pages.published} published (${(pages as any).tenantPublished ?? 0} tenant_pages at /p/*), ${pages.pending} drafts/pending, ${pages.publishedLast7d} updated in last 7d
 - Unresolved 404s: ${missing}
 - Published quality: ${thin.empty} empty (0 words), ${thin.thin} thin (<500 words), ${noMeta} missing meta description
 - GSC last 7d: ${gsc.clicks} clicks, ${gsc.impr} impressions (last sync: ${gsc.lastCaptured || "never"})
@@ -81,10 +94,9 @@ ADMIN TOOLS YOU CAN RECOMMEND (route → purpose):
 - /app/seo/page-auditor → audit + rewrite a single URL
 - /app/seo/keyword-opportunities → import GSC queries, find easy wins
 - /app/seo/internal-links → recommend internal linking
-- /app/seo/health → site-wide title/meta/schema issues
-- /app/content/bulk-editor → bulk-fix thin/empty pages
+- /app/content/bulk-editor → triage published pages (tenant + legacy)
 - /app/content/quick-page-builder → spin up a new /p/{slug} page in 30s
-- /app/content/generate → batch-generate from templates
+- /app/pages → manual page editor with live preview
 - /app/seo/gsc-import → re-sync Search Console data
 - /app/seo/competitor-tracker → scrape competitor pages
 - /app/seo/link-checker → find broken internal links`;
