@@ -71,7 +71,8 @@ export const upsertAiCredential = createServerFn({ method: "POST" })
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     const trimmed = data.apiKey.trim();
     const lastFour = trimmed.slice(-4);
-    const { error } = await supabaseAdmin.rpc("tenant_set_ai_credential", {
+    // Must use the authenticated client — RPC checks auth.uid() for owner.
+    const { error } = await context.supabase.rpc("tenant_set_ai_credential", {
       _workspace_id: data.workspaceId,
       _provider: data.provider,
       _api_key: trimmed,
@@ -91,7 +92,7 @@ export const deleteAiCredential = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceOwner(data.workspaceId, context.userId);
-    const { error } = await supabaseAdmin.rpc("tenant_delete_ai_credential", {
+    const { error } = await context.supabase.rpc("tenant_delete_ai_credential", {
       _workspace_id: data.workspaceId,
       _provider: data.provider,
     });

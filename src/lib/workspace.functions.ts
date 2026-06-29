@@ -187,9 +187,13 @@ export const updateWorkspaceProfile = createServerFn({ method: "POST" })
     const patch: { name?: string; marketplace_domain?: string | null } = {};
     if (data.name !== undefined) patch.name = data.name;
     if (data.marketplaceDomain !== undefined) {
-      patch.marketplace_domain = data.marketplaceDomain
-        ? data.marketplaceDomain.toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "")
-        : null;
+      const normalized = data.marketplaceDomain
+        ? data.marketplaceDomain.toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/:\d+$/, "")
+        : "";
+      if (normalized && !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(normalized)) {
+        throw new Error("Invalid domain — use a hostname like yourmarketplace.com");
+      }
+      patch.marketplace_domain = normalized || null;
     }
     const { error } = await supabaseAdmin.from("workspaces").update(patch).eq("id", data.workspaceId);
     if (error) throw new Error(error.message);

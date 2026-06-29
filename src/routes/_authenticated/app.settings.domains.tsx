@@ -15,6 +15,9 @@ import {
   deleteWorkspaceDomain,
   type WorkspaceDomainRow,
 } from "@/lib/admin-domains.functions";
+import { getSettingsContext } from "@/lib/settings.functions";
+import { SettingsNav } from "@/components/settings/SettingsNav";
+import { OwnerOnlyBanner } from "@/components/settings/OwnerOnlyBanner";
 
 export const Route = createFileRoute("/_authenticated/app/settings/domains")({
   head: () => ({ meta: [{ title: "Custom Domains — founders.click" }] }),
@@ -23,6 +26,7 @@ export const Route = createFileRoute("/_authenticated/app/settings/domains")({
 
 function DomainsPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [isOwner, setIsOwner] = useState(true);
   const [rows, setRows] = useState<WorkspaceDomainRow[]>([]);
   const [hostname, setHostname] = useState("");
   const [busy, setBusy] = useState(false);
@@ -34,10 +38,19 @@ function DomainsPage() {
   const add = useServerFn(addWorkspaceDomain);
   const verify = useServerFn(verifyWorkspaceDomain);
   const del = useServerFn(deleteWorkspaceDomain);
+  const loadCtx = useServerFn(getSettingsContext);
 
   useEffect(() => {
-    getMe().then((me) => setWorkspaceId(me.memberships[0]?.workspace_id ?? null));
-  }, []);
+    getMe().then((me) => {
+      const wsId = me.memberships[0]?.workspace_id ?? null;
+      setWorkspaceId(wsId);
+      if (wsId) {
+        loadCtx({ data: { workspaceId: wsId } })
+          .then((c) => setIsOwner(c.isOwner))
+          .catch(() => setIsOwner(me.memberships[0]?.role === "owner"));
+      }
+    });
+  }, [loadCtx]);
   useEffect(() => {
     if (workspaceId) reload(workspaceId);
     /* eslint-disable-next-line */
@@ -88,13 +101,16 @@ function DomainsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-3xl pb-10">
       <div>
         <h1 className="text-2xl font-bold">Custom domains</h1>
         <p className="text-sm text-muted-foreground">
           Connect your marketplace's domain so SEO pages serve from your site.
         </p>
       </div>
+
+      <SettingsNav />
+      <OwnerOnlyBanner isOwner={isOwner} />
 
       <Card>
         <CardHeader>
@@ -110,9 +126,10 @@ function DomainsPage() {
                 onChange={(e) => setHostname(e.target.value)}
                 placeholder="example.com"
                 onKeyDown={(e) => { if (e.key === "Enter") onAdd(); }}
+                disabled={!isOwner}
               />
             </div>
-            <Button onClick={onAdd} disabled={busy || !workspaceId || !hostname.trim()} className="gap-2">
+            <Button onClick={onAdd} disabled={busy || !workspaceId || !isOwner || !hostname.trim()} className="gap-2">
               {busy && <Loader2 className="h-4 w-4 animate-spin" />} Add domain
             </Button>
           </div>
@@ -137,7 +154,7 @@ function DomainsPage() {
                   </span>
                 )}
               </div>
-              <Button variant="ghost" size="sm" onClick={() => onDelete(d.id)} className="text-destructive">
+              <Button variant="ghost" size="sm" onClick={() => onDelete(d.id)} className="text-destructive" disabled={!isOwner}>
                 <Trash2 className="h-4 w-4" />
               </Button>
             </CardHeader>
@@ -149,6 +166,7 @@ function DomainsPage() {
                   busy={verifyingId === d.id}
                   error={errors[d.id]}
                   onVerify={() => onVerify(d.id)}
+                  canVerify={isOwner}
                 />
               ) : (
                 <details className="rounded-md border bg-muted/30 p-3 text-sm">
@@ -169,8 +187,8 @@ function DomainsPage() {
 }
 
 function VerifySection({
-  hostname, token, busy, error, onVerify,
-}: { hostname: string; token: string; busy: boolean; error?: string; onVerify: () => void }) {
+  hostname, token, busy, error, onVerify, canVerify,
+}: { hostname: string; token: string; busy: boolean; error?: string; onVerify: () => void; canVerify: boolean }) {
   return (
     <div className="space-y-3">
       <h3 className="font-semibold">Verify {hostname}</h3>
@@ -200,7 +218,7 @@ Value: ${token}`}
         </TabsContent>
       </Tabs>
       <div className="flex items-center gap-3">
-        <Button onClick={onVerify} disabled={busy} className="gap-2">
+        <Button onClick={onVerify} disabled={busy || !canVerify} className="gap-2">
           {busy && <Loader2 className="h-4 w-4 animate-spin" />} Verify
         </Button>
         {error && <span className="text-sm text-destructive">{error}</span>}

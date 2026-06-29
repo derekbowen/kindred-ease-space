@@ -15,6 +15,9 @@ import {
   runSharetribeSync,
 } from "@/lib/sharetribe-sync.functions";
 import { InlineCoach } from "@/components/coach/InlineCoach";
+import { getSettingsContext } from "@/lib/settings.functions";
+import { SettingsNav } from "@/components/settings/SettingsNav";
+import { OwnerOnlyBanner } from "@/components/settings/OwnerOnlyBanner";
 
 export const Route = createFileRoute("/_authenticated/app/settings/integrations/sharetribe")({
   head: () => ({ meta: [{ title: "Sharetribe Integration — founders.click" }] }),
@@ -35,6 +38,7 @@ type IntegrationRow = {
 
 function SharetribeIntegrationPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [isOwner, setIsOwner] = useState(true);
   const [integration, setIntegration] = useState<IntegrationRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -51,10 +55,19 @@ function SharetribeIntegrationPage() {
   const connect = useServerFn(connectSharetribe);
   const disconnect = useServerFn(disconnectSharetribe);
   const sync = useServerFn(runSharetribeSync);
+  const loadCtx = useServerFn(getSettingsContext);
 
   useEffect(() => {
-    getMe().then((me) => setWorkspaceId(me.memberships[0]?.workspace_id ?? null));
-  }, []);
+    getMe().then((me) => {
+      const wsId = me.memberships[0]?.workspace_id ?? null;
+      setWorkspaceId(wsId);
+      if (wsId) {
+        loadCtx({ data: { workspaceId: wsId } })
+          .then((c) => setIsOwner(c.isOwner))
+          .catch(() => setIsOwner(me.memberships[0]?.role === "owner"));
+      }
+    });
+  }, [loadCtx]);
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -135,7 +148,9 @@ function SharetribeIntegrationPage() {
   }
 
   return (
-    <div className="p-6 max-w-3xl space-y-6">
+    <div className="max-w-3xl space-y-6 pb-10">
+      <SettingsNav />
+      <OwnerOnlyBanner isOwner={isOwner} />
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -216,7 +231,7 @@ function SharetribeIntegrationPage() {
                 )}
                 Sync now
               </Button>
-              <Button variant="destructive" onClick={onDisconnect} disabled={busy}>
+              <Button variant="destructive" onClick={onDisconnect} disabled={busy || !isOwner}>
                 <Trash2 className="h-4 w-4 mr-2" /> Disconnect
               </Button>
             </div>
@@ -238,6 +253,7 @@ function SharetribeIntegrationPage() {
                 placeholder="https://your-marketplace.sharetribe.com"
                 value={marketplaceUrl}
                 onChange={(e) => setMarketplaceUrl(e.target.value)}
+                disabled={!isOwner}
               />
             </div>
             <div className="space-y-1.5">
@@ -247,6 +263,7 @@ function SharetribeIntegrationPage() {
                 placeholder="00000000-0000-0000-0000-000000000000"
                 value={marketplaceId}
                 onChange={(e) => setMarketplaceId(e.target.value)}
+                disabled={!isOwner}
               />
             </div>
             <div className="space-y-1.5">
@@ -255,6 +272,7 @@ function SharetribeIntegrationPage() {
                 id="cid"
                 value={clientId}
                 onChange={(e) => setClientId(e.target.value)}
+                disabled={!isOwner}
               />
             </div>
             <div className="space-y-1.5">
@@ -264,12 +282,13 @@ function SharetribeIntegrationPage() {
                 type="password"
                 value={clientSecret}
                 onChange={(e) => setClientSecret(e.target.value)}
+                disabled={!isOwner}
               />
               <p className="text-xs text-muted-foreground">
                 Stored encrypted in Supabase Vault. Never sent back to the browser.
               </p>
             </div>
-            <Button onClick={onConnect} disabled={busy} className="w-full">
+            <Button onClick={onConnect} disabled={busy || !isOwner} className="w-full">
               {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               Validate &amp; Connect
             </Button>

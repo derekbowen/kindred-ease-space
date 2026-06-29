@@ -20,6 +20,9 @@ import {
   testAiCredential,
   getAiUsageSummary,
 } from "@/lib/ai-byok.functions";
+import { getSettingsContext } from "@/lib/settings.functions";
+import { SettingsNav } from "@/components/settings/SettingsNav";
+import { OwnerOnlyBanner } from "@/components/settings/OwnerOnlyBanner";
 
 export const Route = createFileRoute("/_authenticated/app/settings/ai")({
   head: () => ({ meta: [{ title: "AI Providers — founders.click" }] }),
@@ -35,6 +38,7 @@ const PROVIDER_META: Record<AiProvider, { label: string; placeholder: string; he
 
 function AiSettingsPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [isOwner, setIsOwner] = useState(true);
   const [rows, setRows] = useState<CredentialRow[]>([]);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [provider, setProvider] = useState<AiProvider>("openai");
@@ -47,10 +51,19 @@ function AiSettingsPage() {
   const del = useServerFn(deleteAiCredential);
   const test = useServerFn(testAiCredential);
   const usageFn = useServerFn(getAiUsageSummary);
+  const loadCtx = useServerFn(getSettingsContext);
 
   useEffect(() => {
-    getMe().then((me) => setWorkspaceId(me.memberships[0]?.workspace_id ?? null));
-  }, []);
+    getMe().then((me) => {
+      const wsId = me.memberships[0]?.workspace_id ?? null;
+      setWorkspaceId(wsId);
+      if (wsId) {
+        loadCtx({ data: { workspaceId: wsId } })
+          .then((c) => setIsOwner(c.isOwner))
+          .catch(() => setIsOwner(me.memberships[0]?.role === "owner"));
+      }
+    });
+  }, [loadCtx]);
   useEffect(() => {
     if (!workspaceId) return;
     refresh(workspaceId);
@@ -116,7 +129,7 @@ function AiSettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 max-w-4xl pb-10">
       <div>
         <h1 className="text-2xl font-bold">AI Providers</h1>
         <p className="text-sm text-muted-foreground">
@@ -124,6 +137,9 @@ function AiSettingsPage() {
           Keys are never logged — only the last four characters are shown.
         </p>
       </div>
+
+      <SettingsNav />
+      <OwnerOnlyBanner isOwner={isOwner} />
 
       {/* Usage dashboard */}
       <div className="grid gap-4 sm:grid-cols-3">
@@ -176,10 +192,10 @@ function AiSettingsPage() {
                     {r.last_error ? <span className="text-destructive">{r.last_error}</span> :
                       r.last_tested_at ? `Tested ${new Date(r.last_tested_at).toLocaleString()}` : "Never tested"}
                   </div>
-                  <Button size="sm" variant="outline" disabled={busy === `test-${r.provider}`} onClick={() => runTest(r.provider)} className="gap-2">
+                  <Button size="sm" variant="outline" disabled={!isOwner || busy === `test-${r.provider}`} onClick={() => runTest(r.provider)} className="gap-2">
                     {busy === `test-${r.provider}` && <Loader2 className="h-3 w-3 animate-spin" />}Test
                   </Button>
-                  <Button size="sm" variant="ghost" disabled={busy === `del-${r.provider}`} onClick={() => remove(r.provider)} className="gap-1 text-destructive hover:text-destructive">
+                  <Button size="sm" variant="ghost" disabled={!isOwner || busy === `del-${r.provider}`} onClick={() => remove(r.provider)} className="gap-1 text-destructive hover:text-destructive">
                     <Trash2 className="h-3 w-3" />
                   </Button>
                 </div>
@@ -203,6 +219,7 @@ function AiSettingsPage() {
                 className="h-9 w-full rounded-md border bg-background px-2 text-sm"
                 value={provider}
                 onChange={(e) => setProvider(e.target.value as AiProvider)}
+                disabled={!isOwner}
               >
                 {AI_PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_META[p].label}</option>)}
               </select>
@@ -216,6 +233,7 @@ function AiSettingsPage() {
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder={PROVIDER_META[provider].placeholder}
                 autoComplete="off"
+                disabled={!isOwner}
               />
             </div>
           </div>
@@ -225,10 +243,11 @@ function AiSettingsPage() {
               value={model}
               onChange={(e) => setModel(e.target.value)}
               placeholder={PROVIDER_META[provider].defaultModel}
+              disabled={!isOwner}
             />
             <p className="text-xs text-muted-foreground">Used by AI features when they don't specify a model.</p>
           </div>
-          <Button onClick={save} disabled={busy === "save" || !workspaceId || !apiKey.trim()} className="gap-2">
+          <Button onClick={save} disabled={busy === "save" || !workspaceId || !isOwner || !apiKey.trim()} className="gap-2">
             {busy === "save" && <Loader2 className="h-4 w-4 animate-spin" />}Save key
           </Button>
         </CardContent>

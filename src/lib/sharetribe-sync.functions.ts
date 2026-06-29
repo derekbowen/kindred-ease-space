@@ -38,7 +38,7 @@ export const connectSharetribe = createServerFn({ method: "POST" })
     z
       .object({
         workspaceId: z.string().uuid(),
-        marketplaceUrl: z.string().url().max(500),
+        marketplaceUrl: z.string().min(8).max(500),
         marketplaceId: z.string().uuid(),
         clientId: z.string().min(8).max(200),
         clientSecret: z.string().min(8).max(500),
@@ -48,6 +48,16 @@ export const connectSharetribe = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     // Connecting rotates/overwrites stored credentials — owner-only.
     await assertWorkspaceOwner(data.workspaceId, context.userId);
+
+    let marketplaceUrl = data.marketplaceUrl.trim().replace(/\/+$/, "");
+    if (!/^https?:\/\//i.test(marketplaceUrl)) {
+      marketplaceUrl = `https://${marketplaceUrl}`;
+    }
+    try {
+      new URL(marketplaceUrl);
+    } catch {
+      return { ok: false as const, error: "Invalid marketplace URL" };
+    }
 
     const v = await validateSharetribeCredentials({
       clientId: data.clientId,
@@ -78,7 +88,7 @@ export const connectSharetribe = createServerFn({ method: "POST" })
         {
           workspace_id: data.workspaceId,
           provider: "sharetribe",
-          marketplace_url: data.marketplaceUrl.replace(/\/+$/, ""),
+          marketplace_url: marketplaceUrl,
           marketplace_id: data.marketplaceId,
           client_id: data.clientId,
           client_secret_vault_id: vaultId,

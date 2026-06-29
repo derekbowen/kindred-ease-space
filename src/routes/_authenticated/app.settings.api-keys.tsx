@@ -13,6 +13,9 @@ import {
   deleteWorkspaceSecret,
   type WorkspaceSecretRow,
 } from "@/lib/admin-workspace-secrets.functions";
+import { getSettingsContext } from "@/lib/settings.functions";
+import { SettingsNav } from "@/components/settings/SettingsNav";
+import { OwnerOnlyBanner } from "@/components/settings/OwnerOnlyBanner";
 
 export const Route = createFileRoute("/_authenticated/app/settings/api-keys")({
   head: () => ({ meta: [{ title: "API Keys — founders.click" }] }),
@@ -20,6 +23,8 @@ export const Route = createFileRoute("/_authenticated/app/settings/api-keys")({
 });
 
 const KNOWN_KEYS: Array<{ name: string; help: string }> = [
+  { name: "OPENROUTER_API_KEY", help: "Powers Quick Page Builder and AI content. Get one at openrouter.ai/keys." },
+  { name: "LOVABLE_API_KEY", help: "Powers Coach actions (expand pages, meta, city drafts). Your Lovable project API key." },
   { name: "FIRECRAWL_API_KEY", help: "Used by competitor scraper, content migration. Get one at firecrawl.dev." },
   { name: "SERPAPI_KEY", help: "Used by rank tracker. Get one at serpapi.com." },
   { name: "GOOGLE_GSC_REFRESH_TOKEN", help: "Used by Search Console import." },
@@ -27,6 +32,7 @@ const KNOWN_KEYS: Array<{ name: string; help: string }> = [
 
 function ApiKeysPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [isOwner, setIsOwner] = useState(true);
   const [rows, setRows] = useState<WorkspaceSecretRow[]>([]);
   const [keyName, setKeyName] = useState(KNOWN_KEYS[0].name);
   const [value, setValue] = useState("");
@@ -35,16 +41,28 @@ function ApiKeysPage() {
   const list = useServerFn(listWorkspaceSecrets);
   const upsert = useServerFn(upsertWorkspaceSecret);
   const del = useServerFn(deleteWorkspaceSecret);
+  const loadCtx = useServerFn(getSettingsContext);
 
-  useEffect(() => { getMe().then((me) => setWorkspaceId(me.memberships[0]?.workspace_id ?? null)); }, []);
-  useEffect(() => { if (workspaceId) reload(workspaceId); /* eslint-disable-next-line */ }, [workspaceId]);
+  useEffect(() => {
+    getMe().then((me) => {
+      const wsId = me.memberships[0]?.workspace_id ?? null;
+      setWorkspaceId(wsId);
+      if (wsId) {
+        loadCtx({ data: { workspaceId: wsId } })
+          .then((c) => setIsOwner(c.isOwner))
+          .catch(() => setIsOwner(me.memberships[0]?.role === "owner"));
+      }
+    });
+  }, [loadCtx]);
+  useEffect(() => { if (workspaceId && isOwner) reload(workspaceId); /* eslint-disable-next-line */ }, [workspaceId, isOwner]);
 
   async function reload(ws: string) {
     try {
       const r = await list({ data: { workspaceId: ws } });
       setRows(r.rows);
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Failed to load");
+      setRows([]);
+      if (isOwner) setMsg(e instanceof Error ? e.message : "Failed to load");
     }
   }
 
@@ -66,11 +84,14 @@ function ApiKeysPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-4xl pb-10">
       <div>
         <h1 className="text-2xl font-bold">API Keys</h1>
-        <p className="text-sm text-muted-foreground">Bring-your-own keys for SEO tools. Stored encrypted at rest, only owners can view or change them.</p>
+        <p className="text-sm text-muted-foreground">Bring-your-own keys for AI and SEO tools. Stored encrypted in Vault — only owners can view or change them.</p>
       </div>
+
+      <SettingsNav />
+      <OwnerOnlyBanner isOwner={isOwner} />
 
       <Card>
         <CardHeader>
@@ -81,18 +102,18 @@ function ApiKeysPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label>Key name</Label>
-              <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={keyName} onChange={(e) => setKeyName(e.target.value)}>
+              <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={keyName} onChange={(e) => setKeyName(e.target.value)} disabled={!isOwner}>
                 {KNOWN_KEYS.map((k) => <option key={k.name} value={k.name}>{k.name}</option>)}
               </select>
               <p className="text-xs text-muted-foreground">{KNOWN_KEYS.find((k) => k.name === keyName)?.help}</p>
             </div>
             <div className="space-y-1">
               <Label>Value</Label>
-              <Input type="password" value={value} onChange={(e) => setValue(e.target.value)} placeholder="paste secret" />
+              <Input type="password" value={value} onChange={(e) => setValue(e.target.value)} placeholder="paste secret" disabled={!isOwner} />
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Button onClick={save} disabled={busy || !workspaceId || !value.trim()} className="gap-2">
+            <Button onClick={save} disabled={busy || !workspaceId || !isOwner || !value.trim()} className="gap-2">
               {busy && <Loader2 className="h-4 w-4 animate-spin" />} Save key
             </Button>
             {msg && <span className="text-sm text-muted-foreground">{msg}</span>}
@@ -119,7 +140,7 @@ function ApiKeysPage() {
                     <td className="py-2 pr-4 font-mono text-xs">{r.key_name}</td>
                     <td className="py-2 pr-4 font-mono text-xs">{r.preview}</td>
                     <td className="py-2 pr-4 text-xs text-muted-foreground">{new Date(r.updated_at).toLocaleString()}</td>
-                    <td className="py-2"><Button size="sm" variant="ghost" onClick={() => remove(r.id)}>Delete</Button></td>
+                    <td className="py-2"><Button size="sm" variant="ghost" onClick={() => remove(r.id)} disabled={!isOwner}>Delete</Button></td>
                   </tr>
                 ))}
               </tbody>

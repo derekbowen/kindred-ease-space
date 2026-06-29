@@ -88,6 +88,20 @@ export const addWorkspaceDomain = createServerFn({ method: "POST" })
       }
       return { ok: false as const, error: error.message };
     }
+
+    // Seed marketplace_domain when unset so /p pages resolve on the tenant host immediately.
+    const { data: ws } = await sb()
+      .from("workspaces")
+      .select("marketplace_domain")
+      .eq("id", data.workspaceId)
+      .maybeSingle();
+    if (!ws?.marketplace_domain) {
+      await sb()
+        .from("workspaces")
+        .update({ marketplace_domain: hostname })
+        .eq("id", data.workspaceId);
+    }
+
     return {
       ok: true as const,
       id: row.id as string,
@@ -164,11 +178,28 @@ export const verifyWorkspaceDomain = createServerFn({ method: "POST" })
 
     if (!method) return { ok: false as const, error: lastErr || "verification failed" };
 
+    const verifiedAt = new Date().toISOString();
     const { error: upErr } = await sb()
       .from("workspace_domains")
-      .update({ verified: true, verified_at: new Date().toISOString(), verification_method: method })
+      .update({ verified: true, verified_at: verifiedAt, verification_method: method })
       .eq("id", row.id);
     if (upErr) return { ok: false as const, error: upErr.message };
+
+    // Keep workspaces.marketplace_domain + domain_verified_at in sync so Settings
+    // badges and host resolution stay accurate after custom-domain verification.
+    const { data: ws } = await sb()
+      .from("workspaces")
+      .select("marketplace_domain")
+      .eq("id", data.workspaceId)
+      .maybeSingle();
+    const wsPatch: { domain_verified_at: string; marketplace_domain?: string } = {
+      domain_verified_at: verifiedAt,
+    };
+    if (!ws?.marketplace_domain) {
+      wsPatch.marketplace_domain = row.hostname;
+    }
+    await sb().from("workspaces").update(wsPatch).eq("id", data.workspaceId);
+
     return { ok: true as const, method };
   });
 
