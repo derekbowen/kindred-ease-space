@@ -7,7 +7,12 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/reset-password")({
-  head: () => ({ meta: [{ title: "Reset password — founders.click" }] }),
+  head: () => ({
+    meta: [
+      { title: "Reset password — founders.click" },
+      { name: "description", content: "Reset the password on your founders.click account. Request a secure recovery link by email, then set a new password to regain access." },
+    ],
+  }),
   component: ResetPasswordPage,
 });
 

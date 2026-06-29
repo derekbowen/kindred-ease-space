@@ -82,8 +82,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "founders.click — The growth engine for Sharetribe marketplaces" },
-      { name: "description", content: "AI-powered SEO, content factory, lead inbox and ops dashboard for Sharetribe marketplace founders. Replace your agency. Move at AI speed." },
+      { title: "founders.click" },
+      { name: "description", content: "Growth tools for Sharetribe marketplace founders." },
       { name: "author", content: "founders.click" },
       { property: "og:title", content: "founders.click — The growth engine for Sharetribe marketplaces" },
       { property: "og:description", content: "AI-powered SEO, content factory, lead inbox and ops dashboard for Sharetribe marketplace founders." },
