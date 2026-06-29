@@ -9,8 +9,6 @@ import { timingSafeEqual } from "crypto";
 import { runSharetribeSyncAll, runSharetribeSyncForWorkspace } from "@/lib/sharetribe-sync.server";
 
 function safeEqual(a: string, b: string): boolean {
-  // Pad both sides to the longer length to keep the compare timing-safe
-  // regardless of input shape, then constant-time compare.
   const len = Math.max(a.length, b.length);
   const aBuf = Buffer.alloc(len);
   const bBuf = Buffer.alloc(len);
@@ -29,7 +27,8 @@ export const Route = createFileRoute("/api/public/hooks/sync-sharetribe")({
           return new Response("server misconfigured", { status: 500 });
         }
         const auth = request.headers.get("authorization") ?? "";
-        const presented = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+        const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+        const presented = bearer || request.headers.get("x-cron-secret") || "";
         if (!presented || !safeEqual(presented, expected)) {
           return new Response("unauthorized", { status: 401 });
         }

@@ -106,6 +106,8 @@ function SharetribeIntegrationPage() {
       } else {
         setErr(r.error);
       }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Sync failed");
     } finally {
       setSyncing(false);
     }

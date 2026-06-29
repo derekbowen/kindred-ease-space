@@ -24,7 +24,8 @@ Deno.serve(async (req) => {
     if (!user) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: corsHeaders });
 
     const admin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const { workspace_id, mode, quantity, tier, addon_key } = await req.json();
+    const { workspace_id, mode, quantity: rawQuantity, tier, addon_key } = await req.json();
+    const quantity = Math.max(1, Math.min(100, Math.floor(Number(rawQuantity) || 1)));
 
     // Validate inputs to avoid leaking TypeErrors from Stripe
     const validModes = ["credits", "subscription", "addon"] as const;
@@ -70,7 +71,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    const origin = req.headers.get("origin") ?? "https://founders.click";
+    const allowedOrigins = (Deno.env.get("ALLOWED_ORIGINS") ?? "https://founders.click")
+      .split(",")
+      .map((o) => o.trim())
+      .filter(Boolean);
+    const rawOrigin = req.headers.get("origin");
+    const origin = rawOrigin && allowedOrigins.includes(rawOrigin) ? rawOrigin : allowedOrigins[0];
     const isSubscription = mode === "subscription" || mode === "addon";
     const selectedPrice =
       mode === "credits"
@@ -84,7 +90,7 @@ Deno.serve(async (req) => {
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       mode: isSubscription ? "subscription" : "payment",
-      line_items: [{ price: selectedPrice.id, quantity: mode === "credits" ? (quantity ?? 1) : 1 }],
+      line_items: [{ price: selectedPrice.id, quantity: mode === "credits" ? quantity : 1 }],
       success_url: `${origin}/app/${returnPath}?success=1&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/app/${returnPath}?canceled=1`,
       metadata: {

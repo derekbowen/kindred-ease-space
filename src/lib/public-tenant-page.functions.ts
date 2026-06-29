@@ -15,8 +15,6 @@ function resolveRequestHost(): string | undefined {
   try {
     const raw = getRequestHeader("x-forwarded-host") || getRequestHeader("host");
     if (!raw) return undefined;
-    // Mirror window.location.host (hostname[:port]) but drop a trailing port so
-    // it matches the stored domain. Take the first value if a list is present.
     return raw.split(",")[0]!.trim().toLowerCase().replace(/:\d+$/, "") || undefined;
   } catch {
     return undefined;
@@ -50,30 +48,17 @@ export type PublicTenantPage = {
 };
 
 export const getPublicTenantPage = createServerFn({ method: "GET" })
-  .inputValidator((d) =>
-    z
-      .object({
-        slug: z.string().min(1).max(200),
-        host: z.string().min(3).max(253).optional(),
-        workspaceId: z.string().uuid().optional(),
-      })
-      .parse(d),
-  )
+  .inputValidator((d) => z.object({ slug: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data }): Promise<{ page: PublicTenantPage | null; host: string | null }> => {
-    let workspaceId = data.workspaceId ?? null;
+    const host = resolveRequestHost() ?? null;
+    let workspaceId: string | null = null;
 
-    // Prefer the host the client passed (if any), but always fall back to the
-    // real request host resolved server-side — the loader can't read it during SSR.
-    const host = data.host ?? resolveRequestHost() ?? null;
-    if (!workspaceId && host) {
-      const { data: ws } = await sb().rpc("workspace_for_host", { _host: host });
+    if (host) {
+      const { data: ws, error } = await sb().rpc("current_workspace_id_by_host", { _host: host });
+      if (error) console.error("[getPublicTenantPage] host lookup failed:", error.message);
       if (ws) workspaceId = ws as string;
     }
-    // Fallback: if there is exactly one workspace in the project, use it
-    if (!workspaceId) {
-      const { data: rows } = await sb().from("workspaces").select("id").limit(2);
-      if (rows && rows.length === 1) workspaceId = rows[0].id;
-    }
+
     if (!workspaceId) return { page: null, host };
 
     const { data: page } = await sb()

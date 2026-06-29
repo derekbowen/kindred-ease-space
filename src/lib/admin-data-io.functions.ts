@@ -205,28 +205,62 @@ export const importTable = createServerFn({ method: "POST" })
     for (let i = 0; i < validRows.length; i += chunkSize) {
       const chunk = validRows.slice(i, i + chunkSize);
       const chunkRowNums = validRowNumbers.slice(i, i + chunkSize);
+
+      const foreignIds = new Set<string>();
+      if (data.mode === "upsert" && conflictColumn === "id") {
+        const ids = chunk.map((r) => r.id).filter(Boolean);
+        if (ids.length) {
+          const { data: existing } = await supabaseAdmin
+            .from(data.table)
+            .select("id, workspace_id")
+            .in("id", ids);
+          for (const row of existing ?? []) {
+            if (row.workspace_id !== workspaceId) foreignIds.add(row.id as string);
+          }
+        }
+      }
+
+      const safeChunk: Record<string, any>[] = [];
+      const safeNums: number[] = [];
+      for (let j = 0; j < chunk.length; j++) {
+        const row = chunk[j];
+        const rowNum = chunkRowNums[j];
+        if (row.id && foreignIds.has(String(row.id))) {
+          rowErrors.push({
+            row: rowNum,
+            key: String(row.id),
+            reason: "Row belongs to another workspace",
+          });
+          continue;
+        }
+        safeChunk.push(row);
+        safeNums.push(rowNum);
+      }
+
+      if (!safeChunk.length) continue;
+
       const tbl = supabaseAdmin.from(data.table) as any;
       const q =
         data.mode === "upsert"
-          ? tbl.upsert(chunk, { onConflict: conflictColumn })
-          : tbl.insert(chunk);
+          ? tbl.upsert(safeChunk, { onConflict: conflictColumn })
+          : tbl.insert(safeChunk);
       const { error } = await q;
       if (!error) {
-        inserted += chunk.length;
+        inserted += safeChunk.length;
         continue;
       }
       // Per-row retry to isolate failures.
-      for (let j = 0; j < chunk.length; j++) {
+      for (let j = 0; j < safeChunk.length; j++) {
         const tbl2 = supabaseAdmin.from(data.table) as any;
         const q2 =
           data.mode === "upsert"
-            ? tbl2.upsert([chunk[j]], { onConflict: conflictColumn })
-            : tbl2.insert([chunk[j]]);
+            ? tbl2.upsert([safeChunk[j]], { onConflict: conflictColumn })
+            : tbl2.insert([safeChunk[j]]);
         const { error: rowErr } = await q2;
         if (rowErr) {
           rowErrors.push({
-            row: chunkRowNums[j],
-            key: chunk[j][conflictColumn] != null ? String(chunk[j][conflictColumn]) : undefined,
+            row: safeNums[j],
+            key: safeChunk[j][conflictColumn] != null ? String(safeChunk[j][conflictColumn]) : undefined,
             reason: `DB: ${rowErr.message}`,
           });
         } else inserted++;

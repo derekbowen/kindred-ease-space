@@ -50,7 +50,7 @@ export const getLatestCanonicalAudit = createServerFn({ method: "GET" })
   .handler(async ({ context }): Promise<AuditRunSummary> => {
     await assertAdmin(context.userId);
     try {
-      const { data, error } = await supabaseAdmin
+      const { data: row, error } = await supabaseAdmin
         .from("canonical_audit_runs")
         .select("started_at, finished_at, total_pages, pages_with_failures, pages_with_warnings, totals, pages")
         .order("started_at", { ascending: false })
@@ -60,15 +60,15 @@ export const getLatestCanonicalAudit = createServerFn({ method: "GET" })
         console.error("[canonical-audit] fetch failed:", error.message);
         return EMPTY_SUMMARY;
       }
-      if (!data) return EMPTY_SUMMARY;
+      if (!row) return EMPTY_SUMMARY;
       return {
-        startedAt: data.started_at as string,
-        finishedAt: data.finished_at as string,
-        totalPages: data.total_pages as number,
-        pagesWithFailures: data.pages_with_failures as number,
-        pagesWithWarnings: data.pages_with_warnings as number,
-        totals: (data.totals as AuditRunSummary["totals"]) ?? EMPTY_SUMMARY.totals,
-        pages: (data.pages as AuditRunSummary["pages"]) ?? [],
+        startedAt: row.started_at as string,
+        finishedAt: row.finished_at as string,
+        totalPages: row.total_pages as number,
+        pagesWithFailures: row.pages_with_failures as number,
+        pagesWithWarnings: row.pages_with_warnings as number,
+        totals: (row.totals as AuditRunSummary["totals"]) ?? EMPTY_SUMMARY.totals,
+        pages: (row.pages as AuditRunSummary["pages"]) ?? [],
       };
     } catch (err) {
       console.error("[canonical-audit] fetch threw:", err);

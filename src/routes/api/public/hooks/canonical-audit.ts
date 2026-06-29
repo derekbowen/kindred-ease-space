@@ -12,9 +12,6 @@ import { runFullAudit } from "@/lib/admin-canonical-audit.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 function safeEqual(a: string, b: string) {
-  // Pad both sides to the longer length to keep the compare timing-safe
-  // regardless of input shape — early-return on length mismatch leaks the
-  // expected secret's length.
   const len = Math.max(a.length, b.length);
   const ab = Buffer.alloc(len);
   const bb = Buffer.alloc(len);

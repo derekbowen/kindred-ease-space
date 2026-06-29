@@ -79,6 +79,22 @@ export const upsertTenantPage = createServerFn({ method: "POST" })
   .inputValidator((d) => upsertSchema.parse(d))
   .handler(async ({ data, context }) => {
     await assertMember(data.workspaceId, context.userId);
+
+    let publishedAt: string | null = null;
+    if (data.status === "published") {
+      if (data.id) {
+        const { data: existing } = await sb()
+          .from("tenant_pages")
+          .select("published_at")
+          .eq("id", data.id)
+          .eq("workspace_id", data.workspaceId)
+          .maybeSingle();
+        publishedAt = existing?.published_at ?? new Date().toISOString();
+      } else {
+        publishedAt = new Date().toISOString();
+      }
+    }
+
     const row: Record<string, any> = {
       workspace_id: data.workspaceId,
       template_id: data.templateId,
@@ -90,7 +106,7 @@ export const upsertTenantPage = createServerFn({ method: "POST" })
       variables: data.variables,
       listing_filter: data.listingFilter,
       status: data.status,
-      published_at: data.status === "published" ? new Date().toISOString() : null,
+      published_at: publishedAt,
     };
     if (data.id) {
       const { data: out, error } = await sb()

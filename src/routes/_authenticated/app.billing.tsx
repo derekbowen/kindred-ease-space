@@ -29,19 +29,20 @@ function BillingPage() {
 
   useEffect(() => {
     (async () => {
-      // Resolve workspace via getMe (server-side membership check) instead of
-      // `workspaces.select().limit(1)`. Multi-workspace users would otherwise
-      // see whichever row Postgres returned first.
-      const me = await getMe();
-      const wsId = me.memberships?.[0]?.workspace_id ?? null;
-      if (!wsId) return;
-      setWorkspaceId(wsId);
-      const [{ data: bal }, { data: subRow }] = await Promise.all([
-        supabase.from("credit_balances").select("balance").eq("workspace_id", wsId).maybeSingle(),
-        supabase.from("subscriptions").select("plan_tier, status, current_period_end").eq("workspace_id", wsId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-      ]);
-      setBalance(bal?.balance ?? 0);
-      setSub(subRow);
+      try {
+        const me = await getMe();
+        const wsId = me.memberships?.[0]?.workspace_id ?? null;
+        if (!wsId) return;
+        setWorkspaceId(wsId);
+        const [{ data: bal }, { data: subRow }] = await Promise.all([
+          supabase.from("credit_balances").select("balance").eq("workspace_id", wsId).maybeSingle(),
+          supabase.from("subscriptions").select("plan_tier, status, current_period_end").eq("workspace_id", wsId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        ]);
+        setBalance(bal?.balance ?? 0);
+        setSub(subRow);
+      } catch (e) {
+        console.error("billing load failed", e);
+      }
     })();
   }, []);
 

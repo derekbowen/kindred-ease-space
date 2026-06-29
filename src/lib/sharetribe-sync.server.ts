@@ -8,6 +8,14 @@ const SHARETRIBE_API_BASE = "https://flex-integ-api.sharetribe.com/v1/integratio
 
 type AnyRec = Record<string, any>;
 
+function jsonApiId(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && "uuid" in value) {
+    return (value as { uuid?: string }).uuid;
+  }
+  return undefined;
+}
+
 async function fetchWithRetry(input: string, init: RequestInit, attempts = 3): Promise<Response> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
@@ -133,7 +141,10 @@ function mapListing(workspaceId: string, marketplaceUrl: string, raw: AnyRec, in
   // Resolve images via included relationships
   const imgRels: AnyRec[] = raw?.relationships?.images?.data ?? [];
   const images = (imgRels
-    .map((rel) => included.find((x) => x.type === "image" && x.id?.uuid === rel.id?.uuid))
+    .map((rel) => {
+      const relId = jsonApiId(rel?.id);
+      return included.find((x) => x.type === "image" && jsonApiId(x.id) === relId);
+    })
     .filter(Boolean) as AnyRec[])
     .map((img) => {
       const variants = img?.attributes?.variants ?? {};
@@ -153,8 +164,9 @@ function mapListing(workspaceId: string, marketplaceUrl: string, raw: AnyRec, in
 
   // Author
   const authorRel = raw?.relationships?.author?.data;
-  const author = authorRel
-    ? included.find((x) => x.type === "user" && x.id?.uuid === authorRel.id?.uuid)
+  const authorId = jsonApiId(authorRel?.id);
+  const author = authorId
+    ? included.find((x) => x.type === "user" && jsonApiId(x.id) === authorId)
     : null;
 
   const baseUrl = marketplaceUrl.replace(/\/+$/, "");
@@ -276,7 +288,11 @@ export async function runSharetribeSyncForWorkspace(workspaceId: string): Promis
           .delete()
           .eq("workspace_id", workspaceId)
           .in("sharetribe_listing_id", stale);
-        if (!delErr) removed = stale.length;
+        if (delErr) {
+          console.error("[sharetribe-sync] stale listing delete failed", delErr.message);
+        } else {
+          removed = stale.length;
+        }
       }
     } else {
       // No listings upstream — wipe local

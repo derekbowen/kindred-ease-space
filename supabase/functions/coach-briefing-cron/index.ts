@@ -17,14 +17,18 @@ Deno.serve(async (req) => {
   // LLM calls across every workspace. (Set CRON_SECRET on the function, the
   // pg_cron job header, and the app; until then behaviour is unchanged.)
   const CRON_SECRET = Deno.env.get("CRON_SECRET");
-  if (CRON_SECRET) {
-    const provided = req.headers.get("x-cron-secret");
-    if (provided !== CRON_SECRET) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401,
-        headers: { ...cors, "Content-Type": "application/json" },
-      });
-    }
+  if (!CRON_SECRET) {
+    return new Response(JSON.stringify({ error: "cron_not_configured" }), {
+      status: 503,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
+  }
+  const provided = req.headers.get("x-cron-secret");
+  if (provided !== CRON_SECRET) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
   }
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;

@@ -31,6 +31,12 @@ export const createWorkspace = createServerFn({ method: "POST" })
     const slug = `${slugBase}-${Math.random().toString(36).slice(2, 8)}`;
     const domain = data.marketplaceDomain.toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
 
+    const { count: ownedWorkspaces } = await supabaseAdmin
+      .from("workspace_members")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("role", "owner");
+
     const { data: ws, error } = await supabaseAdmin
       .from("workspaces")
       .insert({
@@ -68,21 +74,21 @@ export const createWorkspace = createServerFn({ method: "POST" })
       throw new Error(`Couldn't link you to the workspace: ${memberErr.message}`);
     }
 
-    // Trial credits are a nice-to-have. NEVER let a credit-grant hiccup block
-    // onboarding — the workspace + membership already exist, so the user gets in;
-    // credits can be granted/backfilled later.
-    try {
-      const { error: grantErr } = await supabaseAdmin.rpc("grant_credits", {
-        _workspace_id: ws.id,
-        _amount: STARTER_TRIAL_CREDITS,
-        _reason: "trial_grant",
-        _ref_type: "trial",
-        _ref_id: ws.id,
-        _metadata: { source: "onboarding" },
-      });
-      if (grantErr) console.error("[createWorkspace] grant_credits failed (non-fatal)", grantErr);
-    } catch (e) {
-      console.error("[createWorkspace] grant_credits threw (non-fatal)", e);
+    // Trial credits only on a user's first owned workspace. Non-fatal if grant fails.
+    if ((ownedWorkspaces ?? 0) === 0) {
+      try {
+        const { error: grantErr } = await supabaseAdmin.rpc("grant_credits", {
+          _workspace_id: ws.id,
+          _amount: STARTER_TRIAL_CREDITS,
+          _reason: "trial_grant",
+          _ref_type: "trial",
+          _ref_id: ws.id,
+          _metadata: { source: "onboarding" },
+        });
+        if (grantErr) console.error("[createWorkspace] grant_credits failed (non-fatal)", grantErr);
+      } catch (e) {
+        console.error("[createWorkspace] grant_credits threw (non-fatal)", e);
+      }
     }
 
     // Fire-and-forget welcome email — never block workspace creation.
@@ -165,9 +171,9 @@ export const ensureWorkspace = createServerFn({ method: "POST" })
       throw new Error(`Couldn't link you to the workspace: ${memberErr.message}`);
     }
 
-    // Non-fatal trial credits.
+    // Non-fatal trial credits — first workspace only (auto_provision is first-time).
     try {
-      await supabaseAdmin.rpc("grant_credits", {
+      const { error: grantErr } = await supabaseAdmin.rpc("grant_credits", {
         _workspace_id: ws.id,
         _amount: STARTER_TRIAL_CREDITS,
         _reason: "trial_grant",
@@ -175,6 +181,7 @@ export const ensureWorkspace = createServerFn({ method: "POST" })
         _ref_id: ws.id,
         _metadata: { source: "auto_provision" },
       });
+      if (grantErr) console.error("[ensureWorkspace] grant_credits failed (non-fatal)", grantErr);
     } catch (e) {
       console.error("[ensureWorkspace] grant_credits failed (non-fatal)", e);
     }
@@ -221,14 +228,11 @@ export const getWorkspaceOverview = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
 
     // Explicit membership check — don't trust the client-supplied workspaceId.
-    // RLS would also block reads, but defense-in-depth matters for a multi-
-    // tenant endpoint and gives a clean 403-style error instead of silent nulls.
     const { data: isMember } = await supabaseAdmin.rpc("is_workspace_member", {
       _workspace_id: data.workspaceId,
       _user_id: userId,
     });
     if (!isMember) throw new Error("Not allowed");
-
 
     const [{ data: ws }, { data: balance }, { count: pageCount }, { count: leadCount }] =
       await Promise.all([

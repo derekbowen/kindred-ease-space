@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
           const qty = lineItems.data[0]?.quantity ?? 1;
           const creditsPerPack = Number(s.metadata?.credits_per_pack ?? 1000);
           const credits = creditsPerPack * qty;
-          await admin.from("credit_purchases").insert({
+          const { error: purchaseErr } = await admin.from("credit_purchases").insert({
             workspace_id,
             stripe_session_id: s.id,
             stripe_payment_intent_id: s.payment_intent as string,
@@ -47,6 +47,11 @@ Deno.serve(async (req) => {
             currency: s.currency ?? "usd",
             status: "completed",
           });
+          if (purchaseErr) {
+            // Duplicate webhook delivery hits the unique stripe_session_id constraint.
+            if (purchaseErr.code === "23505") break;
+            throw purchaseErr;
+          }
           await admin.rpc("grant_credits", {
             _workspace_id: workspace_id,
             _amount: credits,
@@ -110,6 +115,11 @@ Deno.serve(async (req) => {
           current_period_end: periodEnd,
           cancel_at_period_end: sub.cancel_at_period_end,
         }, { onConflict: "stripe_subscription_id" });
+        await admin.from("workspaces").update({
+          plan: tier,
+          subscription_status: sub.status,
+          current_period_end: periodEnd,
+        }).eq("id", workspace_id);
         break;
       }
       case "invoice.paid": {
@@ -137,6 +147,12 @@ Deno.serve(async (req) => {
           plan_tier = stripeSub.metadata?.plan_tier ?? (await resolvePlanTierFromPrice(stripe, priceId));
         }
         if (!workspace_id) break;
+
+        // Skip proration/update invoices — only grant on normal cycle or first invoice.
+        const billingReason = inv.billing_reason;
+        if (billingReason && billingReason !== "subscription_cycle" && billingReason !== "subscription_create") {
+          break;
+        }
 
         const credits = creditsForTier(plan_tier);
         if (credits > 0) {
@@ -170,6 +186,12 @@ Deno.serve(async (req) => {
         await admin.from("subscriptions")
           .update({ status: "canceled", cancel_at_period_end: false })
           .eq("stripe_subscription_id", sub.id);
+        const workspace_id = sub.metadata?.workspace_id;
+        if (workspace_id) {
+          await admin.from("workspaces").update({
+            subscription_status: "canceled",
+          }).eq("id", workspace_id);
+        }
         break;
       }
     }

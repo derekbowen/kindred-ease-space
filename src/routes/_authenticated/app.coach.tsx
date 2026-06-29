@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,10 +18,6 @@ import { SUGGESTED_PROMPTS } from "@/lib/coach-prompts";
 
 export const Route = createFileRoute("/_authenticated/app/coach")({
   head: () => ({ meta: [{ title: "Coach — founders.click" }] }),
-  beforeLoad: async () => {
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) throw redirect({ to: "/login" });
-  },
   component: CoachPage,
 });
 
@@ -34,6 +30,7 @@ function CoachPage() {
   const [error, setError] = useState<string | null>(null);
   const [draftMessages, setDraftMessages] = useState<CoachMsg[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const activeStreamConvRef = useRef<string | null>(null);
 
   useEffect(() => {
     getMe().then((me) => setWorkspaceId(me.memberships[0]?.workspace_id ?? null));
@@ -51,8 +48,12 @@ function CoachPage() {
     enabled: !!activeConvId,
   });
 
-  // Reset drafts when switching conversations
-  useEffect(() => { setDraftMessages([]); setError(null); }, [activeConvId]);
+  // Reset drafts when switching conversations; ignore in-flight stream updates.
+  useEffect(() => {
+    activeStreamConvRef.current = null;
+    setDraftMessages([]);
+    setError(null);
+  }, [activeConvId]);
 
   const persistedMessages: CoachMsg[] = (msgData?.messages ?? []).map((m) => ({
     id: m.id as string,
@@ -86,6 +87,7 @@ function CoachPage() {
     setDraftMessages((prev) => [...prev, userMsg, asstMsg]);
     setInput("");
     setStreaming(true);
+    activeStreamConvRef.current = convId;
 
     try {
       const { data: session } = await supabase.auth.getSession();
@@ -110,6 +112,7 @@ function CoachPage() {
       let assembled = "";
 
       while (true) {
+        if (activeStreamConvRef.current !== convId) break;
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
@@ -149,10 +152,11 @@ function CoachPage() {
           }
         }
       }
-      // Refresh persisted messages and clear drafts
-      await qc.invalidateQueries({ queryKey: ["coach-messages", convId] });
-      await qc.invalidateQueries({ queryKey: ["coach-conversations", workspaceId] });
-      setDraftMessages([]);
+      if (activeStreamConvRef.current === convId) {
+        await qc.invalidateQueries({ queryKey: ["coach-messages", convId] });
+        await qc.invalidateQueries({ queryKey: ["coach-conversations", workspaceId] });
+        setDraftMessages([]);
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Something went wrong";
       setError(msg);

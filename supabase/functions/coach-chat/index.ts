@@ -7,6 +7,7 @@ import {
   OPENROUTER_BASE,
   PLATFORM_DEFAULT_MODEL,
   creditsForUsage,
+  estimateCreditsBeforeCall,
 } from "../_shared/ai-pricing.ts";
 
 const RequestSchema = z.object({
@@ -148,7 +149,10 @@ async function executeTool(
         .order("updated_at", { ascending: false })
         .limit(Math.min(limit ?? 20, 50));
       if (status) q = q.eq("status", status);
-      if (search) q = q.or(`slug.ilike.%${search}%,title.ilike.%${search}%`);
+      if (search) {
+        const safe = String(search).replace(/[%,().,]/g, "").slice(0, 100);
+        if (safe) q = q.or(`slug.ilike.%${safe}%,title.ilike.%${safe}%`);
+      }
       const { data, error } = await q;
       if (error) return { error: error.message };
       return { pages: data };
@@ -313,6 +317,17 @@ Deno.serve(async (req) => {
       });
     }
 
+    const { data: conv } = await admin
+      .from("coach_conversations")
+      .select("id, workspace_id")
+      .eq("id", body.conversation_id)
+      .maybeSingle();
+    if (!conv || conv.workspace_id !== body.workspace_id) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403, headers: { ...cors, "Content-Type": "application/json" },
+      });
+    }
+
     // Load active system prompt
     const { data: prompt } = await admin
       .from("coach_system_prompts").select("body").eq("is_active", true).order("version", { ascending: false }).limit(1).single();
@@ -391,22 +406,29 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
       });
     }
 
-    // Platform usage is billed to purchased credits. Pre-check balance (after the
-    // free trial quota) so we don't run an expensive tool loop a client can't
-    // cover. No hard cap — an empty balance just means "top up to continue".
+    // Platform path: free trial quota first, then purchased credits (mirrors ai-proxy).
+    let platformBilling: "free_quota" | "credits" | null = null;
     if (!usedByok) {
       const { error: qErr } = await admin.rpc("consume_platform_ai_credit", {
         _workspace_id: body.workspace_id,
       });
-      if (qErr && typeof qErr.message === "string" && qErr.message.includes("platform_ai_quota_exhausted")) {
+      if (!qErr) {
+        platformBilling = "free_quota";
+      } else if (typeof qErr.message === "string" && qErr.message.includes("platform_ai_quota_exhausted")) {
+        platformBilling = "credits";
+        const estCredits = estimateCreditsBeforeCall(model, body.user_message.length * 4, 4096);
         const { data: bal } = await admin
           .from("credit_balances").select("balance").eq("workspace_id", body.workspace_id).maybeSingle();
-        if (!bal || bal.balance <= 0) {
+        if (!bal || bal.balance < estCredits) {
           return new Response(
             JSON.stringify({ error: "Out of AI credits. Top up in Billing to keep coaching.", code: "insufficient_credits" }),
             { status: 402, headers: { ...cors, "Content-Type": "application/json" } },
           );
         }
+      } else {
+        return new Response(JSON.stringify({ error: qErr?.message ?? "quota_error" }), {
+          status: 500, headers: { ...cors, "Content-Type": "application/json" },
+        });
       }
     }
 
@@ -472,10 +494,9 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
               .update({ updated_at: new Date().toISOString() })
               .eq("id", body.conversation_id);
 
-            // Settle platform credits for the entire turn (all tool-loop
-            // iterations) and log usage. BYOK turns bill the tenant's own key.
+            // Settle purchased credits only when the free quota was not used.
             let creditsCharged = 0;
-            if (!usedByok) {
+            if (platformBilling === "credits") {
               creditsCharged = creditsForUsage(model, totalPromptTokens, totalCompletionTokens);
               if (creditsCharged > 0) {
                 const { error: dErr } = await admin.rpc("deduct_credits", {
