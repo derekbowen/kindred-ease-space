@@ -13,7 +13,7 @@ export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
       { title: "Sign in — founders.click" },
-      { name: "description", content: "Sign in to your founders.click workspace." },
+      { name: "description", content: "Sign in to your founders.click workspace to manage SEO, content generation, lead inbox, and marketplace ops in one dashboard." },
     ],
   }),
   validateSearch: searchSchema,
