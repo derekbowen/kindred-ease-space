@@ -4,10 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Sparkles, FileText, Users, Coins } from "lucide-react";
+import { Sparkles, FileText, Store, Coins, BarChart3 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { getWorkspaceOverview } from "@/lib/workspace.functions";
 import { DailyBriefing } from "@/components/coach/DailyBriefing";
+import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
 
 export const Route = createFileRoute("/_authenticated/app/")({
   head: () => ({ meta: [{ title: "Dashboard — founders.click" }] }),
@@ -19,10 +20,6 @@ function DashboardPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
   useEffect(() => {
-    // The app shell (`_authenticated/app.tsx`) is the single owner of
-    // workspace auto-provisioning. We only READ membership here —
-    // calling ensureWorkspace() in parallel with the shell creates a
-    // TOCTOU race that produces duplicate workspaces on first signup.
     let cancelled = false;
     const poll = async (attempt = 0): Promise<void> => {
       try {
@@ -45,7 +42,6 @@ function DashboardPage() {
     return () => { cancelled = true; };
   }, [navigate]);
 
-
   const { data, isLoading } = useQuery({
     queryKey: ["workspace-overview", workspaceId],
     queryFn: () => getWorkspaceOverview({ data: { workspaceId: workspaceId! } }),
@@ -56,6 +52,7 @@ function DashboardPage() {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-40 w-full" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Skeleton className="h-32" />
           <Skeleton className="h-32" />
@@ -67,40 +64,32 @@ function DashboardPage() {
 
   const ws = data?.workspace;
   const balance = data?.balance;
+  const stats = data?.stats;
   const trialEnd = ws?.trial_ends_at ? new Date(ws.trial_ends_at) : null;
   const daysLeft = trialEnd ? Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : null;
+
+  const setupStatus = {
+    sharetribeConnected: stats?.sharetribeConnected ?? false,
+    hasListings: (stats?.syncedListings ?? 0) > 0,
+    hasDomain: Boolean(ws?.marketplace_domain),
+    hasPublishedPage: (stats?.publishedPages ?? 0) > 0,
+  };
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Welcome back</h1>
         <p className="text-sm text-muted-foreground">
-          {ws?.name} · {ws?.marketplace_domain ?? "no domain set"}
+          {ws?.name} · {ws?.marketplace_domain ?? "domain not set yet"}
         </p>
       </div>
-
-      {!ws?.marketplace_domain && (
-        <Card className="border-primary/30 bg-primary/5">
-          <CardContent className="py-4 flex items-center justify-between gap-3">
-            <div>
-              <div className="font-medium">Finish setting up your marketplace</div>
-              <div className="text-xs text-muted-foreground">
-                Add your marketplace name and domain whenever you're ready — it's optional.
-              </div>
-            </div>
-            <Button variant="outline" asChild>
-              <Link to="/app/settings">Open setup</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
 
       {ws?.subscription_status === "trialing" && daysLeft !== null && (
         <Card className="border-orange-500/30 bg-orange-500/5">
           <CardContent className="py-4 flex items-center justify-between">
             <div>
               <div className="font-medium">Trial — {daysLeft} day{daysLeft === 1 ? "" : "s"} left</div>
-              <div className="text-xs text-muted-foreground">Pick a plan to keep things rolling after the trial ends.</div>
+              <div className="text-xs text-muted-foreground">Pick a plan to keep generating after the trial ends.</div>
             </div>
             <Button asChild>
               <Link to="/app/billing">Choose a plan</Link>
@@ -108,6 +97,8 @@ function DashboardPage() {
           </CardContent>
         </Card>
       )}
+
+      <SetupChecklist status={setupStatus} />
 
       {workspaceId && <DailyBriefing workspaceId={workspaceId} />}
 
@@ -120,7 +111,11 @@ function DashboardPage() {
             <CardTitle className="text-3xl">{balance?.balance?.toLocaleString() ?? 0}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            {balance?.monthly_allowance ? `${balance.monthly_allowance.toLocaleString()} / mo` : "Top up to generate pages"}
+            {balance?.monthly_allowance
+              ? `${balance.monthly_allowance.toLocaleString()} included / mo`
+              : "Top up in Billing to keep generating"}
+            {" · "}
+            <Link to="/app/billing" className="hover:text-foreground">Billing →</Link>
           </CardContent>
         </Card>
 
@@ -129,37 +124,60 @@ function DashboardPage() {
             <CardDescription className="flex items-center gap-2">
               <FileText className="h-4 w-4" /> Published Pages
             </CardDescription>
-            <CardTitle className="text-3xl">{data?.stats.publishedPages ?? 0}</CardTitle>
+            <CardTitle className="text-3xl">{stats?.publishedPages ?? 0}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            <Link to="/app/pages" className="hover:text-foreground">Open Pages →</Link>
+            {(stats?.publishedPages ?? 0) === 0 ? (
+              <Link to="/app/pages/new" className="hover:text-foreground">Create your first page →</Link>
+            ) : (
+              <Link to="/app/pages" className="hover:text-foreground">Manage pages →</Link>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <Users className="h-4 w-4" /> Leads
+              <Store className="h-4 w-4" /> Synced Listings
             </CardDescription>
-            <CardTitle className="text-3xl">{data?.stats.leads ?? 0}</CardTitle>
+            <CardTitle className="text-3xl">{stats?.syncedListings ?? 0}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            <Link to="/app/ops/lead-inbox" className="hover:text-foreground">Open Lead Inbox →</Link>
+            {stats?.sharetribeConnected ? (
+              <>
+                From Sharetribe
+                {stats?.lastSharetribeSync
+                  ? ` · last sync ${new Date(stats.lastSharetribeSync).toLocaleDateString()}`
+                  : ""}
+                {" · "}
+                <Link to="/app/settings/integrations/sharetribe" className="hover:text-foreground">Integration →</Link>
+              </>
+            ) : (
+              <Link to="/app/settings/integrations/sharetribe" className="hover:text-foreground">Connect Sharetribe →</Link>
+            )}
           </CardContent>
         </Card>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-orange-500" /> Today's Top 3 Actions
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <BarChart3 className="h-4 w-4" /> Search performance
           </CardTitle>
-          <CardDescription>AI-ranked priorities will appear here once your site has data.</CardDescription>
+          <CardDescription>Import Google Search Console data to track clicks and impressions here.</CardDescription>
         </CardHeader>
-        <CardContent className="text-sm text-muted-foreground space-y-2">
-          <p>Connect your Google Search Console and Stripe to start surfacing live KPIs and ranked actions.</p>
-          <Button variant="outline" asChild>
-            <Link to="/app/settings">Open Settings</Link>
+        <CardContent className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/app/seo/gsc-import">Import GSC data</Link>
+          </Button>
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/app/seo/click-report">View click report</Link>
+          </Button>
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/app/coach">
+              <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+              Ask Coach
+            </Link>
           </Button>
         </CardContent>
       </Card>

@@ -234,35 +234,51 @@ export const getWorkspaceOverview = createServerFn({ method: "GET" })
     });
     if (!isMember) throw new Error("Not allowed");
 
-    const [{ data: ws }, { data: balance }, { count: pageCount }, { count: leadCount }] =
-      await Promise.all([
-        supabase
-          .from("workspaces")
-          .select("id, name, plan, subscription_status, trial_ends_at, marketplace_domain, domain_verified_at, current_period_end")
-          .eq("id", data.workspaceId)
-          .single(),
-        supabase
-          .from("credit_balances")
-          .select("balance, monthly_allowance, cycle_resets_at, lifetime_spent")
-          .eq("workspace_id", data.workspaceId)
-          .maybeSingle(),
-        supabase
-          .from("content_pages")
-          .select("id", { count: "exact", head: true })
-          .eq("workspace_id", data.workspaceId)
-          .eq("status", "published"),
-        supabase
-          .from("provider_leads")
-          .select("id", { count: "exact", head: true })
-          .eq("workspace_id", data.workspaceId),
-      ]);
+    const [
+      { data: ws },
+      { data: balance },
+      { count: tenantPageCount },
+      { count: listingCount },
+      { data: sharetribe },
+    ] = await Promise.all([
+      supabase
+        .from("workspaces")
+        .select("id, name, plan, subscription_status, trial_ends_at, marketplace_domain, domain_verified_at, current_period_end")
+        .eq("id", data.workspaceId)
+        .single(),
+      supabase
+        .from("credit_balances")
+        .select("balance, monthly_allowance, cycle_resets_at, lifetime_spent")
+        .eq("workspace_id", data.workspaceId)
+        .maybeSingle(),
+      supabaseAdmin
+        .from("tenant_pages")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", data.workspaceId)
+        .eq("status", "published"),
+      supabaseAdmin
+        .from("tenant_listings")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", data.workspaceId),
+      supabaseAdmin
+        .from("tenant_integrations")
+        .select("status, listings_count, last_sync_at")
+        .eq("workspace_id", data.workspaceId)
+        .eq("provider", "sharetribe")
+        .maybeSingle(),
+    ]);
+
+    const sharetribeConnected = sharetribe?.status === "connected";
 
     return {
       workspace: ws ?? null,
       balance: balance ?? null,
       stats: {
-        publishedPages: pageCount ?? 0,
-        leads: leadCount ?? 0,
+        publishedPages: tenantPageCount ?? 0,
+        syncedListings: listingCount ?? 0,
+        sharetribeConnected,
+        sharetribeListingsCount: sharetribe?.listings_count ?? listingCount ?? 0,
+        lastSharetribeSync: sharetribe?.last_sync_at ?? null,
       },
     };
   });
