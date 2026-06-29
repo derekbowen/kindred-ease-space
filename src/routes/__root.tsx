@@ -94,6 +94,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:description", content: "AI SEO + content factory + lead inbox for marketplace founders." },
       { property: "og:image", content: canonicalUrl("/product-demo-poster.jpg") },
       { name: "twitter:image", content: canonicalUrl("/product-demo-poster.jpg") },
+      { name: "google-site-verification", content: "wXqrsZ8WyZHOQwr7E-AKXmC_fwxEpLBVgHLsFIepwlw" },
     ],
     links: [
       {
