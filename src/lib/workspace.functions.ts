@@ -4,7 +4,80 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { sendEmail, welcomeEmailTemplate } from "@/lib/email.server";
 
-const STARTER_TRIAL_CREDITS = 250;
+type ProvisionResult = { workspace_id: string; created: boolean; slug: string | null };
+
+function isMissingProvisionRpc(message: string) {
+  return /provision_workspace_for_user/i.test(message) && /(does not exist|could not find)/i.test(message);
+}
+
+async function provisionWorkspace(
+  supabase: { rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }> },
+  userId: string,
+  args: {
+    name: string;
+    marketplaceDomain?: string | null;
+    slugHint?: string | null;
+    ifExistsReturn: boolean;
+  },
+): Promise<ProvisionResult> {
+  const { data, error } = await supabase.rpc("provision_workspace_for_user", {
+    _name: args.name,
+    _marketplace_domain: args.marketplaceDomain ?? null,
+    _slug_hint: args.slugHint ?? null,
+    _if_exists_return: args.ifExistsReturn,
+  });
+  if (!error) {
+    const row = data as ProvisionResult | null;
+    if (!row?.workspace_id) {
+      throw new Error("Workspace provisioning returned no workspace_id");
+    }
+    return row;
+  }
+  if (!isMissingProvisionRpc(error.message)) {
+    throw new Error(error.message);
+  }
+
+  // Migration not applied yet — fall back to service-role inserts.
+  const { data: existing } = await supabaseAdmin
+    .from("workspace_members")
+    .select("workspace_id, workspaces(slug)")
+    .eq("user_id", userId)
+    .eq("role", "owner")
+    .limit(1)
+    .maybeSingle();
+  if (existing?.workspace_id && args.ifExistsReturn) {
+    const slug = (existing.workspaces as { slug?: string } | null)?.slug ?? null;
+    return { workspace_id: existing.workspace_id, created: false, slug };
+  }
+
+  const slug = args.slugHint ?? `ws-${Math.random().toString(36).slice(2, 10)}`;
+  const { data: ws, error: insertErr } = await supabaseAdmin
+    .from("workspaces")
+    .insert({
+      slug,
+      name: args.name,
+      marketplace_domain: args.marketplaceDomain ?? null,
+      owner_user_id: userId,
+      plan: "starter",
+      subscription_status: "trialing",
+      trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+    })
+    .select("id")
+    .single();
+  if (insertErr || !ws) throw new Error(insertErr?.message ?? "workspace insert failed");
+
+  const { error: memberErr } = await supabaseAdmin.from("workspace_members").insert({
+    workspace_id: ws.id,
+    user_id: userId,
+    role: "owner",
+  });
+  if (memberErr) {
+    await supabaseAdmin.from("workspaces").delete().eq("id", ws.id);
+    throw new Error(memberErr.message);
+  }
+
+  return { workspace_id: ws.id, created: true, slug };
+}
 
 export const createWorkspace = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -21,7 +94,7 @@ export const createWorkspace = createServerFn({ method: "POST" })
       .parse(data),
   )
   .handler(async ({ data, context }) => {
-    const { userId } = context;
+    const { supabase } = context;
     const slugBase =
       data.name
         .toLowerCase()
@@ -31,64 +104,17 @@ export const createWorkspace = createServerFn({ method: "POST" })
     const slug = `${slugBase}-${Math.random().toString(36).slice(2, 8)}`;
     const domain = data.marketplaceDomain.toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
 
-    const { count: ownedWorkspaces } = await supabaseAdmin
-      .from("workspace_members")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .eq("role", "owner");
-
-    const { data: ws, error } = await supabaseAdmin
-      .from("workspaces")
-      .insert({
-        slug,
+    let ws: ProvisionResult;
+    try {
+      ws = await provisionWorkspace(supabase, context.userId, {
         name: data.name,
-        marketplace_domain: domain,
-        owner_user_id: userId,
-        plan: "starter",
-        subscription_status: "trialing",
-        trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-      })
-      .select("id, slug")
-      .single();
-
-    if (error || !ws) {
-      console.error("[createWorkspace] insert error", error);
-      // Surface the underlying reason — a generic message makes a stuck signup
-      // impossible to diagnose for the user (and us).
-      throw new Error(
-        error?.message ? `Couldn't create workspace: ${error.message}` : "Failed to create workspace. Please try again.",
-      );
-    }
-
-    // Owner membership is essential — if it fails the user would land back on
-    // onboarding forever (getMe sees no workspace). Check it, and roll back the
-    // orphaned workspace so a retry is clean.
-    const { error: memberErr } = await supabaseAdmin.from("workspace_members").insert({
-      workspace_id: ws.id,
-      user_id: userId,
-      role: "owner",
-    });
-    if (memberErr) {
-      console.error("[createWorkspace] member insert error", memberErr);
-      await supabaseAdmin.from("workspaces").delete().eq("id", ws.id);
-      throw new Error(`Couldn't link you to the workspace: ${memberErr.message}`);
-    }
-
-    // Trial credits only on a user's first owned workspace. Non-fatal if grant fails.
-    if ((ownedWorkspaces ?? 0) === 0) {
-      try {
-        const { error: grantErr } = await supabaseAdmin.rpc("grant_credits", {
-          _workspace_id: ws.id,
-          _amount: STARTER_TRIAL_CREDITS,
-          _reason: "trial_grant",
-          _ref_type: "trial",
-          _ref_id: ws.id,
-          _metadata: { source: "onboarding" },
-        });
-        if (grantErr) console.error("[createWorkspace] grant_credits failed (non-fatal)", grantErr);
-      } catch (e) {
-        console.error("[createWorkspace] grant_credits threw (non-fatal)", e);
-      }
+        marketplaceDomain: domain,
+        slugHint: slug,
+        ifExistsReturn: false,
+      });
+    } catch (e) {
+      console.error("[createWorkspace] provision error", e);
+      throw new Error(e instanceof Error ? `Couldn't create workspace: ${e.message}` : "Failed to create workspace.");
     }
 
     // Fire-and-forget welcome email — never block workspace creation.
@@ -96,7 +122,7 @@ export const createWorkspace = createServerFn({ method: "POST" })
     if (userEmail) {
       welcomeEmailTemplate({
         name: data.name,
-        workspaceSlug: ws.slug,
+        workspaceSlug: ws.slug ?? slug,
       }).then((tpl) => {
         if (!tpl) return;
         return sendEmail({
@@ -104,13 +130,13 @@ export const createWorkspace = createServerFn({ method: "POST" })
           subject: tpl.subject,
           html: tpl.html,
           text: tpl.text,
-          idempotencyKey: `welcome-${ws.id}`,
-          meta: { workspace_id: ws.id, kind: "welcome" },
+          idempotencyKey: `welcome-${ws.workspace_id}`,
+          meta: { workspace_id: ws.workspace_id, kind: "welcome" },
         });
       }).catch((err) => console.error("[createWorkspace] welcome email failed", err));
     }
 
-    return { workspaceId: ws.id, slug: ws.slug };
+    return { workspaceId: ws.workspace_id, slug: ws.slug ?? slug };
   });
 
 /**
@@ -122,71 +148,20 @@ export const createWorkspace = createServerFn({ method: "POST" })
 export const ensureWorkspace = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { userId } = context;
+    const { supabase } = context;
 
-    const { data: existing } = await supabaseAdmin
-      .from("workspace_members")
-      .select("workspace_id")
-      .eq("user_id", userId)
-      .limit(1)
-      .maybeSingle();
-    if (existing?.workspace_id) return { workspaceId: existing.workspace_id, created: false };
-
-    const slug = `ws-${Math.random().toString(36).slice(2, 10)}`;
-    const { data: ws, error } = await supabaseAdmin
-      .from("workspaces")
-      .insert({
-        slug,
-        name: "My Marketplace",
-        owner_user_id: userId,
-        plan: "starter",
-        subscription_status: "trialing",
-        trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-      })
-      .select("id")
-      .single();
-    if (error || !ws) {
-      console.error("[ensureWorkspace] insert error", error);
-      throw new Error(error?.message ? `Couldn't set up your workspace: ${error.message}` : "Couldn't set up your workspace.");
-    }
-
-    const { error: memberErr } = await supabaseAdmin
-      .from("workspace_members")
-      .insert({ workspace_id: ws.id, user_id: userId, role: "owner" });
-    if (memberErr) {
-      // TOCTOU: a parallel ensureWorkspace() call already created an owner
-      // membership for this user (blocked by the partial unique index
-      // workspace_members_one_owner_per_user). Roll back our orphan workspace
-      // and return the winner so the caller still gets a usable workspaceId.
-      console.warn("[ensureWorkspace] owner-membership race; reconciling", memberErr.message);
-      await supabaseAdmin.from("workspaces").delete().eq("id", ws.id);
-      const { data: winner } = await supabaseAdmin
-        .from("workspace_members")
-        .select("workspace_id")
-        .eq("user_id", userId)
-        .eq("role", "owner")
-        .limit(1)
-        .maybeSingle();
-      if (winner?.workspace_id) return { workspaceId: winner.workspace_id, created: false };
-      throw new Error(`Couldn't link you to the workspace: ${memberErr.message}`);
-    }
-
-    // Non-fatal trial credits — first workspace only (auto_provision is first-time).
     try {
-      const { error: grantErr } = await supabaseAdmin.rpc("grant_credits", {
-        _workspace_id: ws.id,
-        _amount: STARTER_TRIAL_CREDITS,
-        _reason: "trial_grant",
-        _ref_type: "trial",
-        _ref_id: ws.id,
-        _metadata: { source: "auto_provision" },
+      const ws = await provisionWorkspace(supabase, context.userId, {
+        name: "My Marketplace",
+        ifExistsReturn: true,
       });
-      if (grantErr) console.error("[ensureWorkspace] grant_credits failed (non-fatal)", grantErr);
+      return { workspaceId: ws.workspace_id, created: ws.created };
     } catch (e) {
-      console.error("[ensureWorkspace] grant_credits failed (non-fatal)", e);
+      console.error("[ensureWorkspace] provision error", e);
+      throw new Error(
+        e instanceof Error ? `Couldn't set up your workspace: ${e.message}` : "Couldn't set up your workspace.",
+      );
     }
-
-    return { workspaceId: ws.id, created: true };
   });
 
 
