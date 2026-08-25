@@ -104,6 +104,40 @@ export const createQuickPage = createServerFn({ method: "POST" })
     const slug = await findUniqueTenantSlug(data.workspaceId, baseSlug);
     const templateId = await getActiveTemplateId("city_hub");
 
+    // Ground generation in the tenant's real inventory when a city is targeted —
+    // unique, factual per-city content is what separates useful programmatic
+    // pages from the templated filler Google's scaled-content policy demotes.
+    let inventoryFacts = "";
+    if (data.city) {
+      const { data: cityListings } = await supabaseAdmin
+        .from("tenant_listings")
+        .select("title, price_amount, price_currency")
+        .eq("workspace_id", data.workspaceId)
+        .ilike("city", data.city)
+        .eq("state_published", true)
+        .limit(100);
+      const rows = cityListings ?? [];
+      const prices = rows
+        .map((r) => r.price_amount)
+        .filter((n): n is number => typeof n === "number")
+        .sort((a, b) => a - b);
+      const currency = rows.find((r) => r.price_currency)?.price_currency ?? "USD";
+      const sample = rows
+        .slice(0, 5)
+        .map((r) => `- ${r.title}`)
+        .join("\n");
+      inventoryFacts = `
+
+Live inventory facts for ${data.city} — the ONLY numbers you may use; never invent pricing, counts, or listings:
+- ${rows.length} published listings
+- ${
+        prices.length
+          ? `Price range ${(prices[0]! / 100).toFixed(0)}–${(prices[prices.length - 1]! / 100).toFixed(0)} ${currency}`
+          : "No price data — do not state or estimate prices"
+      }
+${sample ? `- Example listings:\n${sample}` : "- No example listings yet."}`;
+    }
+
     const userPrompt = `Write a brand page.
 
 Title (H1): "${data.title}"
@@ -111,6 +145,7 @@ ${data.description ? `One-line summary: "${data.description}"` : ""}
 
 What this page should be about (interpret literally and build the article around this):
 ${data.topic}
+${inventoryFacts}
 
 Length: 600-1200 words.
 Use ## for the main sections and ### for sub-points. Lead with a strong opening — no fluff.

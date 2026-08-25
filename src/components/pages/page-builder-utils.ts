@@ -16,10 +16,16 @@ export type PagePreset = {
   description: string;
   icon: LucideIcon;
   accent: string;
-  buildTitle: (ctx: { city?: string; state?: string }) => string;
+  buildTitle: (ctx: { city?: string; state?: string; category?: string }) => string;
   buildTopic: (ctx: { city?: string; state?: string; category?: string }) => string;
 };
 
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// `category` is the marketplace's dominant listing category (plural, lowercase —
+// e.g. "pools", "boats", "studios"), derived from its own synced listings. The
+// presets must work for ANY vertical, so every default is category-parameterized
+// and falls back to a neutral label — never a hardcoded vertical.
 export const PAGE_PRESETS: PagePreset[] = [
   {
     id: "city",
@@ -27,12 +33,16 @@ export const PAGE_PRESETS: PagePreset[] = [
     description: "SEO landing with live listing grid",
     icon: Building2,
     accent: "from-sky-500/20 to-blue-600/10",
-    buildTitle: ({ city, state }) =>
-      city ? `Pool Rental in ${city}${state ? `, ${state}` : ""}` : "Pool Rental in Your City",
-    buildTopic: ({ city, state }) =>
-      city
-        ? `City hub page for ${city}${state ? `, ${state}` : ""}. Cover: who rents pools here, popular use cases (parties, photoshoots, staycations), typical pricing, what to look for when booking, and a strong CTA to browse listings.`
-        : "City hub landing page for a pool rental marketplace. Cover local demand, use cases, pricing, and a CTA.",
+    buildTitle: ({ city, state, category }) => {
+      const label = cap(category || "rentals");
+      return city ? `${label} in ${city}${state ? `, ${state}` : ""}` : `${label} in Your City`;
+    },
+    buildTopic: ({ city, state, category }) => {
+      const cat = category || "listings";
+      return city
+        ? `City hub page for ${city}${state ? `, ${state}` : ""}. Cover: who uses ${cat} here, popular local use cases, what to look for when booking, and a strong CTA to browse the live listings shown on the page. Use only real facts — do not invent pricing or availability.`
+        : `City hub landing page for a ${cat} marketplace. Cover local demand, use cases, what to look for, and a CTA. Use only real facts — do not invent pricing.`;
+    },
   },
   {
     id: "category",
@@ -40,9 +50,11 @@ export const PAGE_PRESETS: PagePreset[] = [
     description: "Deep-dive on a listing category",
     icon: Layers,
     accent: "from-violet-500/20 to-purple-600/10",
-    buildTitle: () => "Complete Guide to Renting Private Pools",
-    buildTopic: () =>
-      "Category guide for pool rentals. Explain types of pools (heated, infinity, rooftop), amenities, booking tips, pricing factors, and who each type is best for. End with CTA to browse.",
+    buildTitle: ({ category }) => `The Complete Guide to ${cap(category || "rentals")}`,
+    buildTopic: ({ category }) => {
+      const cat = category || "rentals";
+      return `Category guide for ${cat}. Explain the main types and amenities renters compare, booking tips, the factors that drive pricing, and who each option is best for. End with a CTA to browse. Use only real facts — do not invent pricing.`;
+    },
   },
   {
     id: "resource",
@@ -50,9 +62,11 @@ export const PAGE_PRESETS: PagePreset[] = [
     description: "Long-form SEO content",
     icon: BookOpen,
     accent: "from-amber-500/20 to-orange-600/10",
-    buildTitle: () => "How to Plan the Perfect Pool Party",
-    buildTopic: () =>
-      "Resource article for pool renters planning an event. Cover guest count, rules, catering, music, timing, weather backup plans, and how to pick the right pool on a marketplace.",
+    buildTitle: ({ category }) => `How to Book ${cap(category || "rentals")} Like a Pro`,
+    buildTopic: ({ category }) => {
+      const cat = category || "rentals";
+      return `Resource article for people booking ${cat} on a marketplace. Cover how to compare options, questions to ask the host, timing and cancellation tips, common mistakes, and how to spot a great listing.`;
+    },
   },
   {
     id: "ai",

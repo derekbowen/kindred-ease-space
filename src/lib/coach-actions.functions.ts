@@ -148,7 +148,6 @@ async function createCityPage(
   const city = String(payload.city ?? "").trim();
   if (!city) throw new Error("Missing city");
   const state = String(payload.state ?? "").trim();
-  const title = `Pool Rental in ${city}`;
   const baseSlug = slugifyPage(city);
   if (!baseSlug) throw new Error("Could not derive slug from city");
 
@@ -162,9 +161,57 @@ async function createCityPage(
 
   const templateId = await getActiveTemplateId("city_hub");
 
+  // Ground the page in THIS marketplace's real inventory — the vertical, price
+  // range, and examples come from the tenant's own listings, never a hardcoded
+  // category. Templated same-except-the-city-name pages with invented pricing
+  // are exactly what Google's scaled-content-abuse policy demotes.
+  const [{ data: ws }, { data: cityListings }] = await Promise.all([
+    supabaseAdmin.from("workspaces").select("name").eq("id", workspaceId).maybeSingle(),
+    supabaseAdmin
+      .from("tenant_listings")
+      .select("title, price_amount, price_currency, category")
+      .eq("workspace_id", workspaceId)
+      .ilike("city", city)
+      .eq("state_published", true)
+      .limit(100),
+  ]);
+  const workspaceName = ws?.name ?? "our marketplace";
+  const listings = cityListings ?? [];
+
+  const catCounts = new Map<string, number>();
+  for (const l of listings) {
+    const c = (l.category ?? "").trim().toLowerCase();
+    if (c) catCounts.set(c, (catCounts.get(c) ?? 0) + 1);
+  }
+  const dominantCategory =
+    [...catCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  const categoryPlural = dominantCategory || "listings";
+  const label = categoryPlural.charAt(0).toUpperCase() + categoryPlural.slice(1);
+  const title = `${label} in ${city}`;
+
+  const prices = listings
+    .map((l) => l.price_amount)
+    .filter((n): n is number => typeof n === "number")
+    .sort((a, b) => a - b);
+  const currency = listings.find((l) => l.price_currency)?.price_currency ?? "USD";
+  const priceFact = prices.length
+    ? `Live price range: ${(prices[0]! / 100).toFixed(0)}–${(prices[prices.length - 1]! / 100).toFixed(0)} ${currency} across ${prices.length} priced listings.`
+    : "No price data available — do NOT state or estimate any prices.";
+  const sampleTitles = listings
+    .slice(0, 5)
+    .map((l) => `- ${l.title}`)
+    .join("\n");
+
   const body = await callAI(
-    "You write SEO city pages for a pool rental marketplace. Return Markdown only, 700-1100 words, ## and ### headings, friendly tone, end with a CTA paragraph.",
-    `Write the city page for ${city}. Cover: who rents pools, popular use cases, pricing range, what to look for, and a closing CTA.`,
+    `You write SEO city pages for "${workspaceName}", a marketplace for ${categoryPlural}. Use ONLY the facts provided below — never invent pricing, listing counts, or listings. Return Markdown only, 700-1100 words, ## and ### headings, friendly tone, end with a CTA paragraph inviting readers to browse the live listings shown below the article.`,
+    `Write the city page for ${city}${state ? `, ${state}` : ""}.
+
+Facts about our live inventory in ${city} (the only numbers you may use):
+- ${listings.length} published listings
+- ${priceFact}
+${sampleTitles ? `- Example listings:\n${sampleTitles}` : "- No example listings yet."}
+
+Cover: who uses ${categoryPlural} in ${city}, popular local use cases, what to look for when choosing, and a closing CTA. If inventory is small, write genuinely useful local guidance instead of padding or inventing listings.`,
     ai,
   );
 
@@ -189,12 +236,17 @@ async function createCityPage(
       title: pageTitle,
       slug: baseSlug,
       h1: title,
-      meta_description: (seo.seo_description ?? `Pool rentals in ${city}.`).slice(0, 320),
+      meta_description: (seo.seo_description ?? `${label} in ${city} on ${workspaceName}.`).slice(
+        0,
+        320,
+      ),
       body_markdown: body,
-      variables: { city, ...(state ? { state } : {}), category_plural: "pools" },
+      variables: { city, ...(state ? { state } : {}), category_plural: categoryPlural },
       listing_filter: { city, ...(state ? { state } : {}), limit: 24, sort: "newest" },
-      status: "published",
-      published_at: new Date().toISOString(),
+      // Draft, not published — the confirmation dialog promises a draft, and
+      // AI-generated pages deserve a human look before going live.
+      status: "draft",
+      published_at: null,
     })
     .select("id, slug")
     .single();
@@ -202,7 +254,7 @@ async function createCityPage(
 
   return {
     ok: true,
-    summary: `Published "${title}" at /p/${inserted.slug}`,
+    summary: `Drafted "${title}" — review and publish it from Pages`,
     details: { pageId: inserted.id, slug: inserted.slug },
   };
 }

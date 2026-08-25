@@ -32,13 +32,14 @@ export const getPageBuilderContext = createServerFn({ method: "GET" })
       cities: BuilderCity[];
       gaps: BuilderCity[];
       recentSlugs: string[];
+      dominantCategory: string | null;
     }> => {
       await assertWorkspaceMember(data.workspaceId, context.userId);
 
       const [{ data: listings }, { data: pages }, { data: ws }] = await Promise.all([
         sb()
           .from("tenant_listings")
-          .select("city, state")
+          .select("city, state, category")
           .eq("workspace_id", data.workspaceId)
           .eq("state_published", true)
           .not("city", "is", null)
@@ -59,7 +60,7 @@ export const getPageBuilderContext = createServerFn({ method: "GET" })
         variables: Record<string, unknown> | null;
         status: string | null;
       };
-      type ListingRow = { city: string | null; state: string | null };
+      type ListingRow = { city: string | null; state: string | null; category?: string | null };
 
       const pageRows = (pages ?? []) as PageRow[];
       const pageSlugs = new Set(
@@ -100,6 +101,18 @@ export const getPageBuilderContext = createServerFn({ method: "GET" })
 
       const recentSlugs: string[] = [...pageSlugs].slice(0, 20);
 
+      // The marketplace's actual vertical, derived from its own listings — used
+      // so page presets never assume a hardcoded category.
+      const catCounts = new Map<string, number>();
+      for (const row of (listings ?? []) as ListingRow[]) {
+        const c = String(row.category ?? "")
+          .trim()
+          .toLowerCase();
+        if (c) catCounts.set(c, (catCounts.get(c) ?? 0) + 1);
+      }
+      const dominantCategory =
+        [...catCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
       return {
         workspaceName: ws?.name ?? "Your marketplace",
         domain: ws?.marketplace_domain ?? null,
@@ -112,6 +125,7 @@ export const getPageBuilderContext = createServerFn({ method: "GET" })
         cities,
         gaps,
         recentSlugs,
+        dominantCategory,
       };
     },
   );

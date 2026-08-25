@@ -46,6 +46,9 @@ export type PublicTenantPage = {
   template_slug: string;
   workspace_name: string;
   listings: PublicListing[];
+  /** Other published pages in this workspace — internal links so pSEO pages form
+   * a crawlable network instead of sitemap-only orphans. */
+  related_pages: Array<{ slug: string; title: string }>;
 };
 
 export const getPublicTenantPage = createServerFn({ method: "GET" })
@@ -87,6 +90,25 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
       }
 
       if (!workspaceId) return { page: null, host, preview };
+
+      // Internal links: without them every pSEO page is a sitemap-only orphan
+      // (the listing cards link off-site with nofollow), which Google's doorway
+      // guidance penalizes and which starves the network of crawl equity.
+      const wsId = workspaceId;
+      const fetchRelated = async (excludeSlug: string) => {
+        const { data: rel } = await sb()
+          .from("tenant_pages")
+          .select("slug, title")
+          .eq("workspace_id", wsId)
+          .eq("status", "published")
+          .neq("slug", excludeSlug)
+          .order("published_at", { ascending: false })
+          .limit(8);
+        return (rel ?? []).map((r: any) => ({
+          slug: r.slug as string,
+          title: r.title as string,
+        }));
+      };
 
       const { data: redirectRow } = await sb()
         .from("content_pages")
@@ -137,6 +159,7 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
             template_slug: "city_hub",
             workspace_name: (legacy.workspaces as any)?.name ?? "",
             listings: [],
+            related_pages: await fetchRelated(data.slug),
           },
           host,
           preview,
@@ -169,6 +192,7 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
           template_slug: (page.page_templates as any)?.slug ?? "city_hub",
           workspace_name: (page.workspaces as any)?.name ?? "",
           listings: (listings ?? []) as PublicListing[],
+          related_pages: await fetchRelated(data.slug),
         },
         host,
         preview,

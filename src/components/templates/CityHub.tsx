@@ -22,8 +22,15 @@ export function CityHub({ page }: { page: PublicTenantPage }) {
       <div className="border-b border-border/60 bg-gradient-to-b from-primary/5 to-transparent">
         <main className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
           <header className="max-w-3xl">
+            <nav aria-label="Breadcrumb" className="text-xs text-muted-foreground">
+              <a href="/" className="hover:text-foreground">
+                {page.workspace_name || "Home"}
+              </a>
+              <span className="mx-1.5">/</span>
+              <span className="text-foreground">{page.h1 || page.title}</span>
+            </nav>
             {location && (
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">
+              <p className="mt-4 text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">
                 {location}
               </p>
             )}
@@ -35,7 +42,7 @@ export function CityHub({ page }: { page: PublicTenantPage }) {
                 {page.meta_description}
               </p>
             )}
-            {city && (
+            {city && count > 0 && (
               <p className="mt-4 inline-flex items-center gap-2 rounded-full border border-border/60 bg-card px-4 py-1.5 text-sm">
                 <span className="font-semibold text-foreground">{count}</span>
                 <span className="text-muted-foreground">
@@ -143,11 +150,31 @@ export function CityHub({ page }: { page: PublicTenantPage }) {
 
         {count === 0 && city && (
           <div className="rounded-xl border border-dashed border-border p-10 text-center">
-            <p className="font-medium">Listings coming soon</p>
+            <p className="font-medium">New {categoryPlural} are on the way in {city}</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Sync your Sharetribe inventory to populate this city grid automatically.
+              Check back soon{page.workspace_name ? ` — ${page.workspace_name} is adding new ${categoryPlural} regularly` : ""}.
             </p>
           </div>
+        )}
+
+        {page.related_pages && page.related_pages.length > 0 && (
+          <section className="mt-14 border-t border-border/60 pt-8">
+            <h2 className="text-lg font-semibold tracking-tight">
+              More from {page.workspace_name || "this marketplace"}
+            </h2>
+            <ul className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {page.related_pages.map((r) => (
+                <li key={r.slug}>
+                  <a
+                    href={`/p/${r.slug}`}
+                    className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                  >
+                    {r.title}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
       </main>
     </div>

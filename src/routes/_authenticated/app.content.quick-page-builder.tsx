@@ -61,6 +61,7 @@ function QuickPageBuilder() {
     cities: BuilderCity[];
     gaps: BuilderCity[];
     stats: { cityGaps: number; publishedPages: number };
+    dominantCategory: string | null;
   } | null>(null);
 
   const create = useServerFn(createQuickPage);
@@ -73,13 +74,14 @@ function QuickPageBuilder() {
   useEffect(() => {
     if (!workspaceId) return;
     loadCtx({ data: { workspaceId } }).then((r: any) =>
-      setCtx({ domain: r.domain, cities: r.cities, gaps: r.gaps, stats: r.stats }),
+      setCtx({ domain: r.domain, cities: r.cities, gaps: r.gaps, stats: r.stats, dominantCategory: r.dominantCategory ?? null }),
     );
   }, [workspaceId, loadCtx]);
 
   const slug = title ? slugifyPageTitle(title) : "";
   const canSubmit = !!workspaceId && title.trim().length >= 3 && topic.trim().length >= 10 && !busy;
   const activePreset = PAGE_PRESETS.find((p) => p.id === preset) ?? PAGE_PRESETS[0];
+  const category = ctx?.dominantCategory ?? undefined;
 
   const previewListingCount = useMemo(() => {
     if (!city || !ctx?.cities) return 0;
@@ -93,8 +95,8 @@ function QuickPageBuilder() {
     setPreset(id);
     const p = PAGE_PRESETS.find((x) => x.id === id);
     if (!p || id === "ai") return;
-    setTitle(p.buildTitle({ city, state }));
-    setTopic(p.buildTopic({ city, state }));
+    setTitle(p.buildTitle({ city, state, category }));
+    setTopic(p.buildTopic({ city, state, category }));
   }
 
   function applyCityGap(g: BuilderCity) {
@@ -102,8 +104,8 @@ function QuickPageBuilder() {
     setCity(g.city);
     setState(g.state ?? "");
     const p = PAGE_PRESETS[0];
-    setTitle(p.buildTitle({ city: g.city, state: g.state ?? undefined }));
-    setTopic(p.buildTopic({ city: g.city, state: g.state ?? undefined }));
+    setTitle(p.buildTitle({ city: g.city, state: g.state ?? undefined, category }));
+    setTopic(p.buildTopic({ city: g.city, state: g.state ?? undefined, category }));
   }
 
   async function submit(e: React.FormEvent) {
@@ -122,7 +124,7 @@ function QuickPageBuilder() {
           model,
           city: city || undefined,
           state: state || undefined,
-          categoryPlural: preset === "city" ? "pools" : "listings",
+          categoryPlural: ctx?.dominantCategory || "listings",
         },
       });
       setResult({
@@ -138,7 +140,7 @@ function QuickPageBuilder() {
       setState("");
       if (workspaceId) {
         loadCtx({ data: { workspaceId } }).then((r: any) =>
-          setCtx({ domain: r.domain, cities: r.cities, gaps: r.gaps, stats: r.stats }),
+          setCtx({ domain: r.domain, cities: r.cities, gaps: r.gaps, stats: r.stats, dominantCategory: r.dominantCategory ?? null }),
         );
       }
     } catch (err: any) {
@@ -297,7 +299,7 @@ function QuickPageBuilder() {
                   <Label htmlFor="title">Page title</Label>
                   <Input
                     id="title"
-                    placeholder={activePreset.buildTitle({ city, state })}
+                    placeholder={activePreset.buildTitle({ city, state, category })}
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                   />
@@ -325,7 +327,7 @@ function QuickPageBuilder() {
                     id="topic"
                     rows={5}
                     placeholder={
-                      activePreset.buildTopic({ city, state }) ||
+                      activePreset.buildTopic({ city, state, category }) ||
                       "Describe the angle, audience, facts to include…"
                     }
                     value={topic}
@@ -421,7 +423,7 @@ function QuickPageBuilder() {
               bodyMarkdown: "",
               city: city || undefined,
               state: state || undefined,
-              categoryPlural: preset === "city" ? "pools" : "listings",
+              categoryPlural: ctx?.dominantCategory || "listings",
               listingCount: previewListingCount,
             }}
           />
