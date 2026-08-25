@@ -79,6 +79,21 @@ async function provisionWorkspace(
     throw new Error(memberErr.message);
   }
 
+  // Match the RPC path: seed the 14-day trial credit balance so a fresh
+  // workspace can actually generate content. grant_credits is idempotent on
+  // (_reason, _ref_type, _ref_id) so a retry won't double-grant.
+  const { error: creditErr } = await supabaseAdmin.rpc("grant_credits", {
+    _workspace_id: ws.id,
+    _amount: 250,
+    _reason: "trial_grant",
+    _ref_type: "trial",
+    _ref_id: ws.id,
+    _metadata: { source: "auto_provision_fallback" },
+  });
+  if (creditErr) {
+    console.error("[provisionWorkspace] trial credit grant failed", creditErr);
+  }
+
   return { workspace_id: ws.id, created: true, slug };
 }
 

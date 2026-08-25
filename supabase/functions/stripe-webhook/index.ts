@@ -222,7 +222,6 @@ Deno.serve(async (req) => {
           .from("subscriptions")
           .update({ status: "canceled", cancel_at_period_end: false })
           .eq("stripe_subscription_id", sub.id);
-        const workspace_id = sub.metadata?.workspace_id;
         if (workspace_id) {
           await admin
             .from("workspaces")

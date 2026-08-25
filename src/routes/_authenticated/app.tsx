@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute, Link, Outlet, useNavigate, useLocation } from "@tanstack/react-router";
 import { LogOut } from "lucide-react";
 import {
@@ -54,16 +54,35 @@ function AppShell() {
   // background and drop them straight into the product. Marketplace details are
   // an optional setup step they can finish anytime in Settings.
   const [provisioning, setProvisioning] = useState(false);
+  const [provisionError, setProvisionError] = useState<string | null>(null);
+  // Attempt auto-provisioning exactly once per mount. Keying the effect off a
+  // `provisioning` state flag (which resets in .finally) meant every failure —
+  // or a getMe that momentarily returned zero memberships — re-armed the effect
+  // and hammered ensureWorkspace in a silent infinite loop.
+  const provisionAttempted = useRef(false);
   useEffect(() => {
     if (loading || !me) return;
     const memberships = Array.isArray(me.memberships) ? me.memberships : [];
-    if (memberships.length > 0 || provisioning) return;
+    if (memberships.length > 0 || provisionAttempted.current) return;
+    provisionAttempted.current = true;
     setProvisioning(true);
+    setProvisionError(null);
     ensureWorkspace()
       .then(() => getMe().then(setMe))
-      .catch((e) => console.error("ensureWorkspace failed", e))
+      .catch((e) => {
+        console.error("ensureWorkspace failed", e);
+        setProvisionError(
+          e instanceof Error ? e.message : "We couldn't set up your workspace.",
+        );
+      })
       .finally(() => setProvisioning(false));
-  }, [loading, me, provisioning]);
+  }, [loading, me]);
+
+  const retryProvision = () => {
+    provisionAttempted.current = false;
+    setProvisionError(null);
+    getMe().then(setMe).catch(() => {});
+  };
 
   const onSignOut = async () => {
     try {
@@ -186,6 +205,21 @@ function AppShell() {
             )}
           </header>
           <main className="flex-1 w-full max-w-6xl min-w-0 px-4 py-4 sm:px-6 sm:py-6">
+            {provisionError && (
+              <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm">
+                <p className="font-medium text-destructive">Workspace setup didn't finish</p>
+                <p className="mt-1 text-muted-foreground">{provisionError}</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-2"
+                  disabled={provisioning}
+                  onClick={retryProvision}
+                >
+                  {provisioning ? "Retrying…" : "Try again"}
+                </Button>
+              </div>
+            )}
             <Outlet />
           </main>
         </SidebarInset>

@@ -52,6 +52,9 @@ function EditPage() {
 
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [domain, setDomain] = useState<string | null>(null);
+  const [wsSlug, setWsSlug] = useState<string | null>(null);
+  const [wsDomain, setWsDomain] = useState<string | null>(null);
+  const [wsDomainVerified, setWsDomainVerified] = useState<boolean>(false);
   const [listingCount, setListingCount] = useState(0);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [templateId, setTemplateId] = useState<string>("");
@@ -81,6 +84,12 @@ function EditPage() {
     Promise.all([getMe(), tplFn()]).then(([me, t]) => {
       const wsId = me.memberships[0]?.workspace_id ?? null;
       setWorkspaceId(wsId);
+      const ws = me.memberships[0]?.workspaces as
+        | { slug: string | null; marketplace_domain: string | null; domain_verified_at: string | null }
+        | undefined;
+      setWsSlug(ws?.slug ?? null);
+      setWsDomain(ws?.marketplace_domain ?? null);
+      setWsDomainVerified(Boolean(ws?.marketplace_domain && ws?.domain_verified_at));
       const tpls = (t.templates as Template[]).filter((x) => x.is_active);
       setTemplates(tpls);
       if (isNew && tpls[0]) setTemplateId(tpls[0].id);
@@ -401,8 +410,18 @@ function EditPage() {
         </Button>
         {!isNew && status === "published" && slug && (
           <Button asChild variant="ghost" size="sm">
-            <a href={`/p/${slug}`} target="_blank" rel="noreferrer">
-              <ExternalLink className="h-4 w-4 mr-2" /> View
+            <a
+              href={
+                wsDomainVerified
+                  ? `https://${wsDomain}/p/${slug}`
+                  : wsSlug
+                    ? `/s/${wsSlug}/${slug}`
+                    : `/p/${slug}`
+              }
+              target="_blank"
+              rel="noreferrer"
+            >
+              <ExternalLink className="h-4 w-4 mr-2" /> {wsDomainVerified ? "View live" : "Preview"}
             </a>
           </Button>
         )}

@@ -44,6 +44,52 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Retrieve top help chunks / bill against the platform key — so this
+    // unauthenticated endpoint must be rate limited, or a scripted loop could
+    // drain the whole platform AI budget.
+    const admin = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
+    const ip =
+      req.headers.get("cf-connecting-ip") ||
+      (req.headers.get("x-forwarded-for") || "").split(",")[0]!.trim() ||
+      "unknown";
+
+    const tooManyResponse = () =>
+      new Response(
+        JSON.stringify({ error: "Too many requests. Please wait a moment and try again." }),
+        { status: 429, headers: { ...cors, "Content-Type": "application/json" } },
+      );
+
+    // Per-IP: 6/min burst and 40/hour. Plus a global daily cost cap so no
+    // distributed abuse can run the platform budget away.
+    const [okBurst, okHour, okGlobal] = await Promise.all([
+      admin.rpc("check_rate_limit", { _bucket: `helpchat:min:${ip}`, _max: 6, _window_seconds: 60 }),
+      admin.rpc("check_rate_limit", {
+        _bucket: `helpchat:hr:${ip}`,
+        _max: 40,
+        _window_seconds: 3600,
+      }),
+      admin.rpc("check_rate_limit", {
+        _bucket: "helpchat:global:day",
+        _max: 5000,
+        _window_seconds: 86400,
+      }),
+    ]);
+    if (okBurst.data === false || okHour.data === false) return tooManyResponse();
+    if (okGlobal.data === false) {
+      return new Response(
+        JSON.stringify({
+          error: "assistant_unavailable",
+          message:
+            "The help assistant is busy right now. Browse the help center at /help in the meantime.",
+        }),
+        { status: 503, headers: { ...cors, "Content-Type": "application/json" } },
+      );
+    }
+
     const { messages } = (await req.json()) as { messages: Msg[] };
     if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: "messages required" }), {
@@ -56,10 +102,6 @@ Deno.serve(async (req) => {
     const query = (lastUser?.content ?? "").slice(0, 2000);
 
     // Retrieve top help chunks
-    const admin = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
     let context = "";
     const sources: { title: string; url: string }[] = [];
     if (query.trim().length > 2) {

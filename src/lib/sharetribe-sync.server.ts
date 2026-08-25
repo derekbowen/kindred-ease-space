@@ -302,12 +302,29 @@ export async function runSharetribeSyncForWorkspace(workspaceId: string): Promis
         }
       }
     } else {
-      // No listings upstream — wipe local
-      const { count } = await sb
+      // Upstream returned ZERO listings this run. That is far more often a
+      // transient hiccup (auth blip, filtered/empty page, upstream error) than a
+      // genuine "the customer deleted everything" — and wiping the local catalog
+      // would silently break every pSEO page built on those listings. Never
+      // auto-wipe a non-empty catalog down to zero; keep the last-known-good data
+      // and surface a warning for the operator to investigate.
+      const { count: existingCount } = await sb
         .from("tenant_listings")
-        .delete({ count: "exact" })
+        .select("id", { count: "exact", head: true })
         .eq("workspace_id", workspaceId);
-      removed = count ?? 0;
+      if ((existingCount ?? 0) > 0) {
+        await setStatus({
+          status: "connected",
+          last_sync_at: new Date().toISOString(),
+          last_sync_status: "warning",
+          last_sync_error:
+            "Upstream returned 0 listings; kept last-known catalog to avoid data loss. Re-sync or disconnect to clear.",
+          listings_count: existingCount ?? 0,
+        });
+        return { upserted, removed: 0 };
+      }
+      // Empty on both sides — nothing to remove.
+      removed = 0;
     }
 
     await setStatus({

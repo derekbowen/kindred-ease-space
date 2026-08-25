@@ -80,8 +80,12 @@ function BulkPage() {
         data: { workspaceId, templateId, rows: parsed, status: publish ? "published" : "draft" },
       });
       if (r.ok) {
-        setMsg(`${publish ? "Published" : "Created"} ${r.count} city hub pages.`);
-        setTimeout(() => navigate({ to: "/app/pages" }), 900);
+        const skippedNote =
+          r.skipped && r.skipped > 0
+            ? ` Skipped ${r.skipped} already-published page${r.skipped === 1 ? "" : "s"} (edit those directly to avoid overwriting live content).`
+            : "";
+        setMsg(`${publish ? "Published" : "Created"} ${r.count} city hub pages.${skippedNote}`);
+        setTimeout(() => navigate({ to: "/app/pages" }), skippedNote ? 2500 : 900);
       } else {
         setErr(r.error);
       }

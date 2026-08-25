@@ -27,6 +27,7 @@ import { Route as HelpCategoryRouteImport } from './routes/help.$category'
 import { Route as ApplySlugRouteImport } from './routes/apply.$slug'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
+import { Route as SWsSlugRouteImport } from './routes/s.$ws.$slug'
 import { Route as HelpCategoryArticleRouteImport } from './routes/help.$category.$article'
 import { Route as ApiPublicSitemapByHostRouteImport } from './routes/api/public/sitemap-by-host'
 import { Route as ApiPublicPageLookupRouteImport } from './routes/api/public/page-lookup'
@@ -185,6 +186,11 @@ const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedAppRoute,
+} as any)
+const SWsSlugRoute = SWsSlugRouteImport.update({
+  id: '/s/$ws/$slug',
+  path: '/s/$ws/$slug',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const HelpCategoryArticleRoute = HelpCategoryArticleRouteImport.update({
   id: '/$article',
@@ -622,6 +628,7 @@ export interface FileRoutesByFullPath {
   '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/help/$category/$article': typeof HelpCategoryArticleRoute
+  '/s/$ws/$slug': typeof SWsSlugRoute
   '/app/': typeof AuthenticatedAppIndexRoute
   '/app/admin/email-templates': typeof AuthenticatedAppAdminEmailTemplatesRoute
   '/app/affiliates/customise': typeof AuthenticatedAppAffiliatesCustomiseRoute
@@ -708,6 +715,7 @@ export interface FileRoutesByTo {
   '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/help/$category/$article': typeof HelpCategoryArticleRoute
+  '/s/$ws/$slug': typeof SWsSlugRoute
   '/app': typeof AuthenticatedAppIndexRoute
   '/app/admin/email-templates': typeof AuthenticatedAppAdminEmailTemplatesRoute
   '/app/affiliates/customise': typeof AuthenticatedAppAffiliatesCustomiseRoute
@@ -798,6 +806,7 @@ export interface FileRoutesById {
   '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/help/$category/$article': typeof HelpCategoryArticleRoute
+  '/s/$ws/$slug': typeof SWsSlugRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
   '/_authenticated/app/admin/email-templates': typeof AuthenticatedAppAdminEmailTemplatesRoute
   '/_authenticated/app/affiliates/customise': typeof AuthenticatedAppAffiliatesCustomiseRoute
@@ -888,6 +897,7 @@ export interface FileRouteTypes {
     | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
     | '/help/$category/$article'
+    | '/s/$ws/$slug'
     | '/app/'
     | '/app/admin/email-templates'
     | '/app/affiliates/customise'
@@ -974,6 +984,7 @@ export interface FileRouteTypes {
     | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
     | '/help/$category/$article'
+    | '/s/$ws/$slug'
     | '/app'
     | '/app/admin/email-templates'
     | '/app/affiliates/customise'
@@ -1063,6 +1074,7 @@ export interface FileRouteTypes {
     | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
     | '/help/$category/$article'
+    | '/s/$ws/$slug'
     | '/_authenticated/app/'
     | '/_authenticated/app/admin/email-templates'
     | '/_authenticated/app/affiliates/customise'
@@ -1138,6 +1150,7 @@ export interface RootRouteChildren {
   ApiPublicDomainTokenRoute: typeof ApiPublicDomainTokenRoute
   ApiPublicPageLookupRoute: typeof ApiPublicPageLookupRoute
   ApiPublicSitemapByHostRoute: typeof ApiPublicSitemapByHostRoute
+  SWsSlugRoute: typeof SWsSlugRoute
   ApiPublicHooksCanonicalAuditRoute: typeof ApiPublicHooksCanonicalAuditRoute
   ApiPublicHooksSyncSharetribeRoute: typeof ApiPublicHooksSyncSharetribeRoute
 }
@@ -1269,6 +1282,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app/'
       preLoaderRoute: typeof AuthenticatedAppIndexRouteImport
       parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/s/$ws/$slug': {
+      id: '/s/$ws/$slug'
+      path: '/s/$ws/$slug'
+      fullPath: '/s/$ws/$slug'
+      preLoaderRoute: typeof SWsSlugRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/help/$category/$article': {
       id: '/help/$category/$article'
@@ -2033,6 +2053,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicDomainTokenRoute: ApiPublicDomainTokenRoute,
   ApiPublicPageLookupRoute: ApiPublicPageLookupRoute,
   ApiPublicSitemapByHostRoute: ApiPublicSitemapByHostRoute,
+  SWsSlugRoute: SWsSlugRoute,
   ApiPublicHooksCanonicalAuditRoute: ApiPublicHooksCanonicalAuditRoute,
   ApiPublicHooksSyncSharetribeRoute: ApiPublicHooksSyncSharetribeRoute,
 }

@@ -26,10 +26,14 @@ type ActionResult = { ok: true; summary: string; details?: Record<string, JsonVa
 const AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const DEFAULT_MODEL = "google/gemini-2.5-flash";
 
-async function callAI(systemPrompt: string, userPrompt: string, apiKey: string): Promise<string> {
+// Threads the API key plus a running token tally through every action handler so
+// platform-key usage can be metered against workspace credits after the fact.
+type AiCtx = { key: string; usage: { prompt: number; completion: number } };
+
+async function callAI(systemPrompt: string, userPrompt: string, ai: AiCtx): Promise<string> {
   const r = await fetch(AI_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${ai.key}` },
     body: JSON.stringify({
       model: DEFAULT_MODEL,
       messages: [
@@ -42,14 +46,19 @@ async function callAI(systemPrompt: string, userPrompt: string, apiKey: string):
     const t = await r.text();
     throw new Error(`AI gateway ${r.status}: ${t.slice(0, 200)}`);
   }
-  const j = (await r.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const j = (await r.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
+  ai.usage.prompt += j.usage?.prompt_tokens ?? 0;
+  ai.usage.completion += j.usage?.completion_tokens ?? 0;
   return j.choices?.[0]?.message?.content?.trim() ?? "";
 }
 
 async function fixThinPage(
   workspaceId: string,
   payload: Record<string, unknown>,
-  apiKey: string,
+  ai: AiCtx,
 ): Promise<ActionResult> {
   const pageId = String(payload.page_id ?? "");
   if (!pageId) throw new Error("Missing page_id");
@@ -65,7 +74,7 @@ async function fixThinPage(
   const expanded = await callAI(
     "You expand thin SEO pages. Return Markdown only, 600-1000 words, no frontmatter, use ## and ### headings, end with a CTA paragraph.",
     `Expand this page. Title: "${page.title}". Existing body:\n\n${page.body_markdown ?? page.meta_description ?? ""}`,
-    apiKey,
+    ai,
   );
 
   const { error: upErr } = await supabaseAdmin
@@ -85,7 +94,7 @@ async function fixThinPage(
 async function addMeta(
   workspaceId: string,
   payload: Record<string, unknown>,
-  apiKey: string,
+  ai: AiCtx,
 ): Promise<ActionResult> {
   const ids: string[] = Array.isArray(payload.page_ids)
     ? (payload.page_ids as string[])
@@ -106,7 +115,7 @@ async function addMeta(
     const out = await callAI(
       'You write SEO meta. Return STRICT JSON: {"seo_title":"...","seo_description":"..."} with seo_title ≤60 chars and seo_description ≤155 chars. No prose.',
       `Page title: "${p.title}". Body excerpt:\n${(p.body_markdown ?? p.meta_description ?? "").slice(0, 1200)}`,
-      apiKey,
+      ai,
     );
     let parsed: { seo_title?: string; seo_description?: string } = {};
     try {
@@ -134,7 +143,7 @@ async function addMeta(
 async function createCityPage(
   workspaceId: string,
   payload: Record<string, unknown>,
-  apiKey: string,
+  ai: AiCtx,
 ): Promise<ActionResult> {
   const city = String(payload.city ?? "").trim();
   if (!city) throw new Error("Missing city");
@@ -156,13 +165,13 @@ async function createCityPage(
   const body = await callAI(
     "You write SEO city pages for a pool rental marketplace. Return Markdown only, 700-1100 words, ## and ### headings, friendly tone, end with a CTA paragraph.",
     `Write the city page for ${city}. Cover: who rents pools, popular use cases, pricing range, what to look for, and a closing CTA.`,
-    apiKey,
+    ai,
   );
 
   const seoOut = await callAI(
     'Return STRICT JSON: {"seo_title":"...","seo_description":"..."}. seo_title ≤60 chars; seo_description ≤155 chars. No prose.',
     `City page: "${title}". Body excerpt:\n${body.slice(0, 1200)}`,
-    apiKey,
+    ai,
   );
   let seo: { seo_title?: string; seo_description?: string } = {};
   try {
@@ -201,7 +210,7 @@ async function createCityPage(
 async function addInternalLinks(
   workspaceId: string,
   payload: Record<string, unknown>,
-  apiKey: string,
+  ai: AiCtx,
 ): Promise<ActionResult> {
   const pageId = String(payload.page_id ?? "");
   if (!pageId) throw new Error("Missing page_id");
@@ -233,7 +242,7 @@ async function addInternalLinks(
   const updated = await callAI(
     "You add 3-6 contextual internal links to a markdown page. Use Markdown link syntax [anchor text](/p/slug). Only link to slugs from the provided list. Do NOT change other content. Return the FULL updated markdown only.",
     `Existing page (title: "${page.title}"):\n\n${page.body_markdown}\n\nAvailable internal link targets:\n${targets}`,
-    apiKey,
+    ai,
   );
 
   // Count newly added internal links
@@ -264,29 +273,62 @@ export const runCoachAction = createServerFn({ method: "POST" })
     await assertWorkspaceMember(data.workspaceId, userId);
 
     // BYOK first, platform env-var fallback.
-    const { getWorkspaceSecret } = await import("@/lib/workspace-secrets.server");
-    const apiKey = await getWorkspaceSecret(data.workspaceId, "LOVABLE_API_KEY", "LOVABLE_API_KEY");
-    if (!apiKey) throw new Error("No AI key configured. Add a BYOK key under Settings → API Keys.");
+    const { getWorkspaceSecretWithSource } = await import("@/lib/workspace-secrets.server");
+    const secret = await getWorkspaceSecretWithSource(
+      data.workspaceId,
+      "LOVABLE_API_KEY",
+      "LOVABLE_API_KEY",
+    );
+    if (!secret) throw new Error("No AI key configured. Add a BYOK key under Settings → API Keys.");
+
+    const ai: AiCtx = { key: secret.key, usage: { prompt: 0, completion: 0 } };
+
+    // Platform-key usage is metered against workspace credits so an authenticated
+    // member can't burn platform AI budget uncapped. Reserve up front (free trial
+    // quota, then purchased credits) — throws "Out of AI credits" when empty.
+    const { reservePlatformAi, settlePlatformAi } = await import("@/lib/ai-metering.server");
+    let billing: import("@/lib/ai-metering.server").PlatformBilling | null = null;
+    if (secret.source === "platform") {
+      billing = await reservePlatformAi(data.workspaceId);
+    }
 
     let result: ActionResult;
     let errorMessage: string | null = null;
     try {
       switch (data.actionType) {
         case "fix_thin_page":
-          result = await fixThinPage(data.workspaceId, data.payload, apiKey);
+          result = await fixThinPage(data.workspaceId, data.payload, ai);
           break;
         case "add_meta":
-          result = await addMeta(data.workspaceId, data.payload, apiKey);
+          result = await addMeta(data.workspaceId, data.payload, ai);
           break;
         case "create_city_page":
-          result = await createCityPage(data.workspaceId, data.payload, apiKey);
+          result = await createCityPage(data.workspaceId, data.payload, ai);
           break;
         case "add_internal_links":
-          result = await addInternalLinks(data.workspaceId, data.payload, apiKey);
+          result = await addInternalLinks(data.workspaceId, data.payload, ai);
           break;
       }
     } catch (e) {
       errorMessage = e instanceof Error ? e.message : String(e);
+    }
+
+    // Settle metered usage whether or not the action ultimately succeeded — the
+    // AI tokens were spent either way.
+    if (billing && (ai.usage.prompt > 0 || ai.usage.completion > 0)) {
+      try {
+        await settlePlatformAi({
+          workspaceId: data.workspaceId,
+          userId,
+          billing,
+          model: DEFAULT_MODEL,
+          promptTokens: ai.usage.prompt,
+          completionTokens: ai.usage.completion,
+          feature: "coach_action",
+        });
+      } catch (e) {
+        console.error("[runCoachAction] settle failed", e);
+      }
     }
 
     await supabase.from("coach_action_log").insert({

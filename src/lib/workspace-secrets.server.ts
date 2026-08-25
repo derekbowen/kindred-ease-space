@@ -28,6 +28,32 @@ export async function getWorkspaceSecret(
   return null;
 }
 
+/**
+ * Like getWorkspaceSecret, but reports whether the key came from the workspace's
+ * own vault ("byok") or the platform env fallback ("platform"). Callers meter
+ * platform-key usage against workspace credits; BYOK usage is the customer's own
+ * provider bill and is not metered.
+ */
+export async function getWorkspaceSecretWithSource(
+  workspaceId: string,
+  keyName: string,
+  envFallback?: string,
+): Promise<{ key: string; source: "byok" | "platform" } | null> {
+  const { data, error } = await supabaseAdmin.rpc("tenant_get_workspace_secret", {
+    _workspace_id: workspaceId,
+    _key_name: keyName,
+  });
+  if (error) {
+    console.error(`workspace-secrets: failed to read ${keyName}:`, error.message);
+  }
+  if (typeof data === "string" && data.length > 0) return { key: data, source: "byok" };
+  if (envFallback) {
+    const envVal = process.env[envFallback];
+    if (envVal) return { key: envVal, source: "platform" };
+  }
+  return null;
+}
+
 export async function requireWorkspaceSecret(
   workspaceId: string,
   keyName: string,

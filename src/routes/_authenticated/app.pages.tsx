@@ -37,9 +37,17 @@ type Row = {
   page_templates: { name: string; slug: string } | null;
 };
 
+type ActiveWorkspace = {
+  id: string;
+  slug: string | null;
+  marketplace_domain: string | null;
+  domain_verified_at: string | null;
+};
+
 function PagesList() {
   const navigate = useNavigate();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [workspace, setWorkspace] = useState<ActiveWorkspace | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -49,8 +57,42 @@ function PagesList() {
   const ctxFn = useServerFn(getPageBuilderContext);
 
   useEffect(() => {
-    getMe().then((me) => setWorkspaceId(me.memberships[0]?.workspace_id ?? null));
+    getMe().then((me) => {
+      const m = me.memberships[0];
+      setWorkspaceId(m?.workspace_id ?? null);
+      const ws = m?.workspaces as
+        | {
+            id: string;
+            slug: string | null;
+            marketplace_domain: string | null;
+            domain_verified_at: string | null;
+          }
+        | undefined;
+      setWorkspace(
+        ws
+          ? {
+              id: ws.id,
+              slug: ws.slug,
+              marketplace_domain: ws.marketplace_domain,
+              domain_verified_at: ws.domain_verified_at,
+            }
+          : null,
+      );
+    });
   }, []);
+
+  // Where a published page's public URL lives: the customer's verified custom
+  // domain when connected, otherwise the platform-hosted (noindexed) preview.
+  const liveUrl = (slug: string) => {
+    if (workspace?.marketplace_domain && workspace.domain_verified_at) {
+      return `https://${workspace.marketplace_domain}/p/${slug}`;
+    }
+    if (workspace?.slug) return `/s/${workspace.slug}/${slug}`;
+    return `/p/${slug}`;
+  };
+  const hasVerifiedDomain = Boolean(
+    workspace?.marketplace_domain && workspace?.domain_verified_at,
+  );
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -139,6 +181,24 @@ function PagesList() {
         </div>
       </section>
 
+      {workspace && !hasVerifiedDomain && (
+        <div className="flex flex-col gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-amber-700 dark:text-amber-300">
+            <span className="font-medium">Connect your marketplace domain</span> so published
+            pages rank on <span className="font-mono">yourdomain.com</span> — search engines value
+            pages on your own domain. Until then, "View live" opens a private preview.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0"
+            onClick={() => navigate({ to: "/app/settings/domains" })}
+          >
+            <Globe className="mr-2 h-4 w-4" /> Connect domain
+          </Button>
+        </div>
+      )}
+
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -212,7 +272,12 @@ function PagesList() {
                   <div className="flex gap-0.5 opacity-80 group-hover:opacity-100">
                     {r.status === "published" && (
                       <Button asChild size="icon" variant="ghost" className="h-8 w-8">
-                        <a href={`/p/${r.slug}`} target="_blank" rel="noreferrer" title="View live">
+                        <a
+                          href={liveUrl(r.slug)}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={hasVerifiedDomain ? "View live" : "Preview"}
+                        >
                           <ExternalLink className="h-4 w-4" />
                         </a>
                       </Button>

@@ -198,17 +198,29 @@ export const seoCoachChat = createServerFn({ method: "POST" })
     }): Promise<{ ok: true; reply: string } | { ok: false; error: string }> => {
       await assertWorkspaceMember(data.workspaceId, context.userId);
       // BYOK first, platform env-var fallback.
-      const { getWorkspaceSecret } = await import("@/lib/workspace-secrets.server");
-      const apiKey = await getWorkspaceSecret(
+      const { getWorkspaceSecretWithSource } = await import("@/lib/workspace-secrets.server");
+      const secret = await getWorkspaceSecretWithSource(
         data.workspaceId,
         "LOVABLE_API_KEY",
         "LOVABLE_API_KEY",
       );
-      if (!apiKey)
+      if (!secret)
         return {
           ok: false,
           error: "No AI key configured. Add a BYOK key under Settings → API Keys.",
         };
+      const apiKey = secret.key;
+
+      // Meter platform-key usage against workspace credits (BYOK is not metered).
+      const { reservePlatformAi, settlePlatformAi } = await import("@/lib/ai-metering.server");
+      let billing: import("@/lib/ai-metering.server").PlatformBilling | null = null;
+      if (secret.source === "platform") {
+        try {
+          billing = await reservePlatformAi(data.workspaceId);
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : "Out of AI credits." };
+        }
+      }
 
       const snapshot = await buildSnapshot(data.workspaceId);
       const completedNote = data.completedRoutes?.length
@@ -240,6 +252,21 @@ export const seoCoachChat = createServerFn({ method: "POST" })
           return { ok: false, error: `AI gateway ${resp.status}: ${t.slice(0, 200)}` };
         }
         const json = await resp.json();
+        if (billing) {
+          try {
+            await settlePlatformAi({
+              workspaceId: data.workspaceId,
+              userId: context.userId,
+              billing,
+              model: "google/gemini-2.5-flash",
+              promptTokens: json?.usage?.prompt_tokens ?? 0,
+              completionTokens: json?.usage?.completion_tokens ?? 0,
+              feature: "seo_coach",
+            });
+          } catch (e) {
+            console.error("[seoCoach] settle failed", e);
+          }
+        }
         const reply = json?.choices?.[0]?.message?.content?.trim();
         if (!reply) return { ok: false, error: "AI returned empty reply" };
         return { ok: true, reply };

@@ -170,22 +170,43 @@ export const bulkCreatePages = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertMember(data.workspaceId, context.userId);
-    const inserts = data.rows.map((r) => ({
-      workspace_id: data.workspaceId,
-      template_id: data.templateId,
-      slug: r.slug.toLowerCase(),
-      title: r.title,
-      meta_description: r.metaDescription ?? null,
-      h1: r.title,
-      variables: r.variables,
-      listing_filter: r.listingFilter,
-      status: data.status,
-      published_at: data.status === "published" ? new Date().toISOString() : null,
-    }));
+
+    // Protect already-published pages: a re-import (same workspace+slug) must not
+    // silently overwrite a live page's edited content, status, or published_at.
+    // Skip published slugs; upsert only new pages and existing drafts.
+    const slugs = data.rows.map((r) => r.slug.toLowerCase());
+    const { data: existing } = await sb()
+      .from("tenant_pages")
+      .select("slug, status")
+      .eq("workspace_id", data.workspaceId)
+      .in("slug", slugs);
+    const publishedSlugs = new Set(
+      (existing ?? []).filter((r: any) => r.status === "published").map((r: any) => r.slug),
+    );
+
+    const inserts = data.rows
+      .filter((r) => !publishedSlugs.has(r.slug.toLowerCase()))
+      .map((r) => ({
+        workspace_id: data.workspaceId,
+        template_id: data.templateId,
+        slug: r.slug.toLowerCase(),
+        title: r.title,
+        meta_description: r.metaDescription ?? null,
+        h1: r.title,
+        variables: r.variables,
+        listing_filter: r.listingFilter,
+        status: data.status,
+        published_at: data.status === "published" ? new Date().toISOString() : null,
+      }));
+
+    const skipped = data.rows.length - inserts.length;
+    if (inserts.length === 0) {
+      return { ok: true as const, count: 0, skipped };
+    }
     const { data: out, error } = await sb()
       .from("tenant_pages")
       .upsert(inserts, { onConflict: "workspace_id,slug", ignoreDuplicates: false })
       .select("id");
     if (error) return { ok: false as const, error: error.message };
-    return { ok: true as const, count: out?.length ?? 0 };
+    return { ok: true as const, count: out?.length ?? 0, skipped };
   });

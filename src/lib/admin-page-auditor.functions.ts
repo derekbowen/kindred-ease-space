@@ -40,13 +40,29 @@ export const auditPage = createServerFn({ method: "POST" })
     // BYOK first, platform env-var fallback. Hard-failing on a missing
     // LOVABLE_API_KEY env var meant any platform-key rotation broke audits
     // for every workspace with no way out.
-    const { getWorkspaceSecret } = await import("@/lib/workspace-secrets.server");
-    const lovKey = await getWorkspaceSecret(data.workspaceId, "LOVABLE_API_KEY", "LOVABLE_API_KEY");
-    if (!lovKey)
+    const { getWorkspaceSecretWithSource } = await import("@/lib/workspace-secrets.server");
+    const secret = await getWorkspaceSecretWithSource(
+      data.workspaceId,
+      "LOVABLE_API_KEY",
+      "LOVABLE_API_KEY",
+    );
+    if (!secret)
       return {
         ok: false as const,
         error: "No AI key configured. Add a BYOK key under Settings → API Keys.",
       };
+    const lovKey = secret.key;
+
+    // Meter platform-key usage against workspace credits (no metering on BYOK).
+    const { reservePlatformAi, settlePlatformAi } = await import("@/lib/ai-metering.server");
+    let billing: import("@/lib/ai-metering.server").PlatformBilling | null = null;
+    if (secret.source === "platform") {
+      try {
+        billing = await reservePlatformAi(data.workspaceId);
+      } catch (e) {
+        return { ok: false as const, error: e instanceof Error ? e.message : "Out of AI credits." };
+      }
+    }
 
     const path = normalizeAuditPath(data.url_path);
 
@@ -162,6 +178,21 @@ Return ONLY JSON, no markdown fences.`;
         error: `AI ${aiResp.status}: ${(await aiResp.text()).slice(0, 200)}`,
       };
     const aiJson = await aiResp.json();
+    if (billing) {
+      try {
+        await settlePlatformAi({
+          workspaceId: data.workspaceId,
+          userId: context.userId,
+          billing,
+          model: "google/gemini-2.5-flash",
+          promptTokens: aiJson?.usage?.prompt_tokens ?? 0,
+          completionTokens: aiJson?.usage?.completion_tokens ?? 0,
+          feature: "page_audit",
+        });
+      } catch (e) {
+        console.error("[auditPage] settle failed", e);
+      }
+    }
     const content: string = aiJson?.choices?.[0]?.message?.content || "";
     const cleaned = content
       .replace(/```json\s*/i, "")

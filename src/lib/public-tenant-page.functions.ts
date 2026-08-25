@@ -49,21 +49,44 @@ export type PublicTenantPage = {
 };
 
 export const getPublicTenantPage = createServerFn({ method: "GET" })
-  .inputValidator((d) => z.object({ slug: z.string().min(1).max(200) }).parse(d))
+  .inputValidator((d) =>
+    z
+      .object({
+        slug: z.string().min(1).max(200),
+        // Platform-hosted preview: resolve the workspace by its slug instead of
+        // the request host, so a fresh customer can view a page on founders.click
+        // before their custom domain is connected/verified.
+        workspaceSlug: z.string().min(1).max(120).optional(),
+      })
+      .parse(d),
+  )
   .handler(
     async ({
       data,
-    }): Promise<{ page: PublicTenantPage | null; host: string | null; redirect?: string }> => {
+    }): Promise<{
+      page: PublicTenantPage | null;
+      host: string | null;
+      redirect?: string;
+      preview: boolean;
+    }> => {
       const host = resolveRequestHost() ?? null;
       let workspaceId: string | null = null;
+      const preview = Boolean(data.workspaceSlug);
 
-      if (host) {
+      if (data.workspaceSlug) {
+        const { data: ws } = await sb()
+          .from("workspaces")
+          .select("id")
+          .eq("slug", data.workspaceSlug)
+          .maybeSingle();
+        if (ws?.id) workspaceId = ws.id as string;
+      } else if (host) {
         const { data: ws, error } = await sb().rpc("current_workspace_id_by_host", { _host: host });
         if (error) console.error("[getPublicTenantPage] host lookup failed:", error.message);
         if (ws) workspaceId = ws as string;
       }
 
-      if (!workspaceId) return { page: null, host };
+      if (!workspaceId) return { page: null, host, preview };
 
       const { data: redirectRow } = await sb()
         .from("content_pages")
@@ -73,7 +96,7 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
         .or(`slug.eq.${data.slug},url_path.eq./p/${data.slug}`)
         .maybeSingle();
       if (redirectRow?.redirect_to) {
-        return { page: null, host, redirect: redirectRow.redirect_to as string };
+        return { page: null, host, redirect: redirectRow.redirect_to as string, preview };
       }
 
       const { data: page } = await sb()
@@ -98,8 +121,9 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
           .eq("status", "published")
           .maybeSingle();
         if (!legacy) {
-          await recordPage404(workspaceId, data.slug);
-          return { page: null, host };
+          // Don't pollute the 404 log with the owner's own preview hits.
+          if (!preview) await recordPage404(workspaceId, data.slug);
+          return { page: null, host, preview };
         }
         return {
           page: {
@@ -115,6 +139,7 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
             listings: [],
           },
           host,
+          preview,
         };
       }
 
@@ -146,6 +171,7 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
           listings: (listings ?? []) as PublicListing[],
         },
         host,
+        preview,
       };
     },
   );
