@@ -46,15 +46,67 @@ export const Route = createFileRoute("/p/$slug")({
       tags.push({ property: "og:image", content: firstImage });
       tags.push({ name: "twitter:image", content: firstImage });
     }
+
+    // Thin/empty pages are a scaled-content-abuse and deindexing risk: never let
+    // Google index a page with no listings and little body. noindex,follow keeps
+    // it out of the index while still letting crawlers follow its links.
+    const bodyLen = (p.body_markdown ?? "").trim().length;
+    const isThin = p.listings.length === 0 && bodyLen < 300;
+    if (isThin) {
+      tags.push({ name: "robots", content: "noindex, follow" });
+    }
+
+    // Page-level structured data: a BreadcrumbList (SERP breadcrumbs + crawl
+    // context) and an ItemList wrapping the listings. Per-listing Product JSON-LD
+    // is emitted below from each listing's structured_data.
+    const origin = loaderData.host ? `https://${loaderData.host}` : "";
+    const ldScripts: Array<{ type: string; children: string }> = [];
+    ldScripts.push({
+      type: "application/ld+json",
+      children: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          {
+            "@type": "ListItem",
+            position: 1,
+            name: p.workspace_name || "Home",
+            item: origin || url,
+          },
+          { "@type": "ListItem", position: 2, name: p.h1 || p.title, item: url },
+        ],
+      }),
+    });
+    if (p.listings.length > 0) {
+      ldScripts.push({
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "ItemList",
+          name: p.title,
+          numberOfItems: p.listings.length,
+          itemListElement: p.listings.map((l, i) => ({
+            "@type": "ListItem",
+            position: i + 1,
+            url: l.marketplace_url,
+            name: l.title,
+          })),
+        }),
+      });
+    }
+    for (const l of p.listings) {
+      if (l.structured_data) {
+        ldScripts.push({
+          type: "application/ld+json",
+          children: JSON.stringify(l.structured_data),
+        });
+      }
+    }
+
     return {
       meta: tags,
       links: [{ rel: "canonical", href: url }],
-      scripts: p.listings
-        .filter((l) => l.structured_data)
-        .map((l) => ({
-          type: "application/ld+json",
-          children: JSON.stringify(l.structured_data),
-        })),
+      scripts: ldScripts,
     };
   },
   component: PublicPage,
