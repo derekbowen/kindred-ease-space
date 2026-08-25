@@ -56,7 +56,17 @@ Deno.serve(async (req) => {
         headers: corsHeaders,
       });
 
-    const origin = req.headers.get("origin") ?? "https://founders.click";
+    // Validate the Origin against an allowlist — never echo an attacker-supplied
+    // Origin into Stripe's return_url (open redirect after billing management).
+    const allowedOrigins = (
+      Deno.env.get("ALLOWED_ORIGINS") ?? "https://www.founders.click,https://founders.click"
+    )
+      .split(",")
+      .map((o) => o.trim())
+      .filter(Boolean);
+    const rawOrigin = req.headers.get("origin");
+    const origin =
+      rawOrigin && allowedOrigins.includes(rawOrigin) ? rawOrigin : allowedOrigins[0];
     const portal = await stripe.billingPortal.sessions.create({
       customer: cust.stripe_customer_id,
       return_url: `${origin}/app/billing`,

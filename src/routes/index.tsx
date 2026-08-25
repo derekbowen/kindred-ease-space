@@ -21,7 +21,7 @@ export const Route = createFileRoute("/")({
       {
         property: "og:description",
         content:
-          "AI page generation at $0.012/page, competitor radar, rank tracking, lead hunting — all in one admin.",
+          "AI page generation from pennies per page, competitor radar, rank tracking, lead hunting — all in one admin.",
       },
       { property: "og:type", content: "website" },
       { property: "og:url", content: canonicalUrl("/") },
@@ -196,7 +196,7 @@ const FEATURES = [
   {
     icon: FileText,
     title: "Content Factory",
-    body: "Generate hundreds of SEO pages per day at ~$0.012 each.",
+    body: "Generate hundreds of SEO pages per day — from a few cents each.",
   },
   {
     icon: Search,

@@ -23,6 +23,9 @@ export const Route = createFileRoute("/p/$slug")({
     const url = loaderData.host
       ? `https://${loaderData.host}${loaderData.path}`
       : canonicalUrl(loaderData.path);
+    // Tenant pages are served on the customer's own brand/domain — override the
+    // platform-wide og:site_name and author from the root head so share cards and
+    // SEO don't advertise "founders.click" on a customer's marketplace.
     const tags = [
       { title: p.title },
       { name: "description", content: p.meta_description ?? p.title },
@@ -30,10 +33,14 @@ export const Route = createFileRoute("/p/$slug")({
       { property: "og:description", content: p.meta_description ?? p.title },
       { property: "og:url", content: url },
       { property: "og:type", content: "website" },
+      { property: "og:site_name", content: p.workspace_name || p.title },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: p.title },
       { name: "twitter:description", content: p.meta_description ?? p.title },
     ];
+    if (p.workspace_name) {
+      tags.push({ name: "author", content: p.workspace_name });
+    }
     const firstImage = p.listings.find((l) => l.images?.[0]?.url)?.images?.[0]?.url;
     if (firstImage) {
       tags.push({ property: "og:image", content: firstImage });

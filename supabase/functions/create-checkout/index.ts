@@ -100,7 +100,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const allowedOrigins = (Deno.env.get("ALLOWED_ORIGINS") ?? "https://founders.click")
+    const allowedOrigins = (
+      Deno.env.get("ALLOWED_ORIGINS") ?? "https://www.founders.click,https://founders.click"
+    )
       .split(",")
       .map((o) => o.trim())
       .filter(Boolean);

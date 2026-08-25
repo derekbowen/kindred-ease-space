@@ -70,6 +70,11 @@ export const Route = createFileRoute("/api/public/page-lookup")({
           headers: { ...CORS_HEADERS, "Access-Control-Max-Age": "86400" },
         }),
 
+      // This is a POST-only JSON API. Answer other verbs with a real 405 instead
+      // of letting a crawler GET fall through to the SPA shell (a 200 soft-404).
+      GET: async () =>
+        json(405, { ok: false, error: "method_not_allowed" }, { Allow: "POST, OPTIONS" }),
+
       POST: async ({ request }) => {
         const ip = clientIp(request);
         if (!rateLimit(ip)) {
