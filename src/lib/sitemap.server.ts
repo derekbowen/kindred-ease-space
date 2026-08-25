@@ -11,6 +11,7 @@ export function escapeXml(s: string): string {
 
 export function normalizeHost(raw: string): string {
   return (raw || "")
+    .split(",")[0]! // x-forwarded-host can be a comma-separated list; take the first
     .toLowerCase()
     .trim()
     .replace(/^https?:\/\//, "")

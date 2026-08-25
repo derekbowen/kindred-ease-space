@@ -367,7 +367,10 @@ export const runCoachAction = createServerFn({ method: "POST" })
 
     // Settle metered usage whether or not the action ultimately succeeded — the
     // AI tokens were spent either way.
-    if (billing && (ai.usage.prompt > 0 || ai.usage.completion > 0)) {
+    // Settle whenever we billed the platform key — even if the gateway omitted a
+    // usage object (0 tokens) — so every platform call is logged, matching the
+    // seo-coach and page-auditor paths.
+    if (billing) {
       try {
         await settlePlatformAi({
           workspaceId: data.workspaceId,
