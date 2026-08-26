@@ -147,9 +147,17 @@ Deno.serve(async (req) => {
 
     const returnPath = mode === "addon" ? "addons" : "billing";
 
-    const session = await stripe.checkout.sessions.create({
+    // Stripe enables Managed Payments by default on new accounts, but it requires
+    // API version 2025-03-31.basil+, while this integration is pinned to
+    // 2024-06-20 (the version the webhook's subscription/invoice field handling
+    // is written against). Opt out per session so checkout runs on classic
+    // Billing. Revisit as a deliberate upgrade: bump the pinned apiVersion here
+    // AND in stripe-webhook, then re-verify invoice.paid / subscription events.
+    const sessionParams = {
       customer: customerId,
       mode: isSubscription ? "subscription" : "payment",
+      // Not in the stripe@14 typings yet — sent through as a raw param.
+      managed_payments: { enabled: false },
       line_items: [{ price: selectedPrice.id, quantity: mode === "credits" ? quantity : 1 }],
       success_url: `${origin}/app/${returnPath}?success=1&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/app/${returnPath}?canceled=1`,
@@ -170,7 +178,9 @@ Deno.serve(async (req) => {
             },
           }
         : undefined,
-    });
+    } as unknown as Stripe.Checkout.SessionCreateParams;
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
 
     return new Response(JSON.stringify({ url: session.url }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
