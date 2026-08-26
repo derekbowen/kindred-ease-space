@@ -2,6 +2,15 @@ import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
 
 export type PlanTier = "starter" | "pro" | "scale";
 
+// Stripe product tax codes. Managed Payments (on by default for new accounts)
+// rejects any line item whose product has no tax_code, so every product we
+// create must carry one. founders.click sells to marketplace operators, i.e.
+// commercial buyers — hence the "business use" variants.
+//   txcd_10103001 = Software as a service (SaaS) - business use
+//   txcd_10105002 = AI as a Service (AIaaS), cloud based - business use
+export const TAX_CODE_SAAS = "txcd_10103001";
+export const TAX_CODE_AI = "txcd_10105002";
+
 type PlanDefinition = {
   catalogKey: string;
   name: string;
@@ -99,6 +108,7 @@ export async function ensureAddonPrice(stripe: Stripe, addonKey: AddonKey) {
     catalogKey: def.catalogKey,
     name: def.name,
     description: def.description,
+    taxCode: TAX_CODE_SAAS,
     metadata: meta,
   });
   const prices = await stripe.prices.list({ product: product.id, active: true, limit: 100 });
@@ -122,6 +132,7 @@ async function ensureProduct(
     catalogKey: string;
     name: string;
     description: string;
+    taxCode: string;
     metadata?: Record<string, string>;
   },
 ) {
@@ -130,11 +141,19 @@ async function ensureProduct(
     (product) => product.metadata?.catalog_key === params.catalogKey,
   );
 
-  if (existing) return existing;
+  if (existing) {
+    // Back-fill the tax code on products created before it was required —
+    // otherwise checkout keeps failing with "the product tax code is missing".
+    if (!existing.tax_code) {
+      return stripe.products.update(existing.id, { tax_code: params.taxCode });
+    }
+    return existing;
+  }
 
   return stripe.products.create({
     name: params.name,
     description: params.description,
+    tax_code: params.taxCode,
     metadata: {
       catalog_key: params.catalogKey,
       ...(params.metadata ?? {}),
@@ -148,6 +167,7 @@ export async function ensureSubscriptionPrice(stripe: Stripe, tier: PlanTier) {
     catalogKey: plan.catalogKey,
     name: plan.name,
     description: plan.description,
+    taxCode: TAX_CODE_SAAS,
     metadata: {
       kind: "subscription",
       plan_tier: tier,
@@ -183,6 +203,7 @@ export async function ensureCreditPackPrice(stripe: Stripe) {
     catalogKey: CREDIT_PACK.catalogKey,
     name: CREDIT_PACK.name,
     description: CREDIT_PACK.description,
+    taxCode: TAX_CODE_AI,
     metadata: {
       kind: "credits",
       credits: String(CREDIT_PACK.credits),
