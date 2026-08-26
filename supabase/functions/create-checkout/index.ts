@@ -86,18 +86,47 @@ Deno.serve(async (req) => {
       .eq("workspace_id", workspace_id)
       .maybeSingle();
 
-    let customerId = cust?.stripe_customer_id;
-    if (!customerId) {
+    const createCustomer = async () => {
       const created = await stripe.customers.create({
         email: user.email,
         metadata: { workspace_id, user_id: user.id },
       });
-      customerId = created.id;
-      await admin.from("stripe_customers").insert({
-        workspace_id,
-        stripe_customer_id: customerId,
-        email: user.email,
-      });
+      await admin.from("stripe_customers").upsert(
+        {
+          workspace_id,
+          stripe_customer_id: created.id,
+          email: user.email,
+        },
+        { onConflict: "workspace_id" },
+      );
+      return created.id;
+    };
+
+    let customerId = cust?.stripe_customer_id;
+    if (!customerId) {
+      customerId = await createCustomer();
+    } else {
+      // A stored customer can go stale — the Stripe account or mode changed, or
+      // the customer was deleted in Stripe. Without this check the stale id is
+      // passed to checkout and every purchase fails permanently with an opaque
+      // 500. Verify it, and transparently re-create when Stripe doesn't know it.
+      try {
+        const existing = await stripe.customers.retrieve(customerId);
+        if ((existing as { deleted?: boolean }).deleted) {
+          customerId = await createCustomer();
+        }
+      } catch (e) {
+        const code = (e as { code?: string; statusCode?: number })?.code;
+        const status = (e as { statusCode?: number })?.statusCode;
+        if (code === "resource_missing" || status === 404) {
+          console.warn(
+            `create-checkout: stale stripe customer ${customerId} for workspace ${workspace_id}; recreating`,
+          );
+          customerId = await createCustomer();
+        } else {
+          throw e;
+        }
+      }
     }
 
     const allowedOrigins = (

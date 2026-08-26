@@ -56,6 +56,27 @@ Deno.serve(async (req) => {
         headers: corsHeaders,
       });
 
+    // Same stale-customer guard as create-checkout: a customer stored from a
+    // different Stripe account/mode (or deleted in Stripe) would otherwise throw
+    // an opaque 500 instead of a usable message.
+    try {
+      const existing = await stripe.customers.retrieve(cust.stripe_customer_id);
+      if ((existing as { deleted?: boolean }).deleted) throw { code: "resource_missing" };
+    } catch (e) {
+      const code = (e as { code?: string })?.code;
+      const status = (e as { statusCode?: number })?.statusCode;
+      if (code === "resource_missing" || status === 404) {
+        console.warn(
+          `customer-portal: stale stripe customer ${cust.stripe_customer_id} for workspace ${workspace_id}`,
+        );
+        return new Response(JSON.stringify({ error: "no_customer" }), {
+          status: 404,
+          headers: corsHeaders,
+        });
+      }
+      throw e;
+    }
+
     // Validate the Origin against an allowlist — never echo an attacker-supplied
     // Origin into Stripe's return_url (open redirect after billing management).
     const allowedOrigins = (
