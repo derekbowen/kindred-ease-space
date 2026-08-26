@@ -1,6 +1,18 @@
+import { useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Button } from "@/components/ui/button";
-import { Sparkles, FileText, Search, Users, Zap, Brain } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  Factory,
+  Inbox,
+  Play,
+  Plus,
+  Radar,
+  RefreshCw,
+  Share2,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { canonicalUrl } from "@/lib/canonical";
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { SiteFooter } from "@/components/site/SiteFooter";
@@ -12,7 +24,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "AI-powered SEO, content factory, lead inbox and ops dashboard for Sharetribe marketplace founders. Replace your agency. Move at AI speed.",
+          "AI-powered SEO, content generation, competitor radar and lead hunting for Sharetribe marketplace founders. 14-day free trial, no card required.",
       },
       {
         property: "og:title",
@@ -52,204 +64,574 @@ export const Route = createFileRoute("/")({
           },
         }),
       },
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "FAQPage",
+          mainEntity: FAQS.map((f) => ({
+            "@type": "Question",
+            name: f.question,
+            acceptedAnswer: { "@type": "Answer", text: f.answer },
+          })),
+        }),
+      },
     ],
   }),
   component: Landing,
 });
 
+const FOCUS_RING =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a]";
+
 function Landing() {
   return (
-    <div className="dark min-h-screen bg-background text-foreground">
+    <div className="dark min-h-screen bg-[#0a0a0a] text-foreground antialiased selection:bg-orange-500/30 selection:text-white">
       <SiteHeader />
-
-      {/* Hero */}
-      <section className="max-w-6xl mx-auto px-6 py-20 text-center">
-        <p className="text-sm uppercase tracking-widest text-brand mb-4">
-          For Sharetribe marketplace founders
-        </p>
-        <h1 className="text-5xl md:text-7xl font-bold tracking-tight">
-          The all-in-one growth engine.
-        </h1>
-        <p className="mt-6 text-lg text-muted-foreground max-w-2xl mx-auto">
-          Custom-coded SEO, AI content generation, competitor radar, lead hunting and ops — without
-          the agency price tag.
-        </p>
-        <div className="mt-8 flex items-center justify-center gap-3">
-          <Button asChild size="lg">
-            <Link to="/signup">Start your free trial</Link>
-          </Button>
-          <Button asChild size="lg" variant="outline">
-            <Link to="/login">Sign in</Link>
-          </Button>
-        </div>
-        <p className="mt-4 text-xs text-muted-foreground">
-          14-day trial · 250 free credits · No card required
-        </p>
-      </section>
-
-      {/* Product demo video */}
-      <section className="max-w-5xl mx-auto px-6 pb-16">
-        <div className="rounded-xl border border-border overflow-hidden bg-black shadow-2xl shadow-brand/10">
-          <video
-            controls
-            playsInline
-            muted
-            preload="metadata"
-            poster="/product-demo-poster.jpg"
-            className="w-full h-auto block"
-          >
-            <source src="/product-demo.mp4" type="video/mp4" />
-            Your browser does not support the video tag.{" "}
-            <a href="/product-demo.mp4" className="underline">
-              Download the demo
-            </a>
-            .
-          </video>
-        </div>
-        <p className="text-center text-xs text-muted-foreground mt-3">
-          Product demo — see the Content Factory in action
-        </p>
-      </section>
-
-      {/* Feature grid (the 7 slides condensed) */}
-      <section className="max-w-6xl mx-auto px-6 py-16">
-        <h2 className="text-3xl font-bold mb-10">Everything you need in one admin</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {FEATURES.map((f) => {
-            const Icon = f.icon;
-            return (
-              <div key={f.title} className="rounded-lg border border-border p-6 bg-card">
-                <Icon className="h-6 w-6 text-brand mb-3" />
-                <h3 className="font-semibold mb-1">{f.title}</h3>
-                <p className="text-sm text-muted-foreground">{f.body}</p>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Pricing */}
-      <section className="max-w-6xl mx-auto px-6 py-16">
-        <h2 className="text-3xl font-bold mb-2">Pricing</h2>
-        <p className="text-sm text-muted-foreground mb-10">
-          Subscription + monthly AI credits. Top up anytime.
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {PLANS.map((p) => (
-            <div
-              key={p.name}
-              className={`rounded-lg border p-6 ${p.featured ? "border-brand/50 bg-brand/5" : "border-border bg-card"}`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-xl font-semibold">{p.name}</h3>
-                {p.featured && (
-                  <span className="text-xs px-2 py-0.5 bg-brand text-brand-foreground rounded">
-                    Popular
-                  </span>
-                )}
-              </div>
-              <div className="mb-3">
-                <span className="text-4xl font-bold">${p.price}</span>
-                <span className="text-muted-foreground">/mo</span>
-              </div>
-              <p className="text-sm text-brand mb-4">
-                {p.credits.toLocaleString()} AI credits / mo
-              </p>
-              <ul className="space-y-1.5 text-sm text-muted-foreground mb-6">
-                {p.features.map((feat) => (
-                  <li key={feat}>• {feat}</li>
-                ))}
-              </ul>
-              <Button asChild className="w-full" variant={p.featured ? "default" : "outline"}>
-                <Link to="/signup">Start trial</Link>
-              </Button>
-            </div>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground mt-6 text-center">
-          Need more credits? Top up at $10 per 1,000. Never expire.
-        </p>
-      </section>
-
-      {/* CTA */}
-      <section className="max-w-3xl mx-auto px-6 py-20 text-center">
-        <h2 className="text-4xl font-bold">Ready to ship like a funded startup?</h2>
-        <p className="mt-4 text-muted-foreground">
-          Solo founders and lean teams use founders.click to compete with agency-backed competitors.
-        </p>
-        <Button asChild size="lg" className="mt-8">
-          <Link to="/signup">Start your free trial</Link>
-        </Button>
-      </section>
-
+      <main>
+        <Hero />
+        <ProductDemo />
+        <ProblemFix />
+        <Features />
+        <HowItWorks />
+        <Pricing />
+        <Faq />
+        <FinalCta />
+      </main>
       <SiteFooter />
     </div>
   );
 }
 
+function Hero() {
+  return (
+    <section className="relative overflow-hidden pb-14 pt-20 sm:pb-20 sm:pt-28">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-0 h-[520px] w-[900px] max-w-[140vw] -translate-x-1/2 rounded-full opacity-60 blur-[120px]"
+        style={{
+          background:
+            "radial-gradient(circle at center, rgba(249,115,22,0.30) 0%, rgba(249,115,22,0.10) 45%, rgba(10,10,10,0) 70%)",
+        }}
+      />
+      <div className="relative mx-auto w-full max-w-4xl px-5 text-center sm:px-8">
+        <p className="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-orange-500">
+          For Sharetribe marketplace founders
+        </p>
+        <h1 className="mt-6 text-[2.75rem] font-semibold leading-[1.02] tracking-[-0.04em] text-white sm:text-6xl lg:text-7xl">
+          The all-in-one growth engine.
+        </h1>
+        <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-zinc-400 sm:text-lg">
+          Custom-coded SEO, AI content generation, competitor radar, lead hunting and ops — without
+          the agency price tag.
+        </p>
+        <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <Link
+            to="/signup"
+            className={`group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-6 py-3.5 text-sm font-semibold text-black shadow-[0_0_40px_-8px_rgba(249,115,22,0.8)] transition-colors hover:bg-orange-400 sm:w-auto ${FOCUS_RING}`}
+          >
+            Start your free trial
+            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          </Link>
+          <a
+            href="#demo"
+            className={`inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.12] px-6 py-3.5 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.06] hover:text-white sm:w-auto ${FOCUS_RING}`}
+          >
+            <Play className="h-4 w-4" />
+            Watch the demo
+          </a>
+        </div>
+        <p className="mt-6 text-xs text-zinc-500">
+          14-day trial · 250 free credits · No card required
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function ProductDemo() {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
+
+  return (
+    <section id="demo" aria-label="Product demo" className="relative scroll-mt-24">
+      <div className="mx-auto w-full max-w-6xl px-5 sm:px-8">
+        <figure>
+          <div className="group relative overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02] p-1.5 shadow-[0_40px_120px_-30px_rgba(0,0,0,0.9)]">
+            <div className="relative aspect-video overflow-hidden rounded-xl bg-[#0d0d0d]">
+              <video
+                ref={videoRef}
+                controls={playing}
+                playsInline
+                muted
+                preload="metadata"
+                poster="/product-demo-poster.jpg"
+                className="h-full w-full object-cover"
+                onPlay={() => setPlaying(true)}
+                onPause={() => setPlaying(false)}
+              >
+                <source src="/product-demo.mp4" type="video/mp4" />
+                Your browser does not support the video tag.{" "}
+                <a href="/product-demo.mp4" className="underline">
+                  Download the demo
+                </a>
+                .
+              </video>
+              {!playing && (
+                <button
+                  type="button"
+                  aria-label="Play product demo video"
+                  onClick={() => videoRef.current?.play()}
+                  className={`absolute inset-0 flex items-center justify-center bg-black/30 transition-colors hover:bg-black/20 ${FOCUS_RING}`}
+                >
+                  <span className="flex h-16 w-16 items-center justify-center rounded-full bg-orange-500 text-black shadow-[0_0_50px_-6px_rgba(249,115,22,0.9)] transition-transform group-hover:scale-105">
+                    <Play className="ml-0.5 h-6 w-6 fill-black" />
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+          <figcaption className="mt-4 text-center text-sm text-zinc-500">
+            See the Content Factory in action
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+  );
+}
+
+const PAINS = [
+  "Agencies charge thousands a month and report on vanity metrics.",
+  "Freelancers ghost you halfway through the content calendar.",
+  "Your competitors are publishing pages faster than you can write them.",
+];
+
+const FIXES = [
+  "One subscription, no retainer, no scope calls.",
+  "Pages generated from your real listings — in minutes, not sprints.",
+  "A daily briefing telling you the single highest-ROI thing to ship.",
+];
+
+function ProblemFix() {
+  return (
+    <section className="mx-auto w-full max-w-6xl px-5 py-24 sm:px-8 sm:py-32">
+      <div className="grid gap-8 lg:grid-cols-2 lg:gap-12">
+        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-8 sm:p-10">
+          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-zinc-500">
+            The problem
+          </p>
+          <h2 className="mt-5 text-3xl font-semibold leading-[1.1] tracking-[-0.03em] text-white sm:text-4xl">
+            Growth is a full-time job you can&apos;t afford to hire for.
+          </h2>
+          <ul className="mt-8 space-y-4">
+            {PAINS.map((pain) => (
+              <li key={pain} className="flex gap-3 text-sm text-zinc-400">
+                <X className="mt-0.5 h-4 w-4 shrink-0 text-zinc-600" />
+                <span>{pain}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="rounded-2xl border border-orange-500/25 bg-orange-500/[0.04] p-8 shadow-[0_0_80px_-40px_rgba(249,115,22,0.7)] sm:p-10">
+          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-orange-500">
+            The fix
+          </p>
+          <h2 className="mt-5 text-3xl font-semibold leading-[1.1] tracking-[-0.03em] text-white sm:text-4xl">
+            Ship the output of a growth team. Solo.
+          </h2>
+          <ul className="mt-8 space-y-4">
+            {FIXES.map((fix) => (
+              <li key={fix} className="flex gap-3 text-sm text-zinc-300">
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
+                <span>{fix}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const FEATURES = [
   {
-    icon: Sparkles,
-    title: "Dashboard",
-    body: "Morning command center with live KPIs and AI-ranked action items.",
-  },
-  {
-    icon: FileText,
+    icon: Factory,
     title: "Content Factory",
-    body: "Generate hundreds of SEO pages per day — from a few cents each.",
+    description: "Generate SEO landing pages in bulk from your live listings.",
   },
   {
-    icon: Search,
+    icon: Radar,
     title: "SEO Intelligence",
-    body: "Competitor radar, rank tracking, AI page auditor, keyword opportunities.",
+    description: "Competitor radar, rank tracking, AI page auditor, keyword gaps.",
   },
   {
-    icon: Users,
+    icon: Sparkles,
+    title: "AI Growth Coach",
+    description: "A daily briefing that ranks your highest-ROI actions.",
+  },
+  {
+    icon: Inbox,
     title: "Lead Inbox",
-    body: "Triage host/provider leads. Daily IG, TikTok, Nextdoor scraping built in.",
+    description: "Capture and triage host/provider leads in one place.",
   },
   {
-    icon: Zap,
-    title: "Move at AI Speed",
-    body: "Publish 200 pages/day, fix 300 internal links in one click.",
+    icon: RefreshCw,
+    title: "Sharetribe Sync",
+    description: "Your listings, synced automatically in the background.",
   },
   {
-    icon: Brain,
-    title: "SEO Coach AI",
-    body: 'Grounded in your live site data. Ask "what should I do today?" and get step-by-step fixes.',
+    icon: Share2,
+    title: "Affiliate Programs",
+    description: "Run referral programs that pay out on real transactions.",
   },
 ];
 
+function Features() {
+  return (
+    <section
+      id="features"
+      aria-labelledby="features-heading"
+      className="mx-auto w-full max-w-6xl scroll-mt-24 px-5 py-24 sm:px-8 sm:py-28"
+    >
+      <div className="max-w-2xl">
+        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-orange-500">
+          Everything included
+        </p>
+        <h2
+          id="features-heading"
+          className="mt-5 text-4xl font-semibold leading-[1.05] tracking-[-0.035em] text-white sm:text-5xl"
+        >
+          One engine. Every growth surface.
+        </h2>
+      </div>
+
+      <ul className="mt-14 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {FEATURES.map(({ icon: Icon, title, description }) => (
+          <li key={title}>
+            <div className="group h-full rounded-2xl border border-white/[0.08] bg-white/[0.02] p-7 transition-all duration-300 hover:-translate-y-1 hover:border-orange-500/40 hover:shadow-[0_0_50px_-20px_rgba(249,115,22,0.8)]">
+              <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-orange-500/20 bg-orange-500/10">
+                <Icon className="h-5 w-5 text-orange-500" aria-hidden="true" />
+              </span>
+              <h3 className="mt-6 text-base font-semibold tracking-tight text-white">{title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-zinc-400">{description}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+const STEPS = [
+  {
+    number: "1",
+    title: "Connect your marketplace",
+    description:
+      "Add your Sharetribe Integration API credentials. We pull your listings, categories and locations automatically.",
+  },
+  {
+    number: "2",
+    title: "Generate your pages",
+    description:
+      "The Content Factory turns your live inventory into indexable landing pages, grounded in real listing data.",
+  },
+  {
+    number: "3",
+    title: "Publish on your domain",
+    description:
+      "Connect and verify your own domain, then track positions and let the Growth Coach tell you what to ship next.",
+  },
+];
+
+function HowItWorks() {
+  return (
+    <section aria-labelledby="how-heading" className="border-y border-white/[0.08] bg-white/[0.015]">
+      <div className="mx-auto w-full max-w-6xl px-5 py-24 sm:px-8 sm:py-28">
+        <div className="max-w-2xl">
+          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-orange-500">
+            How it works
+          </p>
+          <h2
+            id="how-heading"
+            className="mt-5 text-4xl font-semibold leading-[1.05] tracking-[-0.035em] text-white sm:text-5xl"
+          >
+            Live in an afternoon.
+          </h2>
+        </div>
+
+        <ol className="relative mt-16 grid grid-cols-1 gap-12 md:grid-cols-3 md:gap-8">
+          <div
+            aria-hidden="true"
+            className="absolute left-5 top-0 hidden h-full w-px bg-white/[0.08] md:left-0 md:top-5 md:block md:h-px md:w-full"
+          />
+          {STEPS.map((step) => (
+            <li key={step.number} className="relative">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full border border-orange-500/30 bg-[#0a0a0a] font-mono text-sm font-medium text-orange-500">
+                {step.number}
+              </span>
+              <h3 className="mt-6 text-lg font-semibold tracking-tight text-white">{step.title}</h3>
+              <p className="mt-2 max-w-sm text-sm leading-relaxed text-zinc-400">
+                {step.description}
+              </p>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+// Tiers differ by monthly credit allowance only — every feature is available on
+// every plan. Page estimates are approximate and depend on page length.
 const PLANS = [
   {
     name: "Starter",
-    price: 99,
-    credits: 1000,
-    features: ["AI Page Builder", "Bulk Editor", "GSC sync", "1 marketplace"],
+    price: "$99",
+    credits: "500 AI credits/mo",
+    pages: "≈ 40 generated pages a month",
+    blurb: "For a marketplace finding its first organic traffic.",
+    featured: false,
   },
   {
     name: "Pro",
-    price: 249,
-    credits: 5000,
+    price: "$249",
+    credits: "2,500 AI credits/mo",
+    pages: "≈ 200 generated pages a month",
+    blurb: "For operators publishing city and category pages at pace.",
     featured: true,
-    features: [
-      "Everything in Starter",
-      "Competitor Radar",
-      "Rank Tracker",
-      "Lead Inbox",
-      "3 marketplaces",
-    ],
   },
   {
     name: "Scale",
-    price: 599,
-    credits: 15000,
-    features: [
-      "Everything in Pro",
-      "IG Lead Hunter",
-      "Email Verify",
-      "SEO Coach AI",
-      "Unlimited marketplaces",
-    ],
+    price: "$599",
+    credits: "10,000 AI credits/mo",
+    pages: "≈ 800 generated pages a month",
+    blurb: "For national coverage and aggressive expansion.",
+    featured: false,
   },
 ];
+
+const INCLUDED = [
+  "Content Factory",
+  "SEO Intelligence",
+  "AI Growth Coach",
+  "Lead Inbox",
+  "Sharetribe Sync",
+  "Custom domain",
+];
+
+function Pricing() {
+  return (
+    <section
+      id="pricing"
+      aria-labelledby="pricing-heading"
+      className="mx-auto w-full max-w-6xl scroll-mt-24 px-5 py-24 sm:px-8 sm:py-32"
+    >
+      <div className="mx-auto max-w-2xl text-center">
+        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-orange-500">Pricing</p>
+        <h2
+          id="pricing-heading"
+          className="mt-5 text-4xl font-semibold leading-[1.05] tracking-[-0.035em] text-white sm:text-5xl"
+        >
+          Less than one agency invoice.
+        </h2>
+        <p className="mt-5 text-sm text-zinc-400">
+          Every plan unlocks every feature. Pick a plan for how much you publish — not for which
+          tools you&apos;re allowed to use.
+        </p>
+      </div>
+
+      <div className="mt-14 grid grid-cols-1 gap-5 lg:grid-cols-3">
+        {PLANS.map((tier) => (
+          <div
+            key={tier.name}
+            className={`relative flex flex-col rounded-2xl border p-8 ${
+              tier.featured
+                ? "border-orange-500/60 bg-orange-500/[0.04] shadow-[0_0_90px_-40px_rgba(249,115,22,0.9)]"
+                : "border-white/[0.08] bg-white/[0.02]"
+            }`}
+          >
+            {tier.featured && (
+              <span className="absolute -top-3 left-8 rounded-full bg-orange-500 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-black">
+                Most popular
+              </span>
+            )}
+
+            <h3 className="text-sm font-medium uppercase tracking-[0.14em] text-zinc-400">
+              {tier.name}
+            </h3>
+
+            <p className="mt-6 flex items-baseline gap-1">
+              <span className="text-5xl font-semibold tracking-[-0.04em] text-white">
+                {tier.price}
+              </span>
+              <span className="text-sm text-zinc-500">/mo</span>
+            </p>
+
+            <p className="mt-3 font-mono text-sm text-orange-500">{tier.credits}</p>
+
+            <div className="mt-8 flex-1 space-y-3.5">
+              <p className="flex gap-3 text-sm text-zinc-300">
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" aria-hidden="true" />
+                <span>{tier.pages}</span>
+              </p>
+              <p className="flex gap-3 text-sm text-zinc-300">
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" aria-hidden="true" />
+                <span>Every feature unlocked — no gates</span>
+              </p>
+              <p className="text-sm leading-relaxed text-zinc-500">{tier.blurb}</p>
+            </div>
+
+            <Link
+              to="/signup"
+              className={`mt-9 w-full rounded-xl px-5 py-3 text-center text-sm font-semibold transition-colors ${FOCUS_RING} ${
+                tier.featured
+                  ? "bg-orange-500 text-black shadow-[0_0_40px_-10px_rgba(249,115,22,0.9)] hover:bg-orange-400"
+                  : "border border-white/[0.12] text-white hover:bg-white/[0.06]"
+              }`}
+            >
+              Start free trial
+            </Link>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-12 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-8">
+        <p className="text-center font-mono text-[11px] uppercase tracking-[0.22em] text-zinc-500">
+          Every plan includes
+        </p>
+        <ul className="mt-6 flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
+          {INCLUDED.map((item) => (
+            <li key={item} className="flex items-center gap-2 text-sm text-zinc-300">
+              <Check className="h-4 w-4 shrink-0 text-orange-500" aria-hidden="true" />
+              {item}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <p className="mt-8 text-center text-sm text-zinc-500">
+        Run out? Top up at $10 per 1,000 credits. Purchased credits never expire.
+      </p>
+    </section>
+  );
+}
+
+const FAQS = [
+  {
+    question: "Do I need to be technical?",
+    answer:
+      "No. You connect your Sharetribe marketplace with your Integration API credentials, and everything else happens in the dashboard. If you can publish a listing, you can run founders.click.",
+  },
+  {
+    question: "What is a credit?",
+    answer:
+      "A credit is one unit of AI work — generating a landing page, auditing a page, or running a competitor scan. A typical landing page costs roughly 5 to 15 credits depending on its length, so the 250 free trial credits cover your first batch of pages.",
+  },
+  {
+    question: "Can I use my own domain?",
+    answer:
+      "Yes. Add your domain under Settings, verify it with a DNS record or a file upload, and your generated pages serve on your own domain with self-referential canonical tags.",
+  },
+  {
+    question: "Does it work with any Sharetribe marketplace?",
+    answer:
+      "It works with Sharetribe marketplaces of any category — rentals, services, gear and local marketplaces. Pages are generated from your real listing data, including city, category and pricing fields.",
+  },
+  {
+    question: "Can I cancel anytime?",
+    answer:
+      "Anytime, from the billing portal in your dashboard. Your subscription stays active until the end of the period you have already paid for, and purchased top-up credits never expire.",
+  },
+];
+
+function Faq() {
+  const [openIndex, setOpenIndex] = useState<number | null>(0);
+
+  return (
+    <section
+      id="faq"
+      aria-labelledby="faq-heading"
+      className="mx-auto w-full max-w-3xl scroll-mt-24 px-5 py-24 sm:px-8 sm:py-28"
+    >
+      <h2
+        id="faq-heading"
+        className="text-4xl font-semibold leading-[1.05] tracking-[-0.035em] text-white sm:text-5xl"
+      >
+        Questions, answered.
+      </h2>
+
+      <div className="mt-12 divide-y divide-white/[0.08] border-y border-white/[0.08]">
+        {FAQS.map((faq, index) => {
+          const isOpen = openIndex === index;
+          return (
+            <div key={faq.question}>
+              <h3>
+                <button
+                  type="button"
+                  onClick={() => setOpenIndex(isOpen ? null : index)}
+                  aria-expanded={isOpen}
+                  aria-controls={`faq-panel-${index}`}
+                  id={`faq-button-${index}`}
+                  className={`flex w-full items-center justify-between gap-6 py-5 text-left ${FOCUS_RING}`}
+                >
+                  <span className="text-base font-medium text-white">{faq.question}</span>
+                  <Plus
+                    aria-hidden="true"
+                    className={`h-4 w-4 shrink-0 text-orange-500 transition-transform duration-200 ${
+                      isOpen ? "rotate-45" : ""
+                    }`}
+                  />
+                </button>
+              </h3>
+              <div
+                id={`faq-panel-${index}`}
+                role="region"
+                aria-labelledby={`faq-button-${index}`}
+                hidden={!isOpen}
+              >
+                <p className="pb-6 pr-10 text-sm leading-relaxed text-zinc-400">{faq.answer}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function FinalCta() {
+  return (
+    <section
+      aria-labelledby="final-cta-heading"
+      className="relative overflow-hidden border-y border-white/[0.08]"
+    >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 80% 120% at 50% 120%, rgba(249,115,22,0.22) 0%, rgba(249,115,22,0.06) 45%, rgba(10,10,10,0) 75%)",
+        }}
+      />
+      <div className="relative mx-auto w-full max-w-3xl px-5 py-24 text-center sm:px-8 sm:py-32">
+        <h2
+          id="final-cta-heading"
+          className="text-4xl font-semibold leading-[1.05] tracking-[-0.035em] text-white sm:text-5xl"
+        >
+          Ready to ship like a funded startup?
+        </h2>
+        <p className="mx-auto mt-5 max-w-xl text-base text-zinc-400">
+          Connect your marketplace and generate your first pages today.
+        </p>
+        <Link
+          to="/signup"
+          className={`group mt-9 inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-7 py-3.5 text-sm font-semibold text-black shadow-[0_0_50px_-10px_rgba(249,115,22,0.9)] transition-colors hover:bg-orange-400 ${FOCUS_RING}`}
+        >
+          Start your free trial
+          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+        </Link>
+      </div>
+    </section>
+  );
+}
