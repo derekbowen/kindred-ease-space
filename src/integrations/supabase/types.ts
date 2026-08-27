@@ -4890,6 +4890,10 @@ export type Database = {
         Args: { _provider: string; _workspace_id: string }
         Returns: boolean
       }
+      tenant_delete_integration_secret: {
+        Args: { _workspace_id: string }
+        Returns: undefined
+      }
       tenant_delete_workspace_secret: {
         Args: { _id: string; _workspace_id: string }
         Returns: boolean
