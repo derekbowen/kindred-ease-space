@@ -132,7 +132,7 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
 // --- Templates ---------------------------------------------------------
 
 const BRAND = "founders.click";
-const APP_URL = process.env.PUBLIC_APP_URL || "https://founders.click";
+const APP_URL = process.env.PUBLIC_APP_URL || "https://www.founders.click";
 
 const baseStyle = `font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#0f172a;line-height:1.55;max-width:560px;margin:0 auto;padding:24px;`;
 const btnStyle = `display:inline-block;background:#0f172a;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;`;

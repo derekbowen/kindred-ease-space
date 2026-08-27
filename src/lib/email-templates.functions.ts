@@ -153,7 +153,7 @@ export const sendHelpFeedbackFollowUp = createServerFn({ method: "POST" })
       .eq("id", data.articleId)
       .maybeSingle();
     if (!art) throw new Error("Article not found");
-    const origin = process.env.PUBLIC_APP_URL || "https://founders.click";
+    const origin = process.env.PUBLIC_APP_URL || "https://www.founders.click";
     // The public article route is /help/{category}/{slug} — the old link
     // omitted the category segment and 404'd.
     const categorySlug = (art as any).help_categories?.slug ?? "general";
