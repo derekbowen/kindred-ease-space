@@ -187,7 +187,7 @@ seo_title (≤60 chars) and seo_description (≤155 chars) optimised for the top
       throw new Error(`Generated body too short (${gen.body_markdown?.length ?? 0} chars)`);
     }
 
-    const url_path = `/p/${slug}`;
+    const url_path = `/a/${slug}`;
     const pageTitle = gen.title || data.title;
     const city = data.city?.trim() || "";
     const state = data.state?.trim() || "";

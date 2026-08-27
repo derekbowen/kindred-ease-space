@@ -83,7 +83,7 @@ function PageAuditorPage() {
               <Input
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
-                placeholder="/p/los-angeles-ca"
+                placeholder="/a/los-angeles-ca"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") runAudit();
                 }}

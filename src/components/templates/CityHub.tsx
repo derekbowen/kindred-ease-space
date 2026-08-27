@@ -166,7 +166,7 @@ export function CityHub({ page }: { page: PublicTenantPage }) {
               {page.related_pages.map((r) => (
                 <li key={r.slug}>
                   <a
-                    href={`/p/${r.slug}`}
+                    href={`/a/${r.slug}`}
                     className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                   >
                     {r.title}

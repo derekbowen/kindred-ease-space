@@ -115,7 +115,7 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
         .select("redirect_to")
         .eq("workspace_id", workspaceId)
         .eq("status", "redirect")
-        .or(`slug.eq.${data.slug},url_path.eq./p/${data.slug}`)
+        .or(`slug.eq.${data.slug},url_path.eq./a/${data.slug},url_path.eq./p/${data.slug}`)
         .maybeSingle();
       if (redirectRow?.redirect_to) {
         return { page: null, host, redirect: redirectRow.redirect_to as string, preview };

@@ -25,6 +25,9 @@ import { Route as HelpSearchRouteImport } from './routes/help.search'
 import { Route as HelpContactRouteImport } from './routes/help.contact'
 import { Route as HelpCategoryRouteImport } from './routes/help.$category'
 import { Route as ApplySlugRouteImport } from './routes/apply.$slug'
+import { Route as ASitemapDotxmlRouteImport } from './routes/a.sitemap[.]xml'
+import { Route as AFoundersDomainTestRouteImport } from './routes/a.founders-domain-test'
+import { Route as ASlugRouteImport } from './routes/a.$slug'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
 import { Route as SWsSlugRouteImport } from './routes/s.$ws.$slug'
@@ -32,6 +35,7 @@ import { Route as HelpCategoryArticleRouteImport } from './routes/help.$category
 import { Route as ApiPublicSitemapByHostRouteImport } from './routes/api/public/sitemap-by-host'
 import { Route as ApiPublicPageLookupRouteImport } from './routes/api/public/page-lookup'
 import { Route as ApiPublicDomainTokenRouteImport } from './routes/api/public/domain-token'
+import { Route as ApiPublicDomainConfigRouteImport } from './routes/api/public/domain-config'
 import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated/app.settings'
 import { Route as AuthenticatedAppSeoCoachRouteImport } from './routes/_authenticated/app.seo-coach'
 import { Route as AuthenticatedAppPagesRouteImport } from './routes/_authenticated/app.pages'
@@ -177,6 +181,21 @@ const ApplySlugRoute = ApplySlugRouteImport.update({
   path: '/apply/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ASitemapDotxmlRoute = ASitemapDotxmlRouteImport.update({
+  id: '/a/sitemap.xml',
+  path: '/a/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AFoundersDomainTestRoute = AFoundersDomainTestRouteImport.update({
+  id: '/a/founders-domain-test',
+  path: '/a/founders-domain-test',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ASlugRoute = ASlugRouteImport.update({
+  id: '/a/$slug',
+  path: '/a/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
   id: '/app',
   path: '/app',
@@ -210,6 +229,11 @@ const ApiPublicPageLookupRoute = ApiPublicPageLookupRouteImport.update({
 const ApiPublicDomainTokenRoute = ApiPublicDomainTokenRouteImport.update({
   id: '/api/public/domain-token',
   path: '/api/public/domain-token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicDomainConfigRoute = ApiPublicDomainConfigRouteImport.update({
+  id: '/api/public/domain-config',
+  path: '/api/public/domain-config',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAppSettingsRoute =
@@ -609,6 +633,9 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
+  '/a/$slug': typeof ASlugRoute
+  '/a/founders-domain-test': typeof AFoundersDomainTestRoute
+  '/a/sitemap.xml': typeof ASitemapDotxmlRoute
   '/apply/$slug': typeof ApplySlugRoute
   '/help/$category': typeof HelpCategoryRouteWithChildren
   '/help/contact': typeof HelpContactRoute
@@ -624,6 +651,7 @@ export interface FileRoutesByFullPath {
   '/app/pages': typeof AuthenticatedAppPagesRouteWithChildren
   '/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
+  '/api/public/domain-config': typeof ApiPublicDomainConfigRoute
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
   '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
@@ -696,6 +724,9 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
+  '/a/$slug': typeof ASlugRoute
+  '/a/founders-domain-test': typeof AFoundersDomainTestRoute
+  '/a/sitemap.xml': typeof ASitemapDotxmlRoute
   '/apply/$slug': typeof ApplySlugRoute
   '/help/$category': typeof HelpCategoryRouteWithChildren
   '/help/contact': typeof HelpContactRoute
@@ -711,6 +742,7 @@ export interface FileRoutesByTo {
   '/app/pages': typeof AuthenticatedAppPagesRouteWithChildren
   '/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
+  '/api/public/domain-config': typeof ApiPublicDomainConfigRoute
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
   '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
@@ -787,6 +819,9 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
+  '/a/$slug': typeof ASlugRoute
+  '/a/founders-domain-test': typeof AFoundersDomainTestRoute
+  '/a/sitemap.xml': typeof ASitemapDotxmlRoute
   '/apply/$slug': typeof ApplySlugRoute
   '/help/$category': typeof HelpCategoryRouteWithChildren
   '/help/contact': typeof HelpContactRoute
@@ -802,6 +837,7 @@ export interface FileRoutesById {
   '/_authenticated/app/pages': typeof AuthenticatedAppPagesRouteWithChildren
   '/_authenticated/app/seo-coach': typeof AuthenticatedAppSeoCoachRoute
   '/_authenticated/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
+  '/api/public/domain-config': typeof ApiPublicDomainConfigRoute
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
   '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
@@ -878,6 +914,9 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/terms'
     | '/app'
+    | '/a/$slug'
+    | '/a/founders-domain-test'
+    | '/a/sitemap.xml'
     | '/apply/$slug'
     | '/help/$category'
     | '/help/contact'
@@ -893,6 +932,7 @@ export interface FileRouteTypes {
     | '/app/pages'
     | '/app/seo-coach'
     | '/app/settings'
+    | '/api/public/domain-config'
     | '/api/public/domain-token'
     | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
@@ -965,6 +1005,9 @@ export interface FileRouteTypes {
     | '/signup'
     | '/sitemap.xml'
     | '/terms'
+    | '/a/$slug'
+    | '/a/founders-domain-test'
+    | '/a/sitemap.xml'
     | '/apply/$slug'
     | '/help/$category'
     | '/help/contact'
@@ -980,6 +1023,7 @@ export interface FileRouteTypes {
     | '/app/pages'
     | '/app/seo-coach'
     | '/app/settings'
+    | '/api/public/domain-config'
     | '/api/public/domain-token'
     | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
@@ -1055,6 +1099,9 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/terms'
     | '/_authenticated/app'
+    | '/a/$slug'
+    | '/a/founders-domain-test'
+    | '/a/sitemap.xml'
     | '/apply/$slug'
     | '/help/$category'
     | '/help/contact'
@@ -1070,6 +1117,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/pages'
     | '/_authenticated/app/seo-coach'
     | '/_authenticated/app/settings'
+    | '/api/public/domain-config'
     | '/api/public/domain-token'
     | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
@@ -1145,8 +1193,12 @@ export interface RootRouteChildren {
   SignupRoute: typeof SignupRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TermsRoute: typeof TermsRoute
+  ASlugRoute: typeof ASlugRoute
+  AFoundersDomainTestRoute: typeof AFoundersDomainTestRoute
+  ASitemapDotxmlRoute: typeof ASitemapDotxmlRoute
   ApplySlugRoute: typeof ApplySlugRoute
   PSlugRoute: typeof PSlugRoute
+  ApiPublicDomainConfigRoute: typeof ApiPublicDomainConfigRoute
   ApiPublicDomainTokenRoute: typeof ApiPublicDomainTokenRoute
   ApiPublicPageLookupRoute: typeof ApiPublicPageLookupRoute
   ApiPublicSitemapByHostRoute: typeof ApiPublicSitemapByHostRoute
@@ -1269,6 +1321,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApplySlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/a/sitemap.xml': {
+      id: '/a/sitemap.xml'
+      path: '/a/sitemap.xml'
+      fullPath: '/a/sitemap.xml'
+      preLoaderRoute: typeof ASitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/a/founders-domain-test': {
+      id: '/a/founders-domain-test'
+      path: '/a/founders-domain-test'
+      fullPath: '/a/founders-domain-test'
+      preLoaderRoute: typeof AFoundersDomainTestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/a/$slug': {
+      id: '/a/$slug'
+      path: '/a/$slug'
+      fullPath: '/a/$slug'
+      preLoaderRoute: typeof ASlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/app': {
       id: '/_authenticated/app'
       path: '/app'
@@ -1316,6 +1389,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/domain-token'
       fullPath: '/api/public/domain-token'
       preLoaderRoute: typeof ApiPublicDomainTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/domain-config': {
+      id: '/api/public/domain-config'
+      path: '/api/public/domain-config'
+      fullPath: '/api/public/domain-config'
+      preLoaderRoute: typeof ApiPublicDomainConfigRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/app/settings': {
@@ -2048,8 +2128,12 @@ const rootRouteChildren: RootRouteChildren = {
   SignupRoute: SignupRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TermsRoute: TermsRoute,
+  ASlugRoute: ASlugRoute,
+  AFoundersDomainTestRoute: AFoundersDomainTestRoute,
+  ASitemapDotxmlRoute: ASitemapDotxmlRoute,
   ApplySlugRoute: ApplySlugRoute,
   PSlugRoute: PSlugRoute,
+  ApiPublicDomainConfigRoute: ApiPublicDomainConfigRoute,
   ApiPublicDomainTokenRoute: ApiPublicDomainTokenRoute,
   ApiPublicPageLookupRoute: ApiPublicPageLookupRoute,
   ApiPublicSitemapByHostRoute: ApiPublicSitemapByHostRoute,

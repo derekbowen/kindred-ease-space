@@ -92,7 +92,7 @@ export async function tenantSitemapXml(hostname: string): Promise<string | null>
   const urls = rows
     .map((p: any) => {
       const slug = String(p.slug || "").replace(/^\/+/, "");
-      const loc = `https://${h}/p/${escapeXml(slug)}`;
+      const loc = `https://${h}/a/${escapeXml(slug)}`;
       const lastmod = p.updated_at
         ? new Date(p.updated_at).toISOString()
         : new Date().toISOString();

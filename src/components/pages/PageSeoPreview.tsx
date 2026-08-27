@@ -18,7 +18,7 @@ function truncate(s: string, n: number) {
 export function PageSeoPreview({ title, slug, metaDescription, domain }: Props) {
   const displayHost =
     domain?.replace(/^https?:\/\//, "").replace(/\/$/, "") || "your-marketplace.com";
-  const path = slug ? `/p/${slug}` : "/p/your-slug";
+  const path = slug ? `/a/${slug}` : "/a/your-slug";
   const canonical = `https://${displayHost.replace(/^www\./, "")}${path}`;
 
   const issues = useMemo(() => {

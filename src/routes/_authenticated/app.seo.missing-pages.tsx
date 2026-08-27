@@ -130,7 +130,7 @@ function MissingPagesPage() {
                   </div>
                   <div className="flex gap-2">
                     <Input
-                      placeholder="/p/redirect-target or https://…"
+                      placeholder="/a/redirect-target or https://…"
                       value={redirectTargets[r.id] ?? ""}
                       onChange={(e) =>
                         setRedirectTargets((m) => ({ ...m, [r.id]: e.target.value }))

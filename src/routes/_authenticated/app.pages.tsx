@@ -94,10 +94,10 @@ function PagesList() {
   // domain when connected, otherwise the platform-hosted (noindexed) preview.
   const liveUrl = (slug: string) => {
     if (workspace?.marketplace_domain && workspace.domain_verified_at) {
-      return `https://${workspace.marketplace_domain}/p/${slug}`;
+      return `https://${workspace.marketplace_domain}/a/${slug}`;
     }
     if (workspace?.slug) return `/s/${workspace.slug}/${slug}`;
-    return `/p/${slug}`;
+    return `/a/${slug}`;
   };
   const hasVerifiedDomain = Boolean(
     workspace?.marketplace_domain && workspace?.domain_verified_at,

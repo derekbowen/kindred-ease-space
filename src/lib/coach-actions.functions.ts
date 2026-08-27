@@ -286,13 +286,13 @@ async function addInternalLinks(
 
   const targets = (candidates ?? [])
     .filter((c) => c.slug)
-    .map((c) => `- /p/${c.slug} — ${c.title}`)
+    .map((c) => `- /a/${c.slug} — ${c.title}`)
     .join("\n");
 
   if (!targets) throw new Error("No internal link candidates available");
 
   const updated = await callAI(
-    "You add 3-6 contextual internal links to a markdown page. Use Markdown link syntax [anchor text](/p/slug). Only link to slugs from the provided list. Do NOT change other content. Return the FULL updated markdown only.",
+    "You add 3-6 contextual internal links to a markdown page. Use Markdown link syntax [anchor text](/a/slug). Only link to slugs from the provided list. Do NOT change other content. Return the FULL updated markdown only.",
     `Existing page (title: "${page.title}"):\n\n${page.body_markdown}\n\nAvailable internal link targets:\n${targets}`,
     ai,
   );

@@ -434,10 +434,10 @@ function EditPage() {
             <a
               href={
                 wsDomainVerified
-                  ? `https://${wsDomain}/p/${slug}`
+                  ? `https://${wsDomain}/a/${slug}`
                   : wsSlug
                     ? `/s/${wsSlug}/${slug}`
-                    : `/p/${slug}`
+                    : `/a/${slug}`
               }
               target="_blank"
               rel="noreferrer"

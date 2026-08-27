@@ -131,7 +131,7 @@ function RankTrackerPage() {
             <Input
               value={target}
               onChange={(e) => setTarget(e.target.value)}
-              placeholder="/p/los-angeles-ca"
+              placeholder="/a/los-angeles-ca"
             />
           </div>
           <Button onClick={addKw} disabled={busy || !workspaceId || !keyword.trim()}>

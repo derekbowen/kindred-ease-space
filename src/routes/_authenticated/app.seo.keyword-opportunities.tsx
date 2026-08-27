@@ -99,7 +99,7 @@ function KeywordOpportunitiesPage() {
             <Input
               value={pathLike}
               onChange={(e) => setPathLike(e.target.value)}
-              placeholder="/p/los-angeles"
+              placeholder="/a/los-angeles"
               className="w-56"
             />
           </Field>

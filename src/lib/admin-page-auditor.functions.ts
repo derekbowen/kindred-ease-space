@@ -83,7 +83,7 @@ export const auditPage = createServerFn({ method: "POST" })
       .maybeSingle();
     if (tenantPage) {
       page = {
-        url_path: `/p/${tenantPage.slug}`,
+        url_path: `/a/${tenantPage.slug}`,
         title: tenantPage.title,
         seo_description: tenantPage.meta_description,
         body_markdown: tenantPage.body_markdown,
@@ -117,7 +117,7 @@ export const auditPage = createServerFn({ method: "POST" })
       ]);
       const suggestions = [
         ...(tenantSimilar || []).map((r: any) => ({
-          url_path: `/p/${r.slug}`,
+          url_path: `/a/${r.slug}`,
           title: r.title,
           status: r.status,
         })),

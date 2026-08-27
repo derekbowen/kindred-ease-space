@@ -19,11 +19,11 @@ export type ScannablePage = {
 };
 
 export function tenantUrlPath(slug: string): string {
-  return `/p/${slug.replace(/^\/+/, "").replace(/^p\//, "")}`;
+  return `/a/${slug.replace(/^\/+/, "").replace(/^[ap]\//, "")}`;
 }
 
 export function parseTenantSlugFromPath(path: string): string | null {
-  const m = path.match(/^\/p\/([^/?#]+)/);
+  const m = path.match(/^\/[ap]\/([^/?#]+)/);
   return m?.[1] ?? null;
 }
 
