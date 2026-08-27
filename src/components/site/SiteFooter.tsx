@@ -39,14 +39,14 @@ export function SiteFooter() {
           </h3>
           <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
             <li>
-              <Link to="/" className="hover:text-foreground">
+              <a href="/#features" className="hover:text-foreground">
                 {t("nav.features")}
-              </Link>
+              </a>
             </li>
             <li>
-              <Link to="/" className="hover:text-foreground">
+              <a href="/#pricing" className="hover:text-foreground">
                 {t("nav.pricing")}
-              </Link>
+              </a>
             </li>
             <li>
               <Link to="/help" className="hover:text-foreground">

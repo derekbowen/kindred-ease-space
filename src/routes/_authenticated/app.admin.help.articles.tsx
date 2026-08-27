@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useChildMatches, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { Plus, Search, Trash2, Pencil, ExternalLink, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -25,8 +25,16 @@ import {
 
 export const Route = createFileRoute("/_authenticated/app/admin/help/articles")({
   head: () => ({ meta: [{ title: "Help Articles — Admin" }] }),
-  component: AdminHelpArticlesPage,
+  component: AdminHelpArticlesRoute,
 });
+
+// This route has a child editor route; TanStack Router renders children only
+// through the parent's <Outlet/> — without this the editor was unreachable.
+function AdminHelpArticlesRoute() {
+  const childMatches = useChildMatches();
+  if (childMatches.length > 0) return <Outlet />;
+  return <AdminHelpArticlesPage />;
+}
 
 function AdminHelpArticlesPage() {
   const navigate = useNavigate();

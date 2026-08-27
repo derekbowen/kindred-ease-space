@@ -139,7 +139,14 @@ function AppShell() {
               const showStubs =
                 typeof window !== "undefined" &&
                 new URLSearchParams(window.location.search).get("showStubs") === "1";
-              const items = section.items.filter((i) => showStubs || !i.stub);
+              // internalOnly tools (platform ops) only show for the internal
+              // dogfood workspace — customers were seeing them before.
+              const isInternal = Boolean(
+                (activeWorkspace as { is_internal?: boolean } | undefined)?.is_internal,
+              );
+              const items = section.items.filter(
+                (i) => (showStubs || !i.stub) && (isInternal || !i.internalOnly),
+              );
               if (items.length === 0) return null;
               return (
                 <SidebarGroup key={section.label}>

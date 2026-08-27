@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,8 +11,17 @@ import { getAffiliateDashboard, startAffiliateTrial } from "@/lib/affiliates.fun
 
 export const Route = createFileRoute("/_authenticated/app/affiliates")({
   head: () => ({ meta: [{ title: "Affiliate Dashboard — founders.click" }] }),
-  component: AffiliateDashboard,
+  component: AffiliatesRoute,
 });
+
+// This route has 6 child routes (programs, directory, payouts, customise,
+// settings, …). TanStack Router only renders a child through the parent's
+// <Outlet/>; without this wrapper every affiliate sub-page was unreachable.
+function AffiliatesRoute() {
+  const childMatches = useChildMatches();
+  if (childMatches.length > 0) return <Outlet />;
+  return <AffiliateDashboard />;
+}
 
 function fmtMoney(n: number, currency: string) {
   try {

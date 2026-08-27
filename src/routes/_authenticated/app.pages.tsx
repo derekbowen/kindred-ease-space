@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useChildMatches, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,8 +24,17 @@ import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/app/pages")({
   head: () => ({ meta: [{ title: "Pages — founders.click" }] }),
-  component: PagesList,
+  component: PagesRoute,
 });
+
+// This route has child routes (/new, /bulk, /$id/edit). TanStack Router only
+// renders a child through the parent's <Outlet/>; without this wrapper the page
+// editor, new-page and bulk-import screens were unreachable.
+function PagesRoute() {
+  const childMatches = useChildMatches();
+  if (childMatches.length > 0) return <Outlet />;
+  return <PagesList />;
+}
 
 type Row = {
   id: string;

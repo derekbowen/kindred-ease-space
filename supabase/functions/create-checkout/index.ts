@@ -80,6 +80,30 @@ Deno.serve(async (req) => {
         headers: corsHeaders,
       });
 
+    // Block a second concurrent plan subscription: Stripe happily creates
+    // parallel subscriptions for the same customer, which would double-bill and
+    // double-grant monthly credits. Plan changes must go through the customer
+    // portal (upgrade/downgrade), not a second checkout. Add-ons are separate
+    // subscriptions by design and stay allowed.
+    if (mode === "subscription") {
+      const { data: activeSub } = await admin
+        .from("subscriptions")
+        .select("id, status")
+        .eq("workspace_id", workspace_id)
+        .in("status", ["active", "trialing", "past_due"])
+        .limit(1)
+        .maybeSingle();
+      if (activeSub) {
+        return new Response(
+          JSON.stringify({
+            error: "already_subscribed",
+            message: "This workspace already has an active plan. Use Manage billing to change it.",
+          }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
+
     const { data: cust } = await admin
       .from("stripe_customers")
       .select("stripe_customer_id")

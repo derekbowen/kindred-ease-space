@@ -41,6 +41,11 @@ export const Route = createFileRoute("/_authenticated/app/content/quick-page-bui
 
 function QuickPageBuilder() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [ws, setWs] = useState<{
+    slug: string | null;
+    marketplace_domain: string | null;
+    domain_verified_at: string | null;
+  } | null>(null);
   const [preset, setPreset] = useState("city");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -68,7 +73,15 @@ function QuickPageBuilder() {
   const loadCtx = useServerFn(getPageBuilderContext);
 
   useEffect(() => {
-    getMe().then((me) => setWorkspaceId(me.memberships[0]?.workspace_id ?? null));
+    getMe().then((me) => {
+      setWorkspaceId(me.memberships[0]?.workspace_id ?? null);
+      const w = me.memberships[0]?.workspaces as {
+        slug: string | null;
+        marketplace_domain: string | null;
+        domain_verified_at: string | null;
+      } | null;
+      setWs(w ?? null);
+    });
   }, []);
 
   useEffect(() => {
@@ -371,8 +384,24 @@ function QuickPageBuilder() {
                         <p className="text-sm text-muted-foreground truncate">{result.title}</p>
                         <div className="flex flex-wrap gap-2">
                           <Button asChild size="sm">
-                            <a href={result.url_path} target="_blank" rel="noreferrer">
-                              View live <ExternalLink className="ml-1 h-3.5 w-3.5" />
+                            {/* /p/{slug} only resolves on a verified tenant host —
+                                on the platform host it 404s, so link the verified
+                                domain when present, else the /s/ preview. */}
+                            <a
+                              href={
+                                ws?.marketplace_domain && ws?.domain_verified_at
+                                  ? `https://${ws.marketplace_domain}${result.url_path}`
+                                  : ws?.slug
+                                    ? `/s/${ws.slug}${result.url_path.replace(/^\/p/, "")}`
+                                    : result.url_path
+                              }
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {ws?.marketplace_domain && ws?.domain_verified_at
+                                ? "View live"
+                                : "Preview"}{" "}
+                              <ExternalLink className="ml-1 h-3.5 w-3.5" />
                             </a>
                           </Button>
                           <Button asChild size="sm" variant="outline">

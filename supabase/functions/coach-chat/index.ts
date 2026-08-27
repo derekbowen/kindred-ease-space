@@ -612,13 +612,16 @@ Deno.serve(async (req) => {
       {},
     )) as Record<string, unknown>;
 
-    // Load history (last 20)
-    const { data: history } = await admin
+    // Load the MOST RECENT 40 messages (ascending+limit returned the oldest 40,
+    // silently dropping recent context in long conversations), then restore
+    // chronological order for the model.
+    const { data: historyDesc } = await admin
       .from("coach_messages")
       .select("role, content, tool_calls")
       .eq("conversation_id", body.conversation_id)
-      .order("created_at", { ascending: true })
+      .order("created_at", { ascending: false })
       .limit(40);
+    const history = (historyDesc ?? []).reverse();
 
     const systemContent = `${prompt?.body ?? "You are a helpful SEO coach."}
 
@@ -634,15 +637,17 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
       content: body.user_message,
     });
 
-    // Build messages array for LLM
+    // Build messages array for LLM. Replay ONLY plain user/assistant text:
+    // resurrecting a persisted assistant `tool_calls` message without its paired
+    // role:"tool" results violates the chat schema and 400s the provider — which
+    // broke every conversation on the turn AFTER any tool use. Text content is
+    // enough historical context for the model.
     const messages: ChatMessage[] = [{ role: "system", content: systemContent }];
-    for (const m of history ?? []) {
-      const msg: ChatMessage = {
-        role: m.role as ChatMessage["role"],
-        content: (m.content ?? "") as string,
-      };
-      if (m.tool_calls) msg.tool_calls = m.tool_calls as ChatMessage["tool_calls"];
-      messages.push(msg);
+    for (const m of history) {
+      if (m.role !== "user" && m.role !== "assistant") continue; // skip tool rows
+      const content = (m.content ?? "") as string;
+      if (!content.trim()) continue; // skip tool-call-only assistant stubs
+      messages.push({ role: m.role as ChatMessage["role"], content });
     }
     messages.push({ role: "user", content: body.user_message });
 

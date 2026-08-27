@@ -22,6 +22,11 @@ export const MODEL_COST_PER_1K_MICROS: Record<string, { in: number; out: number 
   "google/gemini-3.5-flash": { in: 1500, out: 9000 },
   "google/gemini-3-flash-preview": { in: 500, out: 3000 },
   "google/gemini-3.1-flash-lite-preview": { in: 250, out: 1500 },
+  // Lovable-gateway tools (coach actions, seo-coach, page auditor) run on
+  // gemini-2.5-flash. Without an entry it fell through to the Pro-tier default
+  // and billed customers ~6.7x the real cost.
+  "google/gemini-2.5-flash": { in: 300, out: 2500 },
+  "gemini-2.5-flash": { in: 300, out: 2500 },
   default: { in: 2000, out: 12000 },
 };
 

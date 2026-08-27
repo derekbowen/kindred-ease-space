@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,16 @@ import { listPrograms } from "@/lib/affiliates.functions";
 
 export const Route = createFileRoute("/_authenticated/app/affiliates/programs")({
   head: () => ({ meta: [{ title: "Affiliate Programs — founders.click" }] }),
-  component: ProgramsPage,
+  component: ProgramsRoute,
 });
+
+// This route has a child editor route; TanStack Router renders children only
+// through the parent's <Outlet/> — without this the editor was unreachable.
+function ProgramsRoute() {
+  const childMatches = useChildMatches();
+  if (childMatches.length > 0) return <Outlet />;
+  return <ProgramsPage />;
+}
 
 function ProgramsPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);

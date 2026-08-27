@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useChildMatches } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,8 +17,18 @@ import { OwnerOnlyBanner } from "@/components/settings/OwnerOnlyBanner";
 
 export const Route = createFileRoute("/_authenticated/app/settings")({
   head: () => ({ meta: [{ title: "Settings — founders.click" }] }),
-  component: SettingsPage,
+  component: SettingsRoute,
 });
+
+// This route has child routes (/domains, /api-keys, /ai, /integrations/*).
+// TanStack Router only renders a child through the parent's <Outlet/>; without
+// this wrapper every settings sub-page was unreachable (the parent's own UI
+// rendered instead). Render the child when one matches, the page otherwise.
+function SettingsRoute() {
+  const childMatches = useChildMatches();
+  if (childMatches.length > 0) return <Outlet />;
+  return <SettingsPage />;
+}
 
 function SettingsPage() {
   const [me, setMe] = useState<Awaited<ReturnType<typeof getMe>> | null>(null);

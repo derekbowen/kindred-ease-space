@@ -30,6 +30,7 @@ export const MODEL_COST_PER_1K_MICROS: Record<string, { in: number; out: number 
   "gpt-4o-mini": { in: 150, out: 600 },
   "claude-haiku-4-5": { in: 1000, out: 5000 },
   "gemini-2.5-flash": { in: 300, out: 2500 },
+  "google/gemini-2.5-flash": { in: 300, out: 2500 },
   default: { in: 2000, out: 12000 }, // assume Pro-tier so we never under-bill
 };
 

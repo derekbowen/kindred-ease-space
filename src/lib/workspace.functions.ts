@@ -182,6 +182,30 @@ export const ensureWorkspace = createServerFn({ method: "POST" })
         name: "My Marketplace",
         ifExistsReturn: true,
       });
+
+      // Welcome email on first provision. This is the live signup path (the
+      // explicit createWorkspace flow was retired with the onboarding wall), so
+      // wiring it only there meant no customer ever received the welcome email.
+      // Fire-and-forget with an idempotency key — never blocks provisioning.
+      if (ws.created) {
+        const userEmail = (context.claims as { email?: string } | undefined)?.email;
+        if (userEmail) {
+          welcomeEmailTemplate({ name: "your marketplace", workspaceSlug: ws.slug ?? "" })
+            .then((tpl) => {
+              if (!tpl) return;
+              return sendEmail({
+                to: userEmail,
+                subject: tpl.subject,
+                html: tpl.html,
+                text: tpl.text,
+                idempotencyKey: `welcome-${ws.workspace_id}`,
+                meta: { workspace_id: ws.workspace_id, kind: "welcome" },
+              });
+            })
+            .catch((err) => console.error("[ensureWorkspace] welcome email failed", err));
+        }
+      }
+
       return { workspaceId: ws.workspace_id, created: ws.created };
     } catch (e) {
       console.error("[ensureWorkspace] provision error", e);
@@ -265,7 +289,11 @@ export const getWorkspaceOverview = createServerFn({ method: "GET" })
         )
         .eq("id", data.workspaceId)
         .single(),
-      supabase
+      // supabaseAdmin, not the user client: membership is already asserted
+      // above, and the user-client read silently swallowed an RLS error which
+      // made the dashboard show "0 credits" for every workspace during the
+      // has_role outage. Admin reads can't regress that way.
+      supabaseAdmin
         .from("credit_balances")
         .select("balance, monthly_allowance, cycle_resets_at, lifetime_spent")
         .eq("workspace_id", data.workspaceId)

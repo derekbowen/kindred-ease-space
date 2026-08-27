@@ -36,6 +36,14 @@ function ResetPasswordPage() {
     if (window.location.hash.includes("type=recovery")) {
       setMode("update");
     }
+    // An expired or already-used link arrives as
+    // "#error=access_denied&error_code=otp_expired" — surface it instead of
+    // silently showing the request form again with no explanation.
+    if (window.location.hash.includes("error_code=otp_expired")) {
+      toast.error("That reset link has expired or was already used. Request a new one below.");
+    } else if (window.location.hash.includes("error=access_denied")) {
+      toast.error("That reset link is no longer valid. Request a new one below.");
+    }
     const { data } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") setMode("update");
     });
