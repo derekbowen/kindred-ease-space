@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
+import { parseDelimited } from "@/lib/csv";
 import { importGscQueries, getKeywordStats } from "@/lib/admin-seo-tools.functions";
 
 export const Route = createFileRoute("/_authenticated/app/seo/gsc-import")({
@@ -32,12 +33,11 @@ function parseCtr(raw: string | undefined): number | null {
 }
 
 function parseCsv(csv: string): ParsedRow[] {
-  const lines = csv.trim().split(/\r?\n/);
-  if (!lines.length) return [];
-  const header = lines[0]
-    .toLowerCase()
-    .split(/[,\t]/)
-    .map((h) => h.trim().replace(/"/g, ""));
+  // Quote-aware: GSC exports wrap queries in quotes, and queries containing
+  // commas shifted every column with the old split-on-comma parser.
+  const table = parseDelimited(csv);
+  if (!table.length) return [];
+  const header = table[0].map((h) => h.toLowerCase().replace(/"/g, "").trim());
   const idx = (name: string) => header.findIndex((h) => h.includes(name));
   const iPage = idx("page") >= 0 ? idx("page") : idx("url");
   const iQuery = idx("query") >= 0 ? idx("query") : idx("keyword");
@@ -46,8 +46,8 @@ function parseCsv(csv: string): ParsedRow[] {
   const iCtr = idx("ctr");
   const iPos = idx("position");
   const out: ParsedRow[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(/[,\t]/).map((c) => c.trim().replace(/^"|"$/g, ""));
+  for (let i = 1; i < table.length; i++) {
+    const cols = table[i];
     if (!cols[iQuery] || !cols[iPage]) continue;
     let urlPath = cols[iPage];
     try {

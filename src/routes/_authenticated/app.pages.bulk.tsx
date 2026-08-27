@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Loader2, Upload, Table2, ArrowLeft } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { bulkCreatePages, listPageTemplates } from "@/lib/tenant-pages.functions";
+import { parseDelimitedRecords } from "@/lib/csv";
 
 export const Route = createFileRoute("/_authenticated/app/pages/bulk")({
   head: () => ({ meta: [{ title: "Bulk pages — founders.click" }] }),
@@ -21,19 +22,10 @@ austin-pools,Pool Rentals in Austin TX,Austin,TX,pools
 dallas-pools,Pool Rentals in Dallas TX,Dallas,TX,pools
 houston-pools,Pool Rentals in Houston TX,Houston,TX,pools`;
 
+// Quote-aware parsing: the old split-on-comma corrupted Excel/Sheets exports
+// whose cells contained commas (e.g. "Austin, TX").
 function parseCSV(text: string): Record<string, string>[] {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(",").map((s) => s.trim());
-  return lines
-    .slice(1)
-    .filter((l) => l.trim())
-    .map((line) => {
-      const cells = line.split(",").map((s) => s.trim());
-      const row: Record<string, string> = {};
-      headers.forEach((h, i) => (row[h] = cells[i] ?? ""));
-      return row;
-    });
+  return parseDelimitedRecords(text);
 }
 
 function BulkPage() {

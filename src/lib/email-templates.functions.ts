@@ -149,12 +149,15 @@ export const sendHelpFeedbackFollowUp = createServerFn({ method: "POST" })
       await import("./email.server");
     const { data: art } = await supabaseAdmin
       .from("help_articles")
-      .select("title,slug")
+      .select("title,slug,help_categories(slug)")
       .eq("id", data.articleId)
       .maybeSingle();
     if (!art) throw new Error("Article not found");
     const origin = process.env.PUBLIC_APP_URL || "https://founders.click";
-    const articleUrl = `${origin}/help/${(art as any).slug}`;
+    // The public article route is /help/{category}/{slug} — the old link
+    // omitted the category segment and 404'd.
+    const categorySlug = (art as any).help_categories?.slug ?? "general";
+    const articleUrl = `${origin}/help/${categorySlug}/${(art as any).slug}`;
     const tpl = await helpFeedbackFollowUpTemplate({
       name: data.recipientName,
       articleTitle: (art as any).title,

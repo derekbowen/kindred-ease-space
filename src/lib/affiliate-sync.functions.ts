@@ -10,6 +10,19 @@ export const runAffiliateSync = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ workspaceId: workspaceIdSchema }).parse(d))
   .handler(async ({ data, context }) => {
     await assertWorkspaceOwner(data.workspaceId, context.userId);
+    // Entitlement gate: the referral sync is part of the paid affiliate add-on.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: settings } = await (supabaseAdmin as any)
+      .from("workspace_affiliate_settings")
+      .select("addon_status")
+      .eq("workspace_id", data.workspaceId)
+      .maybeSingle();
+    if (settings?.addon_status !== "active" && settings?.addon_status !== "trialing") {
+      return {
+        ok: false as const,
+        error: "The Affiliate add-on isn't active. Start the trial or subscribe on the Add-ons page.",
+      };
+    }
     try {
       const result = await runAffiliateReferralSync(data.workspaceId);
       return { ok: true as const, ...result };

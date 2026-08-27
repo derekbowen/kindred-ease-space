@@ -165,7 +165,7 @@ function EditPage() {
     [title, slug, metaDescription, h1, bodyMarkdown, city, state, categoryPlural, listingCount],
   );
 
-  async function onSave(publish: boolean) {
+  async function onSave(publish: boolean, opts?: { unpublish?: boolean }) {
     if (!workspaceId || !templateId) return;
     setSaving(true);
     setErr(null);
@@ -182,7 +182,9 @@ function EditPage() {
           bodyMarkdown: bodyMarkdown || null,
           variables: { city, state, category_plural: categoryPlural },
           listingFilter: { city, state, limit, sort: "newest" },
-          status: publish ? "published" : status,
+          // "Save" on a published page keeps it published; taking it offline is
+          // the explicit Unpublish action (there was previously no way at all).
+          status: opts?.unpublish ? "draft" : publish ? "published" : status,
         },
       });
       if (r.ok) {
@@ -400,14 +402,33 @@ function EditPage() {
       </Tabs>
 
       <div className="sticky bottom-0 flex flex-wrap gap-2 border-t border-border bg-background/95 py-4 backdrop-blur">
-        <Button onClick={() => onSave(false)} disabled={saving} variant="outline">
-          {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-          <Save className="h-4 w-4 mr-2" /> Save draft
-        </Button>
-        <Button onClick={() => onSave(true)} disabled={saving}>
-          {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-          Publish live
-        </Button>
+        {status === "published" ? (
+          <Button onClick={() => onSave(true)} disabled={saving}>
+            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            <Save className="h-4 w-4 mr-2" /> Save changes
+          </Button>
+        ) : (
+          <>
+            <Button onClick={() => onSave(false)} disabled={saving} variant="outline">
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              <Save className="h-4 w-4 mr-2" /> Save draft
+            </Button>
+            <Button onClick={() => onSave(true)} disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Publish live
+            </Button>
+          </>
+        )}
+        {!isNew && status === "published" && (
+          <Button
+            onClick={() => onSave(false, { unpublish: true })}
+            disabled={saving}
+            variant="ghost"
+            className="text-muted-foreground"
+          >
+            Unpublish
+          </Button>
+        )}
         {!isNew && status === "published" && slug && (
           <Button asChild variant="ghost" size="sm">
             <a

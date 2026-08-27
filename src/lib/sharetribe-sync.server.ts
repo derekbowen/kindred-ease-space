@@ -197,7 +197,7 @@ function mapListing(workspaceId: string, marketplaceUrl: string, raw: AnyRec, in
     category: pub?.category ?? pub?.categoryLevel1 ?? null,
     custom_fields: { publicData: pub, metadata: meta },
     images,
-    author_id: authorRel?.id?.uuid ?? null,
+    author_id: authorId ?? null,
     author_name: author?.attributes?.profile?.displayName ?? null,
     marketplace_url: listingUrl,
     structured_data: buildJsonLd({
@@ -334,6 +334,23 @@ export async function runSharetribeSyncForWorkspace(workspaceId: string): Promis
       last_sync_error: null,
       listings_count: upserted,
     });
+
+    // Chain the affiliate referral sync for entitled workspaces — it had no
+    // automatic trigger at all, so referrals/payouts only updated when an owner
+    // clicked "Run sync now". Best-effort: never fail the listings sync over it.
+    try {
+      const { data: affSettings } = await sb
+        .from("workspace_affiliate_settings")
+        .select("addon_status")
+        .eq("workspace_id", workspaceId)
+        .maybeSingle();
+      if (affSettings?.addon_status === "active" || affSettings?.addon_status === "trialing") {
+        const { runAffiliateReferralSync } = await import("@/lib/affiliate-sync.server");
+        await runAffiliateReferralSync(workspaceId);
+      }
+    } catch (e) {
+      console.error("[sharetribe-sync] chained affiliate sync failed", e);
+    }
 
     return { upserted, removed };
   } catch (e) {

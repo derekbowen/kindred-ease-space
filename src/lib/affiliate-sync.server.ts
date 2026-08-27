@@ -169,20 +169,35 @@ export async function runAffiliateReferralSync(workspaceId: string): Promise<Aff
       if (existing) continue;
 
       // Upsert the referral for this referred user.
-      const { data: referral } = await sb
+      // Don't clobber first_converted_at on repeat transactions — it must stay
+      // the FIRST conversion timestamp, so only set it when creating the row.
+      let referral: { id: string } | null = null;
+      const { data: existingReferral } = await sb
         .from("affiliate_referrals")
-        .upsert(
-          {
-            workspace_id: workspaceId,
-            affiliate_id: affiliate.id,
-            program_id: program.id,
-            referred_sharetribe_user_id: customerId,
-            first_converted_at: new Date().toISOString(),
-          },
-          { onConflict: "workspace_id,program_id,referred_sharetribe_user_id" },
-        )
         .select("id")
+        .eq("workspace_id", workspaceId)
+        .eq("program_id", program.id)
+        .eq("referred_sharetribe_user_id", customerId)
         .maybeSingle();
+      if (existingReferral) {
+        referral = existingReferral as { id: string };
+      } else {
+        const { data: created } = await sb
+          .from("affiliate_referrals")
+          .upsert(
+            {
+              workspace_id: workspaceId,
+              affiliate_id: affiliate.id,
+              program_id: program.id,
+              referred_sharetribe_user_id: customerId,
+              first_converted_at: new Date().toISOString(),
+            },
+            { onConflict: "workspace_id,program_id,referred_sharetribe_user_id" },
+          )
+          .select("id")
+          .maybeSingle();
+        referral = (created as { id: string } | null) ?? null;
+      }
 
       const payout = computePayout(program, gmv);
       // Marketplace revenue ~ commission line items if present, else 0.

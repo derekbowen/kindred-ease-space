@@ -93,7 +93,12 @@ export function DailyBriefing({ workspaceId }: { workspaceId: string }) {
   const onGenerate = async () => {
     setGenerating(true);
     try {
-      await generateBriefingNow({ data: { workspaceId } });
+      const r = (await generateBriefingNow({ data: { workspaceId } })) as
+        | { ok?: boolean; error?: string }
+        | undefined;
+      if (r && r.ok === false) {
+        toast.error(r.error || "Couldn't generate the briefing. Try again in a moment.");
+      }
       await qc.invalidateQueries({ queryKey: ["coach-briefing", workspaceId] });
     } finally {
       setGenerating(false);

@@ -121,6 +121,25 @@ Deno.serve(async (req) => {
                 price_cents: ADDON_CATALOG[addonKey].priceCents,
                 status,
               });
+              // White-glove add-ons need a human to fulfil them, but nothing
+              // surfaced the purchase — open a support ticket so it lands in
+              // the admin ticket queue (and its email flow) instead of sitting
+              // unseen in addon_requests.
+              const { data: wsRow } = await admin
+                .from("workspaces")
+                .select("name, slug")
+                .eq("id", workspace_id)
+                .maybeSingle();
+              const { error: ticketErr } = await admin.from("support_tickets").insert({
+                workspace_id,
+                email: "billing@stripe-webhook.founders.click",
+                name: "Stripe webhook",
+                subject: `New add-on purchase: ${ADDON_CATALOG[addonKey].name}`,
+                message: `Workspace "${wsRow?.name ?? workspace_id}" (${wsRow?.slug ?? ""}) subscribed to ${ADDON_CATALOG[addonKey].name} ($${(ADDON_CATALOG[addonKey].priceCents / 100).toFixed(0)}/mo). White-glove setup required — see addon_requests for status.`,
+                category: "addon-fulfilment",
+                priority: "high",
+              });
+              if (ticketErr) console.error("addon fulfilment ticket failed", ticketErr.message);
             }
           }
           break;

@@ -109,15 +109,34 @@ export const disconnectSharetribe = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     // Disconnecting hard-deletes the integration AND every synced listing — owner-only.
     await assertWorkspaceOwner(data.workspaceId, context.userId);
-    await (supabaseAdmin as any)
+    const { error: intErr } = await (supabaseAdmin as any)
       .from("tenant_integrations")
       .delete()
       .eq("workspace_id", data.workspaceId)
       .eq("provider", "sharetribe");
-    await (supabaseAdmin as any)
+    if (intErr) {
+      return { ok: false as const, error: `Couldn't remove the integration: ${intErr.message}` };
+    }
+    const { error: listErr } = await (supabaseAdmin as any)
       .from("tenant_listings")
       .delete()
       .eq("workspace_id", data.workspaceId);
+    if (listErr) {
+      return {
+        ok: false as const,
+        error: `Integration removed, but listings could not be deleted: ${listErr.message}`,
+      };
+    }
+    // Remove the client secret from Vault — leaving a disconnected customer's
+    // credential decryptable forever is a liability. Best-effort: the RPC ships
+    // in migration 20260827020000; absence just logs until it's applied.
+    const { error: secretErr } = await (supabaseAdmin as any).rpc(
+      "tenant_delete_integration_secret",
+      { _workspace_id: data.workspaceId },
+    );
+    if (secretErr) {
+      console.error("[disconnectSharetribe] vault secret cleanup failed", secretErr.message);
+    }
     return { ok: true as const };
   });
 

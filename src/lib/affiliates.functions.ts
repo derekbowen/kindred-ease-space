@@ -61,7 +61,7 @@ async function assertAddon(workspaceId: string) {
   const s = await ensureSettings(workspaceId);
   if (s.addon_status !== "active" && s.addon_status !== "trialing") {
     throw new Error(
-      "The Affiliate add-on isn't active. Start the free trial or subscribe in Billing.",
+      "The Affiliate add-on isn't active. Start the free trial or subscribe on the Add-ons page.",
     );
   }
   return s;

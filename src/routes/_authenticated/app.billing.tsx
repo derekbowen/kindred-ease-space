@@ -116,16 +116,30 @@ function BillingPage() {
     })();
   }, [loadBilling]);
 
+  // Returning from Stripe: workspaceId often hasn't loaded yet when this effect
+  // first fires, and the webhook that grants credits lags the redirect by a few
+  // seconds — so remember the pending refresh and refetch (twice) once the
+  // workspace is known, instead of racing and silently skipping.
+  const [pendingRefresh, setPendingRefresh] = useState(false);
   useEffect(() => {
     if (search.success) {
       toast.success("Payment received — your plan or credits will update shortly.");
-      if (workspaceId) loadBilling(workspaceId).catch(() => {});
+      setPendingRefresh(true);
       navigate({ to: "/app/billing", search: {}, replace: true });
     } else if (search.canceled) {
       toast.info("Checkout canceled.");
       navigate({ to: "/app/billing", search: {}, replace: true });
     }
-  }, [search.success, search.canceled, workspaceId, loadBilling, navigate]);
+  }, [search.success, search.canceled, navigate]);
+  useEffect(() => {
+    if (!pendingRefresh || !workspaceId) return;
+    loadBilling(workspaceId).catch(() => {});
+    const timer = setTimeout(() => {
+      loadBilling(workspaceId).catch(() => {});
+      setPendingRefresh(false);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [pendingRefresh, workspaceId, loadBilling]);
 
   async function checkout(mode: "subscription" | "credits", quantity = 1, tier?: Tier["key"]) {
     if (!workspaceId) return toast.error("No workspace");

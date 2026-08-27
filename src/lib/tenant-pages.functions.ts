@@ -13,11 +13,13 @@ async function assertMember(workspaceId: string, userId: string) {
   if (error || !data) throw new Error("forbidden");
 }
 
+// No "/": the public route /p/$slug matches a single path segment, so a slug
+// containing a slash creates a page that can never be reached.
 const slugSchema = z
   .string()
   .min(1)
   .max(200)
-  .regex(/^[a-z0-9][a-z0-9-/]*$/i, "Use letters, numbers, dashes, slashes");
+  .regex(/^[a-z0-9][a-z0-9-]*$/i, "Use letters, numbers and dashes");
 
 export const listPageTemplates = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -174,7 +176,19 @@ export const bulkCreatePages = createServerFn({ method: "POST" })
     // Protect already-published pages: a re-import (same workspace+slug) must not
     // silently overwrite a live page's edited content, status, or published_at.
     // Skip published slugs; upsert only new pages and existing drafts.
-    const slugs = data.rows.map((r) => r.slug.toLowerCase());
+    // A duplicate slug inside one batch makes the upsert fail with a raw
+    // Postgres "cannot affect row a second time" error — keep the first
+    // occurrence and count the rest as skipped.
+    const seenSlugs = new Set<string>();
+    const uniqueRows = data.rows.filter((r) => {
+      const s = r.slug.toLowerCase();
+      if (seenSlugs.has(s)) return false;
+      seenSlugs.add(s);
+      return true;
+    });
+    const dupSkipped = data.rows.length - uniqueRows.length;
+
+    const slugs = uniqueRows.map((r) => r.slug.toLowerCase());
     const { data: existing } = await sb()
       .from("tenant_pages")
       .select("slug, status")
@@ -184,7 +198,7 @@ export const bulkCreatePages = createServerFn({ method: "POST" })
       (existing ?? []).filter((r: any) => r.status === "published").map((r: any) => r.slug),
     );
 
-    const inserts = data.rows
+    const inserts = uniqueRows
       .filter((r) => !publishedSlugs.has(r.slug.toLowerCase()))
       .map((r) => ({
         workspace_id: data.workspaceId,
@@ -199,7 +213,7 @@ export const bulkCreatePages = createServerFn({ method: "POST" })
         published_at: data.status === "published" ? new Date().toISOString() : null,
       }));
 
-    const skipped = data.rows.length - inserts.length;
+    const skipped = uniqueRows.length - inserts.length + dupSkipped;
     if (inserts.length === 0) {
       return { ok: true as const, count: 0, skipped };
     }

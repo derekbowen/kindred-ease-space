@@ -69,6 +69,16 @@ export function HelpAssistantWidget() {
         if (!res.ok || !res.body) {
           if (res.status === 429) throw new Error("Too many requests. Please wait a moment.");
           if (res.status === 402) throw new Error("Service temporarily unavailable.");
+          if (res.status === 503) {
+            // The endpoint sends a friendly offline message — surface it
+            // instead of the generic failure text.
+            let msg = "The assistant is temporarily offline. Browse the help center in the meantime.";
+            try {
+              const j = await res.json();
+              if (j?.message) msg = j.message;
+            } catch { /* keep default */ }
+            throw new Error(msg);
+          }
           throw new Error("Failed to reach the assistant.");
         }
 
