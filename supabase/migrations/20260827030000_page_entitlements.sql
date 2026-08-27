@@ -27,6 +27,19 @@ ALTER TABLE public.workspaces
 -- Internal dogfood workspace gets effectively unlimited capacity.
 UPDATE public.workspaces SET page_limit_base = 1000000 WHERE is_internal = true;
 
+-- Grandfather existing paid workspaces (legacy credit-era plans) onto generous
+-- page capacity so nobody's live pages are ever below their old expectations.
+-- New-plan purchases after this migration overwrite page_limit_base via webhook.
+UPDATE public.workspaces
+   SET page_limit_base = GREATEST(page_limit_base, CASE plan::text
+        WHEN 'starter' THEN 1000
+        WHEN 'growth' THEN 3000
+        WHEN 'scale' THEN 5000
+        WHEN 'enterprise' THEN 10000
+        ELSE page_limit_base END)
+ WHERE subscription_status IN ('active', 'trialing', 'past_due')
+   AND is_internal = false;
+
 -- ---------------------------------------------------------------------------
 -- Webhook idempotency: Stripe may deliver an event five times; the business
 -- action runs once. Service-role only.
