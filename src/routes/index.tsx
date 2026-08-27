@@ -16,6 +16,7 @@ import {
 import { canonicalUrl } from "@/lib/canonical";
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { SiteFooter } from "@/components/site/SiteFooter";
+import { PAGE_PLANS, EVERY_PLAN_INCLUDES, TRIAL_PAGE_LIMIT } from "@/lib/plan-catalog";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -24,7 +25,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "AI-powered SEO, content generation, competitor radar and lead hunting for Sharetribe marketplace founders. 14-day free trial, no card required.",
+          "Publish hundreds of SEO pages for one monthly price. AI generation, hosting, sitemaps and schema included — built for Sharetribe marketplace founders.",
       },
       {
         property: "og:title",
@@ -33,7 +34,7 @@ export const Route = createFileRoute("/")({
       {
         property: "og:description",
         content:
-          "AI page generation from pennies per page, competitor radar, rank tracking, lead hunting — all in one admin.",
+          "Publish hundreds or thousands of SEO pages for one monthly price — AI generation, hosting, sitemaps and schema included.",
       },
       { property: "og:type", content: "website" },
       { property: "og:url", content: canonicalUrl("/") },
@@ -59,8 +60,8 @@ export const Route = createFileRoute("/")({
           offers: {
             "@type": "AggregateOffer",
             priceCurrency: "USD",
-            lowPrice: "99",
-            highPrice: "599",
+            lowPrice: "29",
+            highPrice: "299",
           },
         }),
       },
@@ -122,8 +123,8 @@ function Hero() {
           The all-in-one growth engine.
         </h1>
         <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-zinc-400 sm:text-lg">
-          Custom-coded SEO, AI content generation, competitor radar, lead hunting and ops — without
-          the agency price tag.
+          Publish hundreds or thousands of SEO pages for one monthly price — AI generation,
+          hosting, sitemaps and schema included. No agency retainer.
         </p>
         <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
@@ -142,7 +143,7 @@ function Hero() {
           </a>
         </div>
         <p className="mt-6 text-xs text-zinc-500">
-          14-day trial · 250 free credits · No card required
+          14-day free trial · publish up to {TRIAL_PAGE_LIMIT} pages · No card required
         </p>
       </div>
     </section>
@@ -384,41 +385,10 @@ function HowItWorks() {
 
 // Tiers differ by monthly credit allowance only — every feature is available on
 // every plan. Page estimates are approximate and depend on page length.
-const PLANS = [
-  {
-    name: "Starter",
-    price: "$99",
-    credits: "500 AI credits/mo",
-    pages: "≈ 40 generated pages a month",
-    blurb: "For a marketplace finding its first organic traffic.",
-    featured: false,
-  },
-  {
-    name: "Pro",
-    price: "$249",
-    credits: "2,500 AI credits/mo",
-    pages: "≈ 200 generated pages a month",
-    blurb: "For operators publishing city and category pages at pace.",
-    featured: true,
-  },
-  {
-    name: "Scale",
-    price: "$599",
-    credits: "10,000 AI credits/mo",
-    pages: "≈ 800 generated pages a month",
-    blurb: "For national coverage and aggressive expansion.",
-    featured: false,
-  },
-];
-
-const INCLUDED = [
-  "Content Factory",
-  "SEO Intelligence",
-  "AI Growth Coach",
-  "Lead Inbox",
-  "Sharetribe Sync",
-  "Custom domain",
-];
+// Single source of truth (§37): the same catalog drives the homepage, the
+// billing dashboard, checkout and Stripe — no scattered pricing constants.
+const PLANS = PAGE_PLANS;
+const INCLUDED = EVERY_PLAN_INCLUDES;
 
 function Pricing() {
   return (
@@ -436,23 +406,23 @@ function Pricing() {
           Less than one agency invoice.
         </h2>
         <p className="mt-5 text-sm text-zinc-400">
-          Every plan unlocks every feature. Pick a plan for how much you publish — not for which
-          tools you&apos;re allowed to use.
+          One monthly price for a number of live, hosted SEO pages. Every plan unlocks every
+          feature — pick one for how many pages you publish.
         </p>
       </div>
 
-      <div className="mt-14 grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <div className="mt-14 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-5">
         {PLANS.map((tier) => (
           <div
-            key={tier.name}
-            className={`relative flex flex-col rounded-2xl border p-8 ${
+            key={tier.key}
+            className={`relative flex flex-col rounded-2xl border p-6 ${
               tier.featured
                 ? "border-orange-500/60 bg-orange-500/[0.04] shadow-[0_0_90px_-40px_rgba(249,115,22,0.9)]"
                 : "border-white/[0.08] bg-white/[0.02]"
             }`}
           >
             {tier.featured && (
-              <span className="absolute -top-3 left-8 rounded-full bg-orange-500 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-black">
+              <span className="absolute -top-3 left-6 rounded-full bg-orange-500 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-black">
                 Most popular
               </span>
             )}
@@ -461,23 +431,25 @@ function Pricing() {
               {tier.name}
             </h3>
 
-            <p className="mt-6 flex items-baseline gap-1">
-              <span className="text-5xl font-semibold tracking-[-0.04em] text-white">
-                {tier.price}
+            <p className="mt-5 flex items-baseline gap-1">
+              <span className="text-4xl font-semibold tracking-[-0.04em] text-white">
+                ${tier.monthlyPrice}
               </span>
               <span className="text-sm text-zinc-500">/mo</span>
             </p>
 
-            <p className="mt-3 font-mono text-sm text-orange-500">{tier.credits}</p>
+            <p className="mt-3 font-mono text-sm text-orange-500">
+              {tier.includedPages.toLocaleString()} published pages
+            </p>
 
-            <div className="mt-8 flex-1 space-y-3.5">
-              <p className="flex gap-3 text-sm text-zinc-300">
+            <div className="mt-6 flex-1 space-y-3">
+              <p className="flex gap-2.5 text-sm text-zinc-300">
                 <Check className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" aria-hidden="true" />
-                <span>{tier.pages}</span>
+                <span>AI generation included</span>
               </p>
-              <p className="flex gap-3 text-sm text-zinc-300">
+              <p className="flex gap-2.5 text-sm text-zinc-300">
                 <Check className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" aria-hidden="true" />
-                <span>Every feature unlocked — no gates</span>
+                <span>Every feature unlocked</span>
               </p>
               <p className="text-sm leading-relaxed text-zinc-500">{tier.blurb}</p>
             </div>
@@ -511,7 +483,8 @@ function Pricing() {
       </div>
 
       <p className="mt-8 text-center text-sm text-zinc-500">
-        Run out? Top up at $10 per 1,000 credits. Purchased credits never expire.
+        Need more pages without changing plans? Add capacity in blocks of 1,000 from your
+        dashboard.
       </p>
     </section>
   );
@@ -519,29 +492,29 @@ function Pricing() {
 
 const FAQS = [
   {
+    question: "What counts as a published page?",
+    answer:
+      "A page that is live on your domain. Drafts are free and unlimited — they only use a publishing slot when you set them live. Unpublish a page any time to free its slot.",
+  },
+  {
     question: "Do I need to be technical?",
     answer:
       "No. You connect your Sharetribe marketplace with your Integration API credentials, and everything else happens in the dashboard. If you can publish a listing, you can run founders.click.",
   },
   {
-    question: "What is a credit?",
+    question: "Is AI generation extra?",
     answer:
-      "A credit is one unit of AI work — generating a landing page, auditing a page, or running a competitor scan. A typical landing page costs roughly 5 to 15 credits depending on its length, so the 250 free trial credits cover your first batch of pages.",
+      "No — every plan includes a monthly AI generation allowance sized for its page capacity, covering page generation, rewrites and audits. If you run heavier workloads you can add extra generation capacity at $10 per 1,000 generation credits, but most customers never need to.",
   },
   {
-    question: "Can I use my own domain?",
+    question: "What happens if I cancel?",
     answer:
-      "Yes. Add your domain under Settings, verify it with a DNS record or a file upload, and your generated pages serve on your own domain with self-referential canonical tags.",
+      "Your pages stay live through the end of the billing period you already paid for. After that they are unpublished — but your content is retained, and if you come back your pages return at exactly the same URLs.",
   },
   {
-    question: "Does it work with any Sharetribe marketplace?",
+    question: "Can I change plans anytime?",
     answer:
-      "It works with Sharetribe marketplaces of any category — rentals, services, gear and local marketplaces. Pages are generated from your real listing data, including city, category and pricing fields.",
-  },
-  {
-    question: "Can I cancel anytime?",
-    answer:
-      "Anytime, from the billing portal in your dashboard. Your subscription stays active until the end of the period you have already paid for, and purchased top-up credits never expire.",
+      "Yes. Upgrades take effect immediately with prorated billing. Downgrades apply at the end of your billing period so nothing you published disappears mid-cycle.",
   },
 ];
 

@@ -60,6 +60,8 @@ function QuickPageBuilder() {
     title: string;
     words: number;
     slug: string;
+    limitReached?: boolean;
+    limitMessage?: string | null;
   } | null>(null);
   const [ctx, setCtx] = useState<{
     domain: string | null;
@@ -145,6 +147,8 @@ function QuickPageBuilder() {
         title: res.page.title ?? "(untitled)",
         words: res.words,
         slug: res.page.slug ?? slug,
+        limitReached: (res as { limitReached?: boolean }).limitReached,
+        limitMessage: (res as { limitMessage?: string | null }).limitMessage,
       });
       setTitle("");
       setDescription("");
@@ -376,11 +380,33 @@ function QuickPageBuilder() {
                 )}
 
                 {result && (
-                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
+                  <div
+                    className={`rounded-xl border p-4 ${
+                      result.limitReached
+                        ? "border-amber-500/30 bg-amber-500/10"
+                        : "border-emerald-500/30 bg-emerald-500/10"
+                    }`}
+                  >
                     <div className="flex items-start gap-3">
-                      <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
+                      <CheckCircle2
+                        className={`mt-0.5 h-5 w-5 shrink-0 ${
+                          result.limitReached ? "text-amber-500" : "text-emerald-500"
+                        }`}
+                      />
                       <div className="min-w-0 flex-1 space-y-2">
-                        <p className="font-semibold">Published — {result.words} words</p>
+                        <p className="font-semibold">
+                          {result.limitReached
+                            ? `Saved as draft — ${result.words} words`
+                            : `Published — ${result.words} words`}
+                        </p>
+                        {result.limitMessage && (
+                          <p className="text-sm text-amber-600 dark:text-amber-400">
+                            {result.limitMessage}{" "}
+                            <Link to="/app/billing" className="underline">
+                              Upgrade plan
+                            </Link>
+                          </p>
+                        )}
                         <p className="text-sm text-muted-foreground truncate">{result.title}</p>
                         <div className="flex flex-wrap gap-2">
                           <Button asChild size="sm">

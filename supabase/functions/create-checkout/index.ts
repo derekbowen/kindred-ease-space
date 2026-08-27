@@ -4,7 +4,10 @@ import {
   ensureCreditPackPrice,
   ensureSubscriptionPrice,
   ensureAddonPrice,
+  ensurePageAddonPrice,
   isAddonKey,
+  isPlanTier,
+  PAGE_PLANS,
 } from "../_shared/stripe-catalog.ts";
 
 const corsHeaders = {
@@ -38,11 +41,11 @@ Deno.serve(async (req) => {
 
     const admin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const { workspace_id, mode, quantity: rawQuantity, tier, addon_key } = await req.json();
-    const quantity = Math.max(1, Math.min(100, Math.floor(Number(rawQuantity) || 1)));
+    const maxQty = mode === "page_addon" ? 10 : 100;
+    const quantity = Math.max(1, Math.min(maxQty, Math.floor(Number(rawQuantity) || 1)));
 
     // Validate inputs to avoid leaking TypeErrors from Stripe
-    const validModes = ["credits", "subscription", "addon"] as const;
-    const validTiers = ["starter", "pro", "scale"] as const;
+    const validModes = ["credits", "subscription", "addon", "page_addon"] as const;
     if (!workspace_id || typeof workspace_id !== "string") {
       return new Response(JSON.stringify({ error: "invalid_request" }), {
         status: 400,
@@ -55,7 +58,7 @@ Deno.serve(async (req) => {
         headers: corsHeaders,
       });
     }
-    if (mode === "subscription" && !validTiers.includes(tier)) {
+    if (mode === "subscription" && !isPlanTier(tier)) {
       return new Response(JSON.stringify({ error: "invalid_tier" }), {
         status: 400,
         headers: corsHeaders,
@@ -120,6 +123,47 @@ Deno.serve(async (req) => {
       .eq("workspace_id", workspace_id)
       .maybeSingle();
 
+    // Extra page capacity only makes sense on top of an active plan.
+    if (mode === "page_addon") {
+      const { data: baseSub } = await admin
+        .from("subscriptions")
+        .select("id")
+        .eq("workspace_id", workspace_id)
+        .in("status", ["active", "trialing", "past_due"])
+        .limit(1)
+        .maybeSingle();
+      if (!baseSub) {
+        return new Response(
+          JSON.stringify({
+            error: "plan_required",
+            message: "Pick a plan first — extra page capacity stacks on top of a base plan.",
+          }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      // Only one page-capacity subscription per workspace; adjust its quantity
+      // instead of stacking parallel subscriptions.
+      const { data: existingAddons } = await stripe.subscriptions.list({
+        customer: cust?.stripe_customer_id ?? undefined,
+        status: "active",
+        limit: 100,
+      }).then(
+        (r) => ({ data: r.data.filter((x) => x.metadata?.page_addon === "1" && x.metadata?.workspace_id === workspace_id) }),
+        () => ({ data: [] as Stripe.Subscription[] }),
+      );
+      if (existingAddons.length > 0) {
+        return new Response(
+          JSON.stringify({
+            error: "addon_exists",
+            message:
+              "You already have extra page capacity. Use Manage billing to change its quantity.",
+          }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
+
+
     const createCustomer = async () => {
       const created = await stripe.customers.create({
         email: user.email,
@@ -171,13 +215,15 @@ Deno.serve(async (req) => {
       .filter(Boolean);
     const rawOrigin = req.headers.get("origin");
     const origin = rawOrigin && allowedOrigins.includes(rawOrigin) ? rawOrigin : allowedOrigins[0];
-    const isSubscription = mode === "subscription" || mode === "addon";
+    const isSubscription = mode === "subscription" || mode === "addon" || mode === "page_addon";
     const selectedPrice =
       mode === "credits"
         ? await ensureCreditPackPrice(stripe)
         : mode === "addon"
           ? await ensureAddonPrice(stripe, addon_key)
-          : await ensureSubscriptionPrice(stripe, tier);
+          : mode === "page_addon"
+            ? await ensurePageAddonPrice(stripe)
+            : await ensureSubscriptionPrice(stripe, tier);
 
     const returnPath = mode === "addon" ? "addons" : "billing";
 
@@ -192,7 +238,12 @@ Deno.serve(async (req) => {
       mode: isSubscription ? "subscription" : "payment",
       // Not in the stripe@14 typings yet — sent through as a raw param.
       managed_payments: { enabled: false },
-      line_items: [{ price: selectedPrice.id, quantity: mode === "credits" ? quantity : 1 }],
+      line_items: [
+        {
+          price: selectedPrice.id,
+          quantity: mode === "credits" || mode === "page_addon" ? quantity : 1,
+        },
+      ],
       success_url: `${origin}/app/${returnPath}?success=1&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/app/${returnPath}?canceled=1`,
       metadata: {
@@ -201,14 +252,21 @@ Deno.serve(async (req) => {
         plan_tier: selectedPrice.metadata?.plan_tier ?? "",
         credits_per_pack: selectedPrice.metadata?.credits ?? "",
         addon_key: mode === "addon" ? addon_key : "",
+        page_addon: mode === "page_addon" ? "1" : "",
       },
       subscription_data: isSubscription
         ? {
             metadata: {
               workspace_id,
-              plan_tier: mode === "addon" ? "" : (selectedPrice.metadata?.plan_tier ?? tier),
+              product_kind:
+                mode === "page_addon" ? "page_addon" : mode === "addon" ? "feature_addon" : "page_plan",
+              plan_tier:
+                mode === "addon" || mode === "page_addon"
+                  ? ""
+                  : (selectedPrice.metadata?.plan_tier ?? tier),
               addon_key: mode === "addon" ? addon_key : "",
               addon_tier: mode === "addon" ? (selectedPrice.metadata?.addon_tier ?? "") : "",
+              page_addon: mode === "page_addon" ? "1" : "",
             },
           }
         : undefined,

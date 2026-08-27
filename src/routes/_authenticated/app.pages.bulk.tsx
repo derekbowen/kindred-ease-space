@@ -72,12 +72,27 @@ function BulkPage() {
         data: { workspaceId, templateId, rows: parsed, status: publish ? "published" : "draft" },
       });
       if (r.ok) {
+        // The server fn's ok-branch union confuses inference here — pin it.
+        const res = r as unknown as {
+          count: number;
+          skipped?: number;
+          publishedCount?: number;
+          limitDenied?: number;
+          limit?: number | null;
+        };
         const skippedNote =
-          r.skipped && r.skipped > 0
-            ? ` Skipped ${r.skipped} already-published page${r.skipped === 1 ? "" : "s"} (edit those directly to avoid overwriting live content).`
+          res.skipped && res.skipped > 0
+            ? ` Skipped ${res.skipped} already-published page${res.skipped === 1 ? "" : "s"} (edit those directly to avoid overwriting live content).`
             : "";
-        setMsg(`${publish ? "Published" : "Created"} ${r.count} city hub pages.${skippedNote}`);
-        setTimeout(() => navigate({ to: "/app/pages" }), skippedNote ? 2500 : 900);
+        const limitNote =
+          res.limitDenied && res.limitDenied > 0
+            ? ` ${res.limitDenied} page${res.limitDenied === 1 ? "" : "s"} stayed as drafts — you reached your ${res.limit?.toLocaleString()}-page plan limit. Upgrade in Billing to publish them.`
+            : "";
+        const verb = publish
+          ? `Published ${res.publishedCount ?? res.count} of ${res.count}`
+          : `Created ${res.count}`;
+        setMsg(`${verb} city hub pages.${skippedNote}${limitNote}`);
+        setTimeout(() => navigate({ to: "/app/pages" }), skippedNote || limitNote ? 3500 : 900);
       } else {
         setErr(r.error);
       }

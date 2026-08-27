@@ -82,19 +82,21 @@ export const upsertTenantPage = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertMember(data.workspaceId, context.userId);
 
-    let publishedAt: string | null = null;
-    if (data.status === "published") {
-      if (data.id) {
-        const { data: existing } = await sb()
-          .from("tenant_pages")
-          .select("published_at")
-          .eq("id", data.id)
-          .eq("workspace_id", data.workspaceId)
-          .maybeSingle();
-        publishedAt = existing?.published_at ?? new Date().toISOString();
-      } else {
-        publishedAt = new Date().toISOString();
-      }
+    // Publishing consumes a page-entitlement slot, so the status flip goes
+    // through the atomic DB gate (publish_tenant_pages), never a direct write:
+    // content is saved first (as draft when not already live), then the gate
+    // decides whether a slot is available. Editing an ALREADY-published page
+    // doesn't consume a new slot and stays a direct update.
+    const wantsPublish = data.status === "published";
+    let alreadyPublished = false;
+    if (data.id) {
+      const { data: existing } = await sb()
+        .from("tenant_pages")
+        .select("status")
+        .eq("id", data.id)
+        .eq("workspace_id", data.workspaceId)
+        .maybeSingle();
+      alreadyPublished = existing?.status === "published";
     }
 
     const row: Record<string, any> = {
@@ -107,9 +109,10 @@ export const upsertTenantPage = createServerFn({ method: "POST" })
       body_markdown: data.bodyMarkdown ?? null,
       variables: data.variables,
       listing_filter: data.listingFilter,
-      status: data.status,
-      published_at: publishedAt,
+      status: wantsPublish && alreadyPublished ? "published" : wantsPublish ? "draft" : data.status,
     };
+
+    let pageId: string;
     if (data.id) {
       const { data: out, error } = await sb()
         .from("tenant_pages")
@@ -119,7 +122,7 @@ export const upsertTenantPage = createServerFn({ method: "POST" })
         .select("id")
         .single();
       if (error) return { ok: false as const, error: error.message };
-      return { ok: true as const, id: out.id };
+      pageId = out.id;
     } else {
       const { data: out, error } = await sb()
         .from("tenant_pages")
@@ -127,8 +130,27 @@ export const upsertTenantPage = createServerFn({ method: "POST" })
         .select("id")
         .single();
       if (error) return { ok: false as const, error: error.message };
-      return { ok: true as const, id: out.id };
+      pageId = out.id;
     }
+
+    if (wantsPublish && !alreadyPublished) {
+      const { publishPagesAtomically, pageLimitMessage } = await import(
+        "@/lib/entitlements.functions"
+      );
+      const gate = await publishPagesAtomically(data.workspaceId, [pageId]);
+      if (gate.published === 0) {
+        return {
+          ok: false as const,
+          code: "page_limit" as const,
+          error: `${pageLimitMessage(gate.limit)} Your changes were saved as a draft.`,
+          id: pageId,
+          limit: gate.limit,
+          publishedTotal: gate.publishedTotal,
+        };
+      }
+    }
+
+    return { ok: true as const, id: pageId };
   });
 
 export const deleteTenantPage = createServerFn({ method: "POST" })
@@ -198,6 +220,9 @@ export const bulkCreatePages = createServerFn({ method: "POST" })
       (existing ?? []).filter((r: any) => r.status === "published").map((r: any) => r.slug),
     );
 
+    // Bulk pre-check (§31): know the entitlement BEFORE generating/publishing.
+    // Rows are always written as drafts; if publishing was requested, the
+    // atomic gate then flips as many as the plan allows and reports the rest.
     const inserts = uniqueRows
       .filter((r) => !publishedSlugs.has(r.slug.toLowerCase()))
       .map((r) => ({
@@ -209,18 +234,39 @@ export const bulkCreatePages = createServerFn({ method: "POST" })
         h1: r.title,
         variables: r.variables,
         listing_filter: r.listingFilter,
-        status: data.status,
-        published_at: data.status === "published" ? new Date().toISOString() : null,
+        status: "draft",
       }));
 
     const skipped = uniqueRows.length - inserts.length + dupSkipped;
     if (inserts.length === 0) {
-      return { ok: true as const, count: 0, skipped };
+      return { ok: true as const, count: 0, skipped, publishedCount: 0, limitDenied: 0, limit: null as number | null };
     }
     const { data: out, error } = await sb()
       .from("tenant_pages")
       .upsert(inserts, { onConflict: "workspace_id,slug", ignoreDuplicates: false })
       .select("id");
     if (error) return { ok: false as const, error: error.message };
-    return { ok: true as const, count: out?.length ?? 0, skipped };
+
+    let publishedCount = 0;
+    let limitDenied = 0;
+    let limit: number | null = null;
+    if (data.status === "published" && out && out.length > 0) {
+      const { publishPagesAtomically } = await import("@/lib/entitlements.functions");
+      const gate = await publishPagesAtomically(
+        data.workspaceId,
+        (out as Array<{ id: string }>).map((r) => r.id),
+      );
+      publishedCount = gate.published;
+      limitDenied = gate.denied;
+      limit = gate.limit;
+    }
+
+    return {
+      ok: true as const,
+      count: out?.length ?? 0,
+      skipped,
+      publishedCount,
+      limitDenied,
+      limit,
+    };
   });

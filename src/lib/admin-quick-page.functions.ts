@@ -200,6 +200,9 @@ seo_title (≤60 chars) and seo_description (≤155 chars) optimised for the top
     if (city) listingFilter.city = city;
     if (state) listingFilter.state = state;
 
+    // Insert as draft, then flip through the atomic page-entitlement gate. If
+    // the plan is out of publishing slots the generated page is KEPT as a
+    // draft (the AI work isn't wasted) and the caller gets a clear limit flag.
     const { data: inserted, error: insErr } = await supabaseAdmin
       .from("tenant_pages")
       .insert({
@@ -212,12 +215,20 @@ seo_title (≤60 chars) and seo_description (≤155 chars) optimised for the top
         body_markdown: gen.body_markdown,
         variables,
         listing_filter: listingFilter,
-        status: "published",
-        published_at: new Date().toISOString(),
+        status: "draft",
       })
       .select("id, slug, title")
       .single();
     if (insErr) throw new Error(insErr.message);
+
+    const { publishPagesAtomically, pageLimitMessage } = await import(
+      "@/lib/entitlements.functions"
+    );
+    const gate = await publishPagesAtomically(data.workspaceId, [inserted.id]);
+    const limitReached = gate.published === 0;
+    const limitMessage = limitReached
+      ? `${pageLimitMessage(gate.limit)} The generated page was saved as a draft.`
+      : null;
 
     // Settle credits AFTER success (no charge on failure) + log usage.
     let creditsCharged = 0;
@@ -251,5 +262,7 @@ seo_title (≤60 chars) and seo_description (≤155 chars) optimised for the top
       page: { ...inserted, url_path },
       words: gen.body_markdown.split(/\s+/).length,
       creditsCharged,
+      limitReached,
+      limitMessage,
     };
   });

@@ -115,14 +115,12 @@ function DashboardPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <Coins className="h-4 w-4" /> AI Credits
+              <Coins className="h-4 w-4" /> AI generation credits
             </CardDescription>
             <CardTitle className="text-3xl">{balance?.balance?.toLocaleString() ?? 0}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            {balance?.monthly_allowance
-              ? `${balance.monthly_allowance.toLocaleString()} included / mo`
-              : "Top up in Billing to keep generating"}
+            Included with your plan
             {" · "}
             <Link to="/app/billing" className="hover:text-foreground">
               Billing →
