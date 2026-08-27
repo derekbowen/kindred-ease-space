@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
 
     const { data: member } = await admin
       .from("workspace_members")
-      .select("workspace_id")
+      .select("workspace_id, role")
       .eq("workspace_id", workspace_id)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -44,6 +44,16 @@ Deno.serve(async (req) => {
         status: 403,
         headers: corsHeaders,
       });
+    // Owner-only: the portal can cancel the subscription and change payment
+    // details — an invited member must not reach it.
+    if (member.role !== "owner")
+      return new Response(
+        JSON.stringify({
+          error: "owner_only",
+          message: "Only the workspace owner can manage billing.",
+        }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
 
     const { data: cust } = await admin
       .from("stripe_customers")

@@ -109,8 +109,16 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: "/app/seo/sitemap", label: "Sitemap & Indexing", icon: Map, stub: true },
       { to: "/app/seo/gsc-import", label: "GSC Import", icon: Download },
       { to: "/app/seo/scrape-import", label: "Scrape Import", icon: Globe, stub: true },
-      { to: "/app/seo/click-report", label: "Click Report", icon: MousePointerClick },
-      { to: "/app/seo/canonical-audit", label: "Canonical Audit", icon: ShieldCheck },
+      // Click Report reads city_link_clicks, which nothing writes yet — stub
+      // until a tracker exists. Canonical Audit is platform-admin-only (it
+      // audits founders.click itself) and throws Forbidden for customers.
+      { to: "/app/seo/click-report", label: "Click Report", icon: MousePointerClick, stub: true },
+      {
+        to: "/app/seo/canonical-audit",
+        label: "Canonical Audit",
+        icon: ShieldCheck,
+        internalOnly: true,
+      },
     ],
   },
 

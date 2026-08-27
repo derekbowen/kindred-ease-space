@@ -52,12 +52,13 @@ Deno.serve(async (req) => {
             currency: s.currency ?? "usd",
             status: "completed",
           });
-          if (purchaseErr) {
-            // Duplicate webhook delivery hits the unique stripe_session_id constraint.
-            if (purchaseErr.code === "23505") break;
-            throw purchaseErr;
-          }
-          await admin.rpc("grant_credits", {
+          // A duplicate delivery (23505 on the unique stripe_session_id) must
+          // NOT skip the grant: if a previous attempt inserted the purchase but
+          // the grant then failed, skipping here would strand a paid customer
+          // with no credits forever. grant_credits is ledger-idempotent, so
+          // re-running it on a replay either heals the missing grant or no-ops.
+          if (purchaseErr && purchaseErr.code !== "23505") throw purchaseErr;
+          const { error: grantErr } = await admin.rpc("grant_credits", {
             _workspace_id: workspace_id,
             _amount: credits,
             _reason: "topup_purchase",
@@ -65,13 +66,26 @@ Deno.serve(async (req) => {
             _ref_id: s.id,
             _metadata: {},
           });
+          // Never ACK Stripe with a failed grant — a 500 makes Stripe retry.
+          if (grantErr) throw grantErr;
         }
         break;
       }
       case "customer.subscription.created":
       case "customer.subscription.updated": {
-        const sub = event.data.object as Stripe.Subscription;
-        const workspace_id = sub.metadata?.workspace_id;
+        // Stripe does not guarantee event ordering, and the event payload is a
+        // snapshot from send time — a delayed "updated" event processed after a
+        // cancellation would resurrect the canceled plan. Fetch the
+        // subscription's CURRENT state and act on that instead (canceled
+        // subscriptions remain retrievable, so this never 404s in practice).
+        const evSub = event.data.object as Stripe.Subscription;
+        let sub = evSub;
+        try {
+          sub = await stripe.subscriptions.retrieve(evSub.id);
+        } catch (e) {
+          console.warn(`subscription retrieve failed for ${evSub.id}; using event payload`, e);
+        }
+        const workspace_id = sub.metadata?.workspace_id ?? evSub.metadata?.workspace_id;
         if (!workspace_id) break;
 
         // Add-on subscriptions set entitlement instead of plan credits.
@@ -186,7 +200,7 @@ Deno.serve(async (req) => {
         if (credits > 0) {
           // grant_credits is idempotent on (_reason, _ref_type, _ref_id), so a
           // redelivered invoice.paid will not double-grant.
-          await admin.rpc("grant_credits", {
+          const { error: grantErr } = await admin.rpc("grant_credits", {
             _workspace_id: workspace_id,
             _amount: credits,
             _reason: "monthly_grant",
@@ -194,6 +208,9 @@ Deno.serve(async (req) => {
             _ref_id: inv.id,
             _metadata: { plan_tier },
           });
+          // A silently-failed monthly grant loses the customer's paid credits;
+          // throw so Stripe retries the event instead of getting a 200.
+          if (grantErr) throw grantErr;
         } else {
           console.warn(`invoice.paid: tier "${plan_tier}" resolved to 0 credits for sub ${subId}`);
         }

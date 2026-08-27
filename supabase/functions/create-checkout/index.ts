@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
 
     const { data: member } = await admin
       .from("workspace_members")
-      .select("workspace_id")
+      .select("workspace_id, role")
       .eq("workspace_id", workspace_id)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -79,6 +79,16 @@ Deno.serve(async (req) => {
         status: 403,
         headers: corsHeaders,
       });
+    // Billing is owner-only: an invited member must not be able to start paid
+    // subscriptions on the workspace's card.
+    if (member.role !== "owner")
+      return new Response(
+        JSON.stringify({
+          error: "owner_only",
+          message: "Only the workspace owner can manage billing.",
+        }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
 
     // Block a second concurrent plan subscription: Stripe happily creates
     // parallel subscriptions for the same customer, which would double-bill and
