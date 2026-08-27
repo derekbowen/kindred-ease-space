@@ -32,7 +32,7 @@ export type PageEntitlement = {
  * can never supply or inflate its own limit.
  */
 export async function readEntitlement(workspaceId: string): Promise<PageEntitlement> {
-  const [{ data: ws }, { data: counts }, { data: bal }] = await Promise.all([
+  const [wsRes, { data: counts }, { data: bal }] = await Promise.all([
     sb()
       .from("workspaces")
       .select(
@@ -43,7 +43,17 @@ export async function readEntitlement(workspaceId: string): Promise<PageEntitlem
     sb().from("tenant_pages").select("status").eq("workspace_id", workspaceId),
     sb().from("credit_balances").select("balance").eq("workspace_id", workspaceId).maybeSingle(),
   ]);
-  if (!ws) throw new Error("workspace not found");
+  const ws = wsRes.data;
+  if (!ws) {
+    // Distinguish "no such workspace" from "entitlement schema missing"
+    // (migration not applied) — both fail closed, but ops needs to tell them
+    // apart from the logs.
+    if (wsRes.error) {
+      console.error("[entitlements] read failed", workspaceId, wsRes.error.message);
+      throw new Error(`entitlement read failed: ${wsRes.error.message}`);
+    }
+    throw new Error("workspace not found");
+  }
 
   const bonusActive =
     ws.page_bonus_expires_at && new Date(ws.page_bonus_expires_at).getTime() > Date.now();
@@ -117,7 +127,13 @@ export async function publishPagesAtomically(
     _workspace_id: workspaceId,
     _page_ids: pageIds,
   });
-  if (error) throw new Error(`publish gate failed: ${error.message}`);
+  if (error) {
+    // Fail closed AND loud: content stays a draft, the customer sees the
+    // error, and ops can grep this line. A missing RPC (migration not applied)
+    // lands here too.
+    console.error("[entitlements] publish gate failed", workspaceId, error.message);
+    throw new Error(`publish gate failed: ${error.message}`);
+  }
   const r = data as {
     published: number;
     denied: number;

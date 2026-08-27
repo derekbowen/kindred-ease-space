@@ -115,7 +115,7 @@ async function getDomainConfig(hostname, env, ctx) {
   return ok ? body : null;
 }
 
-function proxyToFounders(request, url, tenantHost) {
+async function proxyToFounders(request, url, tenantHost) {
   const target = new URL(url.pathname + url.search, FOUNDERS_ORIGIN);
   const headers = new Headers(request.headers);
   // The Founders app resolves the tenant from x-forwarded-host and
@@ -123,15 +123,29 @@ function proxyToFounders(request, url, tenantHost) {
   headers.set("x-forwarded-host", tenantHost);
   headers.set("x-founders-edge", "1");
   headers.set("host", target.hostname);
-  return fetch(target.toString(), {
-    method: request.method,
-    headers,
-    body: request.body,
-    redirect: "manual",
-  });
+  try {
+    return await fetch(target.toString(), {
+      method: request.method,
+      headers,
+      body: request.body,
+      redirect: "manual",
+    });
+  } catch (e) {
+    console.error("[founders-edge] founders origin unreachable", tenantHost, String(e));
+    return new Response("Temporarily unavailable", {
+      status: 502,
+      headers: { "Cache-Control": "no-store", "Retry-After": "30" },
+    });
+  }
 }
 
-function proxyToCustomerOrigin(request, url, origin) {
+// Safe-disable posture: the customer's own traffic is the highest-blast-radius
+// path, so origin passthrough NEVER turns off for transient states (error /
+// failing health keep proxying). Only an unreachable origin produces a 502 —
+// uncached, retryable, logged — and the control plane surfaces the failure to
+// the customer with revert-DNS instructions. True rollback is the customer's
+// DNS change; nothing here can silently take their site down harder.
+async function proxyToCustomerOrigin(request, url, origin) {
   const originHost = origin.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
   if (!originHost || originHost === url.hostname) {
     return new Response("loop detected", { status: 508 });
@@ -141,10 +155,18 @@ function proxyToCustomerOrigin(request, url, origin) {
   headers.set("host", originHost);
   headers.set("x-founders-edge", "1");
   headers.set("x-forwarded-host", url.hostname);
-  return fetch(target.toString(), {
-    method: request.method,
-    headers,
-    body: request.body,
-    redirect: "manual",
-  });
+  try {
+    return await fetch(target.toString(), {
+      method: request.method,
+      headers,
+      body: request.body,
+      redirect: "manual",
+    });
+  } catch (e) {
+    console.error("[founders-edge] customer origin unreachable", url.hostname, originHost, String(e));
+    return new Response("Origin temporarily unavailable", {
+      status: 502,
+      headers: { "Cache-Control": "no-store", "Retry-After": "30" },
+    });
+  }
 }

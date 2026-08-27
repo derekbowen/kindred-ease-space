@@ -7,12 +7,10 @@
 --   * billing_events (every billing change traceable)
 --   * publish_tenant_pages(): the ATOMIC, concurrency-safe publish gate —
 --     survives 1,000 parallel publish requests via an advisory lock.
--- NOTE: the two ALTER TYPE statements must run before anything uses the new
--- enum values; run this file top-to-bottom as-is.
+-- PREREQUISITE: 20260827025000_app_plan_enum_values.sql must be applied (and
+-- committed) first — this file's verification block reads the new enum values,
+-- which Postgres forbids inside the transaction that adds them (55P04).
 -- ============================================================================
-
-ALTER TYPE public.app_plan ADD VALUE IF NOT EXISTS 'pro';
-ALTER TYPE public.app_plan ADD VALUE IF NOT EXISTS 'agency';
 
 -- ---------------------------------------------------------------------------
 -- Entitlement columns. Default 25 = free-trial allowance for new workspaces.

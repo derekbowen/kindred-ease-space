@@ -498,6 +498,15 @@ export const activateWorkspaceDomain = createServerFn({ method: "POST" })
 
     const allOk = checks.every((c) => c.ok);
     const now = new Date().toISOString();
+    const failDetail = checks
+      .filter((c) => !c.ok)
+      .map((c) => c.detail)
+      .join("; ");
+    // Safe-disable: a domain that was Connected and now fails its checks is
+    // demoted to 'error' so the dashboard shows it loudly (origin passthrough
+    // at the edge keeps running — we never turn off the customer's own
+    // traffic; the fix for a damaged origin is reverting DNS, which the UI
+    // instructs). A domain that was never active just records the failure.
     const patch = allOk
       ? {
           status: "active",
@@ -507,16 +516,17 @@ export const activateWorkspaceDomain = createServerFn({ method: "POST" })
           last_error: null,
         }
       : {
+          status: row.status === "active" ? "error" : row.status,
           last_health_check: now,
           health_status: "failing",
-          last_error: checks
-            .filter((c) => !c.ok)
-            .map((c) => c.detail)
-            .join("; "),
+          last_error: failDetail,
         };
+    if (!allOk) {
+      console.error("[domains] activation check failed", row.hostname, failDetail);
+    }
     await sb().from("workspace_domains").update(patch).eq("id", row.id);
 
-    return { ok: allOk, checks, status: allOk ? "active" : row.status };
+    return { ok: allOk, checks, status: allOk ? "active" : (patch.status as string) };
   });
 
 export const deleteWorkspaceDomain = createServerFn({ method: "POST" })
