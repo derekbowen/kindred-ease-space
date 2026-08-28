@@ -25,9 +25,12 @@ ALTER TABLE public.workspaces
 -- Internal dogfood workspace gets effectively unlimited capacity.
 UPDATE public.workspaces SET page_limit_base = 1000000 WHERE is_internal = true;
 
--- Grandfather existing paid workspaces (legacy credit-era plans) onto generous
+-- Grandfather existing PAID workspaces (legacy credit-era plans) onto generous
 -- page capacity so nobody's live pages are ever below their old expectations.
 -- New-plan purchases after this migration overwrite page_limit_base via webhook.
+-- NOTE: 'trialing' is deliberately EXCLUDED — a trial is not a paid plan, and
+-- including it would hand every free trial 1,000 published pages instead of the
+-- 25-page trial allowance.
 UPDATE public.workspaces
    SET page_limit_base = GREATEST(page_limit_base, CASE plan::text
         WHEN 'starter' THEN 1000
@@ -35,7 +38,7 @@ UPDATE public.workspaces
         WHEN 'scale' THEN 5000
         WHEN 'enterprise' THEN 10000
         ELSE page_limit_base END)
- WHERE subscription_status IN ('active', 'trialing', 'past_due')
+ WHERE subscription_status IN ('active', 'past_due')
    AND is_internal = false;
 
 -- ---------------------------------------------------------------------------
