@@ -4481,6 +4481,7 @@ export type Database = {
       workspace_domains: {
         Row: {
           cloudflare_hostname_id: string | null
+          cloudflare_route_id: string | null
           created_at: string
           hostname: string
           id: string
@@ -4494,6 +4495,7 @@ export type Database = {
         }
         Insert: {
           cloudflare_hostname_id?: string | null
+          cloudflare_route_id?: string | null
           created_at?: string
           hostname: string
           id?: string
@@ -4507,6 +4509,7 @@ export type Database = {
         }
         Update: {
           cloudflare_hostname_id?: string | null
+          cloudflare_route_id?: string | null
           created_at?: string
           hostname?: string
           id?: string

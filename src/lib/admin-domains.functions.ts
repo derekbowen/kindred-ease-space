@@ -354,6 +354,39 @@ export const verifyWorkspaceDomain = createServerFn({ method: "POST" })
       .eq("id", row.id);
     if (upErr) return { ok: false as const, error: upErr.message };
 
+    // Ownership is proven, so provision the edge now: custom hostname + Worker
+    // route as ONE unit (see domain-provisioning.server.ts for why atomicity
+    // matters — a hostname without its route falls through to the originless
+    // fallback origin and that customer is hard down, not degraded).
+    const { isEdgeProvisioningConfigured, provisionDomainAtEdge } = await import(
+      "@/lib/domain-provisioning.server"
+    );
+    if (isEdgeProvisioningConfigured()) {
+      try {
+        const cf = await provisionDomainAtEdge(row.hostname);
+        await sb()
+          .from("workspace_domains")
+          .update({
+            cloudflare_hostname_id: cf.hostnameId,
+            cloudflare_route_id: cf.routeId,
+            status: "ssl_pending",
+            last_error: null,
+          })
+          .eq("id", row.id);
+      } catch (e) {
+        // Provisioning failed and rolled back — stay in
+        // dns_configuration_required and surface it. Never advance toward
+        // active on a half-built edge.
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error("[domains] edge provisioning failed", row.hostname, msg);
+        await sb()
+          .from("workspace_domains")
+          .update({ status: "error", last_error: `Edge provisioning failed: ${msg}` })
+          .eq("id", row.id);
+        return { ok: false as const, error: `Edge provisioning failed: ${msg}` };
+      }
+    }
+
     // Keep workspaces.marketplace_domain + domain_verified_at in sync so Settings
     // badges and host resolution stay accurate after custom-domain verification.
     const { data: ws } = await sb()
@@ -536,6 +569,24 @@ export const deleteWorkspaceDomain = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceOwner(data.workspaceId, context.userId);
+
+    // Tear the edge down before dropping our row, or the Cloudflare custom
+    // hostname and Worker route are orphaned with nothing left pointing at
+    // them. Teardown is best-effort and never blocks the disconnect.
+    const { data: row } = await sb()
+      .from("workspace_domains")
+      .select("cloudflare_hostname_id, cloudflare_route_id")
+      .eq("workspace_id", data.workspaceId)
+      .eq("id", data.id)
+      .maybeSingle();
+    if (row?.cloudflare_hostname_id || row?.cloudflare_route_id) {
+      const { deprovisionDomainAtEdge } = await import("@/lib/domain-provisioning.server");
+      await deprovisionDomainAtEdge(
+        row.cloudflare_hostname_id ?? null,
+        row.cloudflare_route_id ?? null,
+      );
+    }
+
     const { error } = await sb()
       .from("workspace_domains")
       .delete()
