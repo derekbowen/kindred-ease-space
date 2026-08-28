@@ -25,12 +25,34 @@ Domains flow encodes exactly that distinction.
 
 ## One-time Cloudflare account setup (not per customer)
 
-1. Cloudflare zone for `founders.click`, **Cloudflare for SaaS** enabled.
-2. `proxy.founders.click` = custom-hostname **fallback origin**, proxied (orange
-   cloud), covered by a Worker route so every request lands on `founders-edge`:
-   - route `proxy.founders.click/*` → founders-edge
-   - custom-hostname requests also hit the zone's Worker routes.
-3. `npx wrangler deploy` from this directory.
+Per Cloudflare's [Workers as your fallback origin](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/start/advanced-settings/worker-as-origin/)
+guide. Two details are easy to get wrong and both matter:
+
+1. Cloudflare zone for `founders.click`, **Cloudflare for SaaS** enabled
+   (SSL/TLS → Custom Hostnames).
+2. **Fallback origin = an originless record.** Create DNS record
+   `proxy` → `AAAA` → `100::` , **proxied** (orange cloud), then set
+   `proxy.founders.click` as the Custom Hostnames fallback origin. It is
+   originless on purpose: the Worker answers every custom-hostname request, so
+   traffic must never fall through to a real server. If the Worker ever stops
+   matching, requests fail closed instead of leaking.
+3. **Worker routes — order matters.** Add the bypass routes FIRST so the live
+   site is never exposed to the Worker, then the wildcard:
+   - `www.founders.click/*` → Worker: **None**
+   - `founders.click/*` → Worker: **None**
+   - `*/*` → Worker: **founders-edge**
+
+   A route on `proxy.founders.click/*` does **not** work: custom-hostname
+   traffic arrives as `customer.com`, and only the `*/*` wildcard matches
+   traffic entering the zone from customer vanity domains. More specific routes
+   win, which is why the bypasses protect the platform's own hostnames. The
+   Worker additionally hard-codes a `PLATFORM_HOSTS` passthrough as a backup.
+4. Deploy the Worker (dashboard paste, or `npx wrangler deploy` here).
+
+Note: because a Worker route matches before origin resolution, the
+`custom_origin_server` field on individual custom hostnames is bypassed —
+per-hostname routing is done inside the Worker from the `Host` header, which is
+exactly what `getDomainConfig()` does.
 
 ## Per-customer provisioning (automated by the app; API calls only)
 

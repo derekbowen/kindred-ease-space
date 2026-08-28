@@ -29,10 +29,27 @@ const FOUNDERS_ORIGIN = "https://www.founders.click";
 const CONFIG_TTL_OK = 60; // seconds
 const CONFIG_TTL_MISS = 10;
 
+// Cloudflare for SaaS requires the route pattern `*/*` for custom-hostname
+// traffic to reach this Worker (a route on the fallback origin hostname does
+// NOT match customer domains). `*/*` also captures the platform's own zone
+// traffic, so these hosts must pass straight through untouched — the marketing
+// site, app and API live here. Bypass routes in the dashboard should keep them
+// away from the Worker entirely; this guard is the belt-and-braces backup so a
+// route misconfiguration can never take founders.click down.
+const PLATFORM_HOSTS = new Set([
+  "founders.click",
+  "www.founders.click",
+  "proxy.founders.click",
+]);
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const hostname = url.hostname.toLowerCase();
+
+    if (PLATFORM_HOSTS.has(hostname)) {
+      return fetch(request);
+    }
 
     if (request.headers.get("x-founders-edge")) {
       return new Response("loop detected", { status: 508 });
