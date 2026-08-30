@@ -36,18 +36,25 @@ guide. Two details are easy to get wrong and both matter:
    originless on purpose: the Worker answers every custom-hostname request, so
    traffic must never fall through to a real server. If the Worker ever stops
    matching, requests fail closed instead of leaking.
-3. **Worker routes — order matters.** Add the bypass routes FIRST so the live
-   site is never exposed to the Worker, then the wildcard:
-   - `www.founders.click/*` → Worker: **None**
-   - `founders.click/*` → Worker: **None**
-   - `*/*` → Worker: **founders-edge**
+3. Deploy the Worker as `founders-edge` (dashboard paste, or `npx wrangler
+   deploy` here). **Add no routes by hand** — see below.
+4. **Worker routes are created per customer, automatically.** Cloudflare offers
+   three options; we use the third:
+   - `*/*` — their recommendation, but routes *every* request entering the zone
+     (marketing site and app included) through the Worker. Not used.
+   - `*/*` plus `Worker: None` bypasses for platform hostnames. Works, but is
+     correct only if configured perfectly on a live zone. Not used.
+   - **one route per customer hostname (`customer.com/*`)** ← what we do.
+     `provisionDomainAtEdge()` creates it alongside the custom hostname.
 
-   A route on `proxy.founders.click/*` does **not** work: custom-hostname
-   traffic arrives as `customer.com`, and only the `*/*` wildcard matches
-   traffic entering the zone from customer vanity domains. More specific routes
-   win, which is why the bypasses protect the platform's own hostnames. The
-   Worker additionally hard-codes a `PLATFORM_HOSTS` passthrough as a backup.
-4. Deploy the Worker (dashboard paste, or `npx wrangler deploy` here).
+   A route naming only `proxy.founders.click/*` would not work: the route has
+   to name the customer hostname. Capacity is 1,000 routes per zone on Free and
+   Paid alike, so this scales to 1,000 connected domains.
+
+   Trade-off, deliberately taken: without the wildcard, a custom hostname
+   created *without* its route falls through to the originless fallback origin
+   and that customer is hard down rather than degraded — which is why
+   provisioning is atomic and rolls back on partial failure.
 
 Note: because a Worker route matches before origin resolution, the
 `custom_origin_server` field on individual custom hostnames is bypassed —

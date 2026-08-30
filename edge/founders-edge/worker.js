@@ -29,13 +29,26 @@ const FOUNDERS_ORIGIN = "https://www.founders.click";
 const CONFIG_TTL_OK = 60; // seconds
 const CONFIG_TTL_MISS = 10;
 
-// Cloudflare for SaaS requires the route pattern `*/*` for custom-hostname
-// traffic to reach this Worker (a route on the fallback origin hostname does
-// NOT match customer domains). `*/*` also captures the platform's own zone
-// traffic, so these hosts must pass straight through untouched — the marketing
-// site, app and API live here. Bypass routes in the dashboard should keep them
-// away from the Worker entirely; this guard is the belt-and-braces backup so a
-// route misconfiguration can never take founders.click down.
+// ROUTING MODEL — one Worker route per connected customer hostname
+// (`customer.com/*`), created automatically when a domain is provisioned. See
+// src/lib/domain-provisioning.server.ts.
+//
+// Cloudflare documents three options for getting custom-hostname traffic to a
+// Worker. `*/*` is the one they recommend, but it routes EVERY request
+// entering the zone through this Worker — marketing site and app included. We
+// deliberately use their third option ("Route only custom hostname traffic to
+// the Worker", route = the vanity hostname) so platform traffic never enters
+// this code path at all. Note a route on the fallback-origin hostname alone
+// would NOT work: the route has to name the customer hostname.
+//
+// Consequence to keep in mind: with no wildcard, a custom hostname created
+// WITHOUT its route falls through to the originless fallback origin and that
+// customer is hard down. That is why provisioning creates hostname + route as
+// one unit and rolls back if either half fails.
+//
+// The PLATFORM_HOSTS passthrough below is belt-and-braces: if anyone ever adds
+// a `*/*` route by hand, founders.click still cannot be taken down by this
+// Worker.
 const PLATFORM_HOSTS = new Set([
   "founders.click",
   "www.founders.click",
