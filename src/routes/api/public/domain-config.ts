@@ -60,7 +60,9 @@ export const Route = createFileRoute("/api/public/domain-config")({
 
         const { data: row } = await sb()
           .from("workspace_domains")
-          .select("connection_type, status, customer_origin, route_prefix, workspace_id")
+          .select(
+            "connection_type, status, customer_origin, route_prefix, workspace_id, founders_disabled, updated_at",
+          )
           .eq("hostname", hostname)
           .eq("verified", true)
           .maybeSingle();
@@ -73,6 +75,36 @@ export const Route = createFileRoute("/api/public/domain-config")({
               "Cache-Control": "public, max-age=10",
             },
           });
+        }
+
+        // KILL SWITCH. Deliberately still a 200 with the origin attached: a 404
+        // here would make the edge treat the host as unknown, which in
+        // full_proxy is the whole-domain outage we are trying to escape. The
+        // emergency state must hand the edge everything it needs to pass 100%
+        // of traffic — /a/* included — straight to the customer.
+        if (row.founders_disabled) {
+          return new Response(
+            JSON.stringify({
+              hostname,
+              mode: row.connection_type,
+              route_prefix: row.route_prefix || "/a/",
+              customer_origin:
+                row.customer_origin && row.customer_origin.toLowerCase() !== hostname
+                  ? row.customer_origin
+                  : null,
+              disabled: true,
+              active: false,
+              status: row.status,
+              config_version: row.updated_at,
+            }),
+            {
+              headers: {
+                "Content-Type": "application/json",
+                // Short TTL so re-enabling takes effect quickly.
+                "Cache-Control": "public, max-age=15",
+              },
+            },
+          );
         }
 
         // Loop safety: never hand the edge an origin that would route straight
@@ -92,6 +124,10 @@ export const Route = createFileRoute("/api/public/domain-config")({
             // Worker serve /a/* so activation tests can pass.
             active: row.status === "active",
             status: row.status,
+            disabled: false,
+            // Lets the edge tell one config generation from another when
+            // reasoning about stale copies.
+            config_version: row.updated_at,
           }),
           {
             headers: {

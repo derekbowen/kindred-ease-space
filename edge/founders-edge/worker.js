@@ -26,8 +26,34 @@
  */
 
 const FOUNDERS_ORIGIN = "https://www.founders.click";
-const CONFIG_TTL_OK = 60; // seconds
+const CONFIG_TTL_OK = 60; // seconds — fresh copy, so changes propagate fast
 const CONFIG_TTL_MISS = 10;
+
+// Last-known-good config survives this long and is used only when the control
+// plane is unreachable. It is a safety net, NOT a second source of truth: a
+// customer can legitimately migrate their origin inside this window, so every
+// stale serve is reported and /a/* stops being served well before the window
+// closes.
+const STALE_MAX_S = 86_400; // 24h
+const STALE_HARD_LIMIT_S = 3_600; // 1h — beyond this we stop serving OUR pages
+const STALE_ALERT_AFTER_S = 300; // 5m — report to the control plane
+
+/** Fire-and-forget staleness telemetry so a control-plane outage is visible to
+ *  us before a customer has to report it. Never blocks the response. */
+function reportStale(hostname, ageS, ctx) {
+  if (ageS < STALE_ALERT_AFTER_S) return;
+  try {
+    ctx.waitUntil(
+      fetch(`${FOUNDERS_ORIGIN}/api/public/edge-health`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-founders-edge": "1" },
+        body: JSON.stringify({ hostname, state: "STALE_CONFIG", stale_age_s: ageS }),
+      }).catch(() => {}),
+    );
+  } catch {
+    /* telemetry must never break routing */
+  }
+}
 
 // ROUTING MODEL — one Worker route per connected customer hostname
 // (`customer.com/*`), created automatically when a domain is provisioned. See
@@ -69,6 +95,8 @@ export default {
     }
 
     const config = await getDomainConfig(hostname, env, ctx);
+
+    // A hostname we have never successfully resolved is not ours to serve.
     if (!config) {
       return new Response("Not found", { status: 404 });
     }
@@ -77,7 +105,28 @@ export default {
     const isFoundersPath =
       url.pathname === prefix.replace(/\/$/, "") || url.pathname.startsWith(prefix);
 
+    // KILL SWITCH: the control plane can disable Founders handling for one
+    // hostname without the customer touching DNS. Everything, /a/* included,
+    // passes straight through to their origin. Their marketplace always wins.
+    if (config.disabled) {
+      if (config.customer_origin) {
+        return proxyToCustomerOrigin(request, url, config.customer_origin);
+      }
+      return new Response("Not found", { status: 404 });
+    }
+
+    // FAIL OPEN vs FAIL CLOSED — the asymmetry is deliberate.
+    // `stale` means the control plane was unreachable and we are running on a
+    // cached config. Our own pages fail closed (502, our problem). The
+    // customer's traffic keeps flowing to their origin, because a founders.click
+    // outage must never take down somebody's booking site.
     if (isFoundersPath) {
+      if (config.stale && config.stale_age_s > STALE_HARD_LIMIT_S) {
+        return new Response("Temporarily unavailable", {
+          status: 502,
+          headers: { "Cache-Control": "no-store", "Retry-After": "60" },
+        });
+      }
       return proxyToFounders(request, url, hostname);
     }
 
@@ -104,45 +153,79 @@ export default {
   },
 };
 
+/**
+ * Resolve routing config with STALE-WHILE-ERROR semantics.
+ *
+ * The fresh cache expires quickly so config changes propagate. A second,
+ * long-lived copy survives for STALE_MAX_S and is used whenever the control
+ * plane is unreachable or erroring. In full_proxy this is the difference
+ * between "founders.click is down" and "the customer's entire business is
+ * returning 404" — a stale origin is infinitely better than no origin.
+ */
 async function getDomainConfig(hostname, env, ctx) {
   const cache = caches.default;
-  const cacheKey = new Request(`https://edge-config.founders.internal/${hostname}`);
-  const cached = await cache.match(cacheKey);
-  if (cached) {
-    const body = await cached.json();
+  const freshKey = new Request(`https://edge-config.founders.internal/fresh/${hostname}`);
+  const staleKey = new Request(`https://edge-config.founders.internal/stale/${hostname}`);
+
+  const fresh = await cache.match(freshKey);
+  if (fresh) {
+    const body = await fresh.json();
     return body && body.error ? null : body;
   }
 
-  let res;
+  let res = null;
+  let body = null;
   try {
     res = await fetch(
       `${FOUNDERS_ORIGIN}/api/public/domain-config?hostname=${encodeURIComponent(hostname)}`,
       { headers: { "x-founders-edge": "1" } },
     );
+    body = await res.json();
   } catch {
+    body = null;
+  }
+
+  const ok = res && res.status === 200 && body && !body.error;
+
+  if (ok) {
+    const stamped = JSON.stringify({ ...body, cached_at: Date.now() });
+    ctx.waitUntil(
+      Promise.all([
+        cache.put(freshKey, new Response(stamped, {
+          headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${CONFIG_TTL_OK}` },
+        })),
+        cache.put(staleKey, new Response(stamped, {
+          headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${STALE_MAX_S}` },
+        })),
+      ]),
+    );
+    return body;
+  }
+
+  // A definitive 404 from a healthy control plane means the domain really is
+  // not ours — drop the stale copy so disconnects take effect.
+  if (res && res.status === 404) {
+    ctx.waitUntil(cache.delete(staleKey));
+    ctx.waitUntil(
+      cache.put(freshKey, new Response(JSON.stringify({ error: "domain_not_found" }), {
+        headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${CONFIG_TTL_MISS}` },
+      })),
+    );
     return null;
   }
 
-  let body = null;
-  try {
-    body = await res.json();
-  } catch {
-    body = { error: "bad_config_response" };
+  // Control plane unreachable or 5xx — fall back to the last known good config.
+  const stale = await cache.match(staleKey);
+  if (stale) {
+    const body2 = await stale.json();
+    if (body2 && !body2.error) {
+      const ageS = Math.round((Date.now() - (body2.cached_at ?? 0)) / 1000);
+      console.warn("[founders-edge] serving stale config", hostname, "age_s=", ageS);
+      reportStale(hostname, ageS, ctx);
+      return { ...body2, stale: true, stale_age_s: ageS };
+    }
   }
-  const ok = res.status === 200 && body && !body.error;
-  const ttl = ok ? CONFIG_TTL_OK : CONFIG_TTL_MISS;
-  ctx.waitUntil(
-    cache.put(
-      cacheKey,
-      new Response(JSON.stringify(ok ? body : { error: body?.error || "miss" }), {
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": `public, max-age=${ttl}`,
-        },
-      }),
-    ),
-  );
-  return ok ? body : null;
+  return null;
 }
 
 async function proxyToFounders(request, url, tenantHost) {
