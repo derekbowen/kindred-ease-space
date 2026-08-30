@@ -87,3 +87,54 @@ exactly what `getDomainConfig()` does.
   not verified in `workspace_domains` (host-header security).
 - Tenant sitemap lives at `/a/sitemap.xml` on the customer domain (the edge
   only controls `/a/*`; `/sitemap.xml` belongs to the customer's site).
+
+## Deploying
+
+Two independent pipelines. They must stay independent — the app and the Worker
+fail in different ways, and a single deploy path would couple a routine app
+release to the request path of every connected customer domain.
+
+**The application** (`www.founders.click`) ships through Lovable:
+
+```
+push to github.com/derekbowen/kindred-ease-space (main)
+  → Lovable pulls on the push webhook
+  → deploy (Lovable "Publish", or deploy_project over MCP)
+```
+
+The pull is webhook-driven, not polled. Reconnecting the GitHub integration
+re-arms the webhook but does **not** backfill commits pushed while it was
+disconnected — push something after reconnecting, or the workspace stays behind
+main with no error anywhere. Verify a deploy actually carried your code by
+hitting a route the release added rather than trusting a green publish.
+
+**The Worker** ships through `.github/workflows/deploy-edge-worker.yml`,
+manual dispatch, confirm input `deploy`. It never deploys on merge: this code
+sits in front of customers' production domains, so shipping it is a decision.
+
+### Credentials
+
+Three Cloudflare credentials exist and none of them substitute for another:
+
+| name | lives in | scope | used by |
+| --- | --- | --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Lovable secrets | custom hostnames, SSL, routes | the app, for customer provisioning |
+| `CLOUDFLARE_WORKER_DEPLOY_TOKEN` | GitHub Actions secrets | Workers Scripts:Edit, Workers Routes:Edit | the deploy workflow only |
+| `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_ZONE_ID` | GitHub Actions secrets | not secret | the deploy workflow |
+
+GitHub Actions cannot read Lovable secrets. A token set in Lovable is invisible
+to CI, and vice versa — the workflow preflights for exactly this because the
+failure otherwise surfaces as an opaque wrangler auth error.
+
+The provisioning token deliberately has **no** Workers permission, so it cannot
+deploy. Do not broaden it, and do not let application code read the deployment
+token. Wrangler reads the credential from the environment variable
+`CLOUDFLARE_API_TOKEN`; the workflow maps the deployment token onto that name.
+That name collision is wrangler's convention, not shared identity.
+
+### Routes are not deployed
+
+`wrangler.jsonc` declares no routes. The control plane creates and deletes one
+route per connected hostname during provisioning, so a deploy from a stale
+checkout can never drop a live customer. The workflow counts routes before and
+after and fails if the number dropped.
