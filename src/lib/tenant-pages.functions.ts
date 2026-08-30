@@ -163,10 +163,15 @@ export const upsertTenantPage = createServerFn({ method: "POST" })
         };
       }
       if (!contract.ok) {
+        // Pair each problem with its fix. A UI that renders only `error` still
+        // tells the customer what to DO — being told a page "isn't ready"
+        // with no next step is its own way of blocking the golden path.
         return {
           ok: false as const,
           code: "contract_failed" as const,
-          error: `This page isn't ready to publish yet. ${contract.blocking.map((v) => v.message).join(" ")}`,
+          error: `This page isn't ready to publish yet. ${contract.blocking
+            .map((v) => `${v.message} ${v.fix}`)
+            .join(" ")} Your changes were saved as a draft.`,
           id: pageId,
           violations: contract.violations,
         };

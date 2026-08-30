@@ -79,6 +79,8 @@ function BulkPage() {
           publishedCount?: number;
           limitDenied?: number;
           limit?: number | null;
+          contractRejected?: number;
+          contractReasons?: string[];
         };
         const skippedNote =
           res.skipped && res.skipped > 0
@@ -88,11 +90,20 @@ function BulkPage() {
           res.limitDenied && res.limitDenied > 0
             ? ` ${res.limitDenied} page${res.limitDenied === 1 ? "" : "s"} stayed as drafts — you reached your ${res.limit?.toLocaleString()}-page plan limit. Upgrade in Billing to publish them.`
             : "";
+        // "Published 0 of 200" with no reason leaves the customer stuck. Say
+        // what was wrong and what to change.
+        const contractNote =
+          res.contractRejected && res.contractRejected > 0
+            ? ` ${res.contractRejected} page${res.contractRejected === 1 ? "" : "s"} stayed as drafts because they wouldn't rank as written: ${(res.contractReasons ?? []).join(" ")}`
+            : "";
         const verb = publish
           ? `Published ${res.publishedCount ?? res.count} of ${res.count}`
           : `Created ${res.count}`;
-        setMsg(`${verb} city hub pages.${skippedNote}${limitNote}`);
-        setTimeout(() => navigate({ to: "/app/pages" }), skippedNote || limitNote ? 3500 : 900);
+        setMsg(`${verb} city hub pages.${skippedNote}${limitNote}${contractNote}`);
+        setTimeout(
+          () => navigate({ to: "/app/pages" }),
+          skippedNote || limitNote || contractNote ? 6000 : 900,
+        );
       } else {
         setErr(r.error);
       }
