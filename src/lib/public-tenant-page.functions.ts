@@ -7,6 +7,72 @@ import { recordPage404 } from "@/lib/page-data.helpers.server";
 const sb = () => supabaseAdmin as any;
 
 /**
+ * Rebuild each listing's marketplace URL — and the URL inside its JSON-LD —
+ * from the stored Sharetribe id via the MarketplaceAdapter.
+ *
+ * Sync still writes marketplace_url for backward compatibility, but it is a
+ * FALLBACK, not the source of truth: a customer whose frontend route
+ * convention differs (or changes) gets correct links immediately, with no
+ * re-sync of their catalogue.
+ */
+async function resolveListingUrls(
+  workspaceId: string,
+  rows: Array<Record<string, any>>,
+): Promise<PublicListing[]> {
+  if (rows.length === 0) return [];
+  let cfg: import("@/lib/marketplace/adapter").MarketplaceRouteConfig | null = null;
+  try {
+    const { data: integration } = await sb()
+      .from("tenant_integrations")
+      .select("marketplace_url, route_config")
+      .eq("workspace_id", workspaceId)
+      .eq("provider", "sharetribe")
+      .maybeSingle();
+    if (integration?.marketplace_url) {
+      const { resolveRouteConfig } = await import("@/lib/marketplace/adapter");
+      cfg = resolveRouteConfig(integration.marketplace_url, integration.route_config);
+    }
+  } catch (e) {
+    // A config read failure must degrade to the persisted URL, never break the
+    // page — this runs on every public page view.
+    console.error("[public-page] route config unavailable", workspaceId, String(e));
+  }
+
+  const { buildListingUrl } = await import("@/lib/marketplace/adapter");
+  return rows.map((r) => {
+    const derived =
+      cfg && r.sharetribe_listing_id
+        ? buildListingUrl(cfg, {
+            sharetribe_listing_id: r.sharetribe_listing_id,
+            slug: r.slug,
+          })
+        : null;
+    const url = derived ?? r.marketplace_url;
+    // Keep JSON-LD consistent with the link the visitor actually follows;
+    // a stale `url` in structured data is a mismatch Google can penalise.
+    let structured = r.structured_data;
+    if (structured && typeof structured === "object" && derived) {
+      structured = { ...structured, url };
+      if ((structured as any).offers && typeof (structured as any).offers === "object") {
+        structured = { ...structured, offers: { ...(structured as any).offers, url } };
+      }
+    }
+    return {
+      id: r.id,
+      title: r.title,
+      description: r.description,
+      price_amount: r.price_amount,
+      price_currency: r.price_currency,
+      city: r.city,
+      state: r.state,
+      marketplace_url: url,
+      images: r.images,
+      structured_data: structured,
+    } as PublicListing;
+  });
+}
+
+/**
  * Resolve the public request host server-side. Route loaders run during SSR
  * where `window` is undefined, so the host MUST come from request headers
  * (Cloudflare sets `x-forwarded-host` to the original tenant domain), not from
@@ -170,7 +236,7 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
       let q = sb()
         .from("tenant_listings")
         .select(
-          "id, title, description, price_amount, price_currency, city, state, marketplace_url, images, structured_data",
+          "id, title, description, price_amount, price_currency, city, state, marketplace_url, images, structured_data, sharetribe_listing_id, slug",
         )
         .eq("workspace_id", workspaceId)
         .eq("state_published", true);
@@ -179,6 +245,15 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
       if (f.category) q = q.eq("category", String(f.category));
       q = q.order("synced_at", { ascending: false }).limit(Math.min(Number(f.limit ?? 24), 100));
       const { data: listings } = await q;
+
+      // Derive marketplace URLs at RENDER time through the adapter, so a
+      // route-template change takes effect immediately instead of requiring a
+      // full listing re-sync. The persisted marketplace_url is a legacy
+      // fallback only — never the authority.
+      const resolvedListings = await resolveListingUrls(
+        workspaceId,
+        (listings ?? []) as any[],
+      );
 
       return {
         page: {
@@ -191,7 +266,7 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
           variables: (page.variables ?? {}) as Record<string, any>,
           template_slug: (page.page_templates as any)?.slug ?? "city_hub",
           workspace_name: (page.workspaces as any)?.name ?? "",
-          listings: (listings ?? []) as PublicListing[],
+          listings: resolvedListings,
           related_pages: await fetchRelated(data.slug),
         },
         host,

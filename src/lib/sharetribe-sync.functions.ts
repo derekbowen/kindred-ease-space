@@ -155,3 +155,19 @@ export const runSharetribeSync = createServerFn({ method: "POST" })
       };
     }
   });
+
+/**
+ * Certify the marketplace connection: prove the customer's real listing and
+ * search routes actually resolve, not merely that credentials authenticate.
+ * Dynamic marketplace pages should not publish against an uncertified
+ * integration.
+ */
+export const certifyMarketplace = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ workspaceId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertWorkspaceOwner(data.workspaceId, context.userId);
+    const { certifyMarketplaceConnection } = await import("@/lib/marketplace/certification.server");
+    const result = await certifyMarketplaceConnection(data.workspaceId);
+    return { ok: result.status === "CERTIFIED", ...result };
+  });
