@@ -185,6 +185,59 @@ ALTER TABLE public.tenant_pages
   ADD COLUMN IF NOT EXISTS opportunity_id uuid REFERENCES public.seo_opportunities(id) ON DELETE SET NULL;
 
 -- ---------------------------------------------------------------------------
+-- Cross-tenant linkage guard.
+--
+-- A plain FK on tenant_page_id would let a service-role bug link workspace A's
+-- opportunity to workspace B's page. Composite foreign keys make that
+-- impossible at the database level: the referenced row must carry the SAME
+-- workspace_id. Tenant isolation must not depend on application code.
+-- ---------------------------------------------------------------------------
+ALTER TABLE public.tenant_pages
+  DROP CONSTRAINT IF EXISTS tenant_pages_id_workspace_uk;
+ALTER TABLE public.tenant_pages
+  ADD CONSTRAINT tenant_pages_id_workspace_uk UNIQUE (id, workspace_id);
+
+ALTER TABLE public.seo_opportunities
+  DROP CONSTRAINT IF EXISTS seo_opportunities_id_workspace_uk;
+ALTER TABLE public.seo_opportunities
+  ADD CONSTRAINT seo_opportunities_id_workspace_uk UNIQUE (id, workspace_id);
+
+ALTER TABLE public.seo_opportunities
+  DROP CONSTRAINT IF EXISTS seo_opportunities_page_same_workspace_fk;
+ALTER TABLE public.seo_opportunities
+  ADD CONSTRAINT seo_opportunities_page_same_workspace_fk
+  FOREIGN KEY (tenant_page_id, workspace_id)
+  REFERENCES public.tenant_pages(id, workspace_id) ON DELETE SET NULL;
+
+ALTER TABLE public.tenant_pages
+  DROP CONSTRAINT IF EXISTS tenant_pages_opportunity_same_workspace_fk;
+ALTER TABLE public.tenant_pages
+  ADD CONSTRAINT tenant_pages_opportunity_same_workspace_fk
+  FOREIGN KEY (opportunity_id, workspace_id)
+  REFERENCES public.seo_opportunities(id, workspace_id) ON DELETE SET NULL;
+
+-- Same guard for scan pages: a scan_id from another workspace cannot be paired
+-- with this workspace_id.
+ALTER TABLE public.site_scans
+  DROP CONSTRAINT IF EXISTS site_scans_id_workspace_uk;
+ALTER TABLE public.site_scans
+  ADD CONSTRAINT site_scans_id_workspace_uk UNIQUE (id, workspace_id);
+
+ALTER TABLE public.site_scan_pages
+  DROP CONSTRAINT IF EXISTS site_scan_pages_scan_same_workspace_fk;
+ALTER TABLE public.site_scan_pages
+  ADD CONSTRAINT site_scan_pages_scan_same_workspace_fk
+  FOREIGN KEY (scan_id, workspace_id)
+  REFERENCES public.site_scans(id, workspace_id) ON DELETE CASCADE;
+
+ALTER TABLE public.opportunity_evidence
+  DROP CONSTRAINT IF EXISTS opportunity_evidence_opp_same_workspace_fk;
+ALTER TABLE public.opportunity_evidence
+  ADD CONSTRAINT opportunity_evidence_opp_same_workspace_fk
+  FOREIGN KEY (opportunity_id, workspace_id)
+  REFERENCES public.seo_opportunities(id, workspace_id) ON DELETE CASCADE;
+
+-- ---------------------------------------------------------------------------
 -- RLS — members read their workspace's intelligence; all writes are
 -- service-role (the engine runs server-side), matching the publishing model.
 -- ---------------------------------------------------------------------------
@@ -214,6 +267,33 @@ DROP POLICY IF EXISTS "members read opportunity_evidence" ON public.opportunity_
 CREATE POLICY "members read opportunity_evidence" ON public.opportunity_evidence
   FOR SELECT TO authenticated USING (public.is_workspace_member(workspace_id, auth.uid()));
 
+-- Writes are service-role only. RLS with no write policy already denies these,
+-- but the privilege is withdrawn explicitly too — defence in depth, and it
+-- makes the intent unambiguous to anyone reading the schema later.
+REVOKE INSERT, UPDATE, DELETE ON public.site_scans FROM authenticated, anon;
+REVOKE INSERT, UPDATE, DELETE ON public.site_scan_pages FROM authenticated, anon;
+REVOKE INSERT, UPDATE, DELETE ON public.inventory_aggregates FROM authenticated, anon;
+REVOKE INSERT, UPDATE, DELETE ON public.seo_opportunities FROM authenticated, anon;
+REVOKE INSERT, UPDATE, DELETE ON public.opportunity_evidence FROM authenticated, anon;
+
+-- ---------------------------------------------------------------------------
+-- Workspace-scoped rollout. The environment flag is a master kill switch; a
+-- workspace must ALSO be explicitly enrolled before it sees the engine, so an
+-- unvalidated recommendation engine can never reach every customer at once.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.feature_enrollments (
+  workspace_id uuid NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
+  feature text NOT NULL,
+  enrolled_at timestamptz NOT NULL DEFAULT now(),
+  note text,
+  PRIMARY KEY (workspace_id, feature)
+);
+ALTER TABLE public.feature_enrollments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "members read enrollments" ON public.feature_enrollments;
+CREATE POLICY "members read enrollments" ON public.feature_enrollments
+  FOR SELECT TO authenticated USING (public.is_workspace_member(workspace_id, auth.uid()));
+REVOKE INSERT, UPDATE, DELETE ON public.feature_enrollments FROM authenticated, anon;
+
 -- ---------------------------------------------------------------------------
 -- Verification — every row should read true.
 -- ---------------------------------------------------------------------------
@@ -228,4 +308,20 @@ UNION ALL SELECT 'seo_opportunities', to_regclass('public.seo_opportunities') IS
 UNION ALL SELECT 'opportunity_evidence', to_regclass('public.opportunity_evidence') IS NOT NULL
 UNION ALL SELECT 'tenant_pages.opportunity_id',
        EXISTS (SELECT 1 FROM information_schema.columns
-                WHERE table_name = 'tenant_pages' AND column_name = 'opportunity_id');
+                WHERE table_name = 'tenant_pages' AND column_name = 'opportunity_id')
+UNION ALL SELECT 'feature_enrollments', to_regclass('public.feature_enrollments') IS NOT NULL
+UNION ALL SELECT 'cross-workspace FK guards (4)',
+       (SELECT count(*) = 4 FROM pg_constraint WHERE conname IN (
+          'seo_opportunities_page_same_workspace_fk',
+          'tenant_pages_opportunity_same_workspace_fk',
+          'site_scan_pages_scan_same_workspace_fk',
+          'opportunity_evidence_opp_same_workspace_fk'))
+UNION ALL SELECT 'opportunities not writable by authenticated',
+       NOT has_table_privilege('authenticated', 'public.seo_opportunities', 'UPDATE')
+UNION ALL SELECT 'opportunities readable by authenticated',
+       has_table_privilege('authenticated', 'public.seo_opportunities', 'SELECT')
+UNION ALL SELECT 'RLS enabled on all 6 new tables',
+       (SELECT count(*) = 6 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'public' AND c.relrowsecurity
+           AND c.relname IN ('site_scans','site_scan_pages','inventory_aggregates',
+                             'seo_opportunities','opportunity_evidence','feature_enrollments'));

@@ -1,8 +1,9 @@
 /**
  * Opportunity Engine server functions — the customer-facing surface.
  *
- * Feature-flagged: OPPORTUNITY_ENGINE_ENABLED must be truthy in the app
- * environment, so this ships dark and cannot affect existing customers.
+ * Controlled rollout: availability requires BOTH the global kill switch
+ * (OPPORTUNITY_ENGINE_ENABLED) AND explicit per-workspace enrollment, so an
+ * unvalidated recommendation engine can never reach every customer at once.
  */
 
 import { createServerFn } from "@tanstack/react-start";
@@ -13,20 +14,51 @@ import { assertWorkspaceMember, assertWorkspaceOwner, workspaceIdSchema } from "
 
 const sb = () => supabaseAdmin as any;
 
+export const OPPORTUNITY_FEATURE = "opportunity_engine_v1";
+
+/** Master kill switch. Necessary but NOT sufficient. */
 export function opportunityEngineEnabled(): boolean {
   const v = process.env.OPPORTUNITY_ENGINE_ENABLED ?? "";
   return v === "1" || v.toLowerCase() === "true";
 }
 
-function assertEnabled() {
+/** A workspace sees the engine only when the global switch is on AND that
+ *  workspace is explicitly enrolled. Enrollment rows are service-role-only, so
+ *  a customer cannot enrol themselves into an unvalidated engine. */
+async function workspaceEnrolled(workspaceId: string): Promise<boolean> {
+  const { data } = await sb()
+    .from("feature_enrollments")
+    .select("workspace_id")
+    .eq("workspace_id", workspaceId)
+    .eq("feature", OPPORTUNITY_FEATURE)
+    .maybeSingle();
+  return Boolean(data);
+}
+
+async function assertAvailable(workspaceId: string) {
   if (!opportunityEngineEnabled()) {
     throw new Error("Opportunity Engine is not enabled for this environment");
   }
+  if (!(await workspaceEnrolled(workspaceId))) {
+    throw new Error("Opportunity Engine is not enabled for this workspace");
+  }
 }
 
-export const getOpportunityFlag = createServerFn({ method: "GET" }).handler(async () => ({
-  enabled: opportunityEngineEnabled(),
-}));
+export const getOpportunityFlag = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ workspaceId: workspaceIdSchema.optional() }).parse(d ?? {}),
+  )
+  .handler(async ({ data, context }) => {
+    const global = opportunityEngineEnabled();
+    if (!global || !data.workspaceId) return { enabled: false, global };
+    try {
+      await assertWorkspaceMember(data.workspaceId, context.userId);
+    } catch {
+      return { enabled: false, global };
+    }
+    return { enabled: await workspaceEnrolled(data.workspaceId), global };
+  });
 
 export const setAnalysisDomain = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -34,7 +66,7 @@ export const setAnalysisDomain = createServerFn({ method: "POST" })
     z.object({ workspaceId: workspaceIdSchema, domain: z.string().min(3).max(253) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    assertEnabled();
+    await assertAvailable(data.workspaceId);
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     const host = data.domain
       .trim()
@@ -62,7 +94,7 @@ export const runOpportunityAnalysis = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    assertEnabled();
+    await assertAvailable(data.workspaceId);
     await assertWorkspaceOwner(data.workspaceId, context.userId);
 
     const { data: ws } = await sb()
@@ -154,7 +186,7 @@ export const listOpportunities = createServerFn({ method: "GET" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    assertEnabled();
+    await assertAvailable(data.workspaceId);
     await assertWorkspaceMember(data.workspaceId, context.userId);
     let q = sb()
       .from("seo_opportunities")
@@ -183,7 +215,7 @@ export const getOpportunity = createServerFn({ method: "GET" })
     z.object({ workspaceId: workspaceIdSchema, id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    assertEnabled();
+    await assertAvailable(data.workspaceId);
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const [{ data: opp }, { data: evidence }] = await Promise.all([
       sb()
@@ -209,7 +241,7 @@ export const approveOpportunity = createServerFn({ method: "POST" })
     z.object({ workspaceId: workspaceIdSchema, id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    assertEnabled();
+    await assertAvailable(data.workspaceId);
     await assertWorkspaceOwner(data.workspaceId, context.userId);
 
     const { data: opp } = await sb()
@@ -288,7 +320,7 @@ export const skipOpportunity = createServerFn({ method: "POST" })
     z.object({ workspaceId: workspaceIdSchema, id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    assertEnabled();
+    await assertAvailable(data.workspaceId);
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     await sb()
       .from("seo_opportunities")

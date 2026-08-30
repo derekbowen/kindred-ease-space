@@ -58,8 +58,15 @@ function OpportunitiesPage() {
   const skipFn = useServerFn(skipOpportunity);
 
   useEffect(() => {
-    flagFn().then((f) => setEnabled(f.enabled));
-    getMe().then((me) => setWorkspaceId(me.memberships[0]?.workspace_id ?? null));
+    getMe().then((me) => {
+      const ws = me.memberships[0]?.workspace_id ?? null;
+      setWorkspaceId(ws);
+      // Availability is global-flag AND workspace-enrollment, both decided
+      // server-side. The client is never the authority.
+      flagFn({ data: ws ? { workspaceId: ws } : {} })
+        .then((f) => setEnabled(f.enabled))
+        .catch(() => setEnabled(false));
+    });
   }, [flagFn]);
 
   const reload = useCallback(
