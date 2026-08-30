@@ -1,17 +1,29 @@
 {
   // Founders Edge — reverse proxy for connected customer domains.
-  // Deploy with: npx wrangler deploy (from this directory, in the
-  // founders.click Cloudflare account).
+  //
+  // Deploy via .github/workflows/deploy-edge-worker.yml (manual dispatch), or
+  // `npx wrangler deploy` from this directory. Either way the credential is
+  // CLOUDFLARE_WORKER_DEPLOY_TOKEN — NOT CLOUDFLARE_API_TOKEN, which is the
+  // customer-provisioning token and deliberately has no Workers permission.
   //
   // One-time account setup (see README.md):
   //  1. A Cloudflare zone for founders.click with Cloudflare for SaaS enabled.
-  //  2. proxy.founders.click as the custom-hostname fallback origin, routed to
-  //     this Worker (route: proxy.founders.click/* plus a wildcard route for
-  //     custom hostnames).
+  //  2. proxy.founders.click as the custom-hostname fallback origin.
   //  3. Custom hostnames created per connected domain via API — the app stores
   //     the id in workspace_domains.cloudflare_hostname_id.
+  //
+  // ROUTES ARE NOT DECLARED HERE, ON PURPOSE. Each connected customer hostname
+  // gets its own route, created and deleted by the control plane as part of
+  // provisioning (src/lib/domain-provisioning.server.ts). Listing routes in
+  // this file would make every deploy an authority on customer routing and let
+  // a stale checkout silently drop live customers. Deploys ship CODE; the
+  // control plane owns ROUTING.
   "$schema": "https://unpkg.com/wrangler/config-schema.json",
   "name": "founders-edge",
   "compatibility_date": "2025-09-24",
-  "main": "worker.js"
+  "main": "worker.js",
+  // No workers.dev endpoint: this Worker's only legitimate entry points are the
+  // customer routes above. Left at wrangler's default (true) a deploy would
+  // publish a second, permanent public URL onto the same code path.
+  "workers_dev": false
 }

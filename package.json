@@ -11,7 +11,9 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "audit:urls": "bun scripts/audit-canonical-urls.ts"
+    "audit:urls": "bun scripts/audit-canonical-urls.ts",
+    "test": "bun tests/opportunity-intent.test.ts && bun tests/opportunity-gates.test.ts && bun tests/site-scan-robots.test.ts && bun tests/marketplace-adapter.test.ts",
+    "test:security": "bun tests/security-entitlement-writes.test.ts"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",

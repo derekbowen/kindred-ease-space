@@ -1,0 +1,73 @@
+name: Deploy Edge Worker
+
+# Deploys edge/founders-edge/worker.js — the reverse proxy that fronts
+# connected customer domains.
+#
+# Required repo secrets:
+#   CLOUDFLARE_WORKER_DEPLOY_TOKEN — Account: Workers Scripts:Edit
+#                                    Zone:    Workers Routes:Edit (founders.click)
+#   CLOUDFLARE_ACCOUNT_ID          — Cloudflare account id (not a secret, but
+#                                    kept with the token for convenience)
+#
+# This token is DELIBERATELY separate from CLOUDFLARE_API_TOKEN, which handles
+# customer hostname/SSL/route provisioning and has no Workers Scripts
+# permission. Do not merge the two credentials.
+#
+# Manual by default: this Worker sits in the request path of customers'
+# production domains, so deploys are a decision, not a side effect of merging.
+# Flip the `push` trigger on once the fail-open path has real production
+# history.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy" to confirm you intend to update the live edge Worker'
+        required: true
+        default: ""
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "edge/founders-edge/**"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy founders-edge
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard against accidental runs
+        if: ${{ github.event.inputs.confirm != 'deploy' }}
+        run: |
+          echo "::error::Type 'deploy' in the confirm input to proceed."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # Syntax-check before touching production. A Worker that fails to parse
+      # would be rejected by Cloudflare anyway, but failing here is cheaper and
+      # keeps a broken deploy out of the account's version history.
+      - name: Parse-check worker.js
+        run: npx --yes esbuild@0.25.0 --bundle --format=esm --platform=neutral edge/founders-edge/worker.js --outfile=/dev/null
+
+      - name: Deploy
+        working-directory: edge/founders-edge
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKER_DEPLOY_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4 deploy --name founders-edge
+
+      - name: Post-deploy reachability check
+        run: |
+          # The Worker must not break the platform host. PLATFORM_HOSTS in
+          # worker.js passes founders.click straight through, so a 200 here is
+          # the first signal the deploy did not damage anything.
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 https://www.founders.click/)
+          echo "www.founders.click -> HTTP $code"
+          test "$code" = "200"
