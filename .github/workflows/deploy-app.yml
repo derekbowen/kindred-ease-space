@@ -1,0 +1,115 @@
+name: Deploy App
+
+# Deploys the founders.click application (TanStack Start → Cloudflare Worker)
+# straight from this repository, with no third-party relay in the path.
+#
+# WHY THIS EXISTS
+# The app was already running on Cloudflare — Lovable was only the thing that
+# ran `wrangler deploy` on our behalf. When its GitHub sync stalled, commits
+# stopped reaching production with no error anywhere, and there was no other
+# way to ship. This removes that single point of failure: the deploy is now
+# driven by the same repository that holds the code.
+#
+# Nitro already emits a complete Worker config during `npm run build`
+# (.output/server/wrangler.json, referenced by .wrangler/deploy/config.json),
+# so wrangler picks it up from the repo root with no extra configuration.
+#
+# SECRETS ARE NOT SET HERE.
+# Worker secrets persist across deploys, so they are set ONCE with
+# `wrangler secret put` (see docs/DEPLOYMENT.md). Keeping them out of CI means
+# a workflow log can never contain one, and rotating a key does not require
+# editing this file.
+#
+# Required GitHub Actions secrets:
+#   CLOUDFLARE_WORKER_DEPLOY_TOKEN — Account: Workers Scripts:Edit
+#   CLOUDFLARE_ACCOUNT_ID
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never let two deploys race; cancel a superseded one rather than interleaving.
+concurrency:
+  group: deploy-app
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build and deploy founders-click
+    runs-on: ubuntu-latest
+    steps:
+      # GitHub Actions cannot read Lovable Cloud Secrets. Fail with that
+      # sentence rather than an opaque wrangler auth error.
+      - name: Preflight — deployment credential present
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_WORKER_DEPLOY_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=0
+          [ -z "$TOKEN" ] && { echo "::error::CLOUDFLARE_WORKER_DEPLOY_TOKEN is not set as a GitHub Actions secret (setting it in Lovable does not make it visible here)."; missing=1; } || echo "deploy token: present (${#TOKEN} chars)"
+          [ -z "$ACCOUNT" ] && { echo "::error::CLOUDFLARE_ACCOUNT_ID is not set."; missing=1; } || echo "account id: present"
+          exit $missing
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # The offline suites. A red build must not reach production, and these
+      # include the boundary-contract and published-page-contract assertions.
+      - name: Test
+        run: npm test
+
+      - run: npm run build
+
+      # Nitro's generated config must exist, or wrangler would deploy something
+      # unintended (or nothing) while still reporting success.
+      - name: Verify build produced a Worker
+        run: |
+          test -f .output/server/wrangler.json
+          test -f .output/server/index.mjs
+          echo "worker name: $(node -p "require('./.output/server/wrangler.json').name")"
+
+      - name: Deploy
+        env:
+          # Wrangler reads the credential from CLOUDFLARE_API_TOKEN. That name
+          # is wrangler's convention — the value is the Worker DEPLOYMENT
+          # token, deliberately NOT the application's Cloudflare provisioning
+          # secret of the same name, which has no Workers permission.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKER_DEPLOY_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4 deploy
+
+      # Until a route points at this Worker it serves nothing on the real
+      # domain, so a first deploy is safe. Once cut over, this is the check
+      # that a release did not break the site.
+      - name: Post-deploy smoke
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 https://www.founders.click/)
+          echo "www.founders.click -> HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::Homepage returned $code after deploy."
+            exit 1
+          fi
+          # Confirms the release actually carried this commit's code, rather
+          # than a stale build being reported as a successful deploy — the
+          # exact failure mode that made the Lovable relay untrustworthy.
+          health=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 -X POST \
+            -H 'content-type: application/json' \
+            -d '{"hostname":"deploy-probe.invalid","state":"HEALTHY"}' \
+            https://www.founders.click/api/public/edge-health)
+          echo "/api/public/edge-health -> HTTP $health"
+          if [ "$health" = "404" ]; then
+            echo "::warning::edge-health is 404 — this build may not be the one being served. Check the Worker route."
+          fi
