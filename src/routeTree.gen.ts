@@ -34,6 +34,7 @@ import { Route as SWsSlugRouteImport } from './routes/s.$ws.$slug'
 import { Route as HelpCategoryArticleRouteImport } from './routes/help.$category.$article'
 import { Route as ApiPublicSitemapByHostRouteImport } from './routes/api/public/sitemap-by-host'
 import { Route as ApiPublicPageLookupRouteImport } from './routes/api/public/page-lookup'
+import { Route as ApiPublicEdgeHealthRouteImport } from './routes/api/public/edge-health'
 import { Route as ApiPublicDomainTokenRouteImport } from './routes/api/public/domain-token'
 import { Route as ApiPublicDomainConfigRouteImport } from './routes/api/public/domain-config'
 import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated/app.settings'
@@ -225,6 +226,11 @@ const ApiPublicSitemapByHostRoute = ApiPublicSitemapByHostRouteImport.update({
 const ApiPublicPageLookupRoute = ApiPublicPageLookupRouteImport.update({
   id: '/api/public/page-lookup',
   path: '/api/public/page-lookup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicEdgeHealthRoute = ApiPublicEdgeHealthRouteImport.update({
+  id: '/api/public/edge-health',
+  path: '/api/public/edge-health',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicDomainTokenRoute = ApiPublicDomainTokenRouteImport.update({
@@ -661,6 +667,7 @@ export interface FileRoutesByFullPath {
   '/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
   '/api/public/domain-config': typeof ApiPublicDomainConfigRoute
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
+  '/api/public/edge-health': typeof ApiPublicEdgeHealthRoute
   '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/help/$category/$article': typeof HelpCategoryArticleRoute
@@ -753,6 +760,7 @@ export interface FileRoutesByTo {
   '/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
   '/api/public/domain-config': typeof ApiPublicDomainConfigRoute
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
+  '/api/public/edge-health': typeof ApiPublicEdgeHealthRoute
   '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/help/$category/$article': typeof HelpCategoryArticleRoute
@@ -849,6 +857,7 @@ export interface FileRoutesById {
   '/_authenticated/app/settings': typeof AuthenticatedAppSettingsRouteWithChildren
   '/api/public/domain-config': typeof ApiPublicDomainConfigRoute
   '/api/public/domain-token': typeof ApiPublicDomainTokenRoute
+  '/api/public/edge-health': typeof ApiPublicEdgeHealthRoute
   '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/help/$category/$article': typeof HelpCategoryArticleRoute
@@ -945,6 +954,7 @@ export interface FileRouteTypes {
     | '/app/settings'
     | '/api/public/domain-config'
     | '/api/public/domain-token'
+    | '/api/public/edge-health'
     | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
     | '/help/$category/$article'
@@ -1037,6 +1047,7 @@ export interface FileRouteTypes {
     | '/app/settings'
     | '/api/public/domain-config'
     | '/api/public/domain-token'
+    | '/api/public/edge-health'
     | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
     | '/help/$category/$article'
@@ -1132,6 +1143,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/settings'
     | '/api/public/domain-config'
     | '/api/public/domain-token'
+    | '/api/public/edge-health'
     | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
     | '/help/$category/$article'
@@ -1213,6 +1225,7 @@ export interface RootRouteChildren {
   PSlugRoute: typeof PSlugRoute
   ApiPublicDomainConfigRoute: typeof ApiPublicDomainConfigRoute
   ApiPublicDomainTokenRoute: typeof ApiPublicDomainTokenRoute
+  ApiPublicEdgeHealthRoute: typeof ApiPublicEdgeHealthRoute
   ApiPublicPageLookupRoute: typeof ApiPublicPageLookupRoute
   ApiPublicSitemapByHostRoute: typeof ApiPublicSitemapByHostRoute
   SWsSlugRoute: typeof SWsSlugRoute
@@ -1395,6 +1408,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/page-lookup'
       fullPath: '/api/public/page-lookup'
       preLoaderRoute: typeof ApiPublicPageLookupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/edge-health': {
+      id: '/api/public/edge-health'
+      path: '/api/public/edge-health'
+      fullPath: '/api/public/edge-health'
+      preLoaderRoute: typeof ApiPublicEdgeHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/domain-token': {
@@ -2157,6 +2177,7 @@ const rootRouteChildren: RootRouteChildren = {
   PSlugRoute: PSlugRoute,
   ApiPublicDomainConfigRoute: ApiPublicDomainConfigRoute,
   ApiPublicDomainTokenRoute: ApiPublicDomainTokenRoute,
+  ApiPublicEdgeHealthRoute: ApiPublicEdgeHealthRoute,
   ApiPublicPageLookupRoute: ApiPublicPageLookupRoute,
   ApiPublicSitemapByHostRoute: ApiPublicSitemapByHostRoute,
   SWsSlugRoute: SWsSlugRoute,

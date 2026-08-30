@@ -38,10 +38,32 @@ const STALE_MAX_S = 86_400; // 24h
 const STALE_HARD_LIMIT_S = 3_600; // 1h — beyond this we stop serving OUR pages
 const STALE_ALERT_AFTER_S = 300; // 5m — report to the control plane
 
+// Throttle telemetry per hostname. Without this, every request to a host with
+// stale config reports — so the busier the customer, the harder we hammer a
+// control plane that is ALREADY failing. Telemetry must never amplify the
+// outage it is reporting.
+//
+// Per-isolate and therefore best-effort: Cloudflare runs many isolates and
+// recycles them, so the real ceiling is (isolates x 1/min), not 1/min. That is
+// a reduction of several orders of magnitude, not a guarantee — the receiving
+// endpoint throttles again and is the authoritative limit.
+const REPORT_INTERVAL_MS = 60_000;
+const lastReportAt = new Map();
+
 /** Fire-and-forget staleness telemetry so a control-plane outage is visible to
  *  us before a customer has to report it. Never blocks the response. */
 function reportStale(hostname, ageS, ctx) {
   if (ageS < STALE_ALERT_AFTER_S) return;
+  const now = Date.now();
+  const last = lastReportAt.get(hostname);
+  if (last && now - last < REPORT_INTERVAL_MS) return;
+  lastReportAt.set(hostname, now);
+  // Bound the map: an isolate seeing many hostnames must not grow forever.
+  if (lastReportAt.size > 512) {
+    for (const [k, t] of lastReportAt) {
+      if (now - t > REPORT_INTERVAL_MS) lastReportAt.delete(k);
+    }
+  }
   try {
     ctx.waitUntil(
       fetch(`${FOUNDERS_ORIGIN}/api/public/edge-health`, {
