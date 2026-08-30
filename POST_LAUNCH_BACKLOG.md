@@ -105,6 +105,30 @@ small in absolute terms.
 
 *Plan:* a pg_cron job deleting rows older than 30 days.
 
+### `ssl_status` is written once and never read back
+Provisioning sets `status='ssl_pending'` but nothing ever polls Cloudflare's
+`/custom_hostnames/{id}` to populate `workspace_domains.ssl_status`. The column
+is effectively dead data.
+
+*Safe to defer:* not a functional gap. The UI polls `activateWorkspaceDomain`,
+whose live HTTPS checks cannot pass until SSL has issued — so certificate
+issuance gates activation correctly, just implicitly.
+
+*Plan:* populate `ssl_status` from the custom-hostname read so the UI can say
+"waiting for certificate" rather than a generic pending state.
+
+### Cloudflare API calls have no retry
+`domain-provisioning.server.ts` calls the Cloudflare API once with a 15s
+timeout. A transient 5xx during provisioning surfaces as a failed connection
+attempt.
+
+*Safe to defer:* the failure is atomic and rolls back, the domain lands in a
+clear error state, and the UI's polling loop retries the whole operation.
+Nothing is left half-built.
+
+*Plan:* bounded retry with backoff on idempotent reads and on 5xx/429
+specifically — never blind retry on a create, which could duplicate a hostname.
+
 ### Worker deploy has no staging rehearsal
 `deploy-edge-worker.yml` deploys straight to the account that fronts customer
 domains. Its preflights and post-deploy checks reduce the risk but there is no
