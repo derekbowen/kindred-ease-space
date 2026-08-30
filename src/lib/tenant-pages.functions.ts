@@ -150,6 +150,7 @@ export const upsertTenantPage = createServerFn({ method: "POST" })
           h1: data.h1 ?? null,
           bodyMarkdown: data.bodyMarkdown ?? null,
           listingFilter: data.listingFilter,
+          variables: data.variables,
         });
       } catch (e) {
         // Cannot prove the page is publishable => do not claim it is.
@@ -322,6 +323,7 @@ export const bulkCreatePages = createServerFn({ method: "POST" })
             // "thousands of pages with missing source data" case we must stop.
             bodyMarkdown: null,
             listingFilter: src.listing_filter as Record<string, any>,
+            variables: src.variables as Record<string, any>,
           };
         })
         .filter((x): x is NonNullable<typeof x> => x !== null);

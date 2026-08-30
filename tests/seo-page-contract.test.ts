@@ -122,6 +122,49 @@ console.log("\n=== Duplicates across the workspace ===");
     validatePageContract(sneaky, ctx).violations.some((v) => v.code === "duplicate_title"));
 }
 
+console.log("\n=== Same search intent, different wording (the pSEO rule) ===");
+{
+  const { intentForPage } = await import("../src/lib/seo/page-contract.server");
+  const live = intentForPage("Pool Rentals in Riverside, CA",
+    { city: "Riverside", state: "CA", category_plural: "pool rentals" }, {})!;
+  const ctxIntent: ValidationContext = {
+    ...emptyCtx(),
+    siblingIntents: [{ slug: "pool-rentals-riverside", title: "Pool Rentals in Riverside, CA", intent: live }],
+  };
+
+  // The canonical case: a reworded duplicate that exact-match checks miss.
+  const reworded = intentForPage("Rent a Private Pool in Riverside, CA",
+    { city: "Riverside", state: "CA", category_plural: "private pool rentals" }, {})!;
+  const r = validatePageContract(
+    good({ slug: "rent-a-private-pool-riverside", title: "Rent a Private Pool in Riverside, CA" }),
+    { ...ctxIntent, intent: reworded });
+  t("a REWORDED page for the same search is blocked",
+    r.violations.some((v) => v.code === "duplicate_intent"), codes(good()).join(","));
+  t("the message names the page it collides with",
+    r.violations.find((v) => v.code === "duplicate_intent")?.message.includes("Pool Rentals in Riverside") ?? false);
+
+  // A different city is a legitimately different page.
+  const otherCity = intentForPage("Pool Rentals in Pasadena, CA",
+    { city: "Pasadena", state: "CA", category_plural: "pool rentals" }, {})!;
+  t("the same category in a DIFFERENT city is allowed",
+    validatePageContract(good({ slug: "pool-rentals-pasadena" }), { ...ctxIntent, intent: otherCity }).ok);
+
+  // A different category in the same city is legitimate too.
+  const otherCat = intentForPage("Event Venues in Riverside, CA",
+    { city: "Riverside", state: "CA", category_plural: "event venues" }, {})!;
+  t("a DIFFERENT category in the same city is allowed",
+    validatePageContract(good({ slug: "event-venues-riverside" }), { ...ctxIntent, intent: otherCat }).ok,
+    JSON.stringify(validatePageContract(good({ slug: "event-venues-riverside" }), { ...ctxIntent, intent: otherCat }).violations.map(v=>v.code)));
+
+  // Re-publishing the same page must not collide with itself.
+  t("editing and re-publishing a page does not collide with itself",
+    validatePageContract(good({ slug: "pool-rentals-riverside" }), { ...ctxIntent, intent: live }).ok);
+
+  // No geography => no intent => check skipped rather than guessed.
+  t("a page with no location derives no intent (check skipped, not guessed)",
+    intentForPage("About Us", {}, {}) === null);
+}
+
 console.log("\n=== Orphans ===");
 {
   const firstPage = good({ internalLinkCount: 0 });

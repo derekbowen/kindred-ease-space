@@ -10,11 +10,56 @@ import {
   validatePageContract,
   normalizeForCompare,
   type PageForValidation,
+  type SiblingIntent,
   type ValidationContext,
   type Violation,
 } from "./page-contract";
+import {
+  buildIntentKey,
+  canonicalTokens,
+  categoryFromPhrase,
+  normalizeGeo,
+  type ComparableIntent,
+} from "@/lib/opportunity/intent";
 
 const sb = () => supabaseAdmin as any;
+
+/**
+ * Reduce a page to the search intent it targets: normalized category plus
+ * geography. Returns null when the page carries no location, because a
+ * geography-free page cannot be compared this way and a guess would block
+ * legitimate pages.
+ */
+export function intentForPage(
+  title: string | null,
+  variables: Record<string, any> | null | undefined,
+  listingFilter: Record<string, any> | null | undefined,
+): ComparableIntent | null {
+  const vars = variables ?? {};
+  const filter = listingFilter ?? {};
+  const city = vars.city ?? filter.city ?? null;
+  const state = vars.state ?? filter.state ?? null;
+  const geoKey = normalizeGeo(city, state);
+  if (!geoKey) return null;
+
+  // Prefer the explicit category; fall back to reading it out of the title,
+  // with the city and state stripped so "Austin" never becomes the category.
+  const categoryKey = vars.category_plural
+    ? categoryFromPhrase(String(vars.category_plural), city, state)
+    : categoryFromPhrase(title ?? "", city, state);
+  if (!categoryKey) return null;
+
+  return {
+    categoryKey,
+    geoKey,
+    titleTokens: canonicalTokens(title ?? ""),
+  };
+}
+
+/** Stable key for logs/debugging. */
+export function intentKeyForPage(intent: ComparableIntent): string {
+  return buildIntentKey(intent.categoryKey, intent.geoKey);
+}
 
 /** Mirrors the related-pages query in public-tenant-page.functions.ts. */
 const RELATED_PAGES_RENDERED = 8;
@@ -59,17 +104,25 @@ export async function loadSiblingContext(
 ): Promise<ValidationContext & { publishedCount: number }> {
   let q = sb()
     .from("tenant_pages")
-    .select("id, title, meta_description, h1")
+    .select("id, slug, title, meta_description, h1, variables, listing_filter")
     .eq("workspace_id", workspaceId)
     .eq("status", "published");
   if (excludePageId) q = q.neq("id", excludePageId);
   const { data, error } = await q;
   if (error) throw new Error(`could not read existing pages: ${error.message}`);
 
-  const rows = (data ?? []) as Array<{ title: string | null; meta_description: string | null; h1: string | null }>;
+  const rows = (data ?? []) as Array<{
+    slug: string;
+    title: string | null;
+    meta_description: string | null;
+    h1: string | null;
+    variables: Record<string, any> | null;
+    listing_filter: Record<string, any> | null;
+  }>;
   const siblingTitles = new Set<string>();
   const siblingDescriptions = new Set<string>();
   const siblingH1s = new Set<string>();
+  const siblingIntents: SiblingIntent[] = [];
   for (const r of rows) {
     const t = normalizeForCompare(r.title);
     if (t) siblingTitles.add(t);
@@ -77,8 +130,16 @@ export async function loadSiblingContext(
     if (d) siblingDescriptions.add(d);
     const h = normalizeForCompare(r.h1);
     if (h) siblingH1s.add(h);
+    const intent = intentForPage(r.title, r.variables, r.listing_filter);
+    if (intent) siblingIntents.push({ slug: r.slug, title: r.title ?? r.slug, intent });
   }
-  return { siblingTitles, siblingDescriptions, siblingH1s, publishedCount: rows.length };
+  return {
+    siblingTitles,
+    siblingDescriptions,
+    siblingH1s,
+    siblingIntents,
+    publishedCount: rows.length,
+  };
 }
 
 export type ContractCheck = {
@@ -98,6 +159,7 @@ export async function checkPageBeforePublish(
     h1: string | null;
     bodyMarkdown: string | null;
     listingFilter: Record<string, any> | null | undefined;
+    variables?: Record<string, any> | null;
   },
   preloaded?: ValidationContext & { publishedCount: number },
 ): Promise<ContractCheck> {
@@ -117,7 +179,8 @@ export async function checkPageBeforePublish(
     internalLinkCount: Math.min(ctx.publishedCount, RELATED_PAGES_RENDERED),
   };
 
-  const { ok, violations } = validatePageContract(candidate, ctx);
+  const intent = intentForPage(page.title, page.variables, page.listingFilter);
+  const { ok, violations } = validatePageContract(candidate, { ...ctx, intent: intent ?? undefined });
   return { ok, violations, blocking: violations.filter((v) => v.severity === "BLOCKING") };
 }
 
@@ -139,6 +202,7 @@ export async function checkBatchBeforePublish(
     h1: string | null;
     bodyMarkdown: string | null;
     listingFilter: Record<string, any> | null | undefined;
+    variables?: Record<string, any> | null;
   }>,
   concurrency = 16,
 ): Promise<Map<string, ContractCheck>> {
@@ -150,6 +214,9 @@ export async function checkBatchBeforePublish(
   const seenTitles = new Set(base.siblingTitles);
   const seenDescs = new Set(base.siblingDescriptions);
   const seenH1s = new Set(base.siblingH1s);
+  // Accumulates so a batch containing two rewordings of one search collides
+  // with itself, not merely with what is already live.
+  const seenIntents: SiblingIntent[] = [...(base.siblingIntents ?? [])];
 
   const counts = new Map<string, number>();
   for (let i = 0; i < pages.length; i += concurrency) {
@@ -171,10 +238,13 @@ export async function checkBatchBeforePublish(
   // Sequential so intra-batch duplicate detection is deterministic and
   // order-stable — the FIRST occurrence wins, every later copy is flagged.
   for (const p of pages) {
+    const intent = intentForPage(p.title, p.variables, p.listingFilter);
     const ctx: ValidationContext = {
       siblingTitles: seenTitles,
       siblingDescriptions: seenDescs,
       siblingH1s: seenH1s,
+      siblingIntents: seenIntents,
+      intent: intent ?? undefined,
     };
     const candidate: PageForValidation = {
       slug: p.slug,
@@ -195,6 +265,7 @@ export async function checkBatchBeforePublish(
       if (d) seenDescs.add(d);
       const h = normalizeForCompare(p.h1);
       if (h) seenH1s.add(h);
+      if (intent) seenIntents.push({ slug: p.slug, title: p.title ?? p.slug, intent });
     }
   }
 

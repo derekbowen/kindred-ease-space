@@ -21,6 +21,8 @@
  * BLOCKING violations stop a publish. WARNINGs are surfaced and do not.
  */
 
+import { detectCollision, type ComparableIntent } from "@/lib/opportunity/intent";
+
 export type Severity = "BLOCKING" | "WARNING";
 
 export type Violation = {
@@ -43,6 +45,13 @@ export type PageForValidation = {
   internalLinkCount: number;
 };
 
+/** A published sibling reduced to the search intent it targets. */
+export type SiblingIntent = {
+  slug: string;
+  title: string;
+  intent: ComparableIntent;
+};
+
 export type ValidationContext = {
   /** Normalized titles of the workspace's OTHER published pages. */
   siblingTitles: Set<string>;
@@ -50,6 +59,12 @@ export type ValidationContext = {
   siblingDescriptions: Set<string>;
   /** Normalized H1s of the workspace's OTHER published pages. */
   siblingH1s: Set<string>;
+  /** Search intents already covered by published pages. Optional: callers that
+   *  cannot resolve intents (no city/category on the page) simply skip the
+   *  collision check rather than guessing. */
+  siblingIntents?: SiblingIntent[];
+  /** The intent this page targets, when it can be derived. */
+  intent?: ComparableIntent;
 };
 
 // Mirrors the thin-page rule in src/routes/a.$slug.tsx. Kept as an exported
@@ -218,6 +233,32 @@ export function validatePageContract(
       message: "Another published page uses the same H1 heading.",
       fix: "Vary the heading so the two pages read as different pages.",
     });
+  }
+
+  // ---- Same search intent as an existing page ----
+  //
+  // Exact title/description matching only catches copies. This catches
+  // REWORDINGS: "Pool Rentals in Riverside" and "Rent a Private Pool in
+  // Riverside" are different strings targeting one query, and shipping both
+  // splits their own ranking signal and reads as scaled-content abuse.
+  //
+  // Deterministic — normalized category plus geography, no AI judgement. Skipped
+  // entirely when the page's intent cannot be derived, because guessing here
+  // would block legitimate pages.
+  if (ctx.intent && ctx.siblingIntents?.length) {
+    for (const sib of ctx.siblingIntents) {
+      if (sib.slug === page.slug) continue;
+      const collision = detectCollision(ctx.intent, sib.intent);
+      if (collision.collides) {
+        v.push({
+          code: "duplicate_intent",
+          severity: "BLOCKING",
+          message: `This targets the same search as your published page "${sib.title}" (${collision.reasons.join("; ")}).`,
+          fix: `Either edit "${sib.title}" instead of publishing a second page for the same search, or narrow this page to a different city, category or audience.`,
+        });
+        break;
+      }
+    }
   }
 
   // ---- Orphan ----
