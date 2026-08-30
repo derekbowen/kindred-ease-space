@@ -24,12 +24,69 @@ const sb = () => supabaseAdmin as any;
 
 export const SCAN_LIMITS = {
   maxPages: 200,
-  maxSitemapUrls: 5000,
+  // URL strings are cheap; FETCHES are what we ration. Collecting the full
+  // sitemap and then sampling by template family gives a representative site
+  // model. A low collection cap truncates in sitemap order instead, which
+  // silently biases the model toward whichever sitemap happened to come first.
+  maxSitemapUrls: 50_000,
+  maxChildSitemaps: 50,
   perTemplateSample: 20,
   fetchTimeoutMs: 10_000,
   wallClockMs: 90_000,
   concurrency: 6,
 };
+
+/** Paths disallowed for a generic crawler, from robots.txt. We are a
+ *  well-behaved fetcher of public pages: respecting robots is both correct and
+ *  keeps admin/checkout routes out of the site model. */
+export type RobotsRules = { disallow: string[]; sitemaps: string[] };
+
+export function parseRobots(txt: string): RobotsRules {
+  const lines = txt.split(/\r?\n/).map((l) => l.trim());
+  const disallow: string[] = [];
+  const sitemaps: string[] = [];
+  let appliesToUs = false;
+  for (const line of lines) {
+    if (!line || line.startsWith("#")) continue;
+    const [rawKey, ...rest] = line.split(":");
+    const key = rawKey.trim().toLowerCase();
+    const value = rest.join(":").trim();
+    if (key === "sitemap") {
+      sitemaps.push(value);
+      continue;
+    }
+    if (key === "user-agent") {
+      // Only the wildcard group applies to us; named-bot groups do not.
+      appliesToUs = value === "*";
+      continue;
+    }
+    if (key === "disallow" && appliesToUs && value) disallow.push(value);
+  }
+  return { disallow, sitemaps };
+}
+
+/** Supports the trailing-* and prefix forms that appear in real robots files. */
+export function isDisallowed(pathname: string, rules: RobotsRules): boolean {
+  for (const rule of rules.disallow) {
+    if (rule === "/") return true;
+    if (rule.includes("*")) {
+      const re = new RegExp(
+        "^" + rule.split("*").map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*"),
+      );
+      if (re.test(pathname)) return true;
+    } else if (pathname.startsWith(rule)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** A sitemap child may carry a query string (…/sitemap-x.xml?page=2). Testing
+ *  the raw URL against /\.xml$/ misclassifies those as content pages. */
+export function looksLikeSitemapUrl(u: string): boolean {
+  const withoutQuery = u.split("?")[0].split("#")[0];
+  return /\.xml(\.gz)?$/i.test(withoutQuery);
+}
 
 async function timedFetch(url: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
@@ -110,42 +167,74 @@ function pathTemplate(pathname: string): string {
   );
 }
 
-async function fetchSitemapUrls(origin: string): Promise<{ urls: string[]; found: boolean }> {
-  const candidates = [`${origin}/sitemap.xml`, `${origin}/sitemap_index.xml`];
+export async function fetchRobots(origin: string): Promise<RobotsRules> {
+  try {
+    const res = await timedFetch(`${origin}/robots.txt`);
+    if (!res.ok) return { disallow: [], sitemaps: [] };
+    return parseRobots(await res.text());
+  } catch {
+    return { disallow: [], sitemaps: [] };
+  }
+}
+
+async function fetchSitemapUrls(
+  origin: string,
+  robots: RobotsRules,
+): Promise<{ urls: string[]; found: boolean; childCount: number }> {
+  // Prefer sitemaps robots.txt actually declares; fall back to conventions.
+  const candidates = [
+    ...robots.sitemaps,
+    `${origin}/sitemap.xml`,
+    `${origin}/sitemap_index.xml`,
+  ];
   const collected = new Set<string>();
+  const visited = new Set<string>();
   let found = false;
+  let childCount = 0;
+
+  const readSitemap = async (url: string, depth: number): Promise<void> => {
+    if (visited.has(url) || visited.size > SCAN_LIMITS.maxChildSitemaps) return;
+    visited.add(url);
+    if (collected.size >= SCAN_LIMITS.maxSitemapUrls) return;
+    let xml: string;
+    try {
+      const res = await timedFetch(url);
+      if (!res.ok) return;
+      found = true;
+      xml = await res.text();
+    } catch {
+      return;
+    }
+    const locs = [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1]);
+    // A child sitemap may carry a query string (…/sitemap-x.xml?page=2) — those
+    // are sitemaps, not content pages, and must not be fetched as HTML.
+    const nested = locs.filter(looksLikeSitemapUrl);
+    const direct = locs.filter((u) => !looksLikeSitemapUrl(u));
+    for (const u of direct) {
+      if (collected.size >= SCAN_LIMITS.maxSitemapUrls) break;
+      collected.add(u);
+    }
+    if (depth >= 2) return; // index -> child -> grandchild is deep enough
+    for (const child of nested) {
+      childCount++;
+      await readSitemap(child, depth + 1);
+    }
+  };
 
   for (const sm of candidates) {
     if (collected.size >= SCAN_LIMITS.maxSitemapUrls) break;
-    try {
-      const res = await timedFetch(sm);
-      if (!res.ok) continue;
-      found = true;
-      const xml = await res.text();
-      const locs = [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1]);
-      // A sitemap index points at more sitemaps — follow a bounded number.
-      const nested = locs.filter((u) => /\.xml(\.gz)?$/i.test(u)).slice(0, 10);
-      const direct = locs.filter((u) => !/\.xml(\.gz)?$/i.test(u));
-      direct.forEach((u) => collected.add(u));
-      for (const child of nested) {
-        if (collected.size >= SCAN_LIMITS.maxSitemapUrls) break;
-        try {
-          const r2 = await timedFetch(child);
-          if (!r2.ok) continue;
-          const x2 = await r2.text();
-          [...x2.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)]
-            .map((m) => m[1])
-            .filter((u) => !/\.xml(\.gz)?$/i.test(u))
-            .forEach((u) => collected.add(u));
-        } catch {
-          /* skip child sitemap */
-        }
-      }
-    } catch {
-      /* try next candidate */
-    }
+    await readSitemap(sm, 0);
   }
-  return { urls: [...collected], found };
+
+  // Respect robots.txt: disallowed paths stay out of the site model entirely.
+  const allowed = [...collected].filter((u) => {
+    try {
+      return !isDisallowed(new URL(u).pathname, robots);
+    } catch {
+      return false;
+    }
+  });
+  return { urls: allowed, found, childCount };
 }
 
 /** Sample across template families so a 1M-page site still yields a
@@ -246,7 +335,8 @@ export async function runSiteScan(
       canonicalTokens(r.city).forEach((t) => cityHints.add(t));
     }
 
-    const { urls: sitemapUrls, found: sitemapFound } = await fetchSitemapUrls(origin);
+    const robots = await fetchRobots(origin);
+    const { urls: sitemapUrls, found: sitemapFound } = await fetchSitemapUrls(origin, robots);
 
     let discovered = sitemapUrls;
     if (discovered.length === 0) {
@@ -261,7 +351,10 @@ export async function runSiteScan(
         for (const h of links) {
           try {
             const u = new URL(h, origin);
-            if (u.hostname.replace(/^www\./, "") === host.replace(/^www\./, "")) {
+            if (
+              u.hostname.replace(/^www\./, "") === host.replace(/^www\./, "") &&
+              !isDisallowed(u.pathname, robots)
+            ) {
               u.hash = "";
               set.add(u.toString());
             }
