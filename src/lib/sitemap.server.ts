@@ -9,15 +9,28 @@ export function escapeXml(s: string): string {
   );
 }
 
-export function normalizeHost(raw: string): string {
+/**
+ * The host exactly as the visitor (and Googlebot) requested it, minus scheme,
+ * path and port. `www.` is PRESERVED.
+ *
+ * This is the host sitemap <loc> values must be built from. It is deliberately
+ * separate from normalizeHost(), which strips `www.` so apex and www resolve to
+ * the same workspace row — a lookup convenience that must never leak into
+ * emitted URLs.
+ */
+export function requestHost(raw: string): string {
   return (raw || "")
-    .split(",")[0]! // x-forwarded-host can be a comma-separated list; take the first
+    .split(",")[0]!
     .toLowerCase()
     .trim()
     .replace(/^https?:\/\//, "")
     .replace(/\/.*$/, "")
-    .replace(/:\d+$/, "")
-    .replace(/^www\./, "");
+    .replace(/:\d+$/, "");
+}
+
+/** Lookup key only. Strips `www.` so a workspace matches on apex or www. */
+export function normalizeHost(raw: string): string {
+  return requestHost(raw).replace(/^www\./, "");
 }
 
 // Platform hosts always serve the marketing sitemap, never a tenant's.
@@ -61,7 +74,14 @@ export async function workspaceIdForHost(hostname: string): Promise<string | nul
 export async function tenantSitemapXml(hostname: string): Promise<string | null> {
   const workspaceId = await workspaceIdForHost(hostname);
   if (!workspaceId) return null;
-  const h = normalizeHost(hostname);
+  // Emit URLs on the host that was actually requested, NOT the www-stripped
+  // lookup key. a.$slug.tsx canonicalizes to the request host, so using the
+  // stripped key here made the sitemap advertise https://customer.com/a/x
+  // while the page itself declared https://www.customer.com/a/x canonical —
+  // Google sees a sitemap of URLs that canonicalize somewhere else. Worse, a
+  // customer who connected only `www` has no apex route at all, so every
+  // sitemap URL would fail to resolve.
+  const h = requestHost(hostname);
 
   const [{ data: tenantPages }, { data: legacyPages }] = await Promise.all([
     sb()
