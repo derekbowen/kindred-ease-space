@@ -134,6 +134,44 @@ export const upsertTenantPage = createServerFn({ method: "POST" })
     }
 
     if (wantsPublish && !alreadyPublished) {
+      // CONTRACT GATE, before the entitlement gate and in that order on purpose.
+      // A page that would ship with `noindex`, or that duplicates one already
+      // live, must not consume a paid capacity slot — the customer would be
+      // charged for a page incapable of ranking. Checking capacity first would
+      // burn the slot before we ever noticed.
+      const { checkPageBeforePublish } = await import("@/lib/seo/page-contract.server");
+      let contract;
+      try {
+        contract = await checkPageBeforePublish(data.workspaceId, {
+          id: pageId,
+          slug: row.slug,
+          title: data.title,
+          metaDescription: data.metaDescription ?? null,
+          h1: data.h1 ?? null,
+          bodyMarkdown: data.bodyMarkdown ?? null,
+          listingFilter: data.listingFilter,
+        });
+      } catch (e) {
+        // Cannot prove the page is publishable => do not claim it is.
+        console.error("[publish] contract check unavailable", data.workspaceId, pageId, String(e));
+        return {
+          ok: false as const,
+          code: "contract_unavailable" as const,
+          error:
+            "We couldn't verify this page is ready to publish, so it stayed a draft. Please try again.",
+          id: pageId,
+        };
+      }
+      if (!contract.ok) {
+        return {
+          ok: false as const,
+          code: "contract_failed" as const,
+          error: `This page isn't ready to publish yet. ${contract.blocking.map((v) => v.message).join(" ")}`,
+          id: pageId,
+          violations: contract.violations,
+        };
+      }
+
       const { publishPagesAtomically, pageLimitMessage } = await import(
         "@/lib/entitlements.functions"
       );
@@ -243,22 +281,84 @@ export const bulkCreatePages = createServerFn({ method: "POST" })
     }
     const { data: out, error } = await sb()
       .from("tenant_pages")
+      // slug comes back so returned rows can be matched to their source by KEY
+      // rather than by array position — upsert does not guarantee it returns
+      // rows in input order, and pairing by index would validate one page's
+      // content against another page's id.
       .upsert(inserts, { onConflict: "workspace_id,slug", ignoreDuplicates: false })
-      .select("id");
+      .select("id, slug");
     if (error) return { ok: false as const, error: error.message };
 
     let publishedCount = 0;
     let limitDenied = 0;
     let limit: number | null = null;
+    let contractRejected = 0;
+    let contractReasons: string[] = [];
     if (data.status === "published" && out && out.length > 0) {
-      const { publishPagesAtomically } = await import("@/lib/entitlements.functions");
-      const gate = await publishPagesAtomically(
-        data.workspaceId,
-        (out as Array<{ id: string }>).map((r) => r.id),
-      );
-      publishedCount = gate.published;
-      limitDenied = gate.denied;
-      limit = gate.limit;
+      // Bulk is where thin and duplicate pages get mass-produced, so the
+      // contract gate matters MORE here than on a single publish. Pages are
+      // checked against each other as well as against what is already live:
+      // importing 200 near-identical city pages would otherwise pass, since
+      // none of them is published at the moment of the check.
+      const returned = out as Array<{ id: string; slug: string }>;
+      const bySlug = new Map(inserts.map((r) => [r.slug, r] as const));
+      const candidates = returned
+        .map((r) => {
+          const src = bySlug.get(r.slug);
+          if (!src) return null;
+          return {
+            id: r.id,
+            slug: src.slug,
+            title: src.title as string | null,
+            metaDescription: src.meta_description as string | null,
+            h1: src.h1 as string | null,
+            // Bulk rows carry no body copy, so a page with no matching
+            // inventory is thin by construction — which is exactly the
+            // "thousands of pages with missing source data" case we must stop.
+            bodyMarkdown: null,
+            listingFilter: src.listing_filter as Record<string, any>,
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+      const ids = candidates.map((c) => c.id);
+      const { checkBatchBeforePublish } = await import("@/lib/seo/page-contract.server");
+      let verdicts;
+      try {
+        verdicts = await checkBatchBeforePublish(data.workspaceId, candidates);
+      } catch (e) {
+        console.error("[bulk publish] contract check unavailable", data.workspaceId, String(e));
+        return {
+          ok: true as const,
+          count: out.length,
+          skipped,
+          publishedCount: 0,
+          limitDenied: 0,
+          limit: null as number | null,
+          contractRejected: out.length,
+          contractReasons: [
+            "We couldn't verify these pages were ready to publish, so they were saved as drafts.",
+          ],
+        };
+      }
+
+      const eligible = ids.filter((id) => verdicts.get(id)?.ok);
+      contractRejected = ids.length - eligible.length;
+      // Distinct reasons, so 200 rejections do not produce 200 identical lines.
+      contractReasons = [
+        ...new Set(
+          ids
+            .filter((id) => !verdicts.get(id)?.ok)
+            .flatMap((id) => verdicts.get(id)!.blocking.map((v) => v.message)),
+        ),
+      ].slice(0, 5);
+
+      if (eligible.length > 0) {
+        const { publishPagesAtomically } = await import("@/lib/entitlements.functions");
+        const gate = await publishPagesAtomically(data.workspaceId, eligible);
+        publishedCount = gate.published;
+        limitDenied = gate.denied;
+        limit = gate.limit;
+      }
     }
 
     return {
@@ -268,5 +368,7 @@ export const bulkCreatePages = createServerFn({ method: "POST" })
       publishedCount,
       limitDenied,
       limit,
+      contractRejected,
+      contractReasons,
     };
   });

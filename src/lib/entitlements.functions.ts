@@ -31,8 +31,38 @@ export type PageEntitlement = {
  * the fast internal read of that state (§11 of the billing spec) — the client
  * can never supply or inflate its own limit.
  */
+/** Count rows without fetching them.
+ *
+ *  This used to `select("status")` for the whole workspace and tally in JS.
+ *  That is wrong at exactly the scale we sell: PostgREST caps returned rows,
+ *  so a workspace above the cap reported FEWER published pages than it has,
+ *  and `remaining` was correspondingly overstated. Plans go to 5,000 pages
+ *  (10,000 grandfathered), so this was reachable on a normal Scale plan and
+ *  above — the accounting broke precisely for the biggest customers.
+ *
+ *  The atomic gate in publish_tenant_pages() counts in SQL under an advisory
+ *  lock, so nobody could actually over-publish. The damage was to what we
+ *  TOLD the customer: a Scale customer at 1,200 published pages could be shown
+ *  headroom they did not have, and only discover the truth when publish denied
+ *  them. head:true returns the count and no rows.
+ */
+async function countByStatus(workspaceId: string, status: string): Promise<number> {
+  const { count, error } = await sb()
+    .from("tenant_pages")
+    .select("id", { count: "exact", head: true })
+    .eq("workspace_id", workspaceId)
+    .eq("status", status);
+  if (error) {
+    // Never silently report 0 published pages — that reads as "all your
+    // capacity is free" and is the most dangerous possible wrong answer.
+    console.error("[entitlements] count failed", workspaceId, status, error.message);
+    throw new Error(`entitlement count failed: ${error.message}`);
+  }
+  return count ?? 0;
+}
+
 export async function readEntitlement(workspaceId: string): Promise<PageEntitlement> {
-  const [wsRes, { data: counts }, { data: bal }] = await Promise.all([
+  const [wsRes, published, drafts, suspended, { data: bal }] = await Promise.all([
     sb()
       .from("workspaces")
       .select(
@@ -40,7 +70,9 @@ export async function readEntitlement(workspaceId: string): Promise<PageEntitlem
       )
       .eq("id", workspaceId)
       .maybeSingle(),
-    sb().from("tenant_pages").select("status").eq("workspace_id", workspaceId),
+    countByStatus(workspaceId, "published"),
+    countByStatus(workspaceId, "draft"),
+    countByStatus(workspaceId, "billing_suspended"),
     sb().from("credit_balances").select("balance").eq("workspace_id", workspaceId).maybeSingle(),
   ]);
   const ws = wsRes.data;
@@ -61,15 +93,6 @@ export async function readEntitlement(workspaceId: string): Promise<PageEntitlem
   const addon = ws.page_limit_addon ?? 0;
   const bonus = bonusActive ? (ws.page_limit_bonus ?? 0) : 0;
   const limit = base + addon + bonus;
-
-  let published = 0;
-  let drafts = 0;
-  let suspended = 0;
-  for (const r of (counts ?? []) as Array<{ status: string }>) {
-    if (r.status === "published") published++;
-    else if (r.status === "billing_suspended") suspended++;
-    else if (r.status === "draft") drafts++;
-  }
 
   const status: string = ws.subscription_status ?? "trialing";
   const isTrial = status === "trialing";
