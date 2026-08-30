@@ -73,6 +73,27 @@ const accepted = () =>
 export const Route = createFileRoute("/api/public/edge-health")({
   server: {
     handlers: {
+      // BUILD IDENTITY. CI deploys, then asks this endpoint which build is
+      // actually serving and compares the SHA against the commit it just
+      // shipped. Asking whether a ROUTE exists proves nothing — a route added
+      // three releases ago still exists — and a green deploy log proved
+      // nothing either, which is how a stale tree served production for
+      // eleven commits without anything contradicting it.
+      //
+      // Deliberately public and uncached: it names a public commit of a
+      // private repo, which is not a secret, and it must never be answered
+      // from cache or it would report a build that is no longer running.
+      GET: async () => {
+        const { buildInfo } = await import("@/lib/build-info");
+        return new Response(JSON.stringify(buildInfo()), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store, max-age=0",
+          },
+        });
+      },
+
       POST: async ({ request }) => {
         if (!rateLimit(clientIp(request))) return accepted();
 

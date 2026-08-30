@@ -1,37 +1,39 @@
 name: Deploy App
 
-# Deploys the founders.click application (TanStack Start → Cloudflare Worker)
-# straight from this repository, with no third-party relay in the path.
+# CANONICAL PRODUCTION DEPLOYMENT PATH for founders.click.
 #
-# WHY THIS EXISTS
-# The app was already running on Cloudflare — Lovable was only the thing that
+# This workflow is authoritative. Publishing from Lovable is NOT — it must not
+# be used to ship founders.click, and a Lovable publish does not constitute a
+# release. See docs/DEPLOYMENT.md.
+#
+# WHY IT EXISTS
+# The app already ran on Cloudflare Workers; Lovable was only the thing that
 # ran `wrangler deploy` on our behalf. When its GitHub sync stalled, commits
-# stopped reaching production with no error anywhere, and there was no other
-# way to ship. This removes that single point of failure: the deploy is now
-# driven by the same repository that holds the code.
+# stopped reaching production, nothing surfaced an error, and there was no
+# second way to ship. A relay that fails silently with no bypass is worse than
+# no relay.
 #
-# Nitro already emits a complete Worker config during `npm run build`
-# (.output/server/wrangler.json, referenced by .wrangler/deploy/config.json),
-# so wrangler picks it up from the repo root with no extra configuration.
-#
-# SECRETS ARE NOT SET HERE.
-# Worker secrets persist across deploys, so they are set ONCE with
-# `wrangler secret put` (see docs/DEPLOYMENT.md). Keeping them out of CI means
-# a workflow log can never contain one, and rotating a key does not require
-# editing this file.
-#
-# Required GitHub Actions secrets:
-#   CLOUDFLARE_WORKER_DEPLOY_TOKEN — Account: Workers Scripts:Edit
-#   CLOUDFLARE_ACCOUNT_ID
+# TOKEN SCOPE (minimum required, founders.click only):
+#   CLOUDFLARE_WORKER_DEPLOY_TOKEN
+#     Account → Workers Scripts:Edit      (publish the script)
+#     Zone    → Workers Routes:Edit       (founders.click zone only)
+#   It cannot read Supabase, cannot read customer data, and cannot create
+#   custom hostnames. It is a DIFFERENT credential from the application's
+#   CLOUDFLARE_API_TOKEN provisioning secret, which has no Workers permission.
+#   Neither may be substituted for the other.
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-# Never let two deploys race; cancel a superseded one rather than interleaving.
+# SERIALIZE, never interleave. Two pushes in quick succession must not race:
+# out-of-order completion would leave the older build serving while the newer
+# commit is reported as deployed. cancel-in-progress stays false so a deploy
+# already talking to Cloudflare is allowed to finish rather than being killed
+# mid-upload; the newer run waits and then supersedes it.
 concurrency:
-  group: deploy-app
+  group: deploy-app-production
   cancel-in-progress: false
 
 permissions:
@@ -41,75 +43,210 @@ jobs:
   deploy:
     name: Build and deploy founders-click
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
-      # GitHub Actions cannot read Lovable Cloud Secrets. Fail with that
-      # sentence rather than an opaque wrangler auth error.
-      - name: Preflight — deployment credential present
+      # GitHub Actions cannot read Lovable Cloud Secrets. Say that explicitly
+      # rather than letting wrangler fail later with an opaque auth error that
+      # reads like a permissions problem on the token rather than a missing one.
+      - name: Preflight — CI credentials present
         env:
           TOKEN: ${{ secrets.CLOUDFLARE_WORKER_DEPLOY_TOKEN }}
           ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           missing=0
-          [ -z "$TOKEN" ] && { echo "::error::CLOUDFLARE_WORKER_DEPLOY_TOKEN is not set as a GitHub Actions secret (setting it in Lovable does not make it visible here)."; missing=1; } || echo "deploy token: present (${#TOKEN} chars)"
-          [ -z "$ACCOUNT" ] && { echo "::error::CLOUDFLARE_ACCOUNT_ID is not set."; missing=1; } || echo "account id: present"
+          if [ -z "$TOKEN" ]; then
+            echo "::error::CLOUDFLARE_WORKER_DEPLOY_TOKEN is not set as a GitHub Actions secret."
+            echo "::error::Setting it in Lovable does NOT make it visible to GitHub Actions."
+            missing=1
+          else
+            echo "deploy token: present (${#TOKEN} chars)"
+          fi
+          if [ -z "$ACCOUNT" ]; then
+            echo "::error::CLOUDFLARE_ACCOUNT_ID is not set as a GitHub Actions secret."
+            missing=1
+          else
+            echo "account id: present"
+          fi
           exit $missing
 
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      # This is a bun project — bun.lock is the committed lockfile and there is
+      # no package-lock.json, so `npm ci` would fail outright.
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: "20"
-          cache: npm
+          bun-version: latest
 
-      - run: npm ci
+      - name: Install (frozen lockfile)
+        run: bun install --frozen-lockfile
 
       - name: Typecheck
-        run: npx tsc --noEmit
+        run: bunx tsc --noEmit
 
-      # The offline suites. A red build must not reach production, and these
-      # include the boundary-contract and published-page-contract assertions.
+      # The offline suites: boundary contract, published-page contract,
+      # authorization surface, sitemap host handling, opportunity gates.
+      # A red build must never reach production.
       - name: Test
-        run: npm test
+        run: bun run test
 
-      - run: npm run build
+      - name: Build
+        env:
+          # Compiled into the bundle by vite's `define`, so the running Worker
+          # can name the commit it was built from and CI can verify it.
+          GITHUB_SHA: ${{ github.sha }}
+        run: bun run build
 
-      # Nitro's generated config must exist, or wrangler would deploy something
-      # unintended (or nothing) while still reporting success.
+      # Nitro emits the Worker config during build. If it is absent, wrangler
+      # would deploy something unintended while still reporting success.
       - name: Verify build produced a Worker
         run: |
-          test -f .output/server/wrangler.json
-          test -f .output/server/index.mjs
-          echo "worker name: $(node -p "require('./.output/server/wrangler.json').name")"
+          test -f .output/server/wrangler.json || { echo "::error::missing .output/server/wrangler.json"; exit 1; }
+          test -f .output/server/index.mjs     || { echo "::error::missing .output/server/index.mjs"; exit 1; }
+          test -f .wrangler/deploy/config.json || { echo "::error::missing .wrangler/deploy/config.json"; exit 1; }
+          name=$(node -p "require('./.output/server/wrangler.json').name")
+          echo "worker: $name"
+          [ "$name" = "founders-click" ] || { echo "::error::unexpected worker name '$name'"; exit 1; }
+          # The generated config must not be carrying stray bindings. Routes in
+          # particular are owned by the control plane, never by a deploy.
+          node -e '
+            const c = require("./.output/server/wrangler.json");
+            const stray = ["routes","route","vars","kv_namespaces","d1_databases","r2_buckets","durable_objects","queues"]
+              .filter(k => c[k] !== undefined);
+            if (stray.length) { console.error("::error::generated wrangler.json declares "+stray.join(", ")); process.exit(1); }
+            console.log("bindings: assets only (no routes, no vars) — correct");
+          '
 
-      - name: Deploy
+      # Secrets persist across deploys, so CI never sets them — it only proves
+      # they exist. Shipping a build whose dependencies are unconfigured would
+      # 500 the first time a customer touched the missing one.
+      - name: Preflight — required Worker secrets are configured
+        working-directory: .output/server
         env:
-          # Wrangler reads the credential from CLOUDFLARE_API_TOKEN. That name
-          # is wrangler's convention — the value is the Worker DEPLOYMENT
-          # token, deliberately NOT the application's Cloudflare provisioning
-          # secret of the same name, which has no Workers permission.
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKER_DEPLOY_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx --yes wrangler@4 deploy
-
-      # Until a route points at this Worker it serves nothing on the real
-      # domain, so a first deploy is safe. Once cut over, this is the check
-      # that a release did not break the site.
-      - name: Post-deploy smoke
         run: |
-          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 https://www.founders.click/)
-          echo "www.founders.click -> HTTP $code"
-          if [ "$code" != "200" ]; then
-            echo "::error::Homepage returned $code after deploy."
+          set -o pipefail
+          if ! bunx --bun wrangler@4 secret list --format json > /tmp/secrets.json 2>/tmp/secret-err; then
+            # A brand-new Worker has no secrets yet and no script to list them
+            # against; that is expected on a first deploy, not a failure.
+            echo "::warning::Could not list Worker secrets (first deploy?): $(tail -1 /tmp/secret-err)"
+            exit 0
+          fi
+          required=$(grep -vE '^\s*#|^\s*$' "$GITHUB_WORKSPACE/scripts/required-secrets.txt" | awk '{print $1}')
+          missing=""
+          for k in $required; do
+            node -e "process.exit(JSON.parse(require('fs').readFileSync('/tmp/secrets.json','utf8')).some(s=>s.name==='$k')?0:1)" \
+              || missing="$missing $k"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Worker is missing required secrets:$missing"
+            echo "::error::Set each with: wrangler secret put <NAME>  (see docs/DEPLOYMENT.md)"
             exit 1
           fi
-          # Confirms the release actually carried this commit's code, rather
-          # than a stale build being reported as a successful deploy — the
-          # exact failure mode that made the Lovable relay untrustworthy.
-          health=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 -X POST \
-            -H 'content-type: application/json' \
-            -d '{"hostname":"deploy-probe.invalid","state":"HEALTHY"}' \
-            https://www.founders.click/api/public/edge-health)
-          echo "/api/public/edge-health -> HTTP $health"
-          if [ "$health" = "404" ]; then
-            echo "::warning::edge-health is 404 — this build may not be the one being served. Check the Worker route."
+          echo "all required secrets present"
+
+      - name: Deploy
+        id: deploy
+        env:
+          # Wrangler reads its credential from CLOUDFLARE_API_TOKEN. That name
+          # is wrangler's convention — the VALUE here is the deployment token,
+          # deliberately not the application's provisioning secret of the same
+          # name, which has no Workers permission and cannot deploy.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKER_DEPLOY_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -o pipefail
+          bunx --bun wrangler@4 deploy 2>&1 | tee /tmp/deploy.log
+          ver=$(grep -oE 'Current Version ID: [0-9a-f-]+' /tmp/deploy.log | tail -1 | awk '{print $4}')
+          echo "version_id=${ver:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "deployed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      # ROUTE ISOLATION. The app Worker must serve only founders.click. The
+      # edge Worker owns customer hostnames, one route each, created by the
+      # control plane during domain provisioning.
+      #
+      # The failure this prevents: a `*/*` route on the app Worker would
+      # swallow every request entering the zone — including connected customer
+      # domains — and serve founders.click's app in place of their marketplace.
+      # Neither workflow declares routes, so this can only happen by hand, which
+      # is exactly why it is asserted on every deploy rather than assumed.
+      - name: Verify app Worker cannot intercept customer traffic
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_WORKER_DEPLOY_TOKEN }}
+          ZONE: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: |
+          if [ -z "$ZONE" ]; then
+            echo "::warning::CLOUDFLARE_ZONE_ID not set — cannot verify route isolation."
+            exit 0
           fi
+          curl -s --max-time 20 "https://api.cloudflare.com/client/v4/zones/$ZONE/workers/routes" \
+            -H "Authorization: Bearer $TOKEN" > /tmp/routes.json
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync("/tmp/routes.json","utf8"));
+            if (!r.success) { console.log("::warning::could not read routes"); process.exit(0); }
+            const app  = (r.result||[]).filter(x => x.script === "founders-click");
+            const edge = (r.result||[]).filter(x => x.script === "founders-edge");
+            console.log("founders-click routes: " + (app.map(x=>x.pattern).join(", ") || "(none yet)"));
+            console.log("founders-edge routes:  " + edge.length + " customer hostname(s)");
+            // The app may only match founders.click hostnames.
+            const bad = app.filter(x => !/^([a-z0-9-]+\.)*founders\.click\//.test(x.pattern));
+            if (bad.length) {
+              console.error("::error::app Worker has routes outside founders.click: " + bad.map(x=>x.pattern).join(", "));
+              console.error("::error::these would intercept customer reverse-proxy traffic.");
+              process.exit(1);
+            }
+            // Nothing may claim the whole zone.
+            const wild = (r.result||[]).filter(x => x.pattern.startsWith("*/") || x.pattern === "*/*");
+            if (wild.length) {
+              console.error("::error::wildcard zone route present: " + wild.map(x=>`${x.pattern} -> ${x.script}`).join(", "));
+              process.exit(1);
+            }
+            // A hostname served by BOTH workers is ambiguous and unsafe.
+            const overlap = app.map(x=>x.pattern.split("/")[0])
+              .filter(h => edge.map(x=>x.pattern.split("/")[0]).includes(h));
+            if (overlap.length) {
+              console.error("::error::hostname claimed by both workers: " + overlap.join(", "));
+              process.exit(1);
+            }
+            console.log("route isolation: OK");
+          '
+
+      # Asks production which build it is and compares to the commit we just
+      # shipped. Checking that a ROUTE exists proves nothing — a route added
+      # three releases ago still exists — and a green deploy log proved nothing
+      # either, which is how a stale tree served production for eleven commits.
+      - name: Post-deploy smoke
+        id: smoke
+        run: |
+          set -o pipefail
+          bun scripts/smoke-production.ts https://www.founders.click --sha "${{ github.sha }}" 2>&1 | tee /tmp/smoke.log
+        continue-on-error: true
+
+      - name: Deployment record
+        if: always()
+        run: |
+          {
+            echo "## Deployment"
+            echo ""
+            echo "| field | value |"
+            echo "| --- | --- |"
+            echo "| commit | \`${{ github.sha }}\` |"
+            echo "| ref | \`${{ github.ref_name }}\` |"
+            echo "| deployed at | ${{ steps.deploy.outputs.deployed_at }} |"
+            echo "| worker | founders-click |"
+            echo "| version id | \`${{ steps.deploy.outputs.version_id }}\` |"
+            echo "| CI run | [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |"
+            echo "| smoke result | ${{ steps.smoke.outcome }} |"
+            echo ""
+            echo '```'
+            tail -40 /tmp/smoke.log 2>/dev/null || echo "(no smoke output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Fail the run AFTER recording the deployment, so a red smoke still
+      # leaves a full record of what was shipped and what broke.
+      - name: Fail on smoke failure
+        if: steps.smoke.outcome != 'success'
+        run: |
+          echo "::error::Post-deploy smoke failed. See the job summary, and docs/DEPLOYMENT.md for rollback."
+          exit 1
