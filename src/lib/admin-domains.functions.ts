@@ -361,30 +361,53 @@ export const verifyWorkspaceDomain = createServerFn({ method: "POST" })
     const { isEdgeProvisioningConfigured, provisionDomainAtEdge } = await import(
       "@/lib/domain-provisioning.server"
     );
-    if (isEdgeProvisioningConfigured()) {
-      try {
-        const cf = await provisionDomainAtEdge(row.hostname);
-        await sb()
-          .from("workspace_domains")
-          .update({
-            cloudflare_hostname_id: cf.hostnameId,
-            cloudflare_route_id: cf.routeId,
-            status: "ssl_pending",
-            last_error: null,
-          })
-          .eq("id", row.id);
-      } catch (e) {
-        // Provisioning failed and rolled back — stay in
-        // dns_configuration_required and surface it. Never advance toward
-        // active on a half-built edge.
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error("[domains] edge provisioning failed", row.hostname, msg);
-        await sb()
-          .from("workspace_domains")
-          .update({ status: "error", last_error: `Edge provisioning failed: ${msg}` })
-          .eq("id", row.id);
-        return { ok: false as const, error: `Edge provisioning failed: ${msg}` };
-      }
+    // If we CANNOT provision, say so and stop. Skipping silently used to let
+    // the flow advance to "point your DNS at proxy.founders.click" without a
+    // custom hostname or Worker route existing. That fallback origin is
+    // deliberately originless (AAAA 100::), so a customer who followed those
+    // instructions would take their own domain hard down, and nothing in the
+    // product would have told them anything was wrong.
+    //
+    // Ownership really is verified, so that stays recorded. What is NOT true is
+    // that the domain is ready for DNS, and the UI must not imply it.
+    if (!isEdgeProvisioningConfigured()) {
+      const blocked =
+        "Domain verified, but founders.click can't route traffic yet: edge provisioning is not configured " +
+        "(CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_ID). DO NOT change your DNS yet — pointing it at the edge " +
+        "before routing exists would take your site offline. We've been notified.";
+      console.error(
+        "[domains] BLOCKED: edge provisioning unconfigured; refusing to advance",
+        row.hostname,
+      );
+      await sb()
+        .from("workspace_domains")
+        .update({ status: "error", last_error: blocked })
+        .eq("id", row.id);
+      return { ok: false as const, error: blocked };
+    }
+
+    try {
+      const cf = await provisionDomainAtEdge(row.hostname);
+      await sb()
+        .from("workspace_domains")
+        .update({
+          cloudflare_hostname_id: cf.hostnameId,
+          cloudflare_route_id: cf.routeId,
+          status: "ssl_pending",
+          last_error: null,
+        })
+        .eq("id", row.id);
+    } catch (e) {
+      // Provisioning failed and rolled back — stay in
+      // dns_configuration_required and surface it. Never advance toward
+      // active on a half-built edge.
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[domains] edge provisioning failed", row.hostname, msg);
+      await sb()
+        .from("workspace_domains")
+        .update({ status: "error", last_error: `Edge provisioning failed: ${msg}` })
+        .eq("id", row.id);
+      return { ok: false as const, error: `Edge provisioning failed: ${msg}` };
     }
 
     // Keep workspaces.marketplace_domain + domain_verified_at in sync so Settings
