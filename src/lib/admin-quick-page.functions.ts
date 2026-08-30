@@ -25,6 +25,12 @@ const InputSchema = z.object({
   city: z.string().trim().max(120).optional(),
   state: z.string().trim().max(80).optional(),
   categoryPlural: z.string().trim().max(80).optional(),
+  /** Default true preserves the Quick Page Builder's existing behaviour
+   *  (generate then immediately attempt publish). The Opportunity Engine
+   *  passes false: an approved opportunity produces a DRAFT for customer
+   *  review, and publishing stays a separate deliberate step through the
+   *  unchanged entitlement gate. */
+  autoPublish: z.boolean().default(true),
 });
 
 const SYSTEM = `
@@ -221,14 +227,18 @@ seo_title (≤60 chars) and seo_description (≤155 chars) optimised for the top
       .single();
     if (insErr) throw new Error(insErr.message);
 
-    const { publishPagesAtomically, pageLimitMessage } = await import(
-      "@/lib/entitlements.functions"
-    );
-    const gate = await publishPagesAtomically(data.workspaceId, [inserted.id]);
-    const limitReached = gate.published === 0;
-    const limitMessage = limitReached
-      ? `${pageLimitMessage(gate.limit)} The generated page was saved as a draft.`
-      : null;
+    let limitReached = false;
+    let limitMessage: string | null = null;
+    if (data.autoPublish) {
+      const { publishPagesAtomically, pageLimitMessage } = await import(
+        "@/lib/entitlements.functions"
+      );
+      const gate = await publishPagesAtomically(data.workspaceId, [inserted.id]);
+      limitReached = gate.published === 0;
+      limitMessage = limitReached
+        ? `${pageLimitMessage(gate.limit)} The generated page was saved as a draft.`
+        : null;
+    }
 
     // Settle credits AFTER success (no charge on failure) + log usage.
     let creditsCharged = 0;
