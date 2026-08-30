@@ -322,37 +322,63 @@ export const verifyWorkspaceDomain = createServerFn({ method: "POST" })
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     const { data: row } = await sb()
       .from("workspace_domains")
-      .select("id, hostname, verification_token, verified")
+      .select(
+        "id, hostname, verification_token, verified, verified_at, verification_method, cloudflare_hostname_id, cloudflare_route_id",
+      )
       .eq("workspace_id", data.workspaceId)
       .eq("id", data.id)
       .maybeSingle();
     if (!row) return { ok: false as const, error: "domain not found" };
-    if (row.verified) return { ok: true as const, method: "already" as const };
 
-    const fileRes = await tryFileVerify(row.hostname, row.verification_token);
-    let method: "file" | "dns" | null = fileRes.ok ? "file" : null;
-    let lastErr = fileRes.error;
-    if (!method) {
-      const dnsRes = await tryDnsVerify(row.hostname, row.verification_token);
-      if (dnsRes.ok) method = "dns";
-      else lastErr = `${lastErr || "file failed"}; ${dnsRes.error || "dns failed"}`;
+    // THIS FUNCTION IS A RETRY, NOT A ONE-SHOT.
+    //
+    // It used to return early on `verified`, which sat ABOVE the edge
+    // provisioning block below. So the first call proved ownership, set
+    // verified=true, then failed to provision (a Cloudflare timeout, a 5xx, or
+    // missing credentials) and parked the domain in `error`. Every later call
+    // saw verified=true and returned success without ever retrying
+    // provisioning — and `error` is not a state the UI polls, so the
+    // background retry loop stopped too.
+    //
+    // The result was a domain permanently stuck one step from working, where
+    // the only escape was deleting it and starting over. A transient API blip
+    // during onboarding should never be unrecoverable.
+    //
+    // "Done" means ownership proven AND the edge actually built. Anything less
+    // re-enters the provisioning path.
+    const edgeProvisioned = Boolean(row.cloudflare_hostname_id && row.cloudflare_route_id);
+    if (row.verified && edgeProvisioned) return { ok: true as const, method: "already" as const };
+
+    let verifiedAt: string = row.verified_at ?? new Date().toISOString();
+    let method: "file" | "dns" | null = (row.verification_method as "file" | "dns" | null) ?? null;
+
+    // Ownership is already proven — don't re-run DNS/file checks on a retry,
+    // just resume at the step that failed.
+    if (!row.verified) {
+      const fileRes = await tryFileVerify(row.hostname, row.verification_token);
+      method = fileRes.ok ? "file" : null;
+      let lastErr = fileRes.error;
+      if (!method) {
+        const dnsRes = await tryDnsVerify(row.hostname, row.verification_token);
+        if (dnsRes.ok) method = "dns";
+        else lastErr = `${lastErr || "file failed"}; ${dnsRes.error || "dns failed"}`;
+      }
+      if (!method) return { ok: false as const, error: lastErr || "verification failed" };
+
+      verifiedAt = new Date().toISOString();
+      const { error: upErr } = await sb()
+        .from("workspace_domains")
+        .update({
+          verified: true,
+          verified_at: verifiedAt,
+          verification_method: method,
+          // Ownership proven → next step is pointing DNS at the edge.
+          status: "dns_configuration_required",
+          last_error: null,
+        })
+        .eq("id", row.id);
+      if (upErr) return { ok: false as const, error: upErr.message };
     }
-
-    if (!method) return { ok: false as const, error: lastErr || "verification failed" };
-
-    const verifiedAt = new Date().toISOString();
-    const { error: upErr } = await sb()
-      .from("workspace_domains")
-      .update({
-        verified: true,
-        verified_at: verifiedAt,
-        verification_method: method,
-        // Ownership proven → next step is pointing DNS at the edge.
-        status: "dns_configuration_required",
-        last_error: null,
-      })
-      .eq("id", row.id);
-    if (upErr) return { ok: false as const, error: upErr.message };
 
     // Ownership is proven, so provision the edge now: custom hostname + Worker
     // route as ONE unit (see domain-provisioning.server.ts for why atomicity

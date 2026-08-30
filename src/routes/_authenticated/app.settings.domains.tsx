@@ -323,6 +323,37 @@ function DomainsPage() {
                 />
               )}
 
+              {/* A failed setup must never be a dead end. `error` is reachable
+                  from a Cloudflare timeout or missing credentials, and it used
+                  to hide every control except Delete — the customer's only way
+                  forward was to destroy the domain and start over. Verify is
+                  idempotent and resumes at whichever step failed, so offer it. */}
+              {d.status === "error" && (
+                <div className="space-y-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+                  <p className="font-medium">Setup didn't finish</p>
+                  {d.last_error && <p className="text-xs text-amber-700">{d.last_error}</p>}
+                  <div className="flex items-center gap-3">
+                    <Button
+                      size="sm"
+                      onClick={() => onVerify(d.id)}
+                      disabled={workingId === d.id || !isOwner}
+                      className="gap-2"
+                    >
+                      {workingId === d.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4" />
+                      )}
+                      Retry setup
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      Picks up where it stopped — you don't need to delete the domain.
+                    </span>
+                  </div>
+                  {errors[d.id] && <p className="text-xs text-destructive">{errors[d.id]}</p>}
+                </div>
+              )}
+
               {d.status === "dns_configuration_required" && (
                 <div className="space-y-3 rounded-md border bg-muted/30 p-3 text-sm">
                   <p className="font-medium">
