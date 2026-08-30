@@ -226,7 +226,27 @@ async function getDomainConfig(hostname, env, ctx) {
 
   // A definitive 404 from a healthy control plane means the domain really is
   // not ours — drop the stale copy so disconnects take effect.
+  //
+  // "Definitive" requires the control plane to SAY so, not merely to return
+  // 404. Deleting the stale copy is the single most destructive thing this
+  // Worker can do: it throws away the last-known-good config that keeps a
+  // customer's marketplace alive during a founders.click outage. We only do it
+  // on the exact documented disconnect signal.
+  //
+  // Anything else answering 404 on that path — a bad deploy, a CDN error page,
+  // a routing mistake, an unmigrated column — is treated as an outage, so the
+  // stale config survives and the customer stays up.
   if (res && res.status === 404) {
+    if (body?.error !== "domain_not_found") {
+      const stale = await cache.match(staleKey);
+      if (stale) {
+        const cached = await stale.json();
+        const ageS = Math.round((Date.now() - (cached.cached_at || 0)) / 1000);
+        reportStale(hostname, ageS, ctx);
+        return { ...cached, stale: true, stale_age_s: ageS };
+      }
+      return null;
+    }
     ctx.waitUntil(cache.delete(staleKey));
     ctx.waitUntil(
       cache.put(freshKey, new Response(JSON.stringify({ error: "domain_not_found" }), {

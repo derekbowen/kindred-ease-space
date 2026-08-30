@@ -44,11 +44,50 @@ jobs:
           echo "::error::Type 'deploy' in the confirm input to proceed."
           exit 1
 
+      # GitHub Actions cannot read Lovable Cloud Secrets. A token configured in
+      # Lovable is NOT visible here — it must be a GitHub Actions repository or
+      # environment secret. Without this check wrangler fails later with an
+      # opaque auth error that reads like a permissions problem on the token
+      # rather than a missing one.
+      #
+      # Presence only. Never echo the value, and never echo a prefix of it.
+      - name: Preflight — deployment credential present
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_WORKER_DEPLOY_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=0
+          if [ -z "$TOKEN" ]; then
+            echo "::error::CLOUDFLARE_WORKER_DEPLOY_TOKEN is not set as a GitHub Actions secret."
+            echo "::error::Setting it in Lovable does not make it available to GitHub Actions."
+            missing=1
+          else
+            echo "CLOUDFLARE_WORKER_DEPLOY_TOKEN: present (${#TOKEN} chars)"
+          fi
+          if [ -z "$ACCOUNT" ]; then
+            echo "::error::CLOUDFLARE_ACCOUNT_ID is not set as a GitHub Actions secret."
+            missing=1
+          else
+            echo "CLOUDFLARE_ACCOUNT_ID: present"
+          fi
+          exit $missing
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      # Prove the credential is the Worker deployment token and not something
+      # else, before it is used to write. /user/tokens/verify is read-only.
+      - name: Preflight — credential authenticates
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_WORKER_DEPLOY_TOKEN }}
+        run: |
+          ok=$(curl -s --max-time 20 https://api.cloudflare.com/client/v4/user/tokens/verify \
+                 -H "Authorization: Bearer $TOKEN" | jq -r '.success')
+          echo "token verify success: $ok"
+          test "$ok" = "true"
 
       # Syntax-check before touching production. A Worker that fails to parse
       # would be rejected by Cloudflare anyway, but failing here is cheaper and
@@ -56,12 +95,79 @@ jobs:
       - name: Parse-check worker.js
         run: npx --yes esbuild@0.25.0 --bundle --format=esm --platform=neutral edge/founders-edge/worker.js --outfile=/dev/null
 
+      # Customer routes are created and deleted by the control plane during
+      # domain provisioning, NOT by wrangler — see the note in wrangler.jsonc.
+      # wrangler should therefore leave them completely alone. "Should" is not
+      # evidence, so count them before and after and fail if the number moved.
+      # A silent route loss here is a customer's whole marketplace going dark.
+      - name: Record customer routes before deploy
+        id: routes_before
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_WORKER_DEPLOY_TOKEN }}
+          ZONE: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: |
+          if [ -z "$ZONE" ]; then
+            echo "::warning::CLOUDFLARE_ZONE_ID not set — cannot verify routes survived the deploy."
+            echo "count=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          n=$(curl -s --max-time 20 "https://api.cloudflare.com/client/v4/zones/$ZONE/workers/routes" \
+                -H "Authorization: Bearer $TOKEN" \
+              | jq '[.result[]? | select(.script=="founders-edge")] | length')
+          echo "routes bound to founders-edge before: $n"
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+
       - name: Deploy
         working-directory: edge/founders-edge
         env:
+          # Wrangler reads the credential from CLOUDFLARE_API_TOKEN. That name
+          # is wrangler's, not ours: the value here is the Worker DEPLOYMENT
+          # token. It is deliberately NOT the application's provisioning secret
+          # of the same name, which has no Workers permission and must never be
+          # used to deploy — nor must the application ever consume this one.
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKER_DEPLOY_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx --yes wrangler@4 deploy --name founders-edge
+
+      - name: Verify customer routes survived the deploy
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_WORKER_DEPLOY_TOKEN }}
+          ZONE: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          BEFORE: ${{ steps.routes_before.outputs.count }}
+        run: |
+          if [ "$BEFORE" = "skipped" ]; then
+            echo "::warning::Route verification skipped (no CLOUDFLARE_ZONE_ID)."
+            exit 0
+          fi
+          after=$(curl -s --max-time 20 "https://api.cloudflare.com/client/v4/zones/$ZONE/workers/routes" \
+                    -H "Authorization: Bearer $TOKEN" \
+                  | jq '[.result[]? | select(.script=="founders-edge")] | length')
+          echo "routes bound to founders-edge: before=$BEFORE after=$after"
+          if [ "$after" -lt "$BEFORE" ]; then
+            echo "::error::Deploy REMOVED $((BEFORE - after)) customer route(s). Connected domains may be down."
+            exit 1
+          fi
+
+      # workers_dev is false in wrangler.jsonc so this Worker has no second,
+      # permanent public endpoint outside the customer routes. Assert the
+      # account actually reflects that rather than trusting the config file.
+      - name: Verify no workers.dev endpoint was published
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_WORKER_DEPLOY_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          resp=$(curl -s --max-time 20 \
+            "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/workers/scripts/founders-edge/subdomain" \
+            -H "Authorization: Bearer $TOKEN")
+          enabled=$(echo "$resp" | jq -r '.result.enabled // "unknown"')
+          echo "workers.dev enabled: $enabled"
+          if [ "$enabled" = "true" ]; then
+            echo "::error::founders-edge is exposed on workers.dev. Expected workers_dev=false."
+            exit 1
+          fi
+          if [ "$enabled" = "unknown" ]; then
+            echo "::warning::Could not read workers.dev state (token may lack Workers Scripts:Read). Verify by hand."
+          fi
 
       - name: Post-deploy reachability check
         run: |

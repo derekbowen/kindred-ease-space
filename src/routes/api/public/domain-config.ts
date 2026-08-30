@@ -58,7 +58,7 @@ export const Route = createFileRoute("/api/public/domain-config")({
           .replace(/\/.*$/, "")
           .replace(/:\d+$/, "");
 
-        const { data: row } = await sb()
+        const { data: row, error: lookupError } = await sb()
           .from("workspace_domains")
           .select(
             "connection_type, status, customer_origin, route_prefix, workspace_id, founders_disabled, updated_at",
@@ -66,6 +66,30 @@ export const Route = createFileRoute("/api/public/domain-config")({
           .eq("hostname", hostname)
           .eq("verified", true)
           .maybeSingle();
+
+        // A FAILED QUERY IS NOT A MISSING DOMAIN. This distinction is the whole
+        // safety contract, and dropping the error made the two identical.
+        //
+        // The edge treats 404 as authoritative — "this host really isn't ours" —
+        // and responds by DELETING its last-known-good config and serving 404
+        // for the whole hostname. In full_proxy that is the customer's entire
+        // marketplace down, and it destroys the stale-config safety net on the
+        // way out.
+        //
+        // So anything that is not a clean "query ran, no row" must be a 5xx.
+        // The edge falls back to last-known-good on 5xx, which is exactly the
+        // behaviour we want when OUR side is broken.
+        //
+        // The concrete way this bites: deploy code selecting a column whose
+        // migration has not been applied yet and PostgREST 400s every request.
+        // Every connected customer would have gone dark, from a schema drift.
+        if (lookupError) {
+          console.error("[domain-config] lookup failed", hostname, lookupError.message);
+          return new Response(JSON.stringify({ error: "control_plane_error" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+          });
+        }
 
         if (!row || row.status === "disconnected") {
           return new Response(JSON.stringify({ error: "domain_not_found" }), {
