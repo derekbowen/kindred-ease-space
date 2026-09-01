@@ -132,15 +132,36 @@ jobs:
             echo "::warning::Could not list Worker secrets (first deploy?): $(tail -1 /tmp/secret-err)"
             exit 0
           fi
-          required=$(grep -vE '^\s*#|^\s*$' "$GITHUB_WORKSPACE/scripts/required-secrets.txt" | awk '{print $1}')
+          # Two sections. [required] has no default in code and fails the
+          # deploy; [recommended] has a working fallback and only warns.
+          # Treating everything as required would block deploys over config the
+          # app does not need.
+          manifest="$GITHUB_WORKSPACE/scripts/required-secrets.txt"
+          names_in() {
+            awk -v want="$1" '
+              /^\[/ { section = $0; next }
+              /^[[:space:]]*#/ { next }
+              /^[[:space:]]*$/ { next }
+              /^[[:space:]]/ { next }          # continuation/comment lines
+              section == "[" want "]" { print $1 }
+            ' "$manifest"
+          }
+          have() {
+            node -e "process.exit(JSON.parse(require('fs').readFileSync('/tmp/secrets.json','utf8')).some(s=>s.name==='$1')?0:1)"
+          }
+
           missing=""
-          for k in $required; do
-            node -e "process.exit(JSON.parse(require('fs').readFileSync('/tmp/secrets.json','utf8')).some(s=>s.name==='$k')?0:1)" \
-              || missing="$missing $k"
-          done
+          for k in $(names_in required); do have "$k" || missing="$missing $k"; done
+          soft=""
+          for k in $(names_in recommended); do have "$k" || soft="$soft $k"; done
+
+          [ -n "$soft" ] && echo "::warning::Not set (code has defaults):$soft"
+
           if [ -n "$missing" ]; then
-            echo "::error::Worker is missing required secrets:$missing"
+            echo "::error::Worker is missing REQUIRED secrets:$missing"
+            echo "::error::These have no default — the feature is broken without them."
             echo "::error::Set each with: wrangler secret put <NAME>  (see docs/DEPLOYMENT.md)"
+            echo "::error::Note: a name set as a plaintext Text variable is NOT a secret and will still report missing."
             exit 1
           fi
           echo "all required secrets present"
