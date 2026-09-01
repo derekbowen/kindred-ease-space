@@ -224,7 +224,11 @@ jobs:
                   process.exit(1);
                 }
               } else {
-                console.log("::warning::could not read custom domains (token may lack permission)");
+                // Say WHAT failed. "May lack permission" sent someone to the
+                // token editor on a guess; the API names the actual problem.
+                const why = (d.errors||[]).map(e=>`${e.code}: ${e.message}`).join("; ") || "no error detail";
+                console.log("::warning::could not read custom domains — " + why);
+                console.log("::warning::endpoint: GET /accounts/<account>/workers/domains — if this is a permission error, the deploy token needs the Workers scripts read scope that covers custom domains.");
               }
             } catch (e) {
               console.log("::warning::custom domain check skipped: " + e.message);

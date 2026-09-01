@@ -37,7 +37,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
-          fetch-depth: 100
+          # Full history, deliberately: with a shallow window, a build merely
+          # OLDER than the window is indistinguishable from a build that was
+          # never on main, and the alarm would say "unknown build" about a
+          # merely-ancient one. The history is small; correctness is cheap.
+          fetch-depth: 0
 
       - name: Build identity
         run: |
