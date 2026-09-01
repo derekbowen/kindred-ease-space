@@ -48,6 +48,7 @@ import { Route as AuthenticatedAppAffiliatesRouteImport } from './routes/_authen
 import { Route as AuthenticatedAppAddonsRouteImport } from './routes/_authenticated/app.addons'
 import { Route as ApiPublicHooksSyncSharetribeRouteImport } from './routes/api/public/hooks/sync-sharetribe'
 import { Route as ApiPublicHooksCanonicalAuditRouteImport } from './routes/api/public/hooks/canonical-audit'
+import { Route as ApiPublicHooksAuthSendEmailRouteImport } from './routes/api/public/hooks/auth-send-email'
 import { Route as AuthenticatedAppSettingsDomainsRouteImport } from './routes/_authenticated/app.settings.domains'
 import { Route as AuthenticatedAppSettingsApiKeysRouteImport } from './routes/_authenticated/app.settings.api-keys'
 import { Route as AuthenticatedAppSettingsAiRouteImport } from './routes/_authenticated/app.settings.ai'
@@ -303,6 +304,12 @@ const ApiPublicHooksCanonicalAuditRoute =
   ApiPublicHooksCanonicalAuditRouteImport.update({
     id: '/api/public/hooks/canonical-audit',
     path: '/api/public/hooks/canonical-audit',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksAuthSendEmailRoute =
+  ApiPublicHooksAuthSendEmailRouteImport.update({
+    id: '/api/public/hooks/auth-send-email',
+    path: '/api/public/hooks/auth-send-email',
     getParentRoute: () => rootRouteImport,
   } as any)
 const AuthenticatedAppSettingsDomainsRoute =
@@ -720,6 +727,7 @@ export interface FileRoutesByFullPath {
   '/app/settings/ai': typeof AuthenticatedAppSettingsAiRoute
   '/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
   '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
+  '/api/public/hooks/auth-send-email': typeof ApiPublicHooksAuthSendEmailRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
   '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
   '/app/admin/help/articles': typeof AuthenticatedAppAdminHelpArticlesRouteWithChildren
@@ -813,6 +821,7 @@ export interface FileRoutesByTo {
   '/app/settings/ai': typeof AuthenticatedAppSettingsAiRoute
   '/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
   '/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
+  '/api/public/hooks/auth-send-email': typeof ApiPublicHooksAuthSendEmailRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
   '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
   '/app/admin/help/articles': typeof AuthenticatedAppAdminHelpArticlesRouteWithChildren
@@ -910,6 +919,7 @@ export interface FileRoutesById {
   '/_authenticated/app/settings/ai': typeof AuthenticatedAppSettingsAiRoute
   '/_authenticated/app/settings/api-keys': typeof AuthenticatedAppSettingsApiKeysRoute
   '/_authenticated/app/settings/domains': typeof AuthenticatedAppSettingsDomainsRoute
+  '/api/public/hooks/auth-send-email': typeof ApiPublicHooksAuthSendEmailRoute
   '/api/public/hooks/canonical-audit': typeof ApiPublicHooksCanonicalAuditRoute
   '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
   '/_authenticated/app/admin/help/articles': typeof AuthenticatedAppAdminHelpArticlesRouteWithChildren
@@ -1007,6 +1017,7 @@ export interface FileRouteTypes {
     | '/app/settings/ai'
     | '/app/settings/api-keys'
     | '/app/settings/domains'
+    | '/api/public/hooks/auth-send-email'
     | '/api/public/hooks/canonical-audit'
     | '/api/public/hooks/sync-sharetribe'
     | '/app/admin/help/articles'
@@ -1100,6 +1111,7 @@ export interface FileRouteTypes {
     | '/app/settings/ai'
     | '/app/settings/api-keys'
     | '/app/settings/domains'
+    | '/api/public/hooks/auth-send-email'
     | '/api/public/hooks/canonical-audit'
     | '/api/public/hooks/sync-sharetribe'
     | '/app/admin/help/articles'
@@ -1196,6 +1208,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/settings/ai'
     | '/_authenticated/app/settings/api-keys'
     | '/_authenticated/app/settings/domains'
+    | '/api/public/hooks/auth-send-email'
     | '/api/public/hooks/canonical-audit'
     | '/api/public/hooks/sync-sharetribe'
     | '/_authenticated/app/admin/help/articles'
@@ -1229,6 +1242,7 @@ export interface RootRouteChildren {
   ApiPublicPageLookupRoute: typeof ApiPublicPageLookupRoute
   ApiPublicSitemapByHostRoute: typeof ApiPublicSitemapByHostRoute
   SWsSlugRoute: typeof SWsSlugRoute
+  ApiPublicHooksAuthSendEmailRoute: typeof ApiPublicHooksAuthSendEmailRoute
   ApiPublicHooksCanonicalAuditRoute: typeof ApiPublicHooksCanonicalAuditRoute
   ApiPublicHooksSyncSharetribeRoute: typeof ApiPublicHooksSyncSharetribeRoute
 }
@@ -1506,6 +1520,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/hooks/canonical-audit'
       fullPath: '/api/public/hooks/canonical-audit'
       preLoaderRoute: typeof ApiPublicHooksCanonicalAuditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/auth-send-email': {
+      id: '/api/public/hooks/auth-send-email'
+      path: '/api/public/hooks/auth-send-email'
+      fullPath: '/api/public/hooks/auth-send-email'
+      preLoaderRoute: typeof ApiPublicHooksAuthSendEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/app/settings/domains': {
@@ -2181,6 +2202,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicPageLookupRoute: ApiPublicPageLookupRoute,
   ApiPublicSitemapByHostRoute: ApiPublicSitemapByHostRoute,
   SWsSlugRoute: SWsSlugRoute,
+  ApiPublicHooksAuthSendEmailRoute: ApiPublicHooksAuthSendEmailRoute,
   ApiPublicHooksCanonicalAuditRoute: ApiPublicHooksCanonicalAuditRoute,
   ApiPublicHooksSyncSharetribeRoute: ApiPublicHooksSyncSharetribeRoute,
 }

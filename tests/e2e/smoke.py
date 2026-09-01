@@ -48,8 +48,38 @@ async def expect_visible(page, locator, label, timeout=10_000):
 async def run():
     errors: list[str] = []
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
-        context = await browser.new_context(viewport={"width": 1280, "height": 1800})
+        # Sandboxed CI/agent environments route egress through a proxy that
+        # curl honours via env vars but Chromium does not. Pass it explicitly
+        # so the smoke runs identically on a laptop, a runner, and a sandbox —
+        # a smoke test that only works in one environment is one nobody runs
+        # before it matters.
+        proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+        launch_kwargs = {"headless": True}
+        if proxy_url:
+            launch_kwargs["proxy"] = {"server": proxy_url}
+            # TLS-intercepting relays often cannot negotiate Chromium's modern
+            # ClientHello (ECH, post-quantum hybrids) and drop the tunnel with a
+            # bare reset. Simplify TLS only when a proxy is in play; direct runs
+            # keep the browser's defaults.
+            launch_kwargs["args"] = [
+                "--disable-features=EncryptedClientHello,PostQuantumKyber",
+                "--ssl-version-max=tls1.2",
+            ]
+        # A pre-provisioned Chromium (e.g. /opt/pw-browsers/chromium) may not
+        # match this playwright package's pinned browser revision. Honouring an
+        # explicit executable keeps the smoke runnable without a fresh
+        # multi-hundred-MB browser download the environment may not permit.
+        exe = os.environ.get("SMOKE_CHROMIUM_PATH")
+        if exe:
+            launch_kwargs["executable_path"] = exe
+        browser = await pw.chromium.launch(**launch_kwargs)
+        # An intercepting proxy re-signs TLS with its own CA, which Chromium
+        # does not trust, so certificate checking is relaxed ONLY when a proxy
+        # is in use. Direct runs keep full verification.
+        context = await browser.new_context(
+            viewport={"width": 1280, "height": 1800},
+            ignore_https_errors=bool(proxy_url),
+        )
         page = await context.new_page()
 
         console_errors: list[str] = []

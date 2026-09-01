@@ -195,6 +195,11 @@ jobs:
         env:
           TOKEN: ${{ secrets.CLOUDFLARE_WORKER_DEPLOY_TOKEN }}
           ZONE: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          # The custom-domains call interpolates $ACCOUNT into its URL. Run #9
+          # omitted this line, the variable expanded to nothing, and Cloudflare
+          # answered 7003 "could not route" — which the warning then blamed on
+          # token scope. The env block is part of the check.
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           if [ -z "$ZONE" ]; then
             echo "::warning::CLOUDFLARE_ZONE_ID not set — cannot verify route isolation."
