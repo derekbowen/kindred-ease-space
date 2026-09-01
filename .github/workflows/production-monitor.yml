@@ -77,6 +77,34 @@ jobs:
             exit 1
           fi
 
+      # The auth send-email hook is load-bearing for SIGNUP itself: when it
+      # 404s or loses its secret, GoTrue fails the hook call and account
+      # creation dies platform-wide — which happened for ~65 minutes on
+      # 2026-09-01 and was invisible to a homepage check. An unsigned probe
+      # distinguishes the three states exactly:
+      #   401 "invalid signature"    healthy (deployed, secret present)
+      #   401 "hook not configured"  SECRET LOST -> signups failing
+      #   404                        ENDPOINT GONE -> signups failing
+      - name: Auth email hook alive
+        run: |
+          body=$(curl -s --max-time 25 -X POST -H 'content-type: application/json' -d '{}'             -w '\n%{http_code}' https://www.founders.click/api/public/hooks/auth-send-email)
+          code=$(echo "$body" | tail -1)
+          json=$(echo "$body" | head -n -1)
+          echo "HTTP $code  $json"
+          if [ "$code" = "404" ]; then
+            echo "::error::Auth email hook endpoint is 404 — SIGNUP IS DOWN. The Supabase send-email hook points at a route this build does not serve."
+            exit 1
+          fi
+          if echo "$json" | grep -q "hook not configured"; then
+            echo "::error::SEND_EMAIL_HOOK_SECRET is missing on the Worker — SIGNUP IS DOWN."
+            exit 1
+          fi
+          if [ "$code" != "401" ]; then
+            echo "::error::Auth email hook returned HTTP $code to an unsigned probe (expected 401)."
+            exit 1
+          fi
+          echo "hook healthy: deployed and configured (unsigned probe correctly refused)"
+
       - name: Homepage serves
         run: |
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 https://www.founders.click/)
