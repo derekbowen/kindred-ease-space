@@ -129,6 +129,21 @@ Nothing is left half-built.
 *Plan:* bounded retry with backoff on idempotent reads and on 5xx/429
 specifically — never blind retry on a create, which could duplicate a hostname.
 
+### Malformed MX record for the EmailIt sending domain
+The zone contains an MX record named `go.emailitmail.com.founders.click`
+pointing at `inbound.emailitmail.com`. That name is a fully-qualified hostname
+entered without a trailing dot, so Cloudflare appended the zone to it. As
+written it routes mail for a hostname nobody will ever send to.
+
+*Safe to defer:* it is inert rather than harmful — no mail flow depends on the
+malformed name, and EmailIt sending uses `emailit._domainkey.founders.click`
+(DKIM), which is correctly formed.
+
+*Plan:* confirm with EmailIt whether a `go.` sending subdomain is expected. If
+so, recreate as `go` (or `go.emailitmail.com.` WITH the trailing dot, depending
+on intent) and delete the malformed row. Verify deliverability before and after
+— an unverified change to mail DNS is how transactional email silently stops.
+
 ### Worker deploy has no staging rehearsal
 `deploy-edge-worker.yml` deploys straight to the account that fronts customer
 domains. Its preflights and post-deploy checks reduce the risk but there is no

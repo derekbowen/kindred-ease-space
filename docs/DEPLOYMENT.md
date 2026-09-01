@@ -110,6 +110,33 @@ there, or the preflight will not know to check for it.
 
 ## Cutting over
 
+### Pre-cutover DNS, captured 2026-09-01 — THE ROLLBACK REFERENCE
+
+Before the cutover, founders.click was served by Lovable's hosting through
+proxied DNS in our own zone. Not a Worker route, not a custom domain — which is
+why every routing check reported "none" while the site was plainly serving.
+
+| Type | Name | Content | Proxy | TTL |
+| --- | --- | --- | --- | --- |
+| CNAME | `www.founders.click` | `kindred-ease-space.lovable.app` | Proxied | Auto |
+| A | `founders.click` (apex) | `185.158.133.1` | Proxied | Auto |
+
+**To roll back the cutover, restore exactly those two rows, including Proxied
+status.** While a record is proxied, TTL is forced to Auto and the origin is
+masked, so proxy state matters as much as content.
+
+Adding a Worker custom domain REPLACES the matching record, so these values
+cannot be read back afterwards. They are recorded here because they are public
+DNS, not secrets.
+
+Untouched by the cutover, and listed only so nobody "tidies" them during a
+rollback: `notify.www` NS delegation to `ns5/ns6.lovable.cloud`, and the
+`_lovable`, `_lovable-email`, `_dmarc` and `emailit._domainkey` TXT records.
+Those are separate names from `www` and the apex; replacing a record at `www`
+does not affect delegation at `notify.www`.
+
+### Steps
+
 The first deploy is **safe and reversible**: it publishes a Worker named
 `founders-click`, and until a route points at it, it serves nothing on the real
 domain.
