@@ -1,0 +1,80 @@
+name: Production Monitor
+
+# Watches www.founders.click for the one failure a route-based cutover makes
+# possible: SILENT REVERSION. The www CNAME still points at Lovable's origin
+# underneath the Worker route, so deleting or mistyping that route does not
+# break the site — it instantly serves the pre-cutover build again, with the
+# build-identity endpoint gone, so nothing on the page contradicts it. That is
+# the same failure mode that shipped a stale tree for eleven commits, and it
+# would be invisible without an active check.
+#
+# The check is the build-identity endpoint compiled into every release:
+#   404          -> production has reverted to the pre-cutover origin
+#   sha "dev"    -> a build without CI identity is serving
+#   sha not on main -> an unknown build is serving
+#   sha behind main -> fine (deploys lag pushes by minutes); logged, not failed
+#
+# A failed run turns the Actions badge red and GitHub emails the workflow's
+# last committer. No secrets required — every probe is a public endpoint.
+#
+# NOTE: GitHub suspends cron schedules after ~60 days without repo activity.
+# If the repo goes quiet, re-enable from the Actions tab.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Verify production identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 100
+
+      - name: Build identity
+        run: |
+          set -o pipefail
+          body=$(curl -s --max-time 25 -w '\n%{http_code}' https://www.founders.click/api/public/edge-health)
+          code=$(echo "$body" | tail -1)
+          json=$(echo "$body" | head -n -1)
+          echo "HTTP $code  $json"
+
+          if [ "$code" = "404" ]; then
+            echo "::error::Build-identity endpoint is 404. Production has REVERTED to the pre-cutover origin — check the www.founders.click/* route on the founders-click Worker."
+            exit 1
+          fi
+          if [ "$code" != "200" ]; then
+            echo "::error::Build-identity endpoint returned HTTP $code."
+            exit 1
+          fi
+
+          sha=$(echo "$json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).sha||'')}catch{console.log('')}})")
+          if [ -z "$sha" ] || [ "$sha" = "dev" ]; then
+            echo "::error::Production is serving a build with no CI identity (sha='$sha')."
+            exit 1
+          fi
+
+          # Any commit on main is acceptable — deploys lag pushes by a few
+          # minutes and that is not an incident. A SHA that is NOT on main is:
+          # nobody should be able to put an unreviewed build on production.
+          if git merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then
+            behind=$(git rev-list --count "$sha"..HEAD)
+            echo "serving $sha ($behind commit(s) behind main HEAD)"
+          else
+            echo "::error::Production is serving $sha, which is not on main. An unknown build is live."
+            exit 1
+          fi
+
+      - name: Homepage serves
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 https://www.founders.click/)
+          echo "homepage -> HTTP $code"
+          test "$code" = "200"
