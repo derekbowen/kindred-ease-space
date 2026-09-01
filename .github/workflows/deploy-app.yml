@@ -202,6 +202,34 @@ jobs:
           fi
           curl -s --max-time 20 "https://api.cloudflare.com/client/v4/zones/$ZONE/workers/routes" \
             -H "Authorization: Bearer $TOKEN" > /tmp/routes.json
+          # CUSTOM DOMAINS ARE A SEPARATE API and do NOT appear in
+          # /workers/routes. A Worker can own a hostname entirely through a
+          # custom domain, so checking only routes reports "none" for a Worker
+          # that is in fact serving live traffic — which is exactly what this
+          # step did while production ran on a different origin.
+          curl -s --max-time 20 \
+            "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/workers/domains?zone_id=$ZONE" \
+            -H "Authorization: Bearer $TOKEN" > /tmp/domains.json || echo '{}' > /tmp/domains.json
+          node -e '
+            try {
+              const d = JSON.parse(require("fs").readFileSync("/tmp/domains.json","utf8"));
+              if (d.success) {
+                const rows = d.result || [];
+                console.log("custom domains: " + (rows.map(x => `${x.hostname} -> ${x.service}`).join(", ") || "(none)"));
+                const foreign = rows.filter(x => x.service === "founders-click" &&
+                  !/^([a-z0-9-]+\.)*founders\.click$/.test(x.hostname));
+                if (foreign.length) {
+                  console.error("::error::app Worker owns custom domains outside founders.click: " +
+                    foreign.map(x => x.hostname).join(", "));
+                  process.exit(1);
+                }
+              } else {
+                console.log("::warning::could not read custom domains (token may lack permission)");
+              }
+            } catch (e) {
+              console.log("::warning::custom domain check skipped: " + e.message);
+            }
+          '
           node -e '
             const r = JSON.parse(require("fs").readFileSync("/tmp/routes.json","utf8"));
             if (!r.success) { console.log("::warning::could not read routes"); process.exit(0); }
