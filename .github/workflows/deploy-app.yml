@@ -273,22 +273,31 @@ jobs:
       # shipped. Checking that a ROUTE exists proves nothing — a route added
       # three releases ago still exists — and a green deploy log proved nothing
       # either, which is how a stale tree served production for eleven commits.
-      # `wrangler deploy` returns before the new version is serving everywhere.
-      # Smoking one second later saw the previous build twice (runs #12, #13)
-      # and marked a successful deploy as failed. Wait for the identity
-      # endpoint to report this commit, bounded; the smoke still decides.
+      # `wrangler deploy` returns before the new version is serving everywhere,
+      # and during the rollout consecutive requests land on different edge
+      # servers running different versions: run #15 read the new SHA once and
+      # the old one a second later. A single match proves nothing, so require
+      # the identity endpoint to report this commit several times in a row.
+      # Bounded; the smoke still makes the final call.
       - name: Wait for the new version to propagate
         run: |
-          for i in $(seq 1 24); do
+          want="${{ github.sha }}"
+          streak=0
+          for i in $(seq 1 60); do
             served=$(curl -sS --max-time 10 https://www.founders.click/api/public/edge-health \
               | sed -nE 's/.*"sha":"([0-9a-f]+)".*/\1/p')
-            if [ "$served" = "${{ github.sha }}" ]; then
-              echo "serving ${{ github.sha }} after $((i*5 - 5))s"
-              exit 0
+            if [ "$served" = "$want" ]; then
+              streak=$((streak + 1))
+              if [ "$streak" -ge 8 ]; then
+                echo "serving $want on 8 consecutive reads after $((i*3))s"
+                exit 0
+              fi
+            else
+              streak=0
             fi
-            sleep 5
+            sleep 3
           done
-          echo "::warning::still serving ${served:-unknown} after 120s — smoke will judge"
+          echo "::warning::not stable on $want after 180s (last read ${served:-unknown}) — smoke will judge"
 
       - name: Post-deploy smoke
         id: smoke

@@ -117,10 +117,24 @@ await check("deployed build matches this commit", async () => {
   if (!EXPECTED_SHA) return ["SKIP", "no --sha given (run from CI to enforce)"];
   if (!servingSha) return ["FAIL", "could not read the serving build"];
   if (servingSha === "dev") return ["FAIL", "production is serving a dev build (SHA was not injected)"];
-  if (servingSha !== EXPECTED_SHA) {
-    return ["FAIL", `serving ${servingSha.slice(0, 7)}, expected ${EXPECTED_SHA.slice(0, 7)} — the deploy did not take effect`];
+  // During a rollout, consecutive requests can land on edge servers running
+  // different versions. One stale read is not a failed deploy; a build that
+  // never settles on the expected commit is. Re-read for up to ~45s and
+  // require the last three reads to agree.
+  const seen = [servingSha];
+  for (let i = 0; i < 9 && !seen.slice(-3).every((s) => s === EXPECTED_SHA); i++) {
+    await new Promise((r) => setTimeout(r, 5000));
+    const r = await get("/api/public/edge-health");
+    const j = r.ok && r.status === 200 ? (JSON.parse(r.body) as { sha?: string }) : {};
+    seen.push(j.sha ?? "?");
   }
-  return ["PASS", `${servingSha.slice(0, 7)}`];
+  if (!seen.slice(-3).every((s) => s === EXPECTED_SHA)) {
+    const trail = seen.map((s) => s.slice(0, 7)).join(" → ");
+    return ["FAIL", `expected ${EXPECTED_SHA.slice(0, 7)}, observed ${trail} — the deploy did not take effect`];
+  }
+  servingSha = EXPECTED_SHA;
+  const note = seen.length > 1 ? ` (settled after ${seen.length - 1} re-reads)` : "";
+  return ["PASS", `${servingSha.slice(0, 7)}${note}`];
 });
 
 // ---------------------------------------------------------------------------
