@@ -1,0 +1,168 @@
+[
+  {
+    "phase": "phase2-account",
+    "environment": "https://www.founders.click",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "feature": "Sign up with a new email (account A, derekbowencorp+fclive-a@gmail.com)",
+    "promise": "Create a founders.click workspace and start a 14-day free trial (signup page)",
+    "url": "https://www.founders.click/signup",
+    "account": "new visitor \u2192 account A",
+    "actions": [
+      "open /signup",
+      "fill name/email/password",
+      "click Start free trial"
+    ],
+    "expected": "Account created; told to check email for a confirmation link",
+    "actual": "reached 'check your email' screen; toast 'Check your email to confirm your account.'; POST /auth/v1/signup \u2192 200 with user id 0a15386b\u2026 and confirmation_sent_at set (06:48:37Z). Terms/Privacy links present on the form.",
+    "screenshot": "(overwritten by a harness bug before the append fix; identical screen captured for account B in 001-sign-up-account-b.jpg)",
+    "network": [
+      {
+        "t": "2026-09-02T06:48:37+00:00",
+        "method": "POST",
+        "url": "https://xbxhzinnfhosoztqaaao.supabase.co/auth/v1/signup?redirect_to=https%3A%2F%2Fwww.founders.click%2Fapp",
+        "status": 200,
+        "body": "{\"id\":\"0a15386b-bcd4-4ecc-83d0-219ab28b207b\",\"aud\":\"authenticated\",\"role\":\"authenticated\",\"email\":\"derekbowencorp+fclive-a@gmail.com\",\"confirmation_sent_at\":\u2026}"
+      }
+    ],
+    "console_errors": [],
+    "persistence": "n/a",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T06:48:37+00:00",
+    "extra": {
+      "terms_link_present": true
+    }
+  },
+  {
+    "phase": "phase2-account",
+    "feature": "Sign up with a new email (account B, derekbowencorp+fclive-b@gmail.com)",
+    "promise": "Create a founders.click workspace and start a 14-day free trial (signup page)",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/signup",
+    "account": "new visitor \u2192 account B",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /signup",
+      "fill name/email/password",
+      "click Start free trial"
+    ],
+    "expected": "Account created; told to check email for a confirmation link (or land on /app)",
+    "actual": "reached 'check your email' screen; toasts=['Check your email to confirm your account.']",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase2-account/001-sign-up-account-b.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:21:38+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/signup",
+        "status": 200
+      },
+      {
+        "t": "2026-09-02T07:21:42+00:00",
+        "method": "POST",
+        "url": "https://xbxhzinnfhosoztqaaao.supabase.co/auth/v1/signup?redirect_to=https%3A%2F%2Fwww.founders.click%2Fapp",
+        "status": 200,
+        "body": "{\"id\":\"a1e5ba72-bb3f-43b1-99b7-62dc4cc8504d\",\"aud\":\"authenticated\",\"role\":\"authenticated\",\"email\":\"derekbowencorp+fclive-b@gmail.com\",\"phone\":\"\",\"confirmation_sent_at\":\"2026-09-02T07:21:43.574812845Z\",\"app_metadata\":{\"provider\":\"email\",\"providers\":[\"email\"]},\"user_metadata\":{\"display_name\":\"Live Test B\",\"email\":\"derekbowencorp+fclive-b@gmail.com\",\"email_verified\":false,\"full_name\":\"Live Test B\",\"phone_verified\":false,\"sub\":\"a1e5ba72-bb3f-43b1-99b7-62dc4cc8504d\"},\"identities\":[{\"identity_id\":\"a1fd2e7f-b52c-4229-a4a2-4da4f72f918a\",\"id\":\"a1e5ba72-bb3f-43b1-99b7-62dc4cc8504d\",\"user_id\":\"a1e5ba72-b"
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:21:45+00:00",
+    "extra": {
+      "terms_link_present": true
+    }
+  },
+  {
+    "phase": "phase2-account",
+    "environment": "https://www.founders.click",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "feature": "Contact support (public form)",
+    "promise": "Get in touch with the founders.click support team; we typically reply within 1 business day",
+    "url": "https://www.founders.click/help/contact",
+    "account": "anonymous visitor (contact form)",
+    "actions": [
+      "open /help/contact",
+      "fill email (test alias) / name / subject / message",
+      "submit"
+    ],
+    "expected": "Ticket accepted with visible confirmation; confirmation email arrives at the submitter address",
+    "actual": "Server function returned ok:true ticketId ab749c8c-cad4-45d9-8ebf-ca2e25fb0fac (06:51:51Z). Visible confirmation: see screenshot 002. Email to derekbowencorp+fclive-a@gmail.com: NOT received (checked in:anywhere at +33 min).",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase2-account/002-contact-support-public-form.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T06:51:51+00:00",
+        "method": "POST",
+        "url": "https://www.founders.click/_serverFn/3fd163f1\u2026",
+        "status": 200,
+        "body": "{ok:true, ticketId:'ab749c8c-cad4-45d9-8ebf-ca2e25fb0fac'}"
+      }
+    ],
+    "console_errors": [],
+    "persistence": "n/a",
+    "status": "Failed",
+    "severity": "P1",
+    "customer_impact": "Ticket is stored, but the customer receives no email confirmation; support inbox delivery unknown",
+    "repro": [
+      "open /help/contact",
+      "submit a ticket with your email",
+      "check inbox and spam \u2014 nothing arrives"
+    ],
+    "recorded_at": "2026-09-02T06:51:51+00:00"
+  },
+  {
+    "phase": "phase2-account",
+    "feature": "Sign up END TO END: receive the real confirmation email and open the link",
+    "promise": "'Check your email to confirm your account.' \u2014 the customer receives a confirmation email and can activate the account",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/signup",
+    "account": "accounts A and B (Gmail plus-aliases of the connected inbox derekbowencorp@gmail.com)",
+    "browser": "Chromium (Playwright) 1366x900 + Gmail inbox via connector",
+    "preconditions": "Supabase send-email hook \u2192 /api/public/hooks/auth-send-email \u2192 EmailIt; hook probe healthy (401 invalid signature); DNS: DKIM emailit._domainkey present, NO SPF record on founders.click, DMARC p=none",
+    "actions": [
+      "06:48:37Z sign up account A \u2192 POST /auth/v1/signup 200, confirmation_sent_at set",
+      "06:51:51Z submit support ticket with A's email \u2192 'We'll email you shortly'",
+      "07:21:45Z sign up account B \u2192 200",
+      "poll Gmail (in:anywhere, i.e. inbox + spam + all folders) at +3, +8, +13, +33, +42 min"
+    ],
+    "expected": "Confirmation email in the inbox (or spam) within minutes; provider message id visible",
+    "actual": "NO email of any kind from founders.click reached Gmail after 42 minutes (three separate sends to two aliases: 2 confirmations + 1 ticket receipt). Gmail received unrelated mail normally in the same window (LinkedIn 05:54Z). Same inbox shows ZERO founders.click messages in the last 60 days including the welcome email for the founder's own workspace. The Outlook account derekcbowen@outlook.com is likewise still unconfirmed 23h after its confirmation resend (08:38Z 09-01). The hook returns 200 even when EmailIt fails, by design, so the signup UI reports success.",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase2-account/001-sign-up-account-b.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T06:48:37+00:00",
+        "method": "POST",
+        "url": "\u2026/auth/v1/signup",
+        "status": 200
+      },
+      {
+        "t": "2026-09-02T07:21:45+00:00",
+        "method": "POST",
+        "url": "\u2026/auth/v1/signup",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "n/a",
+    "status": "Failed",
+    "severity": "P0",
+    "customer_impact": "Every new customer is told to check their email and nothing arrives. No account can be activated through the product. Password reset and support-ticket receipts are on the same path.",
+    "repro": [
+      "open https://www.founders.click/signup",
+      "sign up with any Gmail address",
+      "wait \u2014 no email arrives in inbox or spam",
+      "try Sign in \u2192 'Email not confirmed'"
+    ],
+    "recorded_at": "2026-09-02T07:31:00+00:00",
+    "extra": {
+      "supporting": "Cannot see Worker logs or the EmailIt dashboard from the audit environment; the exact rejection reason needs the EmailIt send log for 06:48Z/06:51Z/07:21Z UTC."
+    }
+  }
+]
