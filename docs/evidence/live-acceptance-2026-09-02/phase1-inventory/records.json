@@ -1,0 +1,883 @@
+[
+  {
+    "phase": "phase1-inventory",
+    "feature": "LIVE CAPTURE \u2014 marketing page promise text",
+    "promise": "The customer-facing promise text on https://www.founders.click/ is the contract for every later phase.",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/",
+    "account": "anonymous visitor (inventory)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /",
+      "expand every FAQ entry",
+      "extract hero / problem-fix / features / how-it-works / pricing / FAQ / footer via DOM"
+    ],
+    "expected": "Text matches src/routes/index.tsx constants and src/lib/plan-catalog.ts",
+    "actual": "h1='The all-in-one growth engine.'; sub='Publish hundreds or thousands of SEO pages for one monthly price \u2014 AI generation, hosting, sitemaps and schema included.'; fineprint='14-day free trial \u00b7 publish up to 25 pages \u00b7 No card required'; features=['Content Factory', 'SEO Intelligence', 'AI Growth Coach', 'Lead Inbox', 'Sharetribe Sync', 'Affiliate Programs']; tiers=[('STARTER', '$29 /mo', '100 published pages'), ('GROWTH', '$59 /mo', '500 published pages'), ('SCALE', '$99 /mo', '1,000 published pages'), ('PRO', '$199 /mo', '3,000 published pages'), ('AGENCY', '$299 /mo', '5,000 published pages')]; included=['AI page generation', 'Hosting on your domain', 'Automatic sitemaps', 'Schema / structured data', 'Internal linking', 'Sharetribe listing sync']; faq=5 entries; lang_switcher_controls=2",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase1-inventory/001-marketing-landing-full.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:35:46+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Blocked",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:35:50+00:00",
+    "extra": {
+      "landing": {
+        "hero": {
+          "eyebrow": "FOR SHARETRIBE MARKETPLACE FOUNDERS",
+          "h1": "The all-in-one growth engine.",
+          "sub": "Publish hundreds or thousands of SEO pages for one monthly price \u2014 AI generation, hosting, sitemaps and schema included. No agency retainer.",
+          "ctas": [
+            {
+              "text": "Start your free trial",
+              "href": "/signup"
+            },
+            {
+              "text": "Watch the demo",
+              "href": "#demo"
+            }
+          ],
+          "fineprint": "14-day free trial \u00b7 publish up to 25 pages \u00b7 No card required"
+        },
+        "demo": {
+          "caption": "See the Content Factory in action",
+          "video": "/product-demo.mp4"
+        },
+        "problem_fix": [],
+        "features": {
+          "eyebrow": "EVERYTHING INCLUDED",
+          "h2": "One engine. Every growth surface.",
+          "items": [
+            {
+              "title": "Content Factory",
+              "desc": "Generate SEO landing pages in bulk from your live listings."
+            },
+            {
+              "title": "SEO Intelligence",
+              "desc": "Competitor radar, rank tracking, AI page auditor, keyword gaps."
+            },
+            {
+              "title": "AI Growth Coach",
+              "desc": "A daily briefing that ranks your highest-ROI actions."
+            },
+            {
+              "title": "Lead Inbox",
+              "desc": "Capture and triage host/provider leads in one place."
+            },
+            {
+              "title": "Sharetribe Sync",
+              "desc": "Your listings, synced automatically in the background."
+            },
+            {
+              "title": "Affiliate Programs",
+              "desc": "Run referral programs that pay out on real transactions."
+            }
+          ]
+        },
+        "how": {
+          "h2": "Live in an afternoon.",
+          "steps": [
+            {
+              "title": "Connect your marketplace",
+              "desc": "Add your Sharetribe Integration API credentials. We pull your listings, categories and locations automatically."
+            },
+            {
+              "title": "Generate your pages",
+              "desc": "The Content Factory turns your live inventory into indexable landing pages, grounded in real listing data."
+            },
+            {
+              "title": "Publish on your domain",
+              "desc": "Connect and verify your own domain, then track positions and let the Growth Coach tell you what to ship next."
+            }
+          ]
+        },
+        "pricing": {
+          "h2": "Less than one agency invoice.",
+          "intro": "One monthly price for a number of live, hosted SEO pages. Every plan unlocks every feature \u2014 pick one for how many pages you publish.",
+          "tiers": [
+            {
+              "name": "STARTER",
+              "price": "$29 /mo",
+              "pages": "100 published pages",
+              "bullets": [
+                "AI generation included",
+                "Every feature unlocked",
+                "For a marketplace publishing its first city pages."
+              ],
+              "cta": "Start free trial",
+              "badge": ""
+            },
+            {
+              "name": "GROWTH",
+              "price": "$59 /mo",
+              "pages": "500 published pages",
+              "bullets": [
+                "AI generation included",
+                "Every feature unlocked",
+                "For operators covering every city they serve."
+              ],
+              "cta": "Start free trial",
+              "badge": ""
+            },
+            {
+              "name": "SCALE",
+              "price": "$99 /mo",
+              "pages": "1,000 published pages",
+              "bullets": [
+                "AI generation included",
+                "Every feature unlocked",
+                "Serious coverage: every city \u00d7 every category."
+              ],
+              "cta": "Start free trial",
+              "badge": "MOST POPULAR"
+            },
+            {
+              "name": "PRO",
+              "price": "$199 /mo",
+              "pages": "3,000 published pages",
+              "bullets": [
+                "AI generation included",
+                "Every feature unlocked",
+                "National footprints and aggressive expansion."
+              ],
+              "cta": "Start free trial",
+              "badge": ""
+            },
+            {
+              "name": "AGENCY",
+              "price": "$299 /mo",
+              "pages": "5,000 published pages",
+              "bullets": [
+                "AI generation included",
+                "Every feature unlocked",
+                "Maximum capacity for the biggest marketplaces."
+              ],
+              "cta": "Start free trial",
+              "badge": ""
+            }
+          ],
+          "included": [
+            "AI page generation",
+            "Hosting on your domain",
+            "Automatic sitemaps",
+            "Schema / structured data",
+            "Internal linking",
+            "Sharetribe listing sync"
+          ],
+          "addon_note": "Need more pages without changing plans? Add capacity in blocks of 1,000 from your dashboard."
+        },
+        "faq": [
+          {
+            "q": "What counts as a published page?",
+            "a": "A page that is live on your domain. Drafts are free and unlimited \u2014 they only use a publishing slot when you set them live. Unpublish a page any time to free its slot."
+          },
+          {
+            "q": "Do I need to be technical?",
+            "a": "No. You connect your Sharetribe marketplace with your Integration API credentials, and everything else happens in the dashboard. If you can publish a listing, you can run founders.click."
+          },
+          {
+            "q": "Is AI generation extra?",
+            "a": "No \u2014 every plan includes a monthly AI generation allowance sized for its page capacity, covering page generation, rewrites and audits. If you run heavier workloads you can add extra generation capacity at $10 per 1,000 generation credits, but most customers never need to."
+          },
+          {
+            "q": "What happens if I cancel?",
+            "a": "Your pages stay live through the end of the billing period you already paid for. After that they are unpublished \u2014 but your content is retained, and if you come back your pages return at exactly the same URLs."
+          },
+          {
+            "q": "Can I change plans anytime?",
+            "a": "Yes. Upgrades take effect immediately with prorated billing. Downgrades apply at the end of your billing period so nothing you published disappears mid-cycle."
+          }
+        ],
+        "final_cta": {
+          "h2": "Ready to ship like a funded startup?",
+          "p": "Connect your marketplace and generate your first pages today.",
+          "cta": "Start your free trial"
+        },
+        "header_links": [
+          {
+            "text": "founders.click",
+            "href": "/"
+          },
+          {
+            "text": "Help",
+            "href": "/help"
+          },
+          {
+            "text": "Sign in",
+            "href": "/login"
+          },
+          {
+            "text": "Start free trial",
+            "href": "/signup"
+          }
+        ],
+        "footer_links": [
+          {
+            "text": "founders.click",
+            "href": "/"
+          },
+          {
+            "text": "Features",
+            "href": "/#features"
+          },
+          {
+            "text": "Pricing",
+            "href": "/#pricing"
+          },
+          {
+            "text": "Help",
+            "href": "/help"
+          },
+          {
+            "text": "Terms",
+            "href": "/terms"
+          },
+          {
+            "text": "Privacy",
+            "href": "/privacy"
+          },
+          {
+            "text": "Contact",
+            "href": "/help/contact"
+          },
+          {
+            "text": "Terms",
+            "href": "/terms"
+          },
+          {
+            "text": "Privacy",
+            "href": "/privacy"
+          },
+          {
+            "text": "Contact",
+            "href": "/help/contact"
+          }
+        ],
+        "footer_text": "founders.click The growth engine for Sharetribe marketplaces. Language English Espa\u00f1ol Fran\u00e7ais Deutsch Suomi Svenska PRODUCT Features Pricing Help LEGAL Terms Privacy Contact BUILT FOR MARKETPLACES IN \ud83c\uddfa\ud83c\uddf8 United States \ud83c\uddec\ud83c\udde7 United Kingdom \ud83c\udde8\ud83c\udde6 Canada \ud83c\udde6\ud83c\uddfa Australia \ud83c\uddea\ud83c\uddf8 Spain \ud83c\uddeb\ud83c\uddf7 France \ud83c\udde9\ud83c\uddea Germany \ud83c\uddeb\ud83c\uddee Finland \ud83c\uddf8\ud83c\uddea Sweden \ud83c\uddf3\ud83c\uddf1 Netherlands \ud83c\uddf2\ud83c\uddfd Mexico \ud83c\udde7\ud83c\uddf7 Brazil \u00a9 2026 10000 Solutions LLC. All rights reserved. Terms Privacy Contact",
+        "title": "founders.click \u2014 The growth engine for Sharetribe marketplaces",
+        "meta_description": "Publish hundreds of SEO pages for one monthly price. AI generation, hosting, sitemaps and schema included \u2014 built for Sharetribe marketplace founders.",
+        "canonical": "https://www.founders.click/",
+        "jsonld": [
+          "{\"@context\":\"https://schema.org\",\"@type\":\"SoftwareApplication\",\"name\":\"founders.click\",\"applicationCategory\":\"BusinessApplication\",\"operatingSystem\":\"Web\",\"description\":\"AI-powered SEO, content factory, lead inbox and ops dashboard for Sharetribe marketplace founders.\",\"offers\":{\"@type\":\"AggregateOffer\",\"priceCurrency\":\"USD\",\"lowPrice\":\"29\",\"highPrice\":\"299\"}}",
+          "{\"@context\":\"https://schema.org\",\"@type\":\"FAQPage\",\"mainEntity\":[{\"@type\":\"Question\",\"name\":\"What counts as a published page?\",\"acceptedAnswer\":{\"@type\":\"Answer\",\"text\":\"A page that is live on your domain. Drafts are free and unlimited \u2014 they only use a publishing slot when you set them live. Unpublish a page any time to free its slot.\"}},{\"@type\":\"Question\",\"name\":\"Do I need to be technical?\",\"acceptedAnswer\":{\"@type\":\"Answer\",\"text\":\"No. You connect your Sharetribe marketplace with your Integration API credentials, and everything else happens in the dashboard. If you can publish a listing, y"
+        ],
+        "lang_switcher": 2
+      }
+    }
+  },
+  {
+    "phase": "phase1-inventory",
+    "feature": "LIVE CAPTURE \u2014 help centre home",
+    "promise": "Help centre promises (categories, popular/recent articles, 'Still need help?', AI assistant) are part of the contract.",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/help",
+    "account": "anonymous visitor (inventory)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /help",
+      "extract sections/links via DOM",
+      "open the AI assistant panel (nothing sent)",
+      "close it"
+    ],
+    "expected": "Categories from the seed migration; assistant present",
+    "actual": "h1='How can we help?'; sections=['Browse by category', 'Popular articles', 'Recently updated', 'Still need help?']; categories=['/help/account-billing', '/help/page-builder', '/help/seo-growth', '/help/sharetribe-integration']; assistant_launcher=yes; assistant_copy=\"Ask about founders.click Grounded in our help center. I cite the articles I use. How do I connect my Sharetribe marketplace? What's a City Hub page? How does bi\"",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase1-inventory/002-help-home-full.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:35:52+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Blocked",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:35:56+00:00",
+    "extra": {
+      "help_home": {
+        "title": "Help Center \u2014 founders.click",
+        "h1": "How can we help?",
+        "search_placeholder": "Search articles...",
+        "sections": [
+          {
+            "heading": "Browse by category",
+            "text": "Browse by category 4 articles Sharetribe Integration Credentials, sync troubleshooting, listing mapping, and custom fields. Explore 3 articles Page Builder Templates, variables, the matrix builder, AI content, and publishing. Explore 2 articles SEO & Growth Programmatic SEO, structured data, internal linking, GSC, and indexing. Explore 1 article Account & Billing Plans, page limits, upgrading, team members, invoices, and cancellation. Explore",
+            "links": [
+              {
+                "text": "4 articles Sharetribe Integration Credentials, sync troubleshooting, listing mapping, and custom fields. Explore",
+                "href": "/help/sharetribe-integration"
+              },
+              {
+                "text": "3 articles Page Builder Templates, variables, the matrix builder, AI content, and publishing. Explore",
+                "href": "/help/page-builder"
+              },
+              {
+                "text": "2 articles SEO & Growth Programmatic SEO, structured data, internal linking, GSC, and indexing. Explore",
+                "href": "/help/seo-growth"
+              },
+              {
+                "text": "1 article Account & Billing Plans, page limits, upgrading, team members, invoices, and cancellation. Explore",
+                "href": "/help/account-billing"
+              }
+            ]
+          },
+          {
+            "heading": "Popular articles",
+            "text": "Popular articles SHARETRIBE INTEGRATION Handling multiple marketplaces in one workspace Run several Sharetribe marketplaces from a single founders.click workspace. 2 min read GETTING STARTED Publishing pages and getting indexed Publish, ping Google, and watch your pages enter the index. 3 min read ACCOUNT BILLING Understanding page limits and upgrading Each plan has a published-page limit. 2 min read GETTING STARTED Welcome to founders.click A quick tour of what founders.click does and how to get value in your first hour. 3 min read GETTING STARTED Connecting your Sharetribe marketplace Generate Integration API credentials in Sharetribe Console and paste them into founders.click. 4 min read ",
+            "links": [
+              {
+                "text": "SHARETRIBE INTEGRATION Handling multiple marketplaces in one workspace Run several Sharetribe marketplaces from a single founders.click workspace. 2 min read",
+                "href": "/help/sharetribe-integration/handling-multiple-marketplaces"
+              },
+              {
+                "text": "GETTING STARTED Publishing pages and getting indexed Publish, ping Google, and watch your pages enter the index. 3 min read",
+                "href": "/help/getting-started/publishing-pages-and-getting-indexed"
+              },
+              {
+                "text": "ACCOUNT BILLING Understanding page limits and upgrading Each plan has a published-page limit. 2 min read",
+                "href": "/help/account-billing/understanding-page-limits"
+              },
+              {
+                "text": "GETTING STARTED Welcome to founders.click A quick tour of what founders.click does and how to get value in your first hour. 3 min read",
+                "href": "/help/getting-started/welcome-to-founders-click"
+              },
+              {
+                "text": "GETTING STARTED Connecting your Sharetribe marketplace Generate Integration API credentials in Sharetribe Console and paste them into founders.click. 4 min read",
+                "href": "/help/getting-started/connecting-your-sharetribe-marketplace"
+              },
+              {
+                "text": "BILLING Bring Your Own AI Key (BYOK) Connect your own OpenAI, Anthropic, Google AI, or OpenRouter key so AI features run on your account \u2014 unlimited usage, your",
+                "href": "/help/billing/bring-your-own-ai-key-byok"
+              }
+            ]
+          },
+          {
+            "heading": "Recently updated",
+            "text": "Recently updated Handling multiple marketplaces in one workspace Run several Sharetribe marketplaces from a single founders.click workspace. SHARETRIBE INTEGRATION 2 min Bring Your Own AI Key (BYOK) Connect your own OpenAI, Anthropic, Google AI, or OpenRouter key so AI features run on your account \u2014 unlimited usage, your billing, your control. BILLING 4 min Understanding page limits and upgrading Each plan has a published-page limit. ACCOUNT BILLING 2 min Publishing pages and getting indexed Publish, ping Google, and watch your pages enter the index. GETTING STARTED 3 min",
+            "links": [
+              {
+                "text": "Handling multiple marketplaces in one workspace Run several Sharetribe marketplaces from a single founders.click workspace. SHARETRIBE INTEGRATION 2 min",
+                "href": "/help/sharetribe-integration/handling-multiple-marketplaces"
+              },
+              {
+                "text": "Bring Your Own AI Key (BYOK) Connect your own OpenAI, Anthropic, Google AI, or OpenRouter key so AI features run on your account \u2014 unlimited usage, your billing",
+                "href": "/help/billing/bring-your-own-ai-key-byok"
+              },
+              {
+                "text": "Understanding page limits and upgrading Each plan has a published-page limit. ACCOUNT BILLING 2 min",
+                "href": "/help/account-billing/understanding-page-limits"
+              },
+              {
+                "text": "Publishing pages and getting indexed Publish, ping Google, and watch your pages enter the index. GETTING STARTED 3 min",
+                "href": "/help/getting-started/publishing-pages-and-getting-indexed"
+              }
+            ]
+          },
+          {
+            "heading": "Still need help?",
+            "text": "Still need help? Our team usually replies within 1 business day. Contact support",
+            "links": [
+              {
+                "text": "Contact support",
+                "href": "/help/contact"
+              }
+            ]
+          }
+        ],
+        "all_links": [
+          {
+            "text": "4 articles Sharetribe Integration Credentials, sync troubleshooting, listing mapping, and custom fields. Explore",
+            "href": "/help/sharetribe-integration"
+          },
+          {
+            "text": "3 articles Page Builder Templates, variables, the matrix builder, AI content, and publishing. Explore",
+            "href": "/help/page-builder"
+          },
+          {
+            "text": "2 articles SEO & Growth Programmatic SEO, structured data, internal linking, GSC, and indexing. Explore",
+            "href": "/help/seo-growth"
+          },
+          {
+            "text": "1 article Account & Billing Plans, page limits, upgrading, team members, invoices, and cancellation. Explore",
+            "href": "/help/account-billing"
+          },
+          {
+            "text": "SHARETRIBE INTEGRATION Handling multiple marketplaces in one workspace Run several Sharetribe marketplaces from a single",
+            "href": "/help/sharetribe-integration/handling-multiple-marketplaces"
+          },
+          {
+            "text": "GETTING STARTED Publishing pages and getting indexed Publish, ping Google, and watch your pages enter the index. 3 min r",
+            "href": "/help/getting-started/publishing-pages-and-getting-indexed"
+          },
+          {
+            "text": "ACCOUNT BILLING Understanding page limits and upgrading Each plan has a published-page limit. 2 min read",
+            "href": "/help/account-billing/understanding-page-limits"
+          },
+          {
+            "text": "GETTING STARTED Welcome to founders.click A quick tour of what founders.click does and how to get value in your first ho",
+            "href": "/help/getting-started/welcome-to-founders-click"
+          },
+          {
+            "text": "GETTING STARTED Connecting your Sharetribe marketplace Generate Integration API credentials in Sharetribe Console and pa",
+            "href": "/help/getting-started/connecting-your-sharetribe-marketplace"
+          },
+          {
+            "text": "BILLING Bring Your Own AI Key (BYOK) Connect your own OpenAI, Anthropic, Google AI, or OpenRouter key so AI features run",
+            "href": "/help/billing/bring-your-own-ai-key-byok"
+          },
+          {
+            "text": "Handling multiple marketplaces in one workspace Run several Sharetribe marketplaces from a single founders.click workspa",
+            "href": "/help/sharetribe-integration/handling-multiple-marketplaces"
+          },
+          {
+            "text": "Bring Your Own AI Key (BYOK) Connect your own OpenAI, Anthropic, Google AI, or OpenRouter key so AI features run on your",
+            "href": "/help/billing/bring-your-own-ai-key-byok"
+          },
+          {
+            "text": "Understanding page limits and upgrading Each plan has a published-page limit. ACCOUNT BILLING 2 min",
+            "href": "/help/account-billing/understanding-page-limits"
+          },
+          {
+            "text": "Publishing pages and getting indexed Publish, ping Google, and watch your pages enter the index. GETTING STARTED 3 min",
+            "href": "/help/getting-started/publishing-pages-and-getting-indexed"
+          },
+          {
+            "text": "Contact support",
+            "href": "/help/contact"
+          }
+        ],
+        "buttons": [
+          {
+            "text": "Search articles\u2026 \u2318K",
+            "aria": "Search the help center"
+          },
+          {
+            "text": "",
+            "aria": "Open help assistant"
+          }
+        ],
+        "header_links": [
+          {
+            "text": "founders.click",
+            "href": "/"
+          },
+          {
+            "text": "Help",
+            "href": "/help"
+          },
+          {
+            "text": "Sign in",
+            "href": "/login"
+          },
+          {
+            "text": "Start free trial",
+            "href": "/signup"
+          }
+        ],
+        "footer_links": [
+          {
+            "text": "founders.click",
+            "href": "/"
+          },
+          {
+            "text": "Features",
+            "href": "/#features"
+          },
+          {
+            "text": "Pricing",
+            "href": "/#pricing"
+          },
+          {
+            "text": "Help",
+            "href": "/help"
+          },
+          {
+            "text": "Terms",
+            "href": "/terms"
+          },
+          {
+            "text": "Privacy",
+            "href": "/privacy"
+          },
+          {
+            "text": "Contact",
+            "href": "/help/contact"
+          },
+          {
+            "text": "Terms",
+            "href": "/terms"
+          },
+          {
+            "text": "Privacy",
+            "href": "/privacy"
+          },
+          {
+            "text": "Contact",
+            "href": "/help/contact"
+          }
+        ],
+        "main_text": "How can we help? Search the docs, browse by category, or get in touch with our team. Browse by category 4 articles Sharetribe Integration Credentials, sync troubleshooting, listing mapping, and custom fields. Explore 3 articles Page Builder Templates, variables, the matrix builder, AI content, and publishing. Explore 2 articles SEO & Growth Programmatic SEO, structured data, internal linking, GSC, and indexing. Explore 1 article Account & Billing Plans, page limits, upgrading, team members, invoices, and cancellation. Explore Popular articles SHARETRIBE INTEGRATION Handling multiple marketplaces in one workspace Run several Sharetribe marketplaces from a single founders.click workspace. 2 min read GETTING STARTED Publishing pages and getting indexed Publish, ping Google, and watch your pages enter the index. 3 min read ACCOUNT BILLING Understanding page limits and upgrading Each plan has a published-page limit. 2 min read GETTING STARTED Welcome to founders.click A quick tour of what founders.click does and how to get value in your first hour. 3 min read GETTING STARTED Connecting your Sharetribe marketplace Generate Integration API credentials in Sharetribe Console and paste them into founders.click. 4 min read BILLING Bring Your Own AI Key (BYOK) Connect your own OpenAI, Anthropic, Google AI, or OpenRouter key so AI features run on your account \u2014 unlimited usage, your billing, your control. 4 min read Recently updated Handling multiple marketplaces in one workspace Run several Sharetribe marketplaces from a single founders.click workspace. SHARETRIBE INTEGRATION 2 min Bring Your Own AI Key (BYOK) Connect your own OpenAI, Anthropic, Google AI, or OpenRouter key so AI features run on your account \u2014 unlimited usage, your billing, your control. BILLING 4 min Understanding page limits and upgrading Each plan has a published-page limit. ACCOUNT BILLING 2 min Publishing pages and getting indexed Publish, ping Google, and watch your pages enter the index. GETTING STARTED 3 min Still need help? Our team usually replies within 1 business day. Contact support"
+      },
+      "assistant_copy": "Ask about founders.click Grounded in our help center. I cite the articles I use. How do I connect my Sharetribe marketplace? What's a City Hub page? How does billing work? Why aren't my listings syncing?"
+    }
+  },
+  {
+    "phase": "phase1-inventory",
+    "feature": "LIVE CAPTURE \u2014 help category 'Account & Billing'",
+    "promise": "Plans, page limits, upgrading, team members, invoices, and cancellation.",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/help/account-billing",
+    "account": "anonymous visitor (inventory)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /help/account-billing",
+      "open every article in it and capture title/headings/body"
+    ],
+    "expected": "Articles from the seed migration",
+    "actual": "1 articles: ['Understanding page limits and upgrading']",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase1-inventory/004-help-category-account-billing.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:35:56+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/account-billing",
+        "status": 200
+      },
+      {
+        "t": "2026-09-02T07:35:58+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/account-billing/understanding-page-limits",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Blocked",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:36:00+00:00",
+    "extra": {
+      "articles": [
+        {
+          "category": "account-billing",
+          "href": "/help/account-billing/understanding-page-limits",
+          "title": "Account & Billing",
+          "excerpt": "Each plan has a published-page limit.",
+          "headings": [
+            "Understanding page limits and upgrading",
+            "OTHER CATEGORIES"
+          ],
+          "body": "Help Account & Billing Account & Billing Plans, page limits, upgrading, team members, invoices, and cancellation. Understanding page limits and upgrading Each plan has a published-page limit. ACCOUNT BILLING 2 min OTHER CATEGORIES Sharetribe Integration Page Builder SEO & Growth",
+          "has_feedback": false
+        }
+      ]
+    }
+  },
+  {
+    "phase": "phase1-inventory",
+    "feature": "LIVE CAPTURE \u2014 help category 'Page Builder'",
+    "promise": "Templates, variables, the matrix builder, AI content, and publishing.",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/help/page-builder",
+    "account": "anonymous visitor (inventory)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /help/page-builder",
+      "open every article in it and capture title/headings/body"
+    ],
+    "expected": "Articles from the seed migration",
+    "actual": "3 articles: ['Understanding page templates', 'Using the matrix builder for bulk page creation', 'Writing SEO-optimized content with AI assist']",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase1-inventory/005-help-category-page-builder.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:36:00+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/page-builder",
+        "status": 200
+      },
+      {
+        "t": "2026-09-02T07:36:02+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/page-builder/understanding-page-templates",
+        "status": 200
+      },
+      {
+        "t": "2026-09-02T07:36:03+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/page-builder/using-the-matrix-builder",
+        "status": 200
+      },
+      {
+        "t": "2026-09-02T07:36:05+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/page-builder/writing-seo-content-with-ai",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Blocked",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:36:07+00:00",
+    "extra": {
+      "articles": [
+        {
+          "category": "page-builder",
+          "href": "/help/page-builder/understanding-page-templates",
+          "title": "Page Builder",
+          "excerpt": "Templates define page structure. Variables make them dynamic.",
+          "headings": [
+            "Understanding page templates",
+            "Using the matrix builder for bulk page creation",
+            "Writing SEO-optimized content with AI assist",
+            "OTHER CATEGORIES"
+          ],
+          "body": "Help Page Builder Page Builder Templates, variables, the matrix builder, AI content, and publishing. Understanding page templates Templates define page structure. Variables make them dynamic. PAGE BUILDER 4 min Using the matrix builder for bulk page creation Generate pages for every combination of two or more variables in one click. PAGE BUILDER 3 min Writing SEO-optimized content with AI assist Use AI to draft sections, but always review and personalize before publishing. PAGE BUILDER 3 min OTHER CATEGORIES Sharetribe Integration SEO & Growth Account & Billing",
+          "has_feedback": false
+        },
+        {
+          "category": "page-builder",
+          "href": "/help/page-builder/using-the-matrix-builder",
+          "title": "Page Builder",
+          "excerpt": "Generate pages for every combination of two or more variables in one click.",
+          "headings": [
+            "Understanding page templates",
+            "Using the matrix builder for bulk page creation",
+            "Writing SEO-optimized content with AI assist",
+            "OTHER CATEGORIES"
+          ],
+          "body": "Help Page Builder Page Builder Templates, variables, the matrix builder, AI content, and publishing. Understanding page templates Templates define page structure. Variables make them dynamic. PAGE BUILDER 4 min Using the matrix builder for bulk page creation Generate pages for every combination of two or more variables in one click. PAGE BUILDER 3 min Writing SEO-optimized content with AI assist Use AI to draft sections, but always review and personalize before publishing. PAGE BUILDER 3 min OTHER CATEGORIES Sharetribe Integration SEO & Growth Account & Billing",
+          "has_feedback": false
+        },
+        {
+          "category": "page-builder",
+          "href": "/help/page-builder/writing-seo-content-with-ai",
+          "title": "Page Builder",
+          "excerpt": "Use AI to draft sections, but always review and personalize before publishing.",
+          "headings": [
+            "Understanding page templates",
+            "Using the matrix builder for bulk page creation",
+            "Writing SEO-optimized content with AI assist",
+            "OTHER CATEGORIES"
+          ],
+          "body": "Help Page Builder Page Builder Templates, variables, the matrix builder, AI content, and publishing. Understanding page templates Templates define page structure. Variables make them dynamic. PAGE BUILDER 4 min Using the matrix builder for bulk page creation Generate pages for every combination of two or more variables in one click. PAGE BUILDER 3 min Writing SEO-optimized content with AI assist Use AI to draft sections, but always review and personalize before publishing. PAGE BUILDER 3 min OTHER CATEGORIES Sharetribe Integration SEO & Growth Account & Billing",
+          "has_feedback": false
+        }
+      ]
+    }
+  },
+  {
+    "phase": "phase1-inventory",
+    "feature": "LIVE CAPTURE \u2014 help category 'SEO & Growth'",
+    "promise": "Programmatic SEO, structured data, internal linking, GSC, and indexing.",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/help/seo-growth",
+    "account": "anonymous visitor (inventory)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /help/seo-growth",
+      "open every article in it and capture title/headings/body"
+    ],
+    "expected": "Articles from the seed migration",
+    "actual": "2 articles: ['Connecting Google Search Console', 'Submitting your sitemap']",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase1-inventory/006-help-category-seo-growth.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:36:07+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/seo-growth",
+        "status": 200
+      },
+      {
+        "t": "2026-09-02T07:36:09+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/seo-growth/connecting-google-search-console",
+        "status": 200
+      },
+      {
+        "t": "2026-09-02T07:36:11+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/seo-growth/submitting-your-sitemap",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Blocked",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:36:12+00:00",
+    "extra": {
+      "articles": [
+        {
+          "category": "seo-growth",
+          "href": "/help/seo-growth/connecting-google-search-console",
+          "title": "SEO & Growth",
+          "excerpt": "Verify your domain in GSC so you can see impressions, clicks, and indexing status.",
+          "headings": [
+            "Connecting Google Search Console",
+            "Submitting your sitemap",
+            "OTHER CATEGORIES"
+          ],
+          "body": "Help SEO & Growth SEO & Growth Programmatic SEO, structured data, internal linking, GSC, and indexing. Connecting Google Search Console Verify your domain in GSC so you can see impressions, clicks, and indexing status. SEO GROWTH 3 min Submitting your sitemap Tell Google about every page you have published in one shot. SEO GROWTH 2 min OTHER CATEGORIES Sharetribe Integration Page Builder Account & Billing",
+          "has_feedback": false
+        },
+        {
+          "category": "seo-growth",
+          "href": "/help/seo-growth/submitting-your-sitemap",
+          "title": "SEO & Growth",
+          "excerpt": "Tell Google about every page you have published in one shot.",
+          "headings": [
+            "Connecting Google Search Console",
+            "Submitting your sitemap",
+            "OTHER CATEGORIES"
+          ],
+          "body": "Help SEO & Growth SEO & Growth Programmatic SEO, structured data, internal linking, GSC, and indexing. Connecting Google Search Console Verify your domain in GSC so you can see impressions, clicks, and indexing status. SEO GROWTH 3 min Submitting your sitemap Tell Google about every page you have published in one shot. SEO GROWTH 2 min OTHER CATEGORIES Sharetribe Integration Page Builder Account & Billing",
+          "has_feedback": false
+        }
+      ]
+    }
+  },
+  {
+    "phase": "phase1-inventory",
+    "feature": "LIVE CAPTURE \u2014 help category 'Sharetribe Integration'",
+    "promise": "Credentials, sync troubleshooting, listing mapping, and custom fields.",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/help/sharetribe-integration",
+    "account": "anonymous visitor (inventory)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /help/sharetribe-integration",
+      "open every article in it and capture title/headings/body"
+    ],
+    "expected": "Articles from the seed migration",
+    "actual": "4 articles: ['Handling multiple marketplaces in one workspace', 'Where to find your Integration API credentials', 'Troubleshooting failed syncs', 'Mapping custom fields to page variables']",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase1-inventory/007-help-category-sharetribe-integration.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:36:12+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/sharetribe-integration",
+        "status": 200
+      },
+      {
+        "t": "2026-09-02T07:36:14+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/sharetribe-integration/handling-multiple-marketplaces",
+        "status": 200
+      },
+      {
+        "t": "2026-09-02T07:36:16+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/sharetribe-integration/where-to-find-integration-api-credentials",
+        "status": 200
+      },
+      {
+        "t": "2026-09-02T07:36:17+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/sharetribe-integration/troubleshooting-failed-syncs",
+        "status": 200
+      },
+      {
+        "t": "2026-09-02T07:36:19+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/sharetribe-integration/mapping-custom-fields-to-page-variables",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Blocked",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:36:21+00:00",
+    "extra": {
+      "articles": [
+        {
+          "category": "sharetribe-integration",
+          "href": "/help/sharetribe-integration/handling-multiple-marketplaces",
+          "title": "Sharetribe Integration",
+          "excerpt": "Run several Sharetribe marketplaces from a single founders.click workspace.",
+          "headings": [
+            "Handling multiple marketplaces in one workspace",
+            "Where to find your Integration API credentials",
+            "Troubleshooting failed syncs",
+            "Mapping custom fields to page variables",
+            "OTHER CATEGORIES"
+          ],
+          "body": "Help Sharetribe Integration Sharetribe Integration Credentials, sync troubleshooting, listing mapping, and custom fields. Handling multiple marketplaces in one workspace Run several Sharetribe marketplaces from a single founders.click workspace. SHARETRIBE INTEGRATION 2 min Where to find your Integration API credentials Step-by-step screenshots for locating your Sharetribe Integration API client ID and secret. SHARETRIBE INTEGRATION 2 min Troubleshooting failed syncs When a sync fails: how to read the error, what causes most failures, and how to fix them. SHARETRIBE INTEGRATION 4 min Mapping custom fields to page variables Connect your Sharetribe custom fields to template variables for richer auto-generated pages. SHARETRIBE INTEGRATION 3 min OTHER CATEGORIES Page Builder SEO & Growth Account & Billing",
+          "has_feedback": false
+        },
+        {
+          "category": "sharetribe-integration",
+          "href": "/help/sharetribe-integration/where-to-find-integration-api-credentials",
+          "title": "Sharetribe Integration",
+          "excerpt": "Step-by-step screenshots for locating your Sharetribe Integration API client ID and secret.",
+          "headings": [
+            "Handling multiple marketplaces in one workspace",
+            "Where to find your Integration API credentials",
+            "Troubleshooting failed syncs",
+            "Mapping custom fields to page variables",
+            "OTHER CATEGORIES"
+          ],
+          "body": "Help Sharetribe Integration Sharetribe Integration Credentials, sync troubleshooting, listing mapping, and custom fields. Handling multiple marketplaces in one workspace Run several Sharetribe marketplaces from a single founders.click workspace. SHARETRIBE INTEGRATION 2 min Where to find your Integration API credentials Step-by-step screenshots for locating your Sharetribe Integration API client ID and secret. SHARETRIBE INTEGRATION 2 min Troubleshooting failed syncs When a sync fails: how to read the error, what causes most failures, and how to fix them. SHARETRIBE INTEGRATION 4 min Mapping custom fields to page variables Connect your Sharetribe custom fields to template variables for richer auto-generated pages. SHARETRIBE INTEGRATION 3 min OTHER CATEGORIES Page Builder SEO & Growth Account & Billing",
+          "has_feedback": false
+        },
+        {
+          "category": "sharetribe-integration",
+          "href": "/help/sharetribe-integration/troubleshooting-failed-syncs",
+          "title": "Sharetribe Integration",
+          "excerpt": "When a sync fails: how to read the error, what causes most failures, and how to fix them.",
+          "headings": [
+            "Handling multiple marketplaces in one workspace",
+            "Where to find your Integration API credentials",
+            "Troubleshooting failed syncs",
+            "Mapping custom fields to page variables",
+            "OTHER CATEGORIES"
+          ],
+          "body": "Help Sharetribe Integration Sharetribe Integration Credentials, sync troubleshooting, listing mapping, and custom fields. Handling multiple marketplaces in one workspace Run several Sharetribe marketplaces from a single founders.click workspace. SHARETRIBE INTEGRATION 2 min Where to find your Integration API credentials Step-by-step screenshots for locating your Sharetribe Integration API client ID and secret. SHARETRIBE INTEGRATION 2 min Troubleshooting failed syncs When a sync fails: how to read the error, what causes most failures, and how to fix them. SHARETRIBE INTEGRATION 4 min Mapping custom fields to page variables Connect your Sharetribe custom fields to template variables for richer auto-generated pages. SHARETRIBE INTEGRATION 3 min OTHER CATEGORIES Page Builder SEO & Growth Account & Billing",
+          "has_feedback": false
+        },
+        {
+          "category": "sharetribe-integration",
+          "href": "/help/sharetribe-integration/mapping-custom-fields-to-page-variables",
+          "title": "Sharetribe Integration",
+          "excerpt": "Connect your Sharetribe custom fields to template variables for richer auto-generated pages.",
+          "headings": [
+            "Handling multiple marketplaces in one workspace",
+            "Where to find your Integration API credentials",
+            "Troubleshooting failed syncs",
+            "Mapping custom fields to page variables",
+            "OTHER CATEGORIES"
+          ],
+          "body": "Help Sharetribe Integration Sharetribe Integration Credentials, sync troubleshooting, listing mapping, and custom fields. Handling multiple marketplaces in one workspace Run several Sharetribe marketplaces from a single founders.click workspace. SHARETRIBE INTEGRATION 2 min Where to find your Integration API credentials Step-by-step screenshots for locating your Sharetribe Integration API client ID and secret. SHARETRIBE INTEGRATION 2 min Troubleshooting failed syncs When a sync fails: how to read the error, what causes most failures, and how to fix them. SHARETRIBE INTEGRATION 4 min Mapping custom fields to page variables Connect your Sharetribe custom fields to template variables for richer auto-generated pages. SHARETRIBE INTEGRATION 3 min OTHER CATEGORIES Page Builder SEO & Growth Account & Billing",
+          "has_feedback": false
+        }
+      ]
+    }
+  }
+]

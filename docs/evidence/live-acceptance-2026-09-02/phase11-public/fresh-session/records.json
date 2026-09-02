@@ -1,0 +1,41 @@
+[
+  {
+    "phase": "phase11-public/fresh-session",
+    "feature": "New Session (incognito) carries no state from the previous profile",
+    "promise": "Each browser profile starts clean: no markers, no cookies, no auth token; /app still bounces to login",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp",
+    "account": "anonymous visitor (second fresh profile)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open / in a brand-new Session",
+      "read localStorage/sessionStorage/cookies",
+      "open /app"
+    ],
+    "expected": "marker absent; no live_acceptance_marker cookie; no sb-*-auth-token; /app \u2192 /login",
+    "actual": "marker=None; localStorage keys=[]; sessionStorage keys=[]; cookies=[]; auth keys=[]; /app bounced to login=True (/login?next=%2Fapp)",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/fresh-session/001-new-session-incognito-carries-no-state-from-the-previous-pro.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:33:17+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/",
+        "status": 200
+      },
+      {
+        "t": "2026-09-02T07:33:18+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "no state carried over",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:33:22+00:00"
+  }
+]
