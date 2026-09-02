@@ -273,6 +273,23 @@ jobs:
       # shipped. Checking that a ROUTE exists proves nothing — a route added
       # three releases ago still exists — and a green deploy log proved nothing
       # either, which is how a stale tree served production for eleven commits.
+      # `wrangler deploy` returns before the new version is serving everywhere.
+      # Smoking one second later saw the previous build twice (runs #12, #13)
+      # and marked a successful deploy as failed. Wait for the identity
+      # endpoint to report this commit, bounded; the smoke still decides.
+      - name: Wait for the new version to propagate
+        run: |
+          for i in $(seq 1 24); do
+            served=$(curl -sS --max-time 10 https://www.founders.click/api/public/edge-health \
+              | sed -nE 's/.*"sha":"([0-9a-f]+)".*/\1/p')
+            if [ "$served" = "${{ github.sha }}" ]; then
+              echo "serving ${{ github.sha }} after $((i*5 - 5))s"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::warning::still serving ${served:-unknown} after 120s — smoke will judge"
+
       - name: Post-deploy smoke
         id: smoke
         run: |
