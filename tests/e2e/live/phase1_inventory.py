@@ -500,7 +500,10 @@ ADVERTISED_BUT_ABSENT = [
     "README 'Public tenant pages (/p/slug)' → /p/ now 301s to /a/ (canonical); minor.",
     "Login/Signup 'Continue with Google' → code toasts 'Google sign-in is not enabled in Supabase yet' when the provider is off; must be clicked in P2.",
     "Backlink / link-building: no backlink feature is advertised or implemented anywhere (grep: zero hits); 'referral' appears only as the affiliate add-on.",
-    "Locale: i18n.tsx ships 6 languages but no switcher is rendered — the site is English-only.",
+    "Locale: the help centre header offers six languages (English / Español / Français / Deutsch / Suomi / Svenska) but the marketing site has no switcher and the dashboard/help article copy is English-only.",
+    "Help home links 'Welcome to founders.click', 'Connecting your Sharetribe marketplace', 'Publishing pages and getting indexed' and the help sitemap lists all five Getting Started articles → every one of them, and /help/getting-started itself, returns 404 in production.",
+    "Help home / sitemap link '/help/billing/bring-your-own-ai-key-byok' → 404 (category 'billing' does not exist).",
+    "Help article pages (all categories): the URL answers 200 with the article's <title>, but the visible page is the category listing — the article body never renders (route nesting without <Outlet>). Customers cannot read any help article.",
 ]
 
 # --------------------------------------------------------------------------
@@ -515,7 +518,7 @@ LANDING_JS = r"""
                ctas: q('a', hero).map(a => ({text: txt(a), href: a.getAttribute('href')})), fineprint: txt(heroPs[2]) };
   out.demo = { caption: txt(document.querySelector('#demo figcaption')), video: (document.querySelector('#demo video source')||{}).getAttribute ? document.querySelector('#demo video source').getAttribute('src') : null };
   const secs = q('main section');
-  const pf = secs.find(s => txt(s).includes('The problem'));
+  const pf = secs.find(s => txt(s).toLowerCase().includes('the problem'));
   out.problem_fix = pf ? q(':scope > div > div', pf).map(c => ({ label: txt(c.querySelector('p')), h2: txt(c.querySelector('h2')), items: q('li', c).map(txt) })) : [];
   out.features = { eyebrow: txt(document.querySelector('#features p')), h2: txt(document.querySelector('#features-heading')),
                    items: q('#features li').map(li => ({ title: txt(li.querySelector('h3')), desc: txt(li.querySelector('p')) })) };
@@ -572,10 +575,13 @@ CATEGORY_JS = r"""
 ARTICLE_JS = r"""
 () => {
   const txt = el => (el ? el.innerText.replace(/\s+/g,' ').trim() : '');
-  const art = document.querySelector('article') || document.querySelector('main');
-  return { h1: txt(document.querySelector('h1')), body: txt(art).slice(0, 2500),
-           headings: Array.from(art.querySelectorAll('h2,h3')).map(txt),
-           has_feedback: /helpful/i.test(txt(document.body)) };
+  const main = document.querySelector('main') || document.body;
+  const h1s = Array.from(document.querySelectorAll('h1')).map(txt);
+  const body = txt(main);
+  return { title: document.title, h1s, h1: h1s[h1s.length - 1] || '', body: body.slice(0, 3000),
+           headings: Array.from(main.querySelectorAll('h2,h3')).map(txt).slice(0, 30),
+           not_found: /article not found|category not found|page not found/i.test(body),
+           has_feedback: /helpful/i.test(body) };
 }
 """
 
@@ -687,33 +693,67 @@ async def main():
         )
 
         # ---------------- 3. Every live category + article ------------------
-        articles_md = ["# Help centre — live article inventory (captured unauthenticated)", ""]
+        # Discover categories/articles from THREE sources so nothing the site
+        # advertises is skipped: category cards on /help, article links on
+        # /help (popular / recent), and the help sitemap.
+        sitemap_urls: list[str] = []
+        try:
+            resp = await s.context.request.get(f"{BASE}/help/sitemap.xml", timeout=20000)
+            sm = await resp.text()
+            (OUT / "help-sitemap.xml").write_text(sm)
+            sitemap_urls = [u.replace(BASE, "") for u in re.findall(r"<loc>([^<]+)</loc>", sm)]
+        except Exception as e:  # noqa: BLE001
+            live["help_sitemap_error"] = str(e)[:200]
+        article_urls = sorted({l["href"] for l in helphome["all_links"] if re.fullmatch(r"/help/[a-z0-9-]+/[a-z0-9-]+", l["href"] or "")}
+                              | {u for u in sitemap_urls if re.fullmatch(r"/help/[a-z0-9-]+/[a-z0-9-]+", u)})
+        cat_links = sorted(set(cat_links) | {u.rsplit("/", 1)[0] for u in article_urls}
+                           | {u for u in sitemap_urls if re.fullmatch(r"/help/[a-z0-9-]+", u) and u not in ("/help/contact", "/help/search")})
+        live["help_sitemap_urls"] = sitemap_urls
+        articles_md = ["# Help centre — live article inventory (captured unauthenticated)", "",
+                       f"Sources: category cards + article links on /help, and /help/sitemap.xml ({len(sitemap_urls)} URLs).", ""]
         all_articles = []
+        cat_info: dict[str, dict] = {}
         for cat in cat_links:
             slug = cat.rsplit("/", 1)[-1]
-            await s.goto(cat, settle_ms=1800)
+            resp = await s.goto(cat, settle_ms=1800)
             info = await s.page.evaluate(CATEGORY_JS, slug)
+            info["http"] = resp.status if resp else None
+            info["not_found"] = bool(re.search(r"category not found|page not found", await s.text(), re.I)) or info["http"] == 404
+            cat_info[cat] = info
             shots[cat] = await s.shot(f"help-category-{slug}")
-            articles_md += [f"## {info['h1'] or slug}  ({cat})", f"_{info['description']}_", ""]
-            for a in info["articles"]:
-                await s.goto(a["href"], settle_ms=1500)
+            articles_md += [f"## {info['h1'] or slug}  ({cat}) — HTTP {info['http']}{' — CATEGORY NOT FOUND' if info['not_found'] else ''}",
+                            f"_{info['description']}_", ""]
+            for href in sorted({a["href"] for a in info["articles"]} | {u for u in article_urls if u.startswith(cat + "/")}):
+                excerpt = next((a["excerpt"] for a in info["articles"] if a["href"] == href), "")
+                aresp = await s.goto(href, settle_ms=1500)
                 art = await s.page.evaluate(ARTICLE_JS)
-                all_articles.append({"category": slug, "href": a["href"], "title": art["h1"] or a["title"],
-                                     "excerpt": a["excerpt"], "headings": art["headings"], "body": art["body"], "has_feedback": art["has_feedback"]})
-                articles_md += [f"### {art['h1'] or a['title']}  (`{a['href']}`)", f"- Excerpt: {a['excerpt']}",
-                                f"- Headings: {', '.join(art['headings'])}", f"- Body: {art['body'][:1200]}", ""]
+                art_http = aresp.status if aresp else None
+                rec = {"category": slug, "href": href, "http": art_http, "not_found": art["not_found"] or art_http == 404,
+                       "title": art["h1"] if not art["not_found"] else "(404)", "page_title": art["title"], "h1s": art["h1s"],
+                       "excerpt": excerpt, "headings": art["headings"], "body": art["body"], "has_feedback": art["has_feedback"],
+                       "in_sitemap": href in sitemap_urls, "linked_from_home": any(l["href"] == href for l in helphome["all_links"])}
+                all_articles.append(rec)
+                if not rec["not_found"] and "article-full" not in shots:
+                    shots["article-full"] = await s.shot(f"help-article-{href.rsplit('/', 1)[-1]}", full=True)
+                articles_md += [f"### {rec['title']}  (`{href}`) — HTTP {art_http}{' — NOT FOUND' if rec['not_found'] else ''}",
+                                f"- In help sitemap: {rec['in_sitemap']}; linked from /help: {rec['linked_from_home']}",
+                                f"- Excerpt: {excerpt}", f"- h1s on page: {art['h1s']}",
+                                f"- Headings: {', '.join(art['headings'])}", f"- Body: {art['body'][:1500]}", ""]
+            arts = [x for x in all_articles if x["category"] == slug]
+            missing = [x["href"] for x in arts if x["not_found"]]
             await s.record(
                 feature=f"LIVE CAPTURE — help category '{info['h1'] or slug}'",
-                promise=info["description"] or "(no description)",
-                actions=[f"open {cat}", "open every article in it and capture title/headings/body"],
-                expected="Articles from the seed migration",
-                actual=f"{len(info['articles'])} articles: {[a['title'] for a in info['articles']]}",
-                status=BLOCKED, screenshot=shots[cat], url=f"{BASE}{cat}",
-                extra={"articles": [x for x in all_articles if x['category'] == slug]},
+                promise=info["description"] or "(category page not served)",
+                actions=[f"open {cat}", "open every article linked from it, from /help, or listed in /help/sitemap.xml; capture title/h1/headings/body"],
+                expected="Category page + its articles from the seed migration / admin",
+                actual=(f"category http={info['http']} not_found={info['not_found']}; {len(arts)} article URLs, {len(missing)} return 404: {missing}; "
+                        f"live titles={[x['title'] for x in arts if not x['not_found']]}"),
+                status=BLOCKED, screenshot=shots[cat], url=f"{BASE}{cat}", extra={"category": info, "articles": arts},
             )
         (OUT / "help-articles.md").write_text("\n".join(articles_md))
         (OUT / "help-articles.json").write_text(json.dumps(all_articles, indent=2))
-        live["help_articles"] = [(a["category"], a["title"], a["href"]) for a in all_articles]
+        live["help_articles"] = [(a["category"], a["title"], a["href"], a["http"]) for a in all_articles]
+        live["help_missing"] = [a["href"] for a in all_articles if a["not_found"]] + [c for c, i in cat_info.items() if i["not_found"]]
 
         # ---------------- 4. Other public pages -------------------------------
         public_pages = {
@@ -734,13 +774,34 @@ async def main():
             "/apply/live-acceptance-nope": "apply-unknown",
             "/this-route-does-not-exist": "root-404",
         }
+        raw_files = {"/robots.txt": "robots.txt", "/sitemap.xml": "sitemap.xml", "/help/sitemap.xml": "help-sitemap.xml"}
+        expect = {
+            "/help/contact": "Contact form with name/email/category/subject/message (not submitted here)",
+            "/help/search?q=sitemap": "Search results page",
+            "/terms": "Terms of Service", "/privacy": "Privacy Policy",
+            "/login": "Email/password form + Google + reset link", "/signup": "Name/email/password + Google + legal links",
+            "/reset-password": "Email form 'Send reset link'",
+            "/robots.txt": "Allow /, Disallow /app /login /signup /reset-password, two sitemaps",
+            "/sitemap.xml": "Marketing sitemap (/, /help, /privacy, /terms) on the platform host",
+            "/help/sitemap.xml": "Every published help category + article",
+            "/a/founders-domain-test": "Marker text; tenant 'not-connected' on the platform host",
+            "/p/live-acceptance-probe": "301 → /a/live-acceptance-probe → 404",
+            "/a/live-acceptance-probe": "404 (unknown page)", "/s/live-acceptance/probe": "404 (unknown workspace/page)",
+            "/apply/live-acceptance-nope": "'This affiliate program isn't available.'",
+            "/this-route-does-not-exist": "Branded 404 with 'Go home'",
+        }
         for path, name in public_pages.items():
             try:
                 resp = await s.goto(path, settle_ms=1500)
                 status = resp.status if resp else "?"
                 body = await s.text()
-                if path.endswith((".txt", ".xml")):
-                    body = (await s.page.content())[:1500]
+                extra: dict = {}
+                if path in raw_files:
+                    rr = await s.context.request.get(f"{BASE}{path}", timeout=20000)
+                    raw = await rr.text()
+                    (OUT / raw_files[path]).write_text(raw)
+                    body = raw[:1200]
+                    extra = {"http": rr.status, "raw_first_1200": body, "locs": re.findall(r"<loc>([^<]+)</loc>", raw)[:60]}
                 controls = ""
                 if path in ("/help/contact", "/login", "/signup", "/reset-password"):
                     labels = await s.page.locator("label").all_inner_texts()
@@ -756,6 +817,12 @@ async def main():
                             pass
                 shots[path] = await s.shot(f"public-{name}")
                 route_obs[path] = f"http={status} final={s.page.url.replace(BASE, '')} text={body[:220]!r}{controls}"
+                await s.record(
+                    feature=f"LIVE PROBE — {path}",
+                    promise="A public URL the site links to or advertises (discovery only, nothing submitted)",
+                    actions=[f"open {path}"], expected=expect.get(path, ""), actual=route_obs[path][:900],
+                    status=BLOCKED, screenshot=shots[path], url=f"{BASE}{path}", extra=extra,
+                )
             except Exception as e:  # noqa: BLE001
                 route_obs[path] = f"probe error: {e}"
 
@@ -769,6 +836,17 @@ async def main():
         # ---------------- 5. Public API / hook probes -------------------------
         api = await probe_api(s)
         live["api_probes"] = api
+        sync_hook = api.get("hook sync-sharetribe (no secret)", {})
+        cron_secret_missing = sync_hook.get("status") == 500 and "misconfigured" in sync_hook.get("body", "")
+        await s.record(
+            feature="LIVE PROBE — public APIs and cron hooks (no credentials, unknown hostname)",
+            promise="Public routing APIs answer 404 for hosts we do not manage; cron/auth hooks refuse calls without the shared secret.",
+            actions=["GET domain-config / domain-token / sitemap-by-host ?hostname=<unknown>", "POST page-lookup <unknown>",
+                     "POST hooks/sync-sharetribe, hooks/canonical-audit, hooks/auth-send-email with no secret/signature"],
+            expected="404/404/404/ok:false; 401/401/401",
+            actual="; ".join(f"{k}: {v}" for k, v in api.items()),
+            status=BLOCKED, screenshot=shots["/"], url=f"{BASE}/api/public/", extra={"api": api, "cron_secret_missing_on_worker": cron_secret_missing},
+        )
 
         # ---------------- 6. Every dashboard route, unauthenticated ----------
         app_routes = sorted({f["route"] for f in F if f["route"] and f["route"].startswith("/app")})
@@ -793,6 +871,53 @@ async def main():
                 route_obs[path] = f"probe error: {e}"
 
         (OUT / "live-capture.json").write_text(json.dumps({"live": live, "routes": route_obs}, indent=2))
+        n_live = sum(1 for p in app_routes if "route live" in route_obs.get(p, ""))
+        await s.record(
+            feature=f"LIVE PROBE — {len(app_routes)} dashboard routes opened unauthenticated",
+            promise="Every /app route in the code exists in the production build and bounces anonymous visitors to /login?next=…",
+            actions=[f"open each of {len(app_routes)} /app routes in a fresh anonymous profile"],
+            expected="All redirect to /login with next=<route>; none 404",
+            actual=f"{n_live}/{len(app_routes)} redirected to /login; others: " + "; ".join(f"{p}: {route_obs[p][:120]}" for p in app_routes if "route live" not in route_obs.get(p, "")),
+            status=BLOCKED, screenshot=shots.get("/app", shots["/"]), url=f"{BASE}/app", extra={"routes": {p: route_obs.get(p) for p in app_routes}},
+        )
+
+        # ---- runtime-derived rows and status upgrades (discovery evidence) ---
+        by_name = {f["feature"]: f for f in F}
+        row = by_name["Scheduled Sharetribe sync (every 30 min)"]
+        if cron_secret_missing:
+            row.update(status=NOTIMPL, sev="P1", actual=row["actual"] + " LIVE: POST /api/public/hooks/sync-sharetribe with no secret → 500 'server misconfigured', which the code returns only when CRON_SECRET is unset on the Worker — the pg_cron job can never authenticate, so the automatic 30-minute sync promised by the welcome email and landing page is operationally absent in production.")
+        else:
+            row["actual"] += f" LIVE: hook answered {sync_hook} (secret appears configured; schedule itself unobservable here)."
+        by_name["Public cron hooks refuse unauthenticated calls"]["actual"] = "; ".join(
+            f"{k}: {v}" for k, v in api.items() if k.startswith("hook"))
+        by_name["Domain activation probe + public routing APIs"]["actual"] += " LIVE: " + "; ".join(
+            f"{k}: {v}" for k, v in api.items() if not k.startswith("hook"))
+        by_name["Site header / footer navigation & locale"]["actual"] = (
+            f"Marketing header/footer render no locale switcher ({live['landing']['lang_switcher']} controls live); the HELP header does render a 'Language' selector (English / Español / Français / Deutsch / Suomi / Svenska) — see /help/contact probe text. Marketing copy is English-only.")
+        live_arts = [a for a in all_articles if not a["not_found"]]
+        rendered = [a for a in live_arts if a["page_title"].split(" — ")[0].strip().lower() in [h.lower() for h in a["h1s"]]]
+        missing = live.get("help_missing", [])
+        by_name["Help categories & articles (seeded content)"]["actual"] += (
+            f" LIVE: {len(cat_links)} category URLs, {len(all_articles)} article URLs discovered; {len(missing)} return 404: {missing}; "
+            f"{len(rendered)}/{len(live_arts)} live article URLs show the article's own h1.")
+        add("Help 'Getting Started' onboarding articles", "help seed 20260511071212: category getting-started (Welcome, Connecting Sharetribe, first sync, first SEO page, publishing & indexing); linked from /help (popular/recent) and listed in /help/sitemap.xml",
+            "Help home surfaces 'Welcome to founders.click', 'Connecting your Sharetribe marketplace', 'Publishing pages and getting indexed'; category 'Onboarding, first page, connecting Sharetribe, and your first sync.'",
+            "none", P9,
+            status=NOTIMPL if "/help/getting-started" in missing else BLOCKED, sev="P2" if "/help/getting-started" in missing else "-",
+            actual=("LIVE: /help/getting-started and all five article URLs return HTTP 404 although the help home page links to them and the help sitemap lists them — the onboarding documentation is unreachable." if "/help/getting-started" in missing else "LIVE: category served."))
+        add("Help article reading (article body renders)", "src/routes/help.$category.$article.tsx nested under help.$category.tsx (file-route nesting); the category component renders no <Outlet>",
+            "Open an article and read it ('Was this helpful?' feedback at the end).",
+            "none", P9,
+            status=(NOTIMPL if live_arts and not rendered else BLOCKED), sev=("P1" if live_arts and not rendered else "-"),
+            actual=(f"LIVE: {len(live_arts)} article URLs answer 200 with the article's <title>, but the visible page is the CATEGORY listing (h1s={live_arts[0]['h1s'] if live_arts else []}); no article body, headings or feedback control render. Cause in code: /help/$category/$article is a child route of /help/$category and the parent component has no <Outlet>, so the child never renders."
+                    if live_arts and not rendered else f"LIVE: {len(rendered)}/{len(live_arts)} articles render their own heading."))
+        byok = [a for a in all_articles if "bring-your-own-ai-key" in a["href"]]
+        if byok:
+            add("Help article 'Bring your own AI key (BYOK)' (admin-added, not in seed)", "/help/billing/bring-your-own-ai-key-byok — linked from /help and listed in /help/sitemap.xml; category 'billing' does not exist in the seed",
+                "Explain BYOK to customers.", "none", P9,
+                status=NOTIMPL if byok[0]["not_found"] else BLOCKED, sev="P3" if byok[0]["not_found"] else "-",
+                actual=f"LIVE: http={byok[0]['http']} not_found={byok[0]['not_found']} (category /help/billing http={cat_info.get('/help/billing', {}).get('http')}).")
+        s.drain()  # evidence from the probes above already belongs to their own records
 
         # ---------------- 7. One harness record per inventory feature --------
         for f in F:
@@ -875,8 +1000,11 @@ async def main():
         for sec in H["sections"]:
             md.append(f"- **{sec['heading']}**: " + "; ".join(f"{l['text']} → {l['href']}" for l in sec["links"][:12]))
         md.append(f"- AI assistant copy (panel opened, nothing sent): {live['help_assistant_copy'][:400]}")
-        md.append(f"- Articles live ({len(live['help_articles'])}): " + "; ".join(f"{c}/{t}" for c, t, _ in live["help_articles"]))
-        md.append("- Full article bodies: `help-articles.md`.")
+        md.append(f"- Help sitemap URLs ({len(live.get('help_sitemap_urls', []))}): {live.get('help_sitemap_urls')}")
+        md.append(f"- Article URLs probed ({len(live['help_articles'])}): " + "; ".join(f"{h} → HTTP {code} ({t})" for c, t, h, code in live["help_articles"]))
+        md.append(f"- Category/article URLs returning 404: {live.get('help_missing')}")
+        md.append(f"- Article rendering: {len(rendered)}/{len(live_arts)} live article URLs display the article's own heading (see 'Help article reading' row).")
+        md.append("- Full captured bodies: `help-articles.md` / `help-articles.json`.")
 
         md += ["", "## Legal-page promise sentences", ""]
         for k in ("legal_terms", "legal_privacy"):

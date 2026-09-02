@@ -15,10 +15,10 @@ SEV_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3, "-": 9, "": 9}
 
 def load_all():
     out = []
-    for p in sorted(EVIDENCE.glob("*/records.json")):
+    for p in sorted(EVIDENCE.rglob("records.json")):
         try:
             for r in json.loads(p.read_text()):
-                r["_phase_dir"] = p.parent.name
+                r["_phase_dir"] = str(p.parent.relative_to(EVIDENCE))
                 out.append(r)
         except Exception as e:
             print(f"<!-- could not read {p}: {e} -->")

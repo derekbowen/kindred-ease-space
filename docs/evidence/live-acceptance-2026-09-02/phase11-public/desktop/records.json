@@ -14,11 +14,11 @@
       "read the hero section"
     ],
     "expected": "HTTP 200; h1 + two CTAs; pricing/FAQ/demo sections present; no console errors; no failed resources",
-    "actual": "HTTP 200 in 4.59s; title='founders.click \u2014 The growth engine for Sharetribe marketplaces'; h1='The all-in-one growth engine.'; eyebrow='For Sharetribe marketplace founders'; ctas=[{'text': 'Start your free trial', 'href': '/signup'}, {'text': 'Watch the demo', 'href': '#demo'}]; note='14-day free trial \u00b7 publish up to 25 pages \u00b7 No card required'; sections pricing=True faq=True demo=True; console_errors=[]; failed_resources=[]",
+    "actual": "HTTP 200 in 4.08s; title='founders.click \u2014 The growth engine for Sharetribe marketplaces'; h1='The all-in-one growth engine.'; eyebrow='For Sharetribe marketplace founders'; ctas=[{'text': 'Start your free trial', 'href': '/signup'}, {'text': 'Watch the demo', 'href': '#demo'}]; note='14-day free trial \u00b7 publish up to 25 pages \u00b7 No card required'; sections pricing=True faq=True demo=True; console_errors=[]; failed_resources=[]",
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/001-landing-page-hero.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:31:48+00:00",
+        "t": "2026-09-02T07:45:47+00:00",
         "method": "GET",
         "url": "https://www.founders.click/",
         "status": 200
@@ -30,9 +30,9 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:31:52+00:00",
+    "recorded_at": "2026-09-02T07:45:51+00:00",
     "extra": {
-      "load_seconds": 4.59,
+      "load_seconds": 4.08,
       "title": "founders.click \u2014 The growth engine for Sharetribe marketplaces",
       "hero": {
         "h1": "The all-in-one growth engine.",
@@ -76,7 +76,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:31:53+00:00",
+    "recorded_at": "2026-09-02T07:45:52+00:00",
     "extra": {
       "pricing": {
         "heading": "Less than one agency invoice.",
@@ -147,7 +147,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:31:54+00:00",
+    "recorded_at": "2026-09-02T07:45:53+00:00",
     "extra": {
       "states": {
         "initial": [
@@ -399,7 +399,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:00+00:00",
+    "recorded_at": "2026-09-02T07:45:57+00:00",
     "extra": {
       "links": [
         {
@@ -517,26 +517,40 @@
   {
     "phase": "phase11-public/desktop",
     "feature": "Landing page \u2014 25 MB demo video does not block the page",
-    "promise": "The product demo is poster + click-to-play; the page load does not wait on the 25 MB mp4",
+    "promise": "The product demo is poster + click-to-play; the page load does not wait on (or silently download) the 25 MB mp4",
     "environment": "https://www.founders.click",
     "url": "https://www.founders.click/",
     "account": "anonymous visitor (desktop 1366x900)",
     "browser": "Chromium (Playwright) 1366x900",
     "preconditions": "",
     "actions": [
-      "after the load event, inspect the <video> element and Resource Timing for product-demo.*"
+      "after the load event, inspect the <video> element and Resource Timing for product-demo.*",
+      "fetch /product-demo.mp4 with 'Range: bytes=0-1023' from the page and read the response headers"
     ],
-    "expected": "preload=metadata, poster shown, video paused with a Play overlay, load event fired, only a small metadata range of the mp4 fetched (< 3 MB), no mp4 errors",
-    "actual": "video present=True preload='metadata' poster='/product-demo-poster.jpg' paused=True readyState=0 networkState=3 overlay=True; DCL=758ms load=1576ms; mp4 bytes transferred before any play=25845456 (entries=[{'name': 'product-demo-poster.jpg', 'transferSize': 137657, 'encodedBodySize': 137357, 'initiator': 'video', 'ms': 219}, {'name': 'product-demo.mp4', 'transferSize': 25845456, 'encodedBodySize': 25845156, 'initiator': 'video', 'ms': 983}]); page total transfer\u224826239356 bytes; mp4 errors=[]",
+    "expected": "preload=metadata, poster shown, video paused with a Play overlay, load event fired, only a small metadata range of the mp4 fetched (< 3 MB, i.e. origin answers 206 to Range requests), no mp4 errors",
+    "actual": "video present=True preload='metadata' poster='/product-demo-poster.jpg' paused=True overlay=True readyState=0 networkState=3; DCL=477ms load=1070ms; mp4 bytes transferred before any play=25,845,756 (entries=[{'name': 'product-demo-poster.jpg', 'transferSize': 137657, 'encodedBodySize': 137357, 'initiator': 'video', 'ms': 135}, {'name': 'product-demo.mp4', 'transferSize': 25845456, 'encodedBodySize': 25845156, 'initiator': 'video', 'ms': 728}, {'name': 'product-demo.mp4?live-acceptance-range-probe=1', 'transferSize': 300, 'encodedBodySize': 0, 'initiator': 'fetch', 'ms': 301}]); page total transfer\u224826,239,689 bytes; Range probe \u2192 {'status': 200, 'acceptRanges': None, 'contentRange': None, 'contentLength': '25845156', 'cfCache': 'MISS'} (206 expected; 200 = origin ignores Range); mp4 errors=[]",
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/005-landing-page-25-mb-demo-video-does-not-block-the-page.jpg",
-    "network": [],
+    "network": [
+      {
+        "t": "2026-09-02T07:45:57+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/product-demo.mp4?live-acceptance-range-probe=1",
+        "status": "FAILED",
+        "error": "net::ERR_ABORTED"
+      }
+    ],
     "console_errors": [],
     "persistence": "not checked",
     "status": "Failed",
     "severity": "P2",
-    "customer_impact": "Home page waits on or downloads a 25 MB file for every visitor",
-    "repro": [],
-    "recorded_at": "2026-09-02T07:32:00+00:00",
+    "customer_impact": "Every visitor to the home page downloads the full 25.8 MB mp4 without pressing Play (on a 400 kbps connection that is ~8.5 minutes of saturated bandwidth competing with the page's own JS/fonts)",
+    "repro": [
+      "open https://www.founders.click/ in Chrome with DevTools \u2192 Network",
+      "do not click Play",
+      "observe product-demo.mp4 transfers 25.8 MB (initiator: video, HTTP 200, no Accept-Ranges)",
+      "curl -r 0-1023 -o /dev/null -w '%{http_code} %{size_download}' https://www.founders.click/product-demo.mp4 \u2192 200 25845156"
+    ],
+    "recorded_at": "2026-09-02T07:45:57+00:00",
     "extra": {
       "video": {
         "present": true,
@@ -549,26 +563,43 @@
         "muted": true,
         "src": "product-demo.mp4",
         "overlayButton": true,
-        "dcl_ms": 758,
-        "load_ms": 1576,
+        "dcl_ms": 477,
+        "load_ms": 1070,
         "res": [
           {
             "name": "product-demo-poster.jpg",
             "transferSize": 137657,
             "encodedBodySize": 137357,
             "initiator": "video",
-            "ms": 219
+            "ms": 135
           },
           {
             "name": "product-demo.mp4",
             "transferSize": 25845456,
             "encodedBodySize": 25845156,
             "initiator": "video",
-            "ms": 983
+            "ms": 728
+          },
+          {
+            "name": "product-demo.mp4?live-acceptance-range-probe=1",
+            "transferSize": 300,
+            "encodedBodySize": 0,
+            "initiator": "fetch",
+            "ms": 301
           }
         ],
-        "totalTransfer": 26239356
-      }
+        "totalTransfer": 26239689
+      },
+      "range_probe": {
+        "status": 200,
+        "acceptRanges": null,
+        "contentRange": null,
+        "contentLength": "25845156",
+        "cfCache": "MISS"
+      },
+      "range_honoured": false,
+      "root_cause_supporting_evidence": "public/product-demo.mp4 in the repo is not faststart: top-level atoms ftyp(0) free(32) mdat(40, 25,381,911 B) moov(25,381,951) \u2014 the metadata is at the END of the file, so preload=metadata must read to the end; and the origin answers HTTP 200 (full body, no Accept-Ranges) to Range requests, so the browser cannot skip to the tail.",
+      "sandbox_note": "networkState=3/readyState=0 after the download is consistent with this headless Chromium lacking the H.264 decoder; playback itself is not verifiable here"
     }
   },
   {
@@ -583,7 +614,7 @@
     "actions": [
       "listen to every response/requestfailed/console-error during the whole landing visit (load, scroll, FAQ, link probing)"
     ],
-    "expected": "Zero console errors and zero failed/erroring requests",
+    "expected": "Zero console errors and zero failed/erroring requests (the test's own aborted Range probe excluded)",
     "actual": "console_errors=[]; failed_or_4xx5xx_requests=[]",
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/006-landing-page-no-console-errors-no-failed-resources.jpg",
     "network": [],
@@ -593,7 +624,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:00+00:00",
+    "recorded_at": "2026-09-02T07:45:58+00:00",
     "extra": {
       "console": [],
       "requests": []
@@ -616,7 +647,7 @@
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/007-help-centre-home.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:32:01+00:00",
+        "t": "2026-09-02T07:45:58+00:00",
         "method": "GET",
         "url": "https://www.founders.click/help",
         "status": 200
@@ -628,7 +659,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:03+00:00",
+    "recorded_at": "2026-09-02T07:46:00+00:00",
     "extra": {
       "links": [
         {
@@ -707,7 +738,7 @@
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/008-help-centre-category-page.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:32:04+00:00",
+        "t": "2026-09-02T07:46:00+00:00",
         "method": "GET",
         "url": "https://www.founders.click/help/sharetribe-integration",
         "status": 200
@@ -719,7 +750,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:06+00:00"
+    "recorded_at": "2026-09-02T07:46:03+00:00"
   },
   {
     "phase": "phase11-public/desktop",
@@ -738,7 +769,7 @@
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/009-help-centre-article-page.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:32:07+00:00",
+        "t": "2026-09-02T07:46:03+00:00",
         "method": "GET",
         "url": "https://www.founders.click/help/sharetribe-integration/handling-multiple-marketplaces",
         "status": 200
@@ -750,7 +781,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:10+00:00"
+    "recorded_at": "2026-09-02T07:46:06+00:00"
   },
   {
     "phase": "phase11-public/desktop",
@@ -769,7 +800,7 @@
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/010-help-centre-search-with-a-hit.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:32:10+00:00",
+        "t": "2026-09-02T07:46:06+00:00",
         "method": "GET",
         "url": "https://www.founders.click/help/search?q=Sharetribe",
         "status": 200
@@ -781,7 +812,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:13+00:00"
+    "recorded_at": "2026-09-02T07:46:09+00:00"
   },
   {
     "phase": "phase11-public/desktop",
@@ -796,11 +827,11 @@
       "open /help/search?q=zzqxvblorptest"
     ],
     "expected": "'No articles match' + search tips + Contact support link; HTTP 200",
-    "actual": "HTTP 200; no-match copy=True; tips=False; contact links=4; console=[]; body starts: 'founders.click Help Language English Espa\u00f1ol Fran\u00e7ais Deutsch Suomi Svenska Sign in Start free trial Help Center Search articles\u2026 \u2318K Contact'",
+    "actual": "HTTP 200; no-match copy=True; tips=True; contact links=4; console=[]; body starts: 'founders.click Help Language English Espa\u00f1ol Fran\u00e7ais Deutsch Suomi Svenska Sign in Start free trial Help Center Search articles\u2026 \u2318K Contact'",
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/011-help-centre-search-with-no-hit.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:32:13+00:00",
+        "t": "2026-09-02T07:46:09+00:00",
         "method": "GET",
         "url": "https://www.founders.click/help/search?q=zzqxvblorptest",
         "status": 200
@@ -812,7 +843,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:16+00:00"
+    "recorded_at": "2026-09-02T07:46:12+00:00"
   },
   {
     "phase": "phase11-public/desktop",
@@ -832,7 +863,7 @@
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/012-help-centre-contact-form-renders.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:32:16+00:00",
+        "t": "2026-09-02T07:46:12+00:00",
         "method": "GET",
         "url": "https://www.founders.click/help/contact",
         "status": 200
@@ -844,7 +875,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:18+00:00",
+    "recorded_at": "2026-09-02T07:46:15+00:00",
     "extra": {
       "note": "form deliberately not submitted (submission covered by phase_public_contact.py)"
     }
@@ -868,7 +899,7 @@
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/013-privacy-policy-page.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:32:19+00:00",
+        "t": "2026-09-02T07:46:15+00:00",
         "method": "GET",
         "url": "https://www.founders.click/privacy",
         "status": 200
@@ -880,7 +911,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:21+00:00"
+    "recorded_at": "2026-09-02T07:46:17+00:00"
   },
   {
     "phase": "phase11-public/desktop",
@@ -901,7 +932,7 @@
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/014-terms-of-service-page.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:32:21+00:00",
+        "t": "2026-09-02T07:46:18+00:00",
         "method": "GET",
         "url": "https://www.founders.click/terms",
         "status": 200
@@ -913,7 +944,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:24+00:00"
+    "recorded_at": "2026-09-02T07:46:20+00:00"
   },
   {
     "phase": "phase11-public/desktop",
@@ -933,7 +964,7 @@
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/015-signup-empty-form-is-refused.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:32:24+00:00",
+        "t": "2026-09-02T07:46:20+00:00",
         "method": "GET",
         "url": "https://www.founders.click/signup",
         "status": 200
@@ -945,7 +976,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:26+00:00",
+    "recorded_at": "2026-09-02T07:46:23+00:00",
     "extra": {
       "validity": {
         "formValid": false,
@@ -1004,7 +1035,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:27+00:00",
+    "recorded_at": "2026-09-02T07:46:23+00:00",
     "extra": {
       "validity": {
         "formValid": false,
@@ -1061,7 +1092,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:28+00:00",
+    "recorded_at": "2026-09-02T07:46:24+00:00",
     "extra": {
       "validity": {
         "formValid": false,
@@ -1116,7 +1147,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:28+00:00"
+    "recorded_at": "2026-09-02T07:46:24+00:00"
   },
   {
     "phase": "phase11-public/desktop",
@@ -1133,17 +1164,17 @@
       "click Sign in"
     ],
     "expected": "Inline role=alert 'Invalid login credentials' (+ toast); HTTP 400 from /auth/v1/token; URL stays /login",
-    "actual": "alert='Invalid login credentials' after 1.34s; toasts=['Invalid login credentials']; auth responses=[(400, '{\"code\":\"invalid_credentials\",\"message\":\"Invalid login credentials\"}')]; url=https://www.founders.click/login",
+    "actual": "alert='Invalid login credentials' after 0.83s; toasts=['Invalid login credentials']; auth responses=[(400, '{\"code\":\"invalid_credentials\",\"message\":\"Invalid login credentials\"}')]; url=https://www.founders.click/login",
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/019-login-wrong-password-shows-an-error.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:32:28+00:00",
+        "t": "2026-09-02T07:46:24+00:00",
         "method": "GET",
         "url": "https://www.founders.click/login",
         "status": 200
       },
       {
-        "t": "2026-09-02T07:32:31+00:00",
+        "t": "2026-09-02T07:46:27+00:00",
         "method": "POST",
         "url": "https://xbxhzinnfhosoztqaaao.supabase.co/auth/v1/token?grant_type=password",
         "status": 400,
@@ -1158,7 +1189,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:31+00:00"
+    "recorded_at": "2026-09-02T07:46:27+00:00"
   },
   {
     "phase": "phase11-public/desktop",
@@ -1178,7 +1209,7 @@
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/020-login-keyboard-tab-order-reaches-sign-in.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:32:31+00:00",
+        "t": "2026-09-02T07:46:27+00:00",
         "method": "GET",
         "url": "https://www.founders.click/login",
         "status": 200
@@ -1190,7 +1221,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:33+00:00",
+    "recorded_at": "2026-09-02T07:46:28+00:00",
     "extra": {
       "sequence": [
         {
@@ -1241,7 +1272,7 @@
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/021-reset-password-request-page-renders.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:32:33+00:00",
+        "t": "2026-09-02T07:46:28+00:00",
         "method": "GET",
         "url": "https://www.founders.click/reset-password",
         "status": 200
@@ -1253,7 +1284,7 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:34+00:00",
+    "recorded_at": "2026-09-02T07:46:30+00:00",
     "extra": {
       "note": "not submitted \u2014 email sending covered in phase 2"
     }
@@ -1273,11 +1304,11 @@
       "screenshot what is shown while waiting"
     ],
     "expected": "\u2192 /login?next=/app",
-    "actual": "HTTP 200 shell committed at 0.07s; redirected=True to https://www.founders.click/login?next=%2Fapp after 3.33s; next='/app'; while waiting (t\u22480.7s, url=/app) customer sees: ''; console=[]",
+    "actual": "HTTP 200 shell committed at 0.07s; redirected=True to https://www.founders.click/login?next=%2Fapp after 3.33s; next='/app'; while waiting (t\u22480.7s, url=/app) customer sees: 'a BLANK WHITE page (no spinner/skeleton)'; console=[]",
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/023-unauthenticated-visit-to-app-redirects-to-login.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:32:35+00:00",
+        "t": "2026-09-02T07:46:30+00:00",
         "method": "GET",
         "url": "https://www.founders.click/app",
         "status": 200
@@ -1289,11 +1320,13 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:39+00:00",
+    "recorded_at": "2026-09-02T07:46:34+00:00",
     "extra": {
       "redirect_seconds": 3.33,
       "commit_seconds": 0.07,
-      "waiting_screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/022-waiting-app.jpg"
+      "waiting_screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/022-waiting-app.jpg",
+      "blank_while_waiting": true,
+      "note": "delay \u2248 the 3 s waitForSession() timeout in src/routes/_authenticated.tsx (client-side guard, ssr:false)"
     }
   },
   {
@@ -1311,11 +1344,11 @@
       "screenshot what is shown while waiting"
     ],
     "expected": "\u2192 /login?next=/app/pages",
-    "actual": "HTTP 200 shell committed at 0.08s; redirected=True to https://www.founders.click/login?next=%2Fapp%2Fpages after 3.32s; next='/app/pages'; while waiting (t\u22480.7s, url=/app/pages) customer sees: ''; console=[]",
+    "actual": "HTTP 200 shell committed at 0.07s; redirected=True to https://www.founders.click/login?next=%2Fapp%2Fpages after 3.37s; next='/app/pages'; while waiting (t\u22480.7s, url=/app/pages) customer sees: 'a BLANK WHITE page (no spinner/skeleton)'; console=[]",
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/025-unauthenticated-visit-to-app-pages-redirects-to-login.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:32:39+00:00",
+        "t": "2026-09-02T07:46:34+00:00",
         "method": "GET",
         "url": "https://www.founders.click/app/pages",
         "status": 200
@@ -1327,11 +1360,13 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:43+00:00",
+    "recorded_at": "2026-09-02T07:46:38+00:00",
     "extra": {
-      "redirect_seconds": 3.32,
-      "commit_seconds": 0.08,
-      "waiting_screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/024-waiting-app-pages.jpg"
+      "redirect_seconds": 3.37,
+      "commit_seconds": 0.07,
+      "waiting_screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/024-waiting-app-pages.jpg",
+      "blank_while_waiting": true,
+      "note": "delay \u2248 the 3 s waitForSession() timeout in src/routes/_authenticated.tsx (client-side guard, ssr:false)"
     }
   },
   {
@@ -1349,11 +1384,11 @@
       "screenshot what is shown while waiting"
     ],
     "expected": "\u2192 /login?next=/app/billing",
-    "actual": "HTTP 200 shell committed at 0.08s; redirected=True to https://www.founders.click/login?next=%2Fapp%2Fbilling after 3.26s; next='/app/billing'; while waiting (t\u22480.7s, url=/app/billing) customer sees: ''; console=[]",
+    "actual": "HTTP 200 shell committed at 0.07s; redirected=True to https://www.founders.click/login?next=%2Fapp%2Fbilling after 3.36s; next='/app/billing'; while waiting (t\u22480.7s, url=/app/billing) customer sees: 'a BLANK WHITE page (no spinner/skeleton)'; console=[]",
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/027-unauthenticated-visit-to-app-billing-redirects-to-login.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:32:43+00:00",
+        "t": "2026-09-02T07:46:38+00:00",
         "method": "GET",
         "url": "https://www.founders.click/app/billing",
         "status": 200
@@ -1365,11 +1400,13 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:47+00:00",
+    "recorded_at": "2026-09-02T07:46:43+00:00",
     "extra": {
-      "redirect_seconds": 3.26,
-      "commit_seconds": 0.08,
-      "waiting_screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/026-waiting-app-billing.jpg"
+      "redirect_seconds": 3.36,
+      "commit_seconds": 0.07,
+      "waiting_screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/026-waiting-app-billing.jpg",
+      "blank_while_waiting": true,
+      "note": "delay \u2248 the 3 s waitForSession() timeout in src/routes/_authenticated.tsx (client-side guard, ssr:false)"
     }
   },
   {
@@ -1387,11 +1424,11 @@
       "screenshot what is shown while waiting"
     ],
     "expected": "\u2192 /login?next=/app/settings",
-    "actual": "HTTP 200 shell committed at 0.07s; redirected=True to https://www.founders.click/login?next=%2Fapp%2Fsettings after 3.28s; next='/app/settings'; while waiting (t\u22480.7s, url=/app/settings) customer sees: ''; console=[]",
+    "actual": "HTTP 200 shell committed at 0.08s; redirected=True to https://www.founders.click/login?next=%2Fapp%2Fsettings after 3.33s; next='/app/settings'; while waiting (t\u22480.7s, url=/app/settings) customer sees: 'a BLANK WHITE page (no spinner/skeleton)'; console=[]",
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/029-unauthenticated-visit-to-app-settings-redirects-to-login.jpg",
     "network": [
       {
-        "t": "2026-09-02T07:32:47+00:00",
+        "t": "2026-09-02T07:46:43+00:00",
         "method": "GET",
         "url": "https://www.founders.click/app/settings",
         "status": 200
@@ -1403,390 +1440,13 @@
     "severity": "-",
     "customer_impact": "",
     "repro": [],
-    "recorded_at": "2026-09-02T07:32:51+00:00",
+    "recorded_at": "2026-09-02T07:46:47+00:00",
     "extra": {
-      "redirect_seconds": 3.28,
-      "commit_seconds": 0.07,
-      "waiting_screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/028-waiting-app-settings.jpg"
+      "redirect_seconds": 3.33,
+      "commit_seconds": 0.08,
+      "waiting_screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/028-waiting-app-settings.jpg",
+      "blank_while_waiting": true,
+      "note": "delay \u2248 the 3 s waitForSession() timeout in src/routes/_authenticated.tsx (client-side guard, ssr:false)"
     }
-  },
-  {
-    "phase": "phase11-public/desktop",
-    "feature": "Unknown route returns a branded 404",
-    "promise": "A typo'd URL gets a proper HTTP 404 and a page that looks like ours with a way home",
-    "environment": "https://www.founders.click",
-    "url": "https://www.founders.click/live-acceptance-does-not-exist-2026",
-    "account": "anonymous visitor (desktop 1366x900)",
-    "browser": "Chromium (Playwright) 1366x900",
-    "preconditions": "",
-    "actions": [
-      "open /live-acceptance-does-not-exist-2026"
-    ],
-    "expected": "HTTP 404; '404 / Page not found' copy; 'Go home' link; site title/favicon",
-    "actual": "HTTP 404; title='founders.click'; h1='404' h2='Page not found'; Go-home link=True; brand text on page=False; favicon=https://www.founders.click/favicon.svg; console=['[desktop] error: Failed to load resource: the server responded with a status of 404 ()']",
-    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/030-unknown-route-returns-a-branded-404.jpg",
-    "network": [
-      {
-        "t": "2026-09-02T07:32:51+00:00",
-        "method": "GET",
-        "url": "https://www.founders.click/live-acceptance-does-not-exist-2026",
-        "status": 404,
-        "body": "<!DOCTYPE html><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/assets/styles-Cg50sYyr.css\" data-precedence=\"default\"/><title>founders.click</title><meta name=\"description\" content=\"Growth tools for Sharetribe marketplace founders.\"/><meta name=\"author\" content=\"founders.click\"/><meta property=\"og:title\" content=\"founders.click \u2014 The growth engine for Sharetribe marketplaces\"/><meta property=\"og:description\" content=\"AI-powered SEO, content factory, lead inbox and ops dashboard for Sharetribe marketp"
-      }
-    ],
-    "console_errors": [
-      "error: Failed to load resource: the server responded with a status of 404 ()"
-    ],
-    "persistence": "not checked",
-    "status": "Verified",
-    "severity": "-",
-    "customer_impact": "",
-    "repro": [],
-    "recorded_at": "2026-09-02T07:32:54+00:00",
-    "extra": {
-      "note": "the root 404 shows '404 / Page not found / Go home' in the app's dark theme; the brand name itself is only in the <title>"
-    }
-  },
-  {
-    "phase": "phase11-public/desktop",
-    "feature": "robots.txt",
-    "promise": "Crawlers get a robots file that hides the dashboard/auth pages and points at both sitemaps",
-    "environment": "https://www.founders.click",
-    "url": "https://www.founders.click/robots.txt",
-    "account": "anonymous visitor (desktop 1366x900)",
-    "browser": "Chromium (Playwright) 1366x900",
-    "preconditions": "",
-    "actions": [
-      "GET /robots.txt",
-      "check status, content-type and body"
-    ],
-    "expected": "HTTP 200, content-type text/plain, User-agent, Disallow: /app/ + auth pages, two Sitemap lines",
-    "actual": "HTTP 200; content-type='text/plain; charset=utf-8'; lines=['# As a condition of accessing this website, you agree to abide by the following', '# content signals:', '# (a)  If a Content-Signal = yes, you may collect content for the corresponding', '#      use.', '# (b)  If a Content-Signal = no, you may not collect content for the', '#      corresponding use.', '# (c)  If the website operator does not include a Content-Signal for a', '#      corresponding use, the website operator neither grants nor restricts', '#      permission via Content-Signal with respect to the corresponding use.', '# The content signals and their meanings are:', '# search:   building a search index and providing search results (e.g., returning', \"#           hyperlinks and short excerpts from your website's contents). Search does not\", '#           include providing AI-generated search summaries.', '# ai-input: inputting content into one or more AI models (e.g., retrieval', '#           augmented generation, grounding, or other real-time taking of content for', '#           generative AI search answers).', '# ai-train: training or fine-tuning AI models.', '# use:      how AI systems may consume the content (immediate, reference, or full).', '# ANY RESTRICTIONS EXPRESSED VIA CONTENT SIGNALS ARE EXPRESS RESERVATIONS OF', '# RIGHTS UNDER ARTICLE 4 OF THE EUROPEAN UNION DIRECTIVE 2019/790 ON COPYRIGHT', '# AND RELATED RIGHTS IN THE DIGITAL SINGLE MARKET.', '# BEGIN Cloudflare Managed content', 'User-agent: *', 'Content-Signal: search=yes,ai-train=no,use=reference', 'Allow: /', 'User-agent: Amazonbot', 'Disallow: /', 'User-agent: Applebot-Extended', 'Disallow: /', 'User-agent: Bytespider', 'Disallow: /', 'User-agent: CCBot', 'Disallow: /', 'User-agent: ClaudeBot', 'Disallow: /', 'User-agent: CloudflareBrowserRenderingCrawler', 'Disallow: /', 'User-agent: Google-Extended', 'Disallow: /', 'User-agent: GPTBot', 'Disallow: /', 'User-agent: meta-externalagent', 'Disallow: /', '# END Cloudflare Managed Content', 'User-agent: *', 'Allow: /', 'Disallow: /app/', 'Disallow: /login', 'Disallow: /signup', 'Disallow: /reset-password', 'Sitemap: https://www.founders.click/sitemap.xml', 'Sitemap: https://www.founders.click/help/sitemap.xml']; headers={'strict-transport-security': None, 'x-frame-options': None, 'x-content-type-options': None, 'referrer-policy': None, 'permissions-policy': None, 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=0, must-revalidate'}",
-    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/031-robots-txt.jpg",
-    "network": [
-      {
-        "t": "2026-09-02T07:32:54+00:00",
-        "method": "GET",
-        "url": "https://www.founders.click/robots.txt",
-        "status": 200
-      }
-    ],
-    "console_errors": [],
-    "persistence": "not checked",
-    "status": "Verified",
-    "severity": "-",
-    "customer_impact": "",
-    "repro": [],
-    "recorded_at": "2026-09-02T07:32:55+00:00",
-    "extra": {
-      "body_head": "# As a condition of accessing this website, you agree to abide by the following\n# content signals:\n\n# (a)  If a Content-Signal = yes, you may collect content for the corresponding\n#      use.\n# (b)  If a Content-Signal = no, you may not collect content for the\n#      corresponding use.\n# (c)  If the website operator does not include a Content-Signal for a\n#      corresponding use, the website operator neither grants nor restricts\n#      permission via Content-Signal with respect to the corresponding use.\n\n# The content signals and their meanings are:\n\n# search:   building a search index and providing search results (e.g., returning\n#           hyperlinks and short excerpts from your website's contents). Search does not\n#           include providing AI-generated search summaries.\n# ai-input"
-    }
-  },
-  {
-    "phase": "phase11-public/desktop",
-    "feature": "sitemap.xml",
-    "promise": "The marketing sitemap is valid XML with URLs",
-    "environment": "https://www.founders.click",
-    "url": "https://www.founders.click/sitemap.xml",
-    "account": "anonymous visitor (desktop 1366x900)",
-    "browser": "Chromium (Playwright) 1366x900",
-    "preconditions": "",
-    "actions": [
-      "GET /sitemap.xml",
-      "check status, content-type and body"
-    ],
-    "expected": "HTTP 200, content-type xml, well-formed <urlset>/<sitemapindex> with <loc> entries",
-    "actual": "HTTP 200; content-type='application/xml; charset=utf-8'; root=<urlset> locs=4 first=['https://www.founders.click/', 'https://www.founders.click/help', 'https://www.founders.click/privacy', 'https://www.founders.click/terms']; headers={'strict-transport-security': 'max-age=31536000', 'x-frame-options': 'DENY', 'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin', 'permissions-policy': 'camera=(), microphone=(), geolocation=()', 'content-type': 'application/xml; charset=utf-8', 'cache-control': None}",
-    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/032-sitemap-xml.jpg",
-    "network": [
-      {
-        "t": "2026-09-02T07:32:55+00:00",
-        "method": "GET",
-        "url": "https://www.founders.click/sitemap.xml",
-        "status": 200
-      }
-    ],
-    "console_errors": [],
-    "persistence": "not checked",
-    "status": "Verified",
-    "severity": "-",
-    "customer_impact": "",
-    "repro": [],
-    "recorded_at": "2026-09-02T07:32:56+00:00",
-    "extra": {
-      "body_head": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n  <url><loc>https://www.founders.click/</loc><lastmod>2026-09-02</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>\n  <url><loc>https://www.founders.click/help</loc><lastmod>2026-09-02</lastmod><changefreq>weekly</changefreq><priority>0.5</priority></url>\n  <url><loc>https://www.founders.click/privacy</loc><lastmod>2026-09-02</lastmod><changefreq>weekly</changefreq><priority>0.5</priority></url>\n  <url><loc>https://www.founders.click/terms</loc><lastmod>2026-09-02</lastmod><changefreq>weekly</changefreq><priority>0.5</priority></url>\n</urlset>"
-    }
-  },
-  {
-    "phase": "phase11-public/desktop",
-    "feature": "help/sitemap.xml",
-    "promise": "The help-centre sitemap is valid XML listing articles",
-    "environment": "https://www.founders.click",
-    "url": "https://www.founders.click/help/sitemap.xml",
-    "account": "anonymous visitor (desktop 1366x900)",
-    "browser": "Chromium (Playwright) 1366x900",
-    "preconditions": "",
-    "actions": [
-      "GET /help/sitemap.xml",
-      "check status, content-type and body"
-    ],
-    "expected": "HTTP 200, content-type xml, well-formed <urlset>/<sitemapindex> with <loc> entries",
-    "actual": "HTTP 200; content-type='application/xml; charset=utf-8'; root=<urlset> locs=21 first=['https://www.founders.click/help', 'https://www.founders.click/help/sharetribe-integration', 'https://www.founders.click/help/page-builder', 'https://www.founders.click/help/seo-growth']; headers={'strict-transport-security': 'max-age=31536000', 'x-frame-options': 'DENY', 'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin', 'permissions-policy': 'camera=(), microphone=(), geolocation=()', 'content-type': 'application/xml; charset=utf-8', 'cache-control': None}",
-    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/033-help-sitemap-xml.jpg",
-    "network": [
-      {
-        "t": "2026-09-02T07:32:59+00:00",
-        "method": "GET",
-        "url": "https://www.founders.click/help/sitemap.xml",
-        "status": 200
-      }
-    ],
-    "console_errors": [],
-    "persistence": "not checked",
-    "status": "Verified",
-    "severity": "-",
-    "customer_impact": "",
-    "repro": [],
-    "recorded_at": "2026-09-02T07:32:59+00:00",
-    "extra": {
-      "body_head": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n  <url><loc>https://www.founders.click/help</loc><lastmod>2026-09-02T07:33:00.543Z</lastmod></url>\n  <url><loc>https://www.founders.click/help/sharetribe-integration</loc><lastmod>2026-09-02T07:33:00.543Z</lastmod></url>\n  <url><loc>https://www.founders.click/help/page-builder</loc><lastmod>2026-09-02T07:33:00.543Z</lastmod></url>\n  <url><loc>https://www.founders.click/help/seo-growth</loc><lastmod>2026-09-02T07:33:00.543Z</lastmod></url>\n  <url><loc>https://www.founders.click/help/account-billing</loc><lastmod>2026-09-02T07:33:00.543Z</lastmod></url>\n  <url><loc>https://www.founders.click/help/billing/bring-your-own-ai-key-byok</loc><lastmod>2026-05-11T09:58:04.768Z</lastmod></url>\n  <url><"
-    }
-  },
-  {
-    "phase": "phase11-public/desktop",
-    "feature": "/p/<slug> permanently redirects to /a/<slug>",
-    "promise": "Legacy /p/ links (and their query strings) 301 to the canonical /a/ path",
-    "environment": "https://www.founders.click",
-    "url": "https://www.founders.click/a/live-acceptance-does-not-exist-2026?utm_source=live-acceptance",
-    "account": "anonymous visitor (desktop 1366x900)",
-    "browser": "Chromium (Playwright) 1366x900",
-    "preconditions": "",
-    "actions": [
-      "GET /p/live-acceptance-does-not-exist-2026?utm_source=\u2026 without following",
-      "then open it in the browser"
-    ],
-    "expected": "301 with Location /a/live-acceptance-does-not-exist-2026?utm_source=\u2026; browser lands on /a/\u2026",
-    "actual": "HTTP 301 Location='/a/live-acceptance-does-not-exist-2026?utm_source=live-acceptance'; browser final url=/a/live-acceptance-does-not-exist-2026?utm_source=live-acceptance (HTTP 404)",
-    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/034-p-slug-permanently-redirects-to-a-slug.jpg",
-    "network": [
-      {
-        "t": "2026-09-02T07:33:00+00:00",
-        "method": "GET",
-        "url": "https://www.founders.click/p/live-acceptance-does-not-exist-2026?utm_source=live-acceptance",
-        "status": 301
-      },
-      {
-        "t": "2026-09-02T07:33:00+00:00",
-        "method": "GET",
-        "url": "https://www.founders.click/a/live-acceptance-does-not-exist-2026?utm_source=live-acceptance",
-        "status": 404,
-        "body": "<!DOCTYPE html><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/assets/styles-Cg50sYyr.css\" data-precedence=\"default\"/><title>founders.click</title><meta name=\"description\" content=\"Growth tools for Sharetribe marketplace founders.\"/><meta name=\"author\" content=\"founders.click\"/><meta property=\"og:title\" content=\"founders.click \u2014 The growth engine for Sharetribe marketplaces\"/><meta property=\"og:description\" content=\"AI-powered SEO, content factory, lead inbox and ops dashboard for Sharetribe marketp"
-      }
-    ],
-    "console_errors": [
-      "error: Failed to load resource: the server responded with a status of 404 ()"
-    ],
-    "persistence": "not checked",
-    "status": "Verified",
-    "severity": "-",
-    "customer_impact": "",
-    "repro": [],
-    "recorded_at": "2026-09-02T07:33:03+00:00"
-  },
-  {
-    "phase": "phase11-public/desktop",
-    "feature": "/a/<unknown slug> returns 404",
-    "promise": "An unknown published-page URL is a clean 404, not an error screen",
-    "environment": "https://www.founders.click",
-    "url": "https://www.founders.click/a/live-acceptance-does-not-exist-2026",
-    "account": "anonymous visitor (desktop 1366x900)",
-    "browser": "Chromium (Playwright) 1366x900",
-    "preconditions": "",
-    "actions": [
-      "open /a/live-acceptance-does-not-exist-2026"
-    ],
-    "expected": "HTTP 404 with 'Page not found'",
-    "actual": "HTTP 404; body='404 Page not found.'; console=['[desktop] error: Failed to load resource: the server responded with a status of 404 ()']",
-    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/035-a-unknown-slug-returns-404.jpg",
-    "network": [
-      {
-        "t": "2026-09-02T07:33:03+00:00",
-        "method": "GET",
-        "url": "https://www.founders.click/a/live-acceptance-does-not-exist-2026",
-        "status": 404,
-        "body": "<!DOCTYPE html><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/assets/styles-Cg50sYyr.css\" data-precedence=\"default\"/><title>founders.click</title><meta name=\"description\" content=\"Growth tools for Sharetribe marketplace founders.\"/><meta name=\"author\" content=\"founders.click\"/><meta property=\"og:title\" content=\"founders.click \u2014 The growth engine for Sharetribe marketplaces\"/><meta property=\"og:description\" content=\"AI-powered SEO, content factory, lead inbox and ops dashboard for Sharetribe marketp"
-      }
-    ],
-    "console_errors": [
-      "error: Failed to load resource: the server responded with a status of 404 ()"
-    ],
-    "persistence": "not checked",
-    "status": "Verified",
-    "severity": "-",
-    "customer_impact": "",
-    "repro": [],
-    "recorded_at": "2026-09-02T07:33:06+00:00"
-  },
-  {
-    "phase": "phase11-public/desktop",
-    "feature": "/s/<workspace>/<unknown slug> returns 404",
-    "promise": "An unknown published-page URL is a clean 404, not an error screen",
-    "environment": "https://www.founders.click",
-    "url": "https://www.founders.click/s/live-acceptance-does-not-exist-2026-ws/live-acceptance-does-not-exist-2026",
-    "account": "anonymous visitor (desktop 1366x900)",
-    "browser": "Chromium (Playwright) 1366x900",
-    "preconditions": "",
-    "actions": [
-      "open /s/live-acceptance-does-not-exist-2026-ws/live-acceptance-does-not-exist-2026"
-    ],
-    "expected": "HTTP 404 with 'Page not found'",
-    "actual": "HTTP 404; body='404 Page not found or not published yet.'; console=['[desktop] error: Failed to load resource: the server responded with a status of 404 ()']",
-    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/036-s-workspace-unknown-slug-returns-404.jpg",
-    "network": [
-      {
-        "t": "2026-09-02T07:33:06+00:00",
-        "method": "GET",
-        "url": "https://www.founders.click/s/live-acceptance-does-not-exist-2026-ws/live-acceptance-does-not-exist-2026",
-        "status": 404,
-        "body": "<!DOCTYPE html><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/assets/styles-Cg50sYyr.css\" data-precedence=\"default\"/><title>founders.click</title><meta name=\"description\" content=\"Growth tools for Sharetribe marketplace founders.\"/><meta name=\"author\" content=\"founders.click\"/><meta property=\"og:title\" content=\"founders.click \u2014 The growth engine for Sharetribe marketplaces\"/><meta property=\"og:description\" content=\"AI-powered SEO, content factory, lead inbox and ops dashboard for Sharetribe marketp"
-      }
-    ],
-    "console_errors": [
-      "error: Failed to load resource: the server responded with a status of 404 ()"
-    ],
-    "persistence": "not checked",
-    "status": "Verified",
-    "severity": "-",
-    "customer_impact": "",
-    "repro": [],
-    "recorded_at": "2026-09-02T07:33:09+00:00"
-  },
-  {
-    "phase": "phase11-public/desktop",
-    "feature": "/apply/<unknown slug> \u2014 public affiliate application page",
-    "promise": "An affiliate link for a program that doesn't exist explains itself instead of erroring",
-    "environment": "https://www.founders.click",
-    "url": "https://www.founders.click/apply/live-acceptance-does-not-exist-2026",
-    "account": "anonymous visitor (desktop 1366x900)",
-    "browser": "Chromium (Playwright) 1366x900",
-    "preconditions": "",
-    "actions": [
-      "open /apply/live-acceptance-does-not-exist-2026"
-    ],
-    "expected": "'This affiliate program isn't available.' (ideally HTTP 404), no form, no console errors",
-    "actual": "HTTP 404; message shown=True; body=\"This affiliate program isn't available.\"; console=['[desktop] error: Failed to load resource: the server responded with a status of 404 ()']; server fns=[]",
-    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/037-apply-unknown-slug-public-affiliate-application-page.jpg",
-    "network": [
-      {
-        "t": "2026-09-02T07:33:09+00:00",
-        "method": "GET",
-        "url": "https://www.founders.click/apply/live-acceptance-does-not-exist-2026",
-        "status": 404,
-        "body": "<!DOCTYPE html><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/assets/styles-Cg50sYyr.css\" data-precedence=\"default\"/><title>Affiliate sign-up</title><meta name=\"description\" content=\"Growth tools for Sharetribe marketplace founders.\"/><meta name=\"author\" content=\"founders.click\"/><meta property=\"og:title\" content=\"founders.click \u2014 The growth engine for Sharetribe marketplaces\"/><meta property=\"og:description\" content=\"AI-powered SEO, content factory, lead inbox and ops dashboard for Sharetribe mark"
-      }
-    ],
-    "console_errors": [
-      "error: Failed to load resource: the server responded with a status of 404 ()"
-    ],
-    "persistence": "not checked",
-    "status": "Failed",
-    "severity": "P2",
-    "customer_impact": "",
-    "repro": [],
-    "recorded_at": "2026-09-02T07:33:12+00:00",
-    "extra": {
-      "http_status_note": "404 expected from notFound() in the loader; 200 would mean the not-found is client-rendered only"
-    }
-  },
-  {
-    "phase": "phase11-public/desktop",
-    "feature": "Security headers on / (platform)",
-    "promise": "HSTS (no includeSubDomains), X-Frame-Options DENY, nosniff, Referrer-Policy on the marketing/dashboard host",
-    "environment": "https://www.founders.click",
-    "url": "https://www.founders.click/a/founders-domain-test",
-    "account": "anonymous visitor (desktop 1366x900)",
-    "browser": "Chromium (Playwright) 1366x900",
-    "preconditions": "",
-    "actions": [
-      "GET / via the browser context",
-      "read response headers (also from the earlier page load)"
-    ],
-    "expected": "Strict-Transport-Security: max-age=N; X-Frame-Options: DENY; X-Content-Type-Options: nosniff; Referrer-Policy: strict-origin-when-cross-origin",
-    "actual": "GET /: {'strict-transport-security': 'max-age=31536000', 'x-frame-options': 'DENY', 'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin', 'permissions-policy': 'camera=(), microphone=(), geolocation=()', 'content-type': 'text/html; charset=utf-8', 'cache-control': None}; page.goto /: {'strict-transport-security': 'max-age=31536000', 'x-frame-options': 'DENY', 'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin', 'permissions-policy': 'camera=(), microphone=(), geolocation=()', 'content-type': 'text/html; charset=utf-8', 'cache-control': None}",
-    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/038-security-headers-on-platform.jpg",
-    "network": [
-      {
-        "t": "2026-09-02T07:33:13+00:00",
-        "method": "GET",
-        "url": "https://www.founders.click/a/founders-domain-test",
-        "status": 404,
-        "body": "founders-click-domain-test: OK\nhost: www.founders.click\ntenant: not-connected"
-      }
-    ],
-    "console_errors": [
-      "error: Failed to load resource: the server responded with a status of 404 ()"
-    ],
-    "persistence": "not checked",
-    "status": "Verified",
-    "severity": "-",
-    "customer_impact": "",
-    "repro": [],
-    "recorded_at": "2026-09-02T07:33:15+00:00"
-  },
-  {
-    "phase": "phase11-public/desktop",
-    "feature": "No X-Frame-Options on tenant paths (/a/, /s/, /apply/)",
-    "promise": "Customers may embed their own published pages; frame lock is platform-only, nosniff stays",
-    "environment": "https://www.founders.click",
-    "url": "https://www.founders.click/a/founders-domain-test",
-    "account": "anonymous visitor (desktop 1366x900)",
-    "browser": "Chromium (Playwright) 1366x900",
-    "preconditions": "",
-    "actions": [
-      "open /a/founders-domain-test (a real /a/ page)",
-      "reuse headers captured on /a/<404>, /s/<404>, /apply/<404>"
-    ],
-    "expected": "X-Frame-Options absent on all tenant paths; nosniff + Referrer-Policy still present; HSTS present (platform hostname)",
-    "actual": "/a/founders-domain-test HTTP 404: {'strict-transport-security': 'max-age=31536000', 'x-frame-options': None, 'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin', 'permissions-policy': 'camera=(), microphone=(), geolocation=()', 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store'}; /a/404: {'strict-transport-security': 'max-age=31536000', 'x-frame-options': None, 'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin', 'permissions-policy': 'camera=(), microphone=(), geolocation=()', 'content-type': 'text/html; charset=utf-8', 'cache-control': None}; /s/404: {'strict-transport-security': 'max-age=31536000', 'x-frame-options': None, 'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin', 'permissions-policy': 'camera=(), microphone=(), geolocation=()', 'content-type': 'text/html; charset=utf-8', 'cache-control': None}; /apply/404: {'strict-transport-security': 'max-age=31536000', 'x-frame-options': None, 'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin', 'permissions-policy': 'camera=(), microphone=(), geolocation=()', 'content-type': 'text/html; charset=utf-8', 'cache-control': None}",
-    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/039-no-x-frame-options-on-tenant-paths-a-s-apply.jpg",
-    "network": [],
-    "console_errors": [],
-    "persistence": "not checked",
-    "status": "Failed",
-    "severity": "P2",
-    "customer_impact": "",
-    "repro": [],
-    "recorded_at": "2026-09-02T07:33:15+00:00"
-  },
-  {
-    "phase": "phase11-public/desktop",
-    "feature": "Fresh-session check \u2014 seed state in profile #1",
-    "promise": "(setup) this profile now holds a localStorage/sessionStorage/cookie marker; the next Session must not see it",
-    "environment": "https://www.founders.click",
-    "url": "https://www.founders.click/",
-    "account": "anonymous visitor (desktop 1366x900)",
-    "browser": "Chromium (Playwright) 1366x900",
-    "preconditions": "",
-    "actions": [
-      "on /, set a marker in localStorage, sessionStorage and a cookie"
-    ],
-    "expected": "markers present in this profile; note which storage keys an anonymous visit created",
-    "actual": "localStorage keys=['live-acceptance-marker']; sessionStorage keys=['live-acceptance-marker', 'tsr-scroll-restoration-v1_3']; document.cookie='live_acceptance_marker=1'; context cookies=['live_acceptance_marker']",
-    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/040-fresh-session-check-seed-state-in-profile-1.jpg",
-    "network": [
-      {
-        "t": "2026-09-02T07:33:15+00:00",
-        "method": "GET",
-        "url": "https://www.founders.click/",
-        "status": 200
-      }
-    ],
-    "console_errors": [],
-    "persistence": "to be checked by the fresh Session",
-    "status": "Verified",
-    "severity": "-",
-    "customer_impact": "",
-    "repro": [],
-    "recorded_at": "2026-09-02T07:33:16+00:00"
   }
 ]

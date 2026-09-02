@@ -23,6 +23,7 @@ Run:  SMOKE_CHROMIUM_PATH=/opt/pw-browsers/chromium python3 tests/e2e/live/phase
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import re
 import shutil
@@ -34,7 +35,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).parent))
-from harness import BASE, EVIDENCE, Session, now_iso, redact  # noqa: E402
+from harness import BASE, EVIDENCE, REPO, Session, now_iso, redact  # noqa: E402
 
 PHASE = "phase11-public"
 PHASE_DIR = EVIDENCE / PHASE
@@ -254,6 +255,12 @@ async def desktop() -> None:
 
         async def landing_video():
             mp4 = [e for e in HTTP_ERRORS if "product-demo.mp4" in e["url"]]
+            # Browser-side Range probe: ask for 1 KB and abort after the headers, so we
+            # learn whether the origin honours Range without pulling another 25 MB.
+            rng = await p.evaluate("""async () => { const c = new AbortController();
+                try { const r = await fetch('/product-demo.mp4?live-acceptance-range-probe=1', {headers: {Range: 'bytes=0-1023'}, signal: c.signal, cache: 'no-store'});
+                      const h = {status: r.status, acceptRanges: r.headers.get('accept-ranges'), contentRange: r.headers.get('content-range'), contentLength: r.headers.get('content-length'), cfCache: r.headers.get('cf-cache-status')};
+                      c.abort(); return h; } catch (e) { return {error: String(e)}; } }""")
             v = await p.evaluate("""() => {
                 const v = document.querySelector('video');
                 const nav = performance.getEntriesByType('navigation')[0] || {};
@@ -265,33 +272,40 @@ async def desktop() -> None:
                         paused: v?.paused, controls: v?.controls, muted: v?.muted, src: v?.currentSrc?.split('/').pop(),
                         overlayButton: !!overlay, dcl_ms: Math.round(nav.domContentLoadedEventEnd || 0), load_ms: Math.round(nav.loadEventEnd || 0), res, totalTransfer};
             }""")
-            state["video_responses"] = [x for x in s._net if "product-demo" in x["url"]]
             mp4_bytes = sum(r.get("transferSize", 0) for r in v["res"] if r["name"].startswith("product-demo.mp4"))
-            poster_ok = any(r["name"].startswith("product-demo-poster") for r in v["res"])
+            range_honoured = rng.get("status") == 206
             ok = (v["present"] and v["preload"] == "metadata" and v["poster"] and v["paused"] and v["overlayButton"]
                   and v["load_ms"] > 0 and mp4_bytes < 3_000_000 and not mp4)
             await s.record(
                 feature="Landing page — 25 MB demo video does not block the page",
-                promise="The product demo is poster + click-to-play; the page load does not wait on the 25 MB mp4",
-                actions=["after the load event, inspect the <video> element and Resource Timing for product-demo.*"],
-                expected="preload=metadata, poster shown, video paused with a Play overlay, load event fired, only a small metadata range of the mp4 fetched (< 3 MB), no mp4 errors",
-                actual=f"video present={v['present']} preload={v['preload']!r} poster={v['poster']!r} paused={v['paused']} readyState={v['readyState']} networkState={v['networkState']} overlay={v['overlayButton']}; "
-                       f"DCL={v['dcl_ms']}ms load={v['load_ms']}ms; mp4 bytes transferred before any play={mp4_bytes} (entries={v['res']}); page total transfer≈{v['totalTransfer']} bytes; mp4 errors={mp4}",
+                promise="The product demo is poster + click-to-play; the page load does not wait on (or silently download) the 25 MB mp4",
+                actions=["after the load event, inspect the <video> element and Resource Timing for product-demo.*",
+                         "fetch /product-demo.mp4 with 'Range: bytes=0-1023' from the page and read the response headers"],
+                expected="preload=metadata, poster shown, video paused with a Play overlay, load event fired, only a small metadata range of the mp4 fetched (< 3 MB, i.e. origin answers 206 to Range requests), no mp4 errors",
+                actual=f"video present={v['present']} preload={v['preload']!r} poster={v['poster']!r} paused={v['paused']} overlay={v['overlayButton']} readyState={v['readyState']} networkState={v['networkState']}; "
+                       f"DCL={v['dcl_ms']}ms load={v['load_ms']}ms; mp4 bytes transferred before any play={mp4_bytes:,} (entries={v['res']}); page total transfer≈{v['totalTransfer']:,} bytes; "
+                       f"Range probe → {rng} (206 expected; 200 = origin ignores Range); mp4 errors={mp4}",
                 status="Verified" if ok else "Failed", severity="-" if ok else "P2",
-                impact="" if ok else "Home page waits on or downloads a 25 MB file for every visitor",
-                extra={"video": v},
+                impact="" if ok else "Every visitor to the home page downloads the full 25.8 MB mp4 without pressing Play (on a 400 kbps connection that is ~8.5 minutes of saturated bandwidth competing with the page's own JS/fonts)",
+                repro=[] if ok else ["open https://www.founders.click/ in Chrome with DevTools → Network", "do not click Play",
+                                     "observe product-demo.mp4 transfers 25.8 MB (initiator: video, HTTP 200, no Accept-Ranges)",
+                                     "curl -r 0-1023 -o /dev/null -w '%{http_code} %{size_download}' https://www.founders.click/product-demo.mp4 → 200 25845156"],
+                extra={"video": v, "range_probe": rng, "range_honoured": range_honoured,
+                       "root_cause_supporting_evidence": "public/product-demo.mp4 in the repo is not faststart: top-level atoms ftyp(0) free(32) mdat(40, 25,381,911 B) moov(25,381,951) — the metadata is at the END of the file, so preload=metadata must read to the end; and the origin answers HTTP 200 (full body, no Accept-Ranges) to Range requests, so the browser cannot skip to the tail.",
+                       "sandbox_note": "networkState=3/readyState=0 after the download is consistent with this headless Chromium lacking the H.264 decoder; playback itself is not verifiable here"},
             )
         await step(s, "Landing page — 25 MB demo video does not block the page", landing_video)
 
         async def landing_clean():
-            errs = [e for e in HTTP_ERRORS if e["session"] == "desktop"]
+            # our own aborted 1 KB Range probe (tagged ?live-acceptance-range-probe=1) is not a page failure
+            errs = [e for e in HTTP_ERRORS if e["session"] == "desktop" and "live-acceptance-range-probe" not in e["url"]]
             cons = [c for c in CONSOLE if c.startswith("[desktop]")]
             ok = not errs and not cons
             await s.record(
                 feature="Landing page — no console errors, no failed resources",
                 promise="A visitor's first page load is clean (no JS errors, no 4xx/5xx/blocked assets)",
                 actions=["listen to every response/requestfailed/console-error during the whole landing visit (load, scroll, FAQ, link probing)"],
-                expected="Zero console errors and zero failed/erroring requests",
+                expected="Zero console errors and zero failed/erroring requests (the test's own aborted Range probe excluded)",
                 actual=f"console_errors={cons}; failed_or_4xx5xx_requests={errs}",
                 status="Verified" if ok else "Failed", severity="-" if ok else "P2",
                 extra={"console": cons, "requests": errs},
@@ -401,7 +415,7 @@ async def desktop() -> None:
             resp = await s.goto(f"/help/search?q={q}")
             body = await s.text()
             no = f'No articles match "{q}"' in body
-            tips = "Search tips" in body
+            tips = "search tips" in body.lower()
             contact = await p.locator("a[href='/help/contact']").count()
             ok = resp.status == 200 and no and contact > 0 and not console_since(c)
             await s.record(
@@ -615,15 +629,18 @@ async def desktop() -> None:
                 final = p.url
                 nxt = (parse_qs(urlparse(final).query).get("next") or [None])[0]
                 ok = redirected and nxt == path
+                blank = mid_txt.strip() == "" and mid_url.rstrip("/").endswith(path)
                 await s.record(
                     feature=f"Unauthenticated visit to {path} redirects to login",
                     promise="Dashboard URLs bounce an anonymous visitor to /login and remember where they were going",
                     actions=[f"open {path} in a profile with no session", "time the redirect", "screenshot what is shown while waiting"],
                     expected=f"→ /login?next={path}",
-                    actual=f"HTTP {r.status} shell committed at {commit_s}s; redirected={redirected} to {final} after {delay}s; next={nxt!r}; while waiting (t≈0.7s, url={mid_url.replace(BASE, '')}) customer sees: {mid_txt!r}; console={console_since(c)}",
+                    actual=f"HTTP {r.status} shell committed at {commit_s}s; redirected={redirected} to {final} after {delay}s; next={nxt!r}; "
+                           f"while waiting (t≈0.7s, url={mid_url.replace(BASE, '')}) customer sees: {'a BLANK WHITE page (no spinner/skeleton)' if blank else mid_txt!r}; console={console_since(c)}",
                     status="Verified" if ok else "Failed", severity="-" if ok else "P0",
                     impact="" if ok else "Anonymous visitors can reach or get stuck on dashboard URLs",
-                    extra={"redirect_seconds": delay, "commit_seconds": commit_s, "waiting_screenshot": mid_shot},
+                    extra={"redirect_seconds": delay, "commit_seconds": commit_s, "waiting_screenshot": mid_shot, "blank_while_waiting": blank,
+                           "note": "delay ≈ the 3 s waitForSession() timeout in src/routes/_authenticated.tsx (client-side guard, ssr:false)"},
                 )
         await step(s, "Unauthenticated redirects", redirects)
 
@@ -633,16 +650,18 @@ async def desktop() -> None:
             r = await s.goto(f"/{UNKNOWN}")
             body = await s.text()
             info = await p.evaluate("""() => ({title: document.title, h1: document.querySelector('h1')?.textContent.trim(), h2: document.querySelector('h2')?.textContent.trim(),
-                home: !!document.querySelector('a[href="/"]'), favicon: document.querySelector('link[rel=icon]')?.href, brand: /founders/i.test(document.body.innerText)})""")
+                home: !!document.querySelector('a[href="/"]'), favicon: document.querySelector('link[rel=icon]')?.href, brand: /founders/i.test(document.body.innerText),
+                bg: getComputedStyle(document.body).backgroundColor, logo: !!document.querySelector('header, img[alt*="founders" i], svg[aria-label*="founders" i]')})""")
             ok = r.status == 404 and "404" in body and "Page not found" in body and info["home"]
             await s.record(
                 feature="Unknown route returns a branded 404",
                 promise="A typo'd URL gets a proper HTTP 404 and a page that looks like ours with a way home",
                 actions=[f"open /{UNKNOWN}"],
                 expected="HTTP 404; '404 / Page not found' copy; 'Go home' link; site title/favicon",
-                actual=f"HTTP {r.status}; title={info['title']!r}; h1={info['h1']!r} h2={info['h2']!r}; Go-home link={info['home']}; brand text on page={info['brand']}; favicon={info['favicon']}; console={console_since(c)}",
+                actual=f"HTTP {r.status}; title={info['title']!r}; h1={info['h1']!r} h2={info['h2']!r}; Go-home link={info['home']}; wordmark/header on page={info['logo']}; brand text in body={info['brand']}; "
+                       f"body background={info['bg']} (light theme; the marketing site is dark); favicon={info['favicon']}",
                 status="Verified" if ok else "Failed", severity="-" if ok else "P2",
-                extra={"note": "the root 404 shows '404 / Page not found / Go home' in the app's dark theme; the brand name itself is only in the <title>"},
+                extra={"note": "P3 polish: the 404 body carries no wordmark/logo and renders light-themed while every other public page is dark; brand only via <title>, favicon and the orange 'Go home' button"},
             )
         await step(s, "Unknown route returns a branded 404", unknown_route)
 
@@ -718,13 +737,15 @@ async def desktop() -> None:
             body = await s.text()
             state["apply_headers"] = dict(r.headers)
             msg = "This affiliate program isn't available" in body
-            ok = msg and r.status in (404, 200) and not console_since(c)
+            # Chrome always logs "Failed to load resource ... 404" for a 404 document we asked for; that is not an app error.
+            real_console = [x for x in console_since(c) if "responded with a status of 404" not in x]
+            ok = msg and r.status in (404, 200) and not real_console
             await s.record(
                 feature="/apply/<unknown slug> — public affiliate application page",
                 promise="An affiliate link for a program that doesn't exist explains itself instead of erroring",
                 actions=[f"open /apply/{UNKNOWN}"],
                 expected="'This affiliate program isn't available.' (ideally HTTP 404), no form, no console errors",
-                actual=f"HTTP {r.status}; message shown={msg}; body={body[:120]!r}; console={console_since(c)}; server fns={[ (x['url'].split('/')[-1][:60], x['status']) for x in s._net if '_serverFn' in x['url']][:3]}",
+                actual=f"HTTP {r.status}; message shown={msg}; body={body[:120]!r}; app console errors={real_console} (Chrome's own '404 document' line excluded); server fns={[ (x['url'].split('/')[-1][:60], x['status']) for x in s._net if '_serverFn' in x['url']][:3]}",
                 status="Verified" if ok else "Failed", severity="-" if ok else "P2",
                 extra={"http_status_note": "404 expected from notFound() in the loader; 200 would mean the not-found is client-rendered only"},
             )
@@ -735,8 +756,13 @@ async def desktop() -> None:
             ar = await s.context.request.get(BASE + "/")
             root = hdrs(ar.headers)
             goto_root = hdrs(state.get("landing_headers", {}))
+            # /a/founders-domain-test is the domain-activation probe: it answers 200 only
+            # when the Host maps to a connected tenant, so on www.founders.click a 404
+            # with "tenant: not-connected" is the designed answer. Its headers are
+            # still produced by the /a/ path policy, which is what we check here.
             ra = await s.goto("/a/founders-domain-test", settle_ms=1500)
             a_real = hdrs(ra.headers)
+            probe_body = (await s.text())[:160]
             a_404 = hdrs(state.get("a_headers", {}))
             s_404 = hdrs(state.get("s_headers", {}))
             ap = hdrs(state.get("apply_headers", {}))
@@ -751,15 +777,18 @@ async def desktop() -> None:
                 status="Verified" if root_ok else "Failed", severity="-" if root_ok else "P1",
                 impact="" if root_ok else "Clickjacking / downgrade protection missing on the platform host",
             )
-            a_ok = (a_real["x-frame-options"] is None and a_404["x-frame-options"] is None and s_404["x-frame-options"] is None and ap["x-frame-options"] is None
-                    and a_real["x-content-type-options"] == "nosniff" and ra.status == 200)
+            tenant = {"/a/founders-domain-test": a_real, "/a/<404>": a_404, "/s/<404>": s_404, "/apply/<404>": ap}
+            a_ok = all(h["x-frame-options"] is None and h["x-content-type-options"] == "nosniff" and h["referrer-policy"] == "strict-origin-when-cross-origin"
+                       and h["strict-transport-security"] for h in tenant.values())
             await s.record(
                 feature="No X-Frame-Options on tenant paths (/a/, /s/, /apply/)",
-                promise="Customers may embed their own published pages; frame lock is platform-only, nosniff stays",
-                actions=["open /a/founders-domain-test (a real /a/ page)", "reuse headers captured on /a/<404>, /s/<404>, /apply/<404>"],
-                expected="X-Frame-Options absent on all tenant paths; nosniff + Referrer-Policy still present; HSTS present (platform hostname)",
-                actual=f"/a/founders-domain-test HTTP {ra.status}: {a_real}; /a/404: {a_404}; /s/404: {s_404}; /apply/404: {ap}",
+                promise="Customers may embed their own published pages; frame lock is platform-only, nosniff/Referrer-Policy/HSTS stay",
+                actions=["open /a/founders-domain-test (server route on the /a/ path)", "reuse headers captured on /a/<404>, /s/<404>, /apply/<404>"],
+                expected="X-Frame-Options absent on all four tenant-path responses; nosniff + Referrer-Policy still present; HSTS present (platform hostname)",
+                actual="; ".join(f"{k}: XFO={v['x-frame-options']} nosniff={v['x-content-type-options']} referrer={v['referrer-policy']} HSTS={v['strict-transport-security']}" for k, v in tenant.items())
+                       + f"; domain-test probe answered HTTP {ra.status} {probe_body!r} (404 'tenant: not-connected' is by design on the platform host)",
                 status="Verified" if a_ok else "Failed", severity="-" if a_ok else "P2",
+                extra={"headers": tenant, "domain_test_status": ra.status, "domain_test_body": probe_body},
             )
         await step(s, "Security headers", headers)
 
@@ -836,7 +865,8 @@ async def mobile() -> None:
         targets = [
             ("/", "Landing", [("link Start your free trial", lambda: p.get_by_role("link", name="Start your free trial")),
                               ("link Watch the demo", lambda: p.get_by_role("link", name="Watch the demo")),
-                              ("header Sign in / Start", lambda: p.locator("header a").first)]),
+                              ("header Start free trial", lambda: p.locator("header a[href='/signup']")),
+                              ("header wordmark", lambda: p.locator("header a[href='/']"))]),
             ("/signup", "Signup", [("button Start free trial", lambda: p.get_by_role("button", name="Start free trial")),
                                     ("button Continue with Google", lambda: p.get_by_role("button", name="Continue with Google")),
                                     ("input Email", lambda: p.get_by_label("Email"))]),
@@ -869,8 +899,9 @@ async def mobile() -> None:
                     expected="HTTP 200; documentElement.scrollWidth <= 390; primary CTA height and width >= 40px",
                     actual=f"HTTP {r.status}; innerWidth={ov['vw']} docScrollWidth={ov['docScrollWidth']} bodyScrollWidth={ov['bodyScrollWidth']} overflow={ov['overflow']}; "
                            f"primary '{primary_name}'={primary}; other targets={ {k: v for k, v in sizes.items() if k != primary_name} }; under-40px={small}; wide elements={ov['wide'][:3]}; console={console_since(c)}",
-                    status="Verified" if ok else "Failed", severity="-" if ok else ("P2" if ov["overflow"] or not tap_ok else "P3"),
-                    impact="" if ok else "Phone visitors get a page that scrolls sideways or a CTA that is hard to tap",
+                    status="Verified" if ok else "Failed", severity="-" if ok else ("P2" if (ov["overflow"] or r.status != 200) else "P3"),
+                    impact="" if ok else ("Phone visitors get a page that scrolls sideways" if ov["overflow"] else f"Primary CTA is {primary and primary.get('h')}px tall — under the 40px touch-target guideline (polish; it is full-width so still tappable)"),
+                    repro=[] if ok else [f"open {path} at 390x844", f"getBoundingClientRect() on the '{primary_name}' control → {primary}"],
                     extra={"overflow": ov, "sizes": sizes, "viewport_meta": ov["viewportMeta"]},
                 )
             await step(s, f"Mobile — {label}", one)
@@ -882,7 +913,6 @@ async def mobile() -> None:
                 const btns = [...h.querySelectorAll('button')].filter(vis).map(b => ({label: b.getAttribute('aria-label') || b.textContent.trim(), expanded: b.getAttribute('aria-expanded')}));
                 const links = [...h.querySelectorAll('a')].map(a => ({text: a.textContent.trim().replace(/\\s+/g,' ').slice(0,30), href: a.getAttribute('href'), visible: vis(a)}));
                 return {header: true, buttons: btns, links}; }""")
-            btn = p.locator("header button").filter(has_not_text=re.compile(r"^$"))
             opened = None
             if info.get("header") and info["buttons"]:
                 target = p.locator("header button").first
@@ -891,20 +921,24 @@ async def mobile() -> None:
                 await p.wait_for_timeout(600)
                 after = await p.evaluate("""() => [...document.querySelectorAll('header a, nav a, [role=dialog] a, [data-state=open] a')].filter(a => a.offsetParent || a.getClientRects().length).map(a => ({text: a.textContent.trim().replace(/\\s+/g,' ').slice(0,30), href: a.getAttribute('href')}))""")
                 opened = {"before_visible_links": len(before), "after_visible_links": len(after), "after": after[:10]}
-                ok = len(after) > len(before)
-                status = "Verified" if ok else "Failed"
-                actual = f"header buttons={info['buttons']}; clicking the first opened a menu: {ok}; {opened}"
+                menu_note = f"header buttons={info['buttons']}; clicking the first revealed {len(after) - len(before)} more links: {opened}"
             else:
-                links_vis = [l for l in info.get("links", []) if l["visible"]]
-                ok = bool(links_vis)
-                status = "Verified" if ok else "Failed"
-                actual = f"no header button on mobile; visible header links={links_vis}"
+                menu_note = "no menu button in the header on mobile"
+            # Can a phone visitor reach Sign in from the landing page at all?
+            login_vis = await p.evaluate("""() => [...document.querySelectorAll('a[href="/login"]')].filter(a => a.offsetParent || a.getClientRects().length).map(a => ({text: a.textContent.trim(), where: a.closest('header') ? 'header' : a.closest('footer') ? 'footer' : 'main'}))""")
+            signup_vis = [l for l in info.get("links", []) if l["visible"] and l["href"] == "/signup"]
+            hidden = [l for l in info.get("links", []) if not l["visible"]]
+            ok = bool(signup_vis) and bool(login_vis)
             await s.record(
                 feature="Mobile 390x844 — header navigation usable",
-                promise="On a phone the header still gives access to Sign in / Start free trial (via a menu button or inline links)",
-                actions=["open / at 390x844", "inspect header buttons/links", "click the menu button if present"],
-                expected="Either visible nav links or a menu button that reveals them",
-                actual=actual, status=status, severity="-" if ok else "P2", extra={"header": info, "opened": opened},
+                promise="On a phone the header still gives access to both Start free trial and Sign in (inline or via a menu button)",
+                actions=["open / at 390x844", "inspect header buttons/links", "click the menu button if present", "look for any visible link to /login on the page"],
+                expected="Visible Start free trial AND a visible Sign in entry point (header, menu, or elsewhere on the page)",
+                actual=f"{menu_note}; visible header links={[l for l in info.get('links', []) if l['visible']]}; hidden header links={hidden}; visible /login links anywhere on the page={login_vis}",
+                status="Verified" if ok else "Failed", severity="-" if ok else "P3",
+                impact="" if ok else "An existing customer on a phone has no 'Sign in' link on the landing page (the desktop header's Help + Sign in links are hidden on mobile with no menu button); they must go via /signup → 'Sign in' or type /login",
+                repro=[] if ok else ["open https://www.founders.click/ at 390px width", "look for Sign in — header shows only the wordmark and 'Start free trial'"],
+                extra={"header": info, "opened": opened, "login_links_visible": login_vis},
             )
         await step(s, "Mobile — header navigation", mobile_menu)
         ALL_RECORDS.extend(s.records)
@@ -921,54 +955,118 @@ async def slow_network() -> None:
         await cdp.send("Network.enable")
         await cdp.send("Network.emulateNetworkConditions", SLOW_NET)
 
+        # In-flight request tracker: what is still downloading at each checkpoint.
+        t_start = [0.0]
+        inflight: dict[str, float] = {}
+        finished: list[dict] = []
+
+        def el() -> float:
+            return round(time.perf_counter() - t_start[0], 2)
+
+        def on_req(r):
+            inflight[r.url] = time.perf_counter()
+
+        def on_done(r, how: str):
+            t0 = inflight.pop(r.url, None)
+            finished.append({"url": redact(r.url).replace(BASE, ""), "type": r.resource_type, "how": how,
+                             "started_s": round(t0 - t_start[0], 2) if t0 else None, "ended_s": el()})
+        p.on("request", on_req)
+        p.on("requestfinished", lambda r: on_done(r, "finished"))
+        p.on("requestfailed", lambda r: on_done(r, f"failed:{r.failure}"))
+
+        def in_flight_now() -> list[dict]:
+            now = time.perf_counter()
+            return [{"url": redact(u).replace(BASE, "")[:100], "for_s": round(now - t0, 1)} for u, t0 in inflight.items()]
+
+        async def cdp_shot(name: str) -> str:
+            # page.screenshot() waits for document.fonts — which never settles while the
+            # throttled pipe is saturated — so capture straight through CDP instead.
+            s._shot_n += 1
+            path = s.dir / f"{s._shot_n:02d}-{re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')}.jpg"
+            try:
+                data = await cdp.send("Page.captureScreenshot", {"format": "jpeg", "quality": 55})
+                path.write_bytes(base64.b64decode(data["data"]))
+                return str(path.relative_to(REPO))
+            except Exception as e:  # noqa: BLE001
+                return f"(screenshot failed: {e})"
+
         async def load():
             n, c = len(HTTP_ERRORS), len(CONSOLE)
-            t0 = time.perf_counter()
+            t_start[0] = time.perf_counter()
             r = await p.goto(BASE + "/", wait_until="commit", timeout=180000)
-            t_commit = round(time.perf_counter() - t0, 2)
-            shots = {}
-            await p.wait_for_timeout(1500)
-            shots["t+1.5s"] = await s.shot("slow loading 1.5s")
-            state_at_1_5 = await p.evaluate("() => ({ready: document.readyState, h1: !!document.querySelector('main h1'), styled: !!document.querySelector('main h1') && getComputedStyle(document.querySelector('main h1')).color !== 'rgb(0, 0, 0)', textLen: document.body?.innerText?.length || 0})")
-            # first visible headline
+            t_commit = el()
+            shots, cp = {}, {}
+            while el() < 1.5:
+                await p.wait_for_timeout(100)
+            shots["t+1.5s"] = await cdp_shot("slow loading at 1.5s")
+            cp["t+1.5s"] = await p.evaluate("() => ({ready: document.readyState, h1_in_dom: !!document.querySelector('main h1'), textLen: document.body?.innerText?.length || 0, stylesheets: document.styleSheets.length})")
+            cp["t+1.5s"]["in_flight"] = in_flight_now()
+            # 1) headline painted (SSR HTML + CSS)
             t_h1 = None
-            for _ in range(240):
-                vis = await p.evaluate("() => { const h = document.querySelector('main h1'); if (!h) return false; const r = h.getBoundingClientRect(); return r.height > 0 && getComputedStyle(h).visibility !== 'hidden'; }")
+            while el() < 60:
+                vis = await p.evaluate("() => { const h = document.querySelector('main h1'); if (!h) return false; const r = h.getBoundingClientRect(); const cs = getComputedStyle(h); return r.height > 0 && cs.visibility !== 'hidden' && cs.opacity !== '0'; }")
                 if vis:
-                    t_h1 = round(time.perf_counter() - t0, 2)
+                    t_h1 = el()
                     break
                 await p.wait_for_timeout(250)
-            shots["h1 visible"] = await s.shot("slow h1 visible")
-            # hydration == interactive: a FAQ button starts toggling aria-expanded
-            t_inter = None
-            for _ in range(360):
-                res = await p.evaluate("() => { const b = document.getElementById('faq-button-1'); if (!b) return 'no-button'; b.click(); return b.getAttribute('aria-expanded'); }")
-                await p.wait_for_timeout(120)
-                now_state = await p.evaluate("() => document.getElementById('faq-button-1')?.getAttribute('aria-expanded')")
-                if now_state == "true":
-                    t_inter = round(time.perf_counter() - t0, 2)
-                    await p.evaluate("() => document.getElementById('faq-button-1')?.click()")  # restore
+            shots["headline visible"] = await cdp_shot("slow headline visible")
+            cp["headline"] = {"t": t_h1, "in_flight": in_flight_now()}
+            # 2) hydrated: React has attached a fiber to the FAQ button (no side effects)
+            t_hyd = None
+            while el() < 120:
+                hyd = await p.evaluate("() => { const b = document.getElementById('faq-button-1'); return !!b && Object.keys(b).some(k => k.startsWith('__reactFiber')); }")
+                if hyd:
+                    t_hyd = el()
                     break
-                await p.wait_for_timeout(380)
+                await p.wait_for_timeout(250)
+            # 3) interactive: a real click on the FAQ button changes aria-expanded
+            t_inter = None
+            if t_hyd is not None:
+                for _ in range(20):
+                    await p.evaluate("() => document.getElementById('faq-button-1')?.click()")
+                    await p.wait_for_timeout(150)
+                    if await p.evaluate("() => document.getElementById('faq-button-1')?.getAttribute('aria-expanded')") == "true":
+                        t_inter = el()
+                        await p.evaluate("() => document.getElementById('faq-button-1')?.click()")  # restore
+                        break
+                    await p.wait_for_timeout(350)
+            shots["interactive"] = await cdp_shot("slow interactive")
+            cp["interactive"] = {"t_hydrated": t_hyd, "t_click_works": t_inter, "in_flight": in_flight_now()}
+            # 4) does the load event ever fire? (cap the wait at 90 s total)
+            t_load = None
+            while el() < 90:
+                lm = await p.evaluate("() => Math.round((performance.getEntriesByType('navigation')[0] || {}).loadEventEnd || 0)")
+                if lm > 0:
+                    t_load = round(lm / 1000, 2)
+                    break
+                await p.wait_for_timeout(500)
             timing = await p.evaluate("""() => { const nav = performance.getEntriesByType('navigation')[0] || {}; const res = performance.getEntriesByType('resource');
                 const by = t => res.filter(e => e.initiatorType === t).length;
                 return {ttfb_ms: Math.round(nav.responseStart || 0), dcl_ms: Math.round(nav.domContentLoadedEventEnd || 0), load_ms: Math.round(nav.loadEventEnd || 0), readyState: document.readyState,
-                        resources: res.length, scripts: by('script'), css: by('link'), img: by('img'), transfer_bytes: res.reduce((a, e) => a + (e.transferSize || 0), 0),
-                        mp4_bytes: res.filter(e => /product-demo\\.mp4/.test(e.name)).reduce((a, e) => a + (e.transferSize || 0), 0),
+                        fonts: document.fonts.status, resources_done: res.length, scripts: by('script'), css: by('link'), img: by('img'), transfer_bytes: res.reduce((a, e) => a + (e.transferSize || 0), 0),
+                        mp4_bytes_done: res.filter(e => /product-demo\\.mp4/.test(e.name)).reduce((a, e) => a + (e.transferSize || 0), 0),
                         video_readyState: document.querySelector('video')?.readyState}; }""")
+            still = in_flight_now()
+            shots["final"] = await cdp_shot("slow final")
             errs, cons = errs_since(n), console_since(c)
-            ok = r.status == 200 and t_h1 is not None and t_inter is not None and not errs and not cons
+            slowest = sorted([f for f in finished if f["started_s"] is not None], key=lambda f: f["ended_s"] - f["started_s"], reverse=True)[:5]
+            ok = (r.status == 200 and t_h1 is not None and t_h1 <= 10 and t_inter is not None and t_inter <= 30 and not errs and not cons)
             await s.record(
                 feature="Slow network (400 kbps, 400 ms RTT) — landing page load",
                 promise="On a poor connection the home page still appears progressively and becomes interactive without errors",
-                actions=["throttle via CDP Network.emulateNetworkConditions", "open /", "screenshot at +1.5 s", "time: commit, headline visible, DOMContentLoaded, load, first FAQ button responding (hydrated)"],
-                expected="Progressive render (SSR headline before JS), no failed chunks/timeouts, interactive within a tolerable time (< 30 s), mp4 not competing for bandwidth",
-                actual=f"HTTP {r.status}; commit={t_commit}s; headline visible={t_h1}s; DCL={timing['dcl_ms']}ms; load={timing['load_ms']}ms ({timing['readyState']}); interactive (FAQ responds)={t_inter}s; "
-                       f"at +1.5s: {state_at_1_5}; resources={timing['resources']} (scripts {timing['scripts']}, css {timing['css']}, img {timing['img']}) transfer={timing['transfer_bytes']} bytes; mp4 bytes={timing['mp4_bytes']}; "
-                       f"failed/4xx={errs}; console={cons}",
+                actions=["throttle this page via CDP Network.emulateNetworkConditions (400 kbps down / 200 kbps up / 400 ms)", "open /", "CDP screenshot at +1.5 s",
+                         "time: commit, headline painted, React hydrated (fiber attached), FAQ button responding to a click, load event (waited up to 90 s)", "list requests still in flight at each checkpoint"],
+                expected="Progressive render (SSR headline within 10 s), interactive within 30 s, no failed chunks/timeouts/console errors; nothing large hogging the pipe before the page is usable",
+                actual=f"HTTP {r.status}; commit={t_commit}s; headline painted={t_h1}s; DCL={timing['dcl_ms']}ms; hydrated={t_hyd}s; interactive (FAQ click works)={t_inter}s; "
+                       f"load event={'%ss' % t_load if t_load else 'NOT fired within 90 s'} (readyState={timing['readyState']}, fonts={timing['fonts']}); "
+                       f"at +1.5s: {cp['t+1.5s']}; still in flight at the end: {still}; resources finished={timing['resources_done']} (scripts {timing['scripts']}, css {timing['css']}, img {timing['img']}) transfer={timing['transfer_bytes']:,} bytes; "
+                       f"slowest finished={[(f['url'][:50], f['type'], round(f['ended_s'] - f['started_s'], 1)) for f in slowest]}; failed/4xx={errs}; console={cons}",
                 status="Verified" if ok else "Failed", severity="-" if ok else "P2",
-                impact="" if ok else "Visitors on slow connections see a broken or non-interactive home page",
-                extra={"timing": timing, "screenshots": shots, "throttle": SLOW_NET, "t_commit": t_commit, "t_h1": t_h1, "t_interactive": t_inter},
+                impact="" if ok else "Visitors on slow connections wait too long for a usable home page",
+                screenshot=shots["final"],
+                extra={"timing": timing, "checkpoints": cp, "screenshots": shots, "throttle": SLOW_NET, "t_commit": t_commit, "t_h1": t_h1, "t_hydrated": t_hyd, "t_interactive": t_inter, "t_load": t_load,
+                       "in_flight_at_end": still, "finished_sample": finished[:40],
+                       "harness_note": "Session(slow_network=True) applies the CDP throttle to a throwaway page; CDP network emulation is per-target, so this script re-applies the same conditions to the page it drives"},
             )
         await step(s, "Slow network — landing page load", load)
         ALL_RECORDS.extend(s.records)
@@ -978,14 +1076,14 @@ async def slow_network() -> None:
 async def network_summary() -> None:
     async with Session(f"{PHASE}/network-summary", label="aggregate of all phase-11 sessions") as s:
         await s.goto("/", settle_ms=500)
-        expected_pat = re.compile(rf"/({UNKNOWN}|a/{UNKNOWN}|s/{UNKNOWN}|apply/{UNKNOWN}|p/{UNKNOWN})|/auth/v1/token|/auth/v1/signup", re.I)
+        expected_pat = re.compile(rf"/({UNKNOWN}|a/{UNKNOWN}|s/{UNKNOWN}|apply/{UNKNOWN}|p/{UNKNOWN}|a/founders-domain-test)|/auth/v1/token|/auth/v1/signup|live-acceptance-range-probe", re.I)
         expected = [e for e in HTTP_ERRORS if expected_pat.search(e["url"])]
         unexpected = [e for e in HTTP_ERRORS if not expected_pat.search(e["url"])]
         await s.record(
             feature="4xx/5xx and failed requests seen across all phase-11 sessions",
             promise="Nothing on the public journeys errors except the responses we deliberately provoked",
             actions=["aggregate every response >= 400 and every failed request from desktop, fresh, mobile and slow-network sessions"],
-            expected="Only the deliberate 404s (unknown routes/slugs) and the deliberate 400 from the wrong-password login",
+            expected="Only the deliberate 404s (unknown routes/slugs, the domain-test probe on the platform host) and the deliberate 400 from the wrong-password login",
             actual=f"total={len(HTTP_ERRORS)}; deliberate={len(expected)} {[(e['status'], e['url'].replace(BASE, '')) for e in expected]}; UNEXPECTED={len(unexpected)} {[(e['session'], e['status'], e['url'][:120], e.get('error')) for e in unexpected]}",
             status="Verified" if not unexpected else "Failed", severity="-" if not unexpected else "P2",
             extra={"all": HTTP_ERRORS, "console_all": CONSOLE},
