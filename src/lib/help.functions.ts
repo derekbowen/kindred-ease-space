@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { rateLimit, serverFnClientIp, RATE_LIMITED_MESSAGE } from "./public-rate-limit";
 import {
   listCategories,
   getCategoryBySlug,
@@ -123,6 +124,9 @@ export const searchHelp = createServerFn({ method: "GET" })
       const [categories, popular] = await Promise.all([listCategories(), listPopularArticles(6)]);
       return { query: "", results: [], categories, suggestions: [], popular };
     }
+    if (!rateLimit("help-search", serverFnClientIp(), 120)) {
+      return { query: q, results: [], categories: [], suggestions: [], popular: [] };
+    }
     try {
       const [results, categories] = await Promise.all([searchArticles(q, 50), listCategories()]);
       let suggestions: HelpTitleSuggestion[] = [];
@@ -152,6 +156,9 @@ const FeedbackSchema = z.object({
 export const submitArticleFeedback = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => FeedbackSchema.parse(d))
   .handler(async ({ data }) => {
+    if (!rateLimit("help-feedback", serverFnClientIp(), 20)) {
+      return { ok: false as const, error: RATE_LIMITED_MESSAGE };
+    }
     try {
       await submitFeedback({
         articleId: data.articleId,
@@ -176,6 +183,11 @@ const TicketSchema = z.object({
 export const submitSupportTicket = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => TicketSchema.parse(d))
   .handler(async ({ data }) => {
+    // Every ticket sends two emails, one of them to a caller-chosen address.
+    // Unlimited, that is a mail cannon aimed by strangers from our domain.
+    if (!rateLimit("support-ticket", serverFnClientIp(), 5)) {
+      return { ok: false as const, error: RATE_LIMITED_MESSAGE };
+    }
     try {
       const { id } = await submitTicket({
         email: data.email,
@@ -196,6 +208,7 @@ export const quickSearchHelp = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<{ results: HelpArticleListItem[] }> => {
     const q = (data.q ?? "").trim().slice(0, 200);
     if (!q) return { results: [] };
+    if (!rateLimit("help-search", serverFnClientIp(), 120)) return { results: [] };
     try {
       const results = await searchArticles(q, 8);
       return { results };

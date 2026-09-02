@@ -137,7 +137,6 @@ function section() {
 
 const ctx = { waitUntil: (p: Promise<unknown>) => { void Promise.resolve(p).catch(() => {}); } };
 
-let worker: any;
 async function get(path: string, host = HOST): Promise<Response> {
   return worker.fetch(new Request(`https://${host}${path}`), {}, ctx);
 }
@@ -159,7 +158,7 @@ function ageStale(seconds: number, host = HOST) {
 
 installFakes();
 resetNetwork();
-worker = (await import(WORKER)).default;
+const worker: any = (await import(WORKER)).default;
 section();
 
 // ===========================================================================

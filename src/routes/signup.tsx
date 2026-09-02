@@ -10,6 +10,7 @@ export const Route = createFileRoute("/signup")({
   head: () => ({
     meta: [
       { title: "Start your free trial — founders.click" },
+      { name: "robots", content: "noindex, nofollow" },
       {
         name: "description",
         content: "Create a founders.click workspace and start your 14-day free trial.",
@@ -121,6 +122,17 @@ function SignupPage() {
               <Button type="submit" className="w-full" disabled={submitting}>
                 {submitting ? "Creating account…" : "Start free trial"}
               </Button>
+              <p className="text-center text-xs text-muted-foreground">
+                By creating an account you agree to the{" "}
+                <Link to="/terms" className="underline hover:text-foreground">
+                  Terms of Service
+                </Link>{" "}
+                and{" "}
+                <Link to="/privacy" className="underline hover:text-foreground">
+                  Privacy Policy
+                </Link>
+                .
+              </p>
             </form>
             <Button variant="outline" className="w-full" onClick={onGoogle}>
               Continue with Google

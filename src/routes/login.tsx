@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { safeNextPath } from "@/lib/safe-next";
 
 const searchSchema = z.object({ next: z.string().optional() });
 
@@ -13,6 +14,7 @@ export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
       { title: "Sign in — founders.click" },
+      { name: "robots", content: "noindex, nofollow" },
       {
         name: "description",
         content:
@@ -43,7 +45,7 @@ function LoginPage() {
       toast.error(error.message);
       return;
     }
-    navigate({ to: (search.next as string | undefined) ?? "/app" });
+    navigate({ to: safeNextPath(search.next) });
   };
 
   const onGoogle = async () => {

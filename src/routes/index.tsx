@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { safeJsonLd } from "@/lib/json-ld";
 import {
   ArrowRight,
   Check,
@@ -49,7 +50,7 @@ export const Route = createFileRoute("/")({
     scripts: [
       {
         type: "application/ld+json",
-        children: JSON.stringify({
+        children: safeJsonLd({
           "@context": "https://schema.org",
           "@type": "SoftwareApplication",
           name: "founders.click",
@@ -67,7 +68,7 @@ export const Route = createFileRoute("/")({
       },
       {
         type: "application/ld+json",
-        children: JSON.stringify({
+        children: safeJsonLd({
           "@context": "https://schema.org",
           "@type": "FAQPage",
           mainEntity: FAQS.map((f) => ({

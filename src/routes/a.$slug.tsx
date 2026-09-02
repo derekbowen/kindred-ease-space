@@ -1,5 +1,6 @@
 import { createFileRoute, notFound, redirect, useRouter } from "@tanstack/react-router";
 import { getPublicTenantPage } from "@/lib/public-tenant-page.functions";
+import { safeJsonLd } from "@/lib/json-ld";
 import { CityHub } from "@/components/templates/CityHub";
 import { canonicalUrl } from "@/lib/canonical";
 
@@ -67,7 +68,7 @@ export const Route = createFileRoute("/a/$slug")({
     const ldScripts: Array<{ type: string; children: string }> = [];
     ldScripts.push({
       type: "application/ld+json",
-      children: JSON.stringify({
+      children: safeJsonLd({
         "@context": "https://schema.org",
         "@type": "BreadcrumbList",
         itemListElement: [
@@ -84,7 +85,7 @@ export const Route = createFileRoute("/a/$slug")({
     if (p.listings.length > 0) {
       ldScripts.push({
         type: "application/ld+json",
-        children: JSON.stringify({
+        children: safeJsonLd({
           "@context": "https://schema.org",
           "@type": "ItemList",
           name: p.title,
@@ -102,7 +103,7 @@ export const Route = createFileRoute("/a/$slug")({
       if (l.structured_data) {
         ldScripts.push({
           type: "application/ld+json",
-          children: JSON.stringify(l.structured_data),
+          children: safeJsonLd(l.structured_data),
         });
       }
     }

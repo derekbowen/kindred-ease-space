@@ -10,6 +10,7 @@ export const Route = createFileRoute("/reset-password")({
   head: () => ({
     meta: [
       { title: "Reset password — founders.click" },
+      { name: "robots", content: "noindex, nofollow" },
       {
         name: "description",
         content:

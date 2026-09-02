@@ -1,5 +1,6 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { getHelpArticle } from "@/lib/help.functions";
+import { safeJsonLd } from "@/lib/json-ld";
 import { Breadcrumb } from "@/components/help/Breadcrumb";
 import { MarkdownRenderer } from "@/components/help/MarkdownRenderer";
 import { HelpfulFeedback } from "@/components/help/HelpfulFeedback";
@@ -34,7 +35,7 @@ export const Route = createFileRoute("/help/$category/$article")({
       scripts: [
         {
           type: "application/ld+json",
-          children: JSON.stringify({
+          children: safeJsonLd({
             "@context": "https://schema.org",
             "@type": "Article",
             headline: a.title,
@@ -47,7 +48,7 @@ export const Route = createFileRoute("/help/$category/$article")({
         },
         {
           type: "application/ld+json",
-          children: JSON.stringify({
+          children: safeJsonLd({
             "@context": "https://schema.org",
             "@type": "BreadcrumbList",
             itemListElement: [

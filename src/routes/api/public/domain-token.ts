@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { clientIp } from "@/lib/public-rate-limit";
 
 const sb = () => supabaseAdmin as any;
 
@@ -22,12 +23,6 @@ function rateLimit(ip: string, limit = 120, windowMs = 60_000): boolean {
   }
   b.count += 1;
   return b.count <= limit;
-}
-
-function clientIp(request: Request): string {
-  const xff = request.headers.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0]!.trim();
-  return request.headers.get("cf-connecting-ip") || "unknown";
 }
 
 const Query = z.object({ hostname: z.string().min(3).max(253) });

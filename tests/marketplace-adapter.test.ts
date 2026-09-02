@@ -2,7 +2,7 @@ import {
   resolveRouteConfig, buildListingUrl, buildSearchUrl, buildProviderUrl,
   inventoryHealth, SHARETRIBE_DEFAULT_ROUTES,
 } from "../src/lib/marketplace/adapter";
-let p=0,f=0; const t=(n:string,c:boolean,x="")=>{c?(p++,console.log("  PASS  "+n)):(f++,console.log("  FAIL  "+n+"  "+x));};
+let p=0,f=0; const t=(n:string,c:boolean,x="")=>{ if (c) { p++; console.log("  PASS  "+n); } else { f++; console.log("  FAIL  "+n+"  "+x); } };
 
 console.log("\n=== Default profile reproduces today's behaviour ===");
 const def = resolveRouteConfig("https://www.example.com/", {});

@@ -6,7 +6,7 @@
  */
 export function parseDelimited(text: string): string[][] {
   const rows: string[][] = [];
-  const src = text.replace(/^﻿/, ""); // strip BOM
+  const src = text.replace(/^\uFEFF/, ""); // strip BOM
   // Detect delimiter from the first line: prefer tab when present.
   const firstLine = src.slice(0, src.indexOf("\n") === -1 ? src.length : src.indexOf("\n"));
   const delim = firstLine.includes("\t") ? "\t" : ",";

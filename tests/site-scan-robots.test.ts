@@ -1,5 +1,5 @@
 import { parseRobots, isDisallowed, looksLikeSitemapUrl } from "../src/lib/opportunity/site-scan.server";
-let p=0,f=0; const t=(n:string,c:boolean)=>{c?(p++,console.log("  PASS  "+n)):(f++,console.log("  FAIL  "+n));};
+let p=0,f=0; const t=(n:string,c:boolean)=>{ if (c) { p++; console.log("  PASS  "+n); } else { f++; console.log("  FAIL  "+n); } };
 const robots = parseRobots(`
 User-agent: AhrefsBot
 Disallow: /

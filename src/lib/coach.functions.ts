@@ -29,6 +29,7 @@ export const createConversation = createServerFn({ method: "POST" })
     }).parse,
   )
   .handler(async ({ data, context }) => {
+    await assertWorkspaceMember(data.workspaceId, context.userId);
     const { supabase, userId } = context;
     const { data: row, error } = await supabase
       .from("coach_conversations")
