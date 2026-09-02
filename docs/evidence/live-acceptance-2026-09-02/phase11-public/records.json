@@ -1869,5 +1869,743 @@
     "customer_impact": "",
     "repro": [],
     "recorded_at": "2026-09-02T07:47:08+00:00"
+  },
+  {
+    "phase": "phase11-public/fresh-session",
+    "feature": "New Session (incognito) carries no state from the previous profile",
+    "promise": "Each browser profile starts clean: no markers, no cookies, no auth token; /app still bounces to login",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp",
+    "account": "anonymous visitor (second fresh profile)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open / in a brand-new Session",
+      "read localStorage/sessionStorage/cookies",
+      "open /app"
+    ],
+    "expected": "marker absent; no live_acceptance_marker cookie; no sb-*-auth-token; /app \u2192 /login",
+    "actual": "marker=None; localStorage keys=[]; sessionStorage keys=[]; cookies=[]; auth keys=[]; /app bounced to login=True (/login?next=%2Fapp)",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/fresh-session/001-new-session-incognito-carries-no-state-from-the-previous-pro.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:47:09+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/",
+        "status": 200
+      },
+      {
+        "t": "2026-09-02T07:47:11+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "no state carried over",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:47:14+00:00"
+  },
+  {
+    "phase": "phase11-public/mobile",
+    "feature": "Mobile 390x844 \u2014 Landing (/)",
+    "promise": "Page fits the phone width (no horizontal scroll) and the primary CTA is a comfortable tap target (>= 40px)",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/",
+    "account": "anonymous visitor (mobile 390x844)",
+    "browser": "Chromium (Playwright) mobile 390x844",
+    "preconditions": "",
+    "actions": [
+      "open / at 390x844 (touch, mobile UA flags)",
+      "compare scrollWidth with innerWidth",
+      "getBoundingClientRect on the primary CTAs"
+    ],
+    "expected": "HTTP 200; documentElement.scrollWidth <= 390; primary CTA height and width >= 40px",
+    "actual": "HTTP 200; innerWidth=390 docScrollWidth=390 bodyScrollWidth=390 overflow=False; primary 'link Start your free trial'={'text': 'Start your free trial', 'w': 350, 'h': 48}; other targets={'link Watch the demo': {'text': 'Watch the demo', 'w': 350, 'h': 50}, 'header Start free trial': {'text': 'Start free trial', 'w': 108, 'h': 32}, 'header wordmark': {'text': 'founders.click', 'w': 122, 'h': 24}}; under-40px=['header Start free trial', 'header wordmark']; wide elements=[]; console=[]",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/mobile/001-mobile-390x844-landing.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:47:15+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:47:17+00:00",
+    "extra": {
+      "overflow": {
+        "vw": 390,
+        "docScrollWidth": 390,
+        "bodyScrollWidth": 390,
+        "overflow": false,
+        "wide": [],
+        "viewportMeta": "width=device-width, initial-scale=1"
+      },
+      "sizes": {
+        "link Start your free trial": {
+          "text": "Start your free trial",
+          "w": 350,
+          "h": 48
+        },
+        "link Watch the demo": {
+          "text": "Watch the demo",
+          "w": 350,
+          "h": 50
+        },
+        "header Start free trial": {
+          "text": "Start free trial",
+          "w": 108,
+          "h": 32
+        },
+        "header wordmark": {
+          "text": "founders.click",
+          "w": 122,
+          "h": 24
+        }
+      },
+      "viewport_meta": "width=device-width, initial-scale=1"
+    }
+  },
+  {
+    "phase": "phase11-public/mobile",
+    "feature": "Mobile 390x844 \u2014 Signup (/signup)",
+    "promise": "Page fits the phone width (no horizontal scroll) and the primary CTA is a comfortable tap target (>= 40px)",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/signup",
+    "account": "anonymous visitor (mobile 390x844)",
+    "browser": "Chromium (Playwright) mobile 390x844",
+    "preconditions": "",
+    "actions": [
+      "open /signup at 390x844 (touch, mobile UA flags)",
+      "compare scrollWidth with innerWidth",
+      "getBoundingClientRect on the primary CTAs"
+    ],
+    "expected": "HTTP 200; documentElement.scrollWidth <= 390; primary CTA height and width >= 40px",
+    "actual": "HTTP 200; innerWidth=390 docScrollWidth=390 bodyScrollWidth=390 overflow=False; primary 'button Start free trial'={'text': 'Start free trial', 'w': 358, 'h': 36}; other targets={'button Continue with Google': {'text': 'Continue with Google', 'w': 358, 'h': 36}, 'input Email': {'text': None, 'w': 358, 'h': 36}}; under-40px=['button Start free trial', 'button Continue with Google', 'input Email']; wide elements=[]; console=[]",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/mobile/002-mobile-390x844-signup-signup.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:47:17+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/signup",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Failed",
+    "severity": "P3",
+    "customer_impact": "Primary CTA is 36px tall \u2014 under the 40px touch-target guideline (polish; it is full-width so still tappable)",
+    "repro": [
+      "open /signup at 390x844",
+      "getBoundingClientRect() on the 'button Start free trial' control \u2192 {'text': 'Start free trial', 'w': 358, 'h': 36}"
+    ],
+    "recorded_at": "2026-09-02T07:47:19+00:00",
+    "extra": {
+      "overflow": {
+        "vw": 390,
+        "docScrollWidth": 390,
+        "bodyScrollWidth": 390,
+        "overflow": false,
+        "wide": [],
+        "viewportMeta": "width=device-width, initial-scale=1"
+      },
+      "sizes": {
+        "button Start free trial": {
+          "text": "Start free trial",
+          "w": 358,
+          "h": 36
+        },
+        "button Continue with Google": {
+          "text": "Continue with Google",
+          "w": 358,
+          "h": 36
+        },
+        "input Email": {
+          "text": null,
+          "w": 358,
+          "h": 36
+        }
+      },
+      "viewport_meta": "width=device-width, initial-scale=1"
+    }
+  },
+  {
+    "phase": "phase11-public/mobile",
+    "feature": "Mobile 390x844 \u2014 Login (/login)",
+    "promise": "Page fits the phone width (no horizontal scroll) and the primary CTA is a comfortable tap target (>= 40px)",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous visitor (mobile 390x844)",
+    "browser": "Chromium (Playwright) mobile 390x844",
+    "preconditions": "",
+    "actions": [
+      "open /login at 390x844 (touch, mobile UA flags)",
+      "compare scrollWidth with innerWidth",
+      "getBoundingClientRect on the primary CTAs"
+    ],
+    "expected": "HTTP 200; documentElement.scrollWidth <= 390; primary CTA height and width >= 40px",
+    "actual": "HTTP 200; innerWidth=390 docScrollWidth=390 bodyScrollWidth=390 overflow=False; primary 'button Sign in'={'text': 'Sign in', 'w': 358, 'h': 36}; other targets={'button Continue with Google': {'text': 'Continue with Google', 'w': 358, 'h': 36}, 'link Forgot password': {'text': 'Forgot password?', 'w': 123, 'h': 16}}; under-40px=['button Sign in', 'button Continue with Google', 'link Forgot password']; wide elements=[]; console=[]",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/mobile/003-mobile-390x844-login-login.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:47:20+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/login",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Failed",
+    "severity": "P3",
+    "customer_impact": "Primary CTA is 36px tall \u2014 under the 40px touch-target guideline (polish; it is full-width so still tappable)",
+    "repro": [
+      "open /login at 390x844",
+      "getBoundingClientRect() on the 'button Sign in' control \u2192 {'text': 'Sign in', 'w': 358, 'h': 36}"
+    ],
+    "recorded_at": "2026-09-02T07:47:22+00:00",
+    "extra": {
+      "overflow": {
+        "vw": 390,
+        "docScrollWidth": 390,
+        "bodyScrollWidth": 390,
+        "overflow": false,
+        "wide": [],
+        "viewportMeta": "width=device-width, initial-scale=1"
+      },
+      "sizes": {
+        "button Sign in": {
+          "text": "Sign in",
+          "w": 358,
+          "h": 36
+        },
+        "button Continue with Google": {
+          "text": "Continue with Google",
+          "w": 358,
+          "h": 36
+        },
+        "link Forgot password": {
+          "text": "Forgot password?",
+          "w": 123,
+          "h": 16
+        }
+      },
+      "viewport_meta": "width=device-width, initial-scale=1"
+    }
+  },
+  {
+    "phase": "phase11-public/mobile",
+    "feature": "Mobile 390x844 \u2014 Help centre (/help)",
+    "promise": "Page fits the phone width (no horizontal scroll) and the primary CTA is a comfortable tap target (>= 40px)",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/help",
+    "account": "anonymous visitor (mobile 390x844)",
+    "browser": "Chromium (Playwright) mobile 390x844",
+    "preconditions": "",
+    "actions": [
+      "open /help at 390x844 (touch, mobile UA flags)",
+      "compare scrollWidth with innerWidth",
+      "getBoundingClientRect on the primary CTAs"
+    ],
+    "expected": "HTTP 200; documentElement.scrollWidth <= 390; primary CTA height and width >= 40px",
+    "actual": "HTTP 200; innerWidth=390 docScrollWidth=390 bodyScrollWidth=390 overflow=False; primary 'search input'={'text': 'Search articles...', 'w': 342, 'h': 48}; other targets={'link Contact support': None, 'first category link': {'text': '4 articles Sharetribe Integration  Crede', 'w': 342, 'h': 212}}; under-40px=[]; wide elements=[]; console=[]",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/mobile/004-mobile-390x844-help-centre-help.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:47:22+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:47:24+00:00",
+    "extra": {
+      "overflow": {
+        "vw": 390,
+        "docScrollWidth": 390,
+        "bodyScrollWidth": 390,
+        "overflow": false,
+        "wide": [],
+        "viewportMeta": "width=device-width, initial-scale=1"
+      },
+      "sizes": {
+        "search input": {
+          "text": "Search articles...",
+          "w": 342,
+          "h": 48
+        },
+        "link Contact support": null,
+        "first category link": {
+          "text": "4 articles Sharetribe Integration  Crede",
+          "w": 342,
+          "h": 212
+        }
+      },
+      "viewport_meta": "width=device-width, initial-scale=1"
+    }
+  },
+  {
+    "phase": "phase11-public/mobile",
+    "feature": "Mobile 390x844 \u2014 header navigation usable",
+    "promise": "On a phone the header still gives access to both Start free trial and Sign in (inline or via a menu button)",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/",
+    "account": "anonymous visitor (mobile 390x844)",
+    "browser": "Chromium (Playwright) mobile 390x844",
+    "preconditions": "",
+    "actions": [
+      "open / at 390x844",
+      "inspect header buttons/links",
+      "click the menu button if present",
+      "look for any visible link to /login on the page"
+    ],
+    "expected": "Visible Start free trial AND a visible Sign in entry point (header, menu, or elsewhere on the page)",
+    "actual": "no menu button in the header on mobile; visible header links=[{'text': 'founders.click', 'href': '/', 'visible': True}, {'text': 'Start free trial', 'href': '/signup', 'visible': True}]; hidden header links=[{'text': 'Help', 'href': '/help', 'visible': False}, {'text': 'Sign in', 'href': '/login', 'visible': False}]; visible /login links anywhere on the page=[]",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/mobile/005-mobile-390x844-header-navigation-usable.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:47:24+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Failed",
+    "severity": "P3",
+    "customer_impact": "An existing customer on a phone has no 'Sign in' link on the landing page (the desktop header's Help + Sign in links are hidden on mobile with no menu button); they must go via /signup \u2192 'Sign in' or type /login",
+    "repro": [
+      "open https://www.founders.click/ at 390px width",
+      "look for Sign in \u2014 header shows only the wordmark and 'Start free trial'"
+    ],
+    "recorded_at": "2026-09-02T07:47:26+00:00",
+    "extra": {
+      "header": {
+        "header": true,
+        "buttons": [],
+        "links": [
+          {
+            "text": "founders.click",
+            "href": "/",
+            "visible": true
+          },
+          {
+            "text": "Help",
+            "href": "/help",
+            "visible": false
+          },
+          {
+            "text": "Sign in",
+            "href": "/login",
+            "visible": false
+          },
+          {
+            "text": "Start free trial",
+            "href": "/signup",
+            "visible": true
+          }
+        ]
+      },
+      "opened": null,
+      "login_links_visible": []
+    }
+  },
+  {
+    "phase": "phase11-public/slow-network",
+    "feature": "Slow network (400 kbps, 400 ms RTT) \u2014 landing page load",
+    "promise": "On a poor connection the home page still appears progressively and becomes interactive without errors",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/",
+    "account": "anonymous visitor (desktop, throttled 400 kbps / 400 ms RTT)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "throttle this page via CDP Network.emulateNetworkConditions (400 kbps down / 200 kbps up / 400 ms)",
+      "open /",
+      "CDP screenshot at +1.5 s",
+      "time: commit, headline painted, React hydrated (fiber attached), FAQ button responding to a click, load event (waited up to 90 s)",
+      "list requests still in flight at each checkpoint"
+    ],
+    "expected": "Progressive render (SSR headline within 10 s), interactive within 30 s, no failed chunks/timeouts/console errors; nothing large hogging the pipe before the page is usable",
+    "actual": "HTTP 200; commit=0.77s; headline painted=4.01s; DCL=3896ms; hydrated=13.69s; interactive (FAQ click works)=13.85s; load event=NOT fired within 90 s (readyState=interactive, fonts=loaded); at +1.5s: {'ready': 'interactive', 'h1_in_dom': True, 'textLen': 3983, 'stylesheets': 1, 'in_flight': [{'url': '/assets/index-B53gYUFa.js', 'for_s': 3.1}, {'url': '/product-demo-poster.jpg', 'for_s': 3.1}, {'url': '/product-demo.mp4', 'for_s': 3.1}]}; still in flight at the end: [{'url': '/product-demo.mp4', 'for_s': 89.1}]; resources finished=20 (scripts 0, css 1, img 0) transfer=393,376 bytes; slowest finished=[('/assets/index-B53gYUFa.js', 'script', 12.6), ('/product-demo-poster.jpg', 'image', 9.7), ('/assets/styles-Cg50sYyr.css', 'stylesheet', 2.9), ('/assets/utils-DMHpy-pb.js', 'script', 2.0), ('/assets/index-DiGx60vq.js', 'script', 1.5)]; failed/4xx=[]; console=[]",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/slow-network/04-slow-final.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:47:27+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:48:57+00:00",
+    "extra": {
+      "timing": {
+        "ttfb_ms": 536,
+        "dcl_ms": 3896,
+        "load_ms": 0,
+        "readyState": "interactive",
+        "fonts": "loaded",
+        "resources_done": 20,
+        "scripts": 0,
+        "css": 1,
+        "img": 0,
+        "transfer_bytes": 393376,
+        "mp4_bytes_done": 0,
+        "video_readyState": 0
+      },
+      "checkpoints": {
+        "t+1.5s": {
+          "ready": "interactive",
+          "h1_in_dom": true,
+          "textLen": 3983,
+          "stylesheets": 1,
+          "in_flight": [
+            {
+              "url": "/assets/index-B53gYUFa.js",
+              "for_s": 3.1
+            },
+            {
+              "url": "/product-demo-poster.jpg",
+              "for_s": 3.1
+            },
+            {
+              "url": "/product-demo.mp4",
+              "for_s": 3.1
+            }
+          ]
+        },
+        "headline": {
+          "t": 4.01,
+          "in_flight": [
+            {
+              "url": "/assets/index-B53gYUFa.js",
+              "for_s": 3.1
+            },
+            {
+              "url": "/product-demo-poster.jpg",
+              "for_s": 3.1
+            },
+            {
+              "url": "/product-demo.mp4",
+              "for_s": 3.1
+            }
+          ]
+        },
+        "interactive": {
+          "t_hydrated": 13.69,
+          "t_click_works": 13.85,
+          "in_flight": [
+            {
+              "url": "/product-demo.mp4",
+              "for_s": 13.0
+            }
+          ]
+        }
+      },
+      "screenshots": {
+        "t+1.5s": "docs/evidence/live-acceptance-2026-09-02/phase11-public/slow-network/01-slow-loading-at-1-5s.jpg",
+        "headline visible": "docs/evidence/live-acceptance-2026-09-02/phase11-public/slow-network/02-slow-headline-visible.jpg",
+        "interactive": "docs/evidence/live-acceptance-2026-09-02/phase11-public/slow-network/03-slow-interactive.jpg",
+        "final": "docs/evidence/live-acceptance-2026-09-02/phase11-public/slow-network/04-slow-final.jpg"
+      },
+      "throttle": {
+        "offline": false,
+        "latency": 400,
+        "downloadThroughput": 51200.0,
+        "uploadThroughput": 25600.0
+      },
+      "t_commit": 0.77,
+      "t_h1": 4.01,
+      "t_hydrated": 13.69,
+      "t_interactive": 13.85,
+      "t_load": null,
+      "in_flight_at_end": [
+        {
+          "url": "/product-demo.mp4",
+          "for_s": 89.1
+        }
+      ],
+      "finished_sample": [
+        {
+          "url": "/",
+          "type": "document",
+          "how": "finished",
+          "started_s": 0.01,
+          "ended_s": 0.95
+        },
+        {
+          "url": "/assets/plus-Dmml8-GU.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.5
+        },
+        {
+          "url": "/assets/index-CkK6wjOr.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.53
+        },
+        {
+          "url": "/assets/refresh-cw-DXp064Xm.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.59
+        },
+        {
+          "url": "/assets/globe-BetdgdCY.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.65
+        },
+        {
+          "url": "/assets/createLucideIcon-DDQ0ZhNO.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.7
+        },
+        {
+          "url": "/assets/arrow-right-CUZ0H3j9.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.73
+        },
+        {
+          "url": "/assets/plan-catalog-CmfFiBYF.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.94,
+          "ended_s": 1.76
+        },
+        {
+          "url": "/assets/play-C4pOmW-9.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.79
+        },
+        {
+          "url": "/assets/x-Cy5LLxlh.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.82
+        },
+        {
+          "url": "/assets/share-2-CT5n5uKW.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.85
+        },
+        {
+          "url": "/assets/check-DBn5wvCG.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.88
+        },
+        {
+          "url": "/assets/sparkles-DKpxaPaD.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.91
+        },
+        {
+          "url": "/assets/inbox-CTuxHwDW.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.94
+        },
+        {
+          "url": "/assets/button-dQ2A5tUp.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 2.05
+        },
+        {
+          "url": "/assets/SiteFooter-DxlnbIII.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.94,
+          "ended_s": 2.08
+        },
+        {
+          "url": "/assets/index-DiGx60vq.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.94,
+          "ended_s": 2.44
+        },
+        {
+          "url": "/assets/utils-DMHpy-pb.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 2.91
+        },
+        {
+          "url": "/assets/styles-Cg50sYyr.css",
+          "type": "stylesheet",
+          "how": "finished",
+          "started_s": 0.94,
+          "ended_s": 3.84
+        },
+        {
+          "url": "/product-demo-poster.jpg",
+          "type": "image",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 10.64
+        },
+        {
+          "url": "/assets/index-B53gYUFa.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.94,
+          "ended_s": 13.49
+        }
+      ],
+      "harness_note": "Session(slow_network=True) applies the CDP throttle to a throwaway page; CDP network emulation is per-target, so this script re-applies the same conditions to the page it drives"
+    }
+  },
+  {
+    "phase": "phase11-public/network-summary",
+    "feature": "4xx/5xx and failed requests seen across all phase-11 sessions",
+    "promise": "Nothing on the public journeys errors except the responses we deliberately provoked",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/",
+    "account": "aggregate of all phase-11 sessions",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "aggregate every response >= 400 and every failed request from desktop, fresh, mobile and slow-network sessions"
+    ],
+    "expected": "Only the deliberate 404s (unknown routes/slugs, the domain-test probe on the platform host) and the deliberate 400 from the wrong-password login",
+    "actual": "total=8; deliberate=8 [('FAILED', '/product-demo.mp4?live-acceptance-range-probe=1'), (400, 'https://xbxhzinnfhosoztqaaao.supabase.co/auth/v1/token?grant_type=password'), (404, '/live-acceptance-does-not-exist-2026'), (404, '/a/live-acceptance-does-not-exist-2026?utm_source=live-acceptance'), (404, '/a/live-acceptance-does-not-exist-2026'), (404, '/s/live-acceptance-does-not-exist-2026-ws/live-acceptance-does-not-exist-2026'), (404, '/apply/live-acceptance-does-not-exist-2026'), (404, '/a/founders-domain-test')]; UNEXPECTED=0 []",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/network-summary/001-4xx-5xx-and-failed-requests-seen-across-all-phase-11-session.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:48:58+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:48:59+00:00",
+    "extra": {
+      "all": [
+        {
+          "session": "desktop",
+          "t": "2026-09-02T07:45:57+00:00",
+          "status": "FAILED",
+          "error": "net::ERR_ABORTED",
+          "type": "fetch",
+          "url": "https://www.founders.click/product-demo.mp4?live-acceptance-range-probe=1"
+        },
+        {
+          "session": "desktop",
+          "t": "2026-09-02T07:46:27+00:00",
+          "status": 400,
+          "method": "POST",
+          "type": "fetch",
+          "url": "https://xbxhzinnfhosoztqaaao.supabase.co/auth/v1/token?grant_type=password"
+        },
+        {
+          "session": "desktop",
+          "t": "2026-09-02T07:46:47+00:00",
+          "status": 404,
+          "method": "GET",
+          "type": "document",
+          "url": "https://www.founders.click/live-acceptance-does-not-exist-2026"
+        },
+        {
+          "session": "desktop",
+          "t": "2026-09-02T07:46:54+00:00",
+          "status": 404,
+          "method": "GET",
+          "type": "document",
+          "url": "https://www.founders.click/a/live-acceptance-does-not-exist-2026?utm_source=live-acceptance"
+        },
+        {
+          "session": "desktop",
+          "t": "2026-09-02T07:46:56+00:00",
+          "status": 404,
+          "method": "GET",
+          "type": "document",
+          "url": "https://www.founders.click/a/live-acceptance-does-not-exist-2026"
+        },
+        {
+          "session": "desktop",
+          "t": "2026-09-02T07:46:59+00:00",
+          "status": 404,
+          "method": "GET",
+          "type": "document",
+          "url": "https://www.founders.click/s/live-acceptance-does-not-exist-2026-ws/live-acceptance-does-not-exist-2026"
+        },
+        {
+          "session": "desktop",
+          "t": "2026-09-02T07:47:02+00:00",
+          "status": 404,
+          "method": "GET",
+          "type": "document",
+          "url": "https://www.founders.click/apply/live-acceptance-does-not-exist-2026"
+        },
+        {
+          "session": "desktop",
+          "t": "2026-09-02T07:47:05+00:00",
+          "status": 404,
+          "method": "GET",
+          "type": "document",
+          "url": "https://www.founders.click/a/founders-domain-test"
+        }
+      ],
+      "console_all": [
+        "[desktop] error: Failed to load resource: the server responded with a status of 400 ()",
+        "[desktop] error: Failed to load resource: the server responded with a status of 404 ()",
+        "[desktop] error: Failed to load resource: the server responded with a status of 404 ()",
+        "[desktop] error: Failed to load resource: the server responded with a status of 404 ()",
+        "[desktop] error: Failed to load resource: the server responded with a status of 404 ()",
+        "[desktop] error: Failed to load resource: the server responded with a status of 404 ()",
+        "[desktop] error: Failed to load resource: the server responded with a status of 404 ()"
+      ]
+    }
   }
 ]

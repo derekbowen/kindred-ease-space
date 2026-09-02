@@ -1,0 +1,275 @@
+[
+  {
+    "phase": "phase11-public/slow-network",
+    "feature": "Slow network (400 kbps, 400 ms RTT) \u2014 landing page load",
+    "promise": "On a poor connection the home page still appears progressively and becomes interactive without errors",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/",
+    "account": "anonymous visitor (desktop, throttled 400 kbps / 400 ms RTT)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "throttle this page via CDP Network.emulateNetworkConditions (400 kbps down / 200 kbps up / 400 ms)",
+      "open /",
+      "CDP screenshot at +1.5 s",
+      "time: commit, headline painted, React hydrated (fiber attached), FAQ button responding to a click, load event (waited up to 90 s)",
+      "list requests still in flight at each checkpoint"
+    ],
+    "expected": "Progressive render (SSR headline within 10 s), interactive within 30 s, no failed chunks/timeouts/console errors; nothing large hogging the pipe before the page is usable",
+    "actual": "HTTP 200; commit=0.77s; headline painted=4.01s; DCL=3896ms; hydrated=13.69s; interactive (FAQ click works)=13.85s; load event=NOT fired within 90 s (readyState=interactive, fonts=loaded); at +1.5s: {'ready': 'interactive', 'h1_in_dom': True, 'textLen': 3983, 'stylesheets': 1, 'in_flight': [{'url': '/assets/index-B53gYUFa.js', 'for_s': 3.1}, {'url': '/product-demo-poster.jpg', 'for_s': 3.1}, {'url': '/product-demo.mp4', 'for_s': 3.1}]}; still in flight at the end: [{'url': '/product-demo.mp4', 'for_s': 89.1}]; resources finished=20 (scripts 0, css 1, img 0) transfer=393,376 bytes; slowest finished=[('/assets/index-B53gYUFa.js', 'script', 12.6), ('/product-demo-poster.jpg', 'image', 9.7), ('/assets/styles-Cg50sYyr.css', 'stylesheet', 2.9), ('/assets/utils-DMHpy-pb.js', 'script', 2.0), ('/assets/index-DiGx60vq.js', 'script', 1.5)]; failed/4xx=[]; console=[]",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/slow-network/04-slow-final.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:47:27+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:48:57+00:00",
+    "extra": {
+      "timing": {
+        "ttfb_ms": 536,
+        "dcl_ms": 3896,
+        "load_ms": 0,
+        "readyState": "interactive",
+        "fonts": "loaded",
+        "resources_done": 20,
+        "scripts": 0,
+        "css": 1,
+        "img": 0,
+        "transfer_bytes": 393376,
+        "mp4_bytes_done": 0,
+        "video_readyState": 0
+      },
+      "checkpoints": {
+        "t+1.5s": {
+          "ready": "interactive",
+          "h1_in_dom": true,
+          "textLen": 3983,
+          "stylesheets": 1,
+          "in_flight": [
+            {
+              "url": "/assets/index-B53gYUFa.js",
+              "for_s": 3.1
+            },
+            {
+              "url": "/product-demo-poster.jpg",
+              "for_s": 3.1
+            },
+            {
+              "url": "/product-demo.mp4",
+              "for_s": 3.1
+            }
+          ]
+        },
+        "headline": {
+          "t": 4.01,
+          "in_flight": [
+            {
+              "url": "/assets/index-B53gYUFa.js",
+              "for_s": 3.1
+            },
+            {
+              "url": "/product-demo-poster.jpg",
+              "for_s": 3.1
+            },
+            {
+              "url": "/product-demo.mp4",
+              "for_s": 3.1
+            }
+          ]
+        },
+        "interactive": {
+          "t_hydrated": 13.69,
+          "t_click_works": 13.85,
+          "in_flight": [
+            {
+              "url": "/product-demo.mp4",
+              "for_s": 13.0
+            }
+          ]
+        }
+      },
+      "screenshots": {
+        "t+1.5s": "docs/evidence/live-acceptance-2026-09-02/phase11-public/slow-network/01-slow-loading-at-1-5s.jpg",
+        "headline visible": "docs/evidence/live-acceptance-2026-09-02/phase11-public/slow-network/02-slow-headline-visible.jpg",
+        "interactive": "docs/evidence/live-acceptance-2026-09-02/phase11-public/slow-network/03-slow-interactive.jpg",
+        "final": "docs/evidence/live-acceptance-2026-09-02/phase11-public/slow-network/04-slow-final.jpg"
+      },
+      "throttle": {
+        "offline": false,
+        "latency": 400,
+        "downloadThroughput": 51200.0,
+        "uploadThroughput": 25600.0
+      },
+      "t_commit": 0.77,
+      "t_h1": 4.01,
+      "t_hydrated": 13.69,
+      "t_interactive": 13.85,
+      "t_load": null,
+      "in_flight_at_end": [
+        {
+          "url": "/product-demo.mp4",
+          "for_s": 89.1
+        }
+      ],
+      "finished_sample": [
+        {
+          "url": "/",
+          "type": "document",
+          "how": "finished",
+          "started_s": 0.01,
+          "ended_s": 0.95
+        },
+        {
+          "url": "/assets/plus-Dmml8-GU.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.5
+        },
+        {
+          "url": "/assets/index-CkK6wjOr.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.53
+        },
+        {
+          "url": "/assets/refresh-cw-DXp064Xm.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.59
+        },
+        {
+          "url": "/assets/globe-BetdgdCY.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.65
+        },
+        {
+          "url": "/assets/createLucideIcon-DDQ0ZhNO.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.7
+        },
+        {
+          "url": "/assets/arrow-right-CUZ0H3j9.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.73
+        },
+        {
+          "url": "/assets/plan-catalog-CmfFiBYF.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.94,
+          "ended_s": 1.76
+        },
+        {
+          "url": "/assets/play-C4pOmW-9.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.79
+        },
+        {
+          "url": "/assets/x-Cy5LLxlh.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.82
+        },
+        {
+          "url": "/assets/share-2-CT5n5uKW.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.85
+        },
+        {
+          "url": "/assets/check-DBn5wvCG.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.88
+        },
+        {
+          "url": "/assets/sparkles-DKpxaPaD.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.91
+        },
+        {
+          "url": "/assets/inbox-CTuxHwDW.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 1.94
+        },
+        {
+          "url": "/assets/button-dQ2A5tUp.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 2.05
+        },
+        {
+          "url": "/assets/SiteFooter-DxlnbIII.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.94,
+          "ended_s": 2.08
+        },
+        {
+          "url": "/assets/index-DiGx60vq.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.94,
+          "ended_s": 2.44
+        },
+        {
+          "url": "/assets/utils-DMHpy-pb.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 2.91
+        },
+        {
+          "url": "/assets/styles-Cg50sYyr.css",
+          "type": "stylesheet",
+          "how": "finished",
+          "started_s": 0.94,
+          "ended_s": 3.84
+        },
+        {
+          "url": "/product-demo-poster.jpg",
+          "type": "image",
+          "how": "finished",
+          "started_s": 0.95,
+          "ended_s": 10.64
+        },
+        {
+          "url": "/assets/index-B53gYUFa.js",
+          "type": "script",
+          "how": "finished",
+          "started_s": 0.94,
+          "ended_s": 13.49
+        }
+      ],
+      "harness_note": "Session(slow_network=True) applies the CDP throttle to a throwaway page; CDP network emulation is per-target, so this script re-applies the same conditions to the page it drives"
+    }
+  }
+]

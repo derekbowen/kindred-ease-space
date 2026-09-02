@@ -1,0 +1,77 @@
+{
+  "http_errors": [
+    {
+      "session": "desktop",
+      "t": "2026-09-02T07:45:57+00:00",
+      "status": "FAILED",
+      "error": "net::ERR_ABORTED",
+      "type": "fetch",
+      "url": "https://www.founders.click/product-demo.mp4?live-acceptance-range-probe=1"
+    },
+    {
+      "session": "desktop",
+      "t": "2026-09-02T07:46:27+00:00",
+      "status": 400,
+      "method": "POST",
+      "type": "fetch",
+      "url": "https://xbxhzinnfhosoztqaaao.supabase.co/auth/v1/token?grant_type=password"
+    },
+    {
+      "session": "desktop",
+      "t": "2026-09-02T07:46:47+00:00",
+      "status": 404,
+      "method": "GET",
+      "type": "document",
+      "url": "https://www.founders.click/live-acceptance-does-not-exist-2026"
+    },
+    {
+      "session": "desktop",
+      "t": "2026-09-02T07:46:54+00:00",
+      "status": 404,
+      "method": "GET",
+      "type": "document",
+      "url": "https://www.founders.click/a/live-acceptance-does-not-exist-2026?utm_source=live-acceptance"
+    },
+    {
+      "session": "desktop",
+      "t": "2026-09-02T07:46:56+00:00",
+      "status": 404,
+      "method": "GET",
+      "type": "document",
+      "url": "https://www.founders.click/a/live-acceptance-does-not-exist-2026"
+    },
+    {
+      "session": "desktop",
+      "t": "2026-09-02T07:46:59+00:00",
+      "status": 404,
+      "method": "GET",
+      "type": "document",
+      "url": "https://www.founders.click/s/live-acceptance-does-not-exist-2026-ws/live-acceptance-does-not-exist-2026"
+    },
+    {
+      "session": "desktop",
+      "t": "2026-09-02T07:47:02+00:00",
+      "status": 404,
+      "method": "GET",
+      "type": "document",
+      "url": "https://www.founders.click/apply/live-acceptance-does-not-exist-2026"
+    },
+    {
+      "session": "desktop",
+      "t": "2026-09-02T07:47:05+00:00",
+      "status": 404,
+      "method": "GET",
+      "type": "document",
+      "url": "https://www.founders.click/a/founders-domain-test"
+    }
+  ],
+  "console": [
+    "[desktop] error: Failed to load resource: the server responded with a status of 400 ()",
+    "[desktop] error: Failed to load resource: the server responded with a status of 404 ()",
+    "[desktop] error: Failed to load resource: the server responded with a status of 404 ()",
+    "[desktop] error: Failed to load resource: the server responded with a status of 404 ()",
+    "[desktop] error: Failed to load resource: the server responded with a status of 404 ()",
+    "[desktop] error: Failed to load resource: the server responded with a status of 404 ()",
+    "[desktop] error: Failed to load resource: the server responded with a status of 404 ()"
+  ]
+}

@@ -849,7 +849,7 @@ async def main():
         )
 
         # ---------------- 6. Every dashboard route, unauthenticated ----------
-        app_routes = sorted({f["route"] for f in F if f["route"] and f["route"].startswith("/app")})
+        app_routes = sorted({f["route"] for f in F if f["route"] and (f["route"] == "/app" or f["route"].startswith("/app/"))})
         for path in app_routes:
             try:
                 await s.goto(path, settle_ms=800)

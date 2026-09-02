@@ -1,0 +1,320 @@
+[
+  {
+    "phase": "phase11-public/mobile",
+    "feature": "Mobile 390x844 \u2014 Landing (/)",
+    "promise": "Page fits the phone width (no horizontal scroll) and the primary CTA is a comfortable tap target (>= 40px)",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/",
+    "account": "anonymous visitor (mobile 390x844)",
+    "browser": "Chromium (Playwright) mobile 390x844",
+    "preconditions": "",
+    "actions": [
+      "open / at 390x844 (touch, mobile UA flags)",
+      "compare scrollWidth with innerWidth",
+      "getBoundingClientRect on the primary CTAs"
+    ],
+    "expected": "HTTP 200; documentElement.scrollWidth <= 390; primary CTA height and width >= 40px",
+    "actual": "HTTP 200; innerWidth=390 docScrollWidth=390 bodyScrollWidth=390 overflow=False; primary 'link Start your free trial'={'text': 'Start your free trial', 'w': 350, 'h': 48}; other targets={'link Watch the demo': {'text': 'Watch the demo', 'w': 350, 'h': 50}, 'header Start free trial': {'text': 'Start free trial', 'w': 108, 'h': 32}, 'header wordmark': {'text': 'founders.click', 'w': 122, 'h': 24}}; under-40px=['header Start free trial', 'header wordmark']; wide elements=[]; console=[]",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/mobile/001-mobile-390x844-landing.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:47:15+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:47:17+00:00",
+    "extra": {
+      "overflow": {
+        "vw": 390,
+        "docScrollWidth": 390,
+        "bodyScrollWidth": 390,
+        "overflow": false,
+        "wide": [],
+        "viewportMeta": "width=device-width, initial-scale=1"
+      },
+      "sizes": {
+        "link Start your free trial": {
+          "text": "Start your free trial",
+          "w": 350,
+          "h": 48
+        },
+        "link Watch the demo": {
+          "text": "Watch the demo",
+          "w": 350,
+          "h": 50
+        },
+        "header Start free trial": {
+          "text": "Start free trial",
+          "w": 108,
+          "h": 32
+        },
+        "header wordmark": {
+          "text": "founders.click",
+          "w": 122,
+          "h": 24
+        }
+      },
+      "viewport_meta": "width=device-width, initial-scale=1"
+    }
+  },
+  {
+    "phase": "phase11-public/mobile",
+    "feature": "Mobile 390x844 \u2014 Signup (/signup)",
+    "promise": "Page fits the phone width (no horizontal scroll) and the primary CTA is a comfortable tap target (>= 40px)",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/signup",
+    "account": "anonymous visitor (mobile 390x844)",
+    "browser": "Chromium (Playwright) mobile 390x844",
+    "preconditions": "",
+    "actions": [
+      "open /signup at 390x844 (touch, mobile UA flags)",
+      "compare scrollWidth with innerWidth",
+      "getBoundingClientRect on the primary CTAs"
+    ],
+    "expected": "HTTP 200; documentElement.scrollWidth <= 390; primary CTA height and width >= 40px",
+    "actual": "HTTP 200; innerWidth=390 docScrollWidth=390 bodyScrollWidth=390 overflow=False; primary 'button Start free trial'={'text': 'Start free trial', 'w': 358, 'h': 36}; other targets={'button Continue with Google': {'text': 'Continue with Google', 'w': 358, 'h': 36}, 'input Email': {'text': None, 'w': 358, 'h': 36}}; under-40px=['button Start free trial', 'button Continue with Google', 'input Email']; wide elements=[]; console=[]",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/mobile/002-mobile-390x844-signup-signup.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:47:17+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/signup",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Failed",
+    "severity": "P3",
+    "customer_impact": "Primary CTA is 36px tall \u2014 under the 40px touch-target guideline (polish; it is full-width so still tappable)",
+    "repro": [
+      "open /signup at 390x844",
+      "getBoundingClientRect() on the 'button Start free trial' control \u2192 {'text': 'Start free trial', 'w': 358, 'h': 36}"
+    ],
+    "recorded_at": "2026-09-02T07:47:19+00:00",
+    "extra": {
+      "overflow": {
+        "vw": 390,
+        "docScrollWidth": 390,
+        "bodyScrollWidth": 390,
+        "overflow": false,
+        "wide": [],
+        "viewportMeta": "width=device-width, initial-scale=1"
+      },
+      "sizes": {
+        "button Start free trial": {
+          "text": "Start free trial",
+          "w": 358,
+          "h": 36
+        },
+        "button Continue with Google": {
+          "text": "Continue with Google",
+          "w": 358,
+          "h": 36
+        },
+        "input Email": {
+          "text": null,
+          "w": 358,
+          "h": 36
+        }
+      },
+      "viewport_meta": "width=device-width, initial-scale=1"
+    }
+  },
+  {
+    "phase": "phase11-public/mobile",
+    "feature": "Mobile 390x844 \u2014 Login (/login)",
+    "promise": "Page fits the phone width (no horizontal scroll) and the primary CTA is a comfortable tap target (>= 40px)",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous visitor (mobile 390x844)",
+    "browser": "Chromium (Playwright) mobile 390x844",
+    "preconditions": "",
+    "actions": [
+      "open /login at 390x844 (touch, mobile UA flags)",
+      "compare scrollWidth with innerWidth",
+      "getBoundingClientRect on the primary CTAs"
+    ],
+    "expected": "HTTP 200; documentElement.scrollWidth <= 390; primary CTA height and width >= 40px",
+    "actual": "HTTP 200; innerWidth=390 docScrollWidth=390 bodyScrollWidth=390 overflow=False; primary 'button Sign in'={'text': 'Sign in', 'w': 358, 'h': 36}; other targets={'button Continue with Google': {'text': 'Continue with Google', 'w': 358, 'h': 36}, 'link Forgot password': {'text': 'Forgot password?', 'w': 123, 'h': 16}}; under-40px=['button Sign in', 'button Continue with Google', 'link Forgot password']; wide elements=[]; console=[]",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/mobile/003-mobile-390x844-login-login.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:47:20+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/login",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Failed",
+    "severity": "P3",
+    "customer_impact": "Primary CTA is 36px tall \u2014 under the 40px touch-target guideline (polish; it is full-width so still tappable)",
+    "repro": [
+      "open /login at 390x844",
+      "getBoundingClientRect() on the 'button Sign in' control \u2192 {'text': 'Sign in', 'w': 358, 'h': 36}"
+    ],
+    "recorded_at": "2026-09-02T07:47:22+00:00",
+    "extra": {
+      "overflow": {
+        "vw": 390,
+        "docScrollWidth": 390,
+        "bodyScrollWidth": 390,
+        "overflow": false,
+        "wide": [],
+        "viewportMeta": "width=device-width, initial-scale=1"
+      },
+      "sizes": {
+        "button Sign in": {
+          "text": "Sign in",
+          "w": 358,
+          "h": 36
+        },
+        "button Continue with Google": {
+          "text": "Continue with Google",
+          "w": 358,
+          "h": 36
+        },
+        "link Forgot password": {
+          "text": "Forgot password?",
+          "w": 123,
+          "h": 16
+        }
+      },
+      "viewport_meta": "width=device-width, initial-scale=1"
+    }
+  },
+  {
+    "phase": "phase11-public/mobile",
+    "feature": "Mobile 390x844 \u2014 Help centre (/help)",
+    "promise": "Page fits the phone width (no horizontal scroll) and the primary CTA is a comfortable tap target (>= 40px)",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/help",
+    "account": "anonymous visitor (mobile 390x844)",
+    "browser": "Chromium (Playwright) mobile 390x844",
+    "preconditions": "",
+    "actions": [
+      "open /help at 390x844 (touch, mobile UA flags)",
+      "compare scrollWidth with innerWidth",
+      "getBoundingClientRect on the primary CTAs"
+    ],
+    "expected": "HTTP 200; documentElement.scrollWidth <= 390; primary CTA height and width >= 40px",
+    "actual": "HTTP 200; innerWidth=390 docScrollWidth=390 bodyScrollWidth=390 overflow=False; primary 'search input'={'text': 'Search articles...', 'w': 342, 'h': 48}; other targets={'link Contact support': None, 'first category link': {'text': '4 articles Sharetribe Integration  Crede', 'w': 342, 'h': 212}}; under-40px=[]; wide elements=[]; console=[]",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/mobile/004-mobile-390x844-help-centre-help.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:47:22+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:47:24+00:00",
+    "extra": {
+      "overflow": {
+        "vw": 390,
+        "docScrollWidth": 390,
+        "bodyScrollWidth": 390,
+        "overflow": false,
+        "wide": [],
+        "viewportMeta": "width=device-width, initial-scale=1"
+      },
+      "sizes": {
+        "search input": {
+          "text": "Search articles...",
+          "w": 342,
+          "h": 48
+        },
+        "link Contact support": null,
+        "first category link": {
+          "text": "4 articles Sharetribe Integration  Crede",
+          "w": 342,
+          "h": 212
+        }
+      },
+      "viewport_meta": "width=device-width, initial-scale=1"
+    }
+  },
+  {
+    "phase": "phase11-public/mobile",
+    "feature": "Mobile 390x844 \u2014 header navigation usable",
+    "promise": "On a phone the header still gives access to both Start free trial and Sign in (inline or via a menu button)",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/",
+    "account": "anonymous visitor (mobile 390x844)",
+    "browser": "Chromium (Playwright) mobile 390x844",
+    "preconditions": "",
+    "actions": [
+      "open / at 390x844",
+      "inspect header buttons/links",
+      "click the menu button if present",
+      "look for any visible link to /login on the page"
+    ],
+    "expected": "Visible Start free trial AND a visible Sign in entry point (header, menu, or elsewhere on the page)",
+    "actual": "no menu button in the header on mobile; visible header links=[{'text': 'founders.click', 'href': '/', 'visible': True}, {'text': 'Start free trial', 'href': '/signup', 'visible': True}]; hidden header links=[{'text': 'Help', 'href': '/help', 'visible': False}, {'text': 'Sign in', 'href': '/login', 'visible': False}]; visible /login links anywhere on the page=[]",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/mobile/005-mobile-390x844-header-navigation-usable.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:47:24+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Failed",
+    "severity": "P3",
+    "customer_impact": "An existing customer on a phone has no 'Sign in' link on the landing page (the desktop header's Help + Sign in links are hidden on mobile with no menu button); they must go via /signup \u2192 'Sign in' or type /login",
+    "repro": [
+      "open https://www.founders.click/ at 390px width",
+      "look for Sign in \u2014 header shows only the wordmark and 'Start free trial'"
+    ],
+    "recorded_at": "2026-09-02T07:47:26+00:00",
+    "extra": {
+      "header": {
+        "header": true,
+        "buttons": [],
+        "links": [
+          {
+            "text": "founders.click",
+            "href": "/",
+            "visible": true
+          },
+          {
+            "text": "Help",
+            "href": "/help",
+            "visible": false
+          },
+          {
+            "text": "Sign in",
+            "href": "/login",
+            "visible": false
+          },
+          {
+            "text": "Start free trial",
+            "href": "/signup",
+            "visible": true
+          }
+        ]
+      },
+      "opened": null,
+      "login_links_visible": []
+    }
+  }
+]

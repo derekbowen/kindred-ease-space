@@ -1,0 +1,110 @@
+[
+  {
+    "phase": "phase11-public/network-summary",
+    "feature": "4xx/5xx and failed requests seen across all phase-11 sessions",
+    "promise": "Nothing on the public journeys errors except the responses we deliberately provoked",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/",
+    "account": "aggregate of all phase-11 sessions",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "aggregate every response >= 400 and every failed request from desktop, fresh, mobile and slow-network sessions"
+    ],
+    "expected": "Only the deliberate 404s (unknown routes/slugs, the domain-test probe on the platform host) and the deliberate 400 from the wrong-password login",
+    "actual": "total=8; deliberate=8 [('FAILED', '/product-demo.mp4?live-acceptance-range-probe=1'), (400, 'https://xbxhzinnfhosoztqaaao.supabase.co/auth/v1/token?grant_type=password'), (404, '/live-acceptance-does-not-exist-2026'), (404, '/a/live-acceptance-does-not-exist-2026?utm_source=live-acceptance'), (404, '/a/live-acceptance-does-not-exist-2026'), (404, '/s/live-acceptance-does-not-exist-2026-ws/live-acceptance-does-not-exist-2026'), (404, '/apply/live-acceptance-does-not-exist-2026'), (404, '/a/founders-domain-test')]; UNEXPECTED=0 []",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/network-summary/001-4xx-5xx-and-failed-requests-seen-across-all-phase-11-session.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T07:48:58+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T07:48:59+00:00",
+    "extra": {
+      "all": [
+        {
+          "session": "desktop",
+          "t": "2026-09-02T07:45:57+00:00",
+          "status": "FAILED",
+          "error": "net::ERR_ABORTED",
+          "type": "fetch",
+          "url": "https://www.founders.click/product-demo.mp4?live-acceptance-range-probe=1"
+        },
+        {
+          "session": "desktop",
+          "t": "2026-09-02T07:46:27+00:00",
+          "status": 400,
+          "method": "POST",
+          "type": "fetch",
+          "url": "https://xbxhzinnfhosoztqaaao.supabase.co/auth/v1/token?grant_type=password"
+        },
+        {
+          "session": "desktop",
+          "t": "2026-09-02T07:46:47+00:00",
+          "status": 404,
+          "method": "GET",
+          "type": "document",
+          "url": "https://www.founders.click/live-acceptance-does-not-exist-2026"
+        },
+        {
+          "session": "desktop",
+          "t": "2026-09-02T07:46:54+00:00",
+          "status": 404,
+          "method": "GET",
+          "type": "document",
+          "url": "https://www.founders.click/a/live-acceptance-does-not-exist-2026?utm_source=live-acceptance"
+        },
+        {
+          "session": "desktop",
+          "t": "2026-09-02T07:46:56+00:00",
+          "status": 404,
+          "method": "GET",
+          "type": "document",
+          "url": "https://www.founders.click/a/live-acceptance-does-not-exist-2026"
+        },
+        {
+          "session": "desktop",
+          "t": "2026-09-02T07:46:59+00:00",
+          "status": 404,
+          "method": "GET",
+          "type": "document",
+          "url": "https://www.founders.click/s/live-acceptance-does-not-exist-2026-ws/live-acceptance-does-not-exist-2026"
+        },
+        {
+          "session": "desktop",
+          "t": "2026-09-02T07:47:02+00:00",
+          "status": 404,
+          "method": "GET",
+          "type": "document",
+          "url": "https://www.founders.click/apply/live-acceptance-does-not-exist-2026"
+        },
+        {
+          "session": "desktop",
+          "t": "2026-09-02T07:47:05+00:00",
+          "status": 404,
+          "method": "GET",
+          "type": "document",
+          "url": "https://www.founders.click/a/founders-domain-test"
+        }
+      ],
+      "console_all": [
+        "[desktop] error: Failed to load resource: the server responded with a status of 400 ()",
+        "[desktop] error: Failed to load resource: the server responded with a status of 404 ()",
+        "[desktop] error: Failed to load resource: the server responded with a status of 404 ()",
+        "[desktop] error: Failed to load resource: the server responded with a status of 404 ()",
+        "[desktop] error: Failed to load resource: the server responded with a status of 404 ()",
+        "[desktop] error: Failed to load resource: the server responded with a status of 404 ()",
+        "[desktop] error: Failed to load resource: the server responded with a status of 404 ()"
+      ]
+    }
+  }
+]
