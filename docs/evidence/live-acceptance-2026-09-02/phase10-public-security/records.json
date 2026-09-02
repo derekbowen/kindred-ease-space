@@ -1,0 +1,1927 @@
+[
+  {
+    "phase": "phase10-public-security",
+    "feature": "Unauthenticated /app URL redirects to login \u2014 /app",
+    "promise": "Every dashboard URL bounces an anonymous visitor to /login?next=\u2026 and renders no tenant data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app with no session",
+      "wait for the client redirect",
+      "GET the raw shell with curl for its headers"
+    ],
+    "expected": "browser lands on /login?next=/app; pre-redirect shell shows no data; raw shell 200 (ssr:false) with security headers",
+    "actual": "redirected=True -> /login?next=%2Fapp next='/app'; while waiting shell text[:80]=''; leaked_words=[]; raw shell HTTP 200 cache-control=None XFO=DENY nosniff=nosniff set-cookie=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/001-unauthenticated-app-url-redirects-to-login-app.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:09:04+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:08+00:00",
+    "extra": {
+      "header_row": {
+        "path": "/app",
+        "shell_status": 200,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "strict-transport-security": "max-age=31536000",
+        "set-cookie": false,
+        "content-type": "text/html; charset=utf-8"
+      }
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Unauthenticated /app URL redirects to login \u2014 /app/pages",
+    "promise": "Every dashboard URL bounces an anonymous visitor to /login?next=\u2026 and renders no tenant data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp%2Fpages",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app/pages with no session",
+      "wait for the client redirect",
+      "GET the raw shell with curl for its headers"
+    ],
+    "expected": "browser lands on /login?next=/app/pages; pre-redirect shell shows no data; raw shell 200 (ssr:false) with security headers",
+    "actual": "redirected=True -> /login?next=%2Fapp%2Fpages next='/app/pages'; while waiting shell text[:80]=''; leaked_words=[]; raw shell HTTP 200 cache-control=None XFO=DENY nosniff=nosniff set-cookie=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/002-unauthenticated-app-url-redirects-to-login-app-pages.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:09:08+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app/pages",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:11+00:00",
+    "extra": {
+      "header_row": {
+        "path": "/app/pages",
+        "shell_status": 200,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "strict-transport-security": "max-age=31536000",
+        "set-cookie": false,
+        "content-type": "text/html; charset=utf-8"
+      }
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Unauthenticated /app URL redirects to login \u2014 /app/billing",
+    "promise": "Every dashboard URL bounces an anonymous visitor to /login?next=\u2026 and renders no tenant data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp%2Fbilling",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app/billing with no session",
+      "wait for the client redirect",
+      "GET the raw shell with curl for its headers"
+    ],
+    "expected": "browser lands on /login?next=/app/billing; pre-redirect shell shows no data; raw shell 200 (ssr:false) with security headers",
+    "actual": "redirected=True -> /login?next=%2Fapp%2Fbilling next='/app/billing'; while waiting shell text[:80]=''; leaked_words=[]; raw shell HTTP 200 cache-control=None XFO=DENY nosniff=nosniff set-cookie=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/003-unauthenticated-app-url-redirects-to-login-app-billing.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:09:11+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app/billing",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:15+00:00",
+    "extra": {
+      "header_row": {
+        "path": "/app/billing",
+        "shell_status": 200,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "strict-transport-security": "max-age=31536000",
+        "set-cookie": false,
+        "content-type": "text/html; charset=utf-8"
+      }
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Unauthenticated /app URL redirects to login \u2014 /app/settings/domains",
+    "promise": "Every dashboard URL bounces an anonymous visitor to /login?next=\u2026 and renders no tenant data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp%2Fsettings%2Fdomains",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app/settings/domains with no session",
+      "wait for the client redirect",
+      "GET the raw shell with curl for its headers"
+    ],
+    "expected": "browser lands on /login?next=/app/settings/domains; pre-redirect shell shows no data; raw shell 200 (ssr:false) with security headers",
+    "actual": "redirected=True -> /login?next=%2Fapp%2Fsettings%2Fdomains next='/app/settings/domains'; while waiting shell text[:80]=''; leaked_words=[]; raw shell HTTP 200 cache-control=None XFO=DENY nosniff=nosniff set-cookie=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/004-unauthenticated-app-url-redirects-to-login-app-settings-doma.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:09:15+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app/settings/domains",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:18+00:00",
+    "extra": {
+      "header_row": {
+        "path": "/app/settings/domains",
+        "shell_status": 200,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "strict-transport-security": "max-age=31536000",
+        "set-cookie": false,
+        "content-type": "text/html; charset=utf-8"
+      }
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Unauthenticated /app URL redirects to login \u2014 /app/affiliates/payouts",
+    "promise": "Every dashboard URL bounces an anonymous visitor to /login?next=\u2026 and renders no tenant data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp%2Faffiliates%2Fpayouts",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app/affiliates/payouts with no session",
+      "wait for the client redirect",
+      "GET the raw shell with curl for its headers"
+    ],
+    "expected": "browser lands on /login?next=/app/affiliates/payouts; pre-redirect shell shows no data; raw shell 200 (ssr:false) with security headers",
+    "actual": "redirected=True -> /login?next=%2Fapp%2Faffiliates%2Fpayouts next='/app/affiliates/payouts'; while waiting shell text[:80]=''; leaked_words=[]; raw shell HTTP 200 cache-control=None XFO=DENY nosniff=nosniff set-cookie=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/005-unauthenticated-app-url-redirects-to-login-app-affiliates-pa.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:09:18+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app/affiliates/payouts",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:21+00:00",
+    "extra": {
+      "header_row": {
+        "path": "/app/affiliates/payouts",
+        "shell_status": 200,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "strict-transport-security": "max-age=31536000",
+        "set-cookie": false,
+        "content-type": "text/html; charset=utf-8"
+      }
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Unauthenticated /app URL redirects to login \u2014 /app/coach",
+    "promise": "Every dashboard URL bounces an anonymous visitor to /login?next=\u2026 and renders no tenant data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp%2Fcoach",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app/coach with no session",
+      "wait for the client redirect",
+      "GET the raw shell with curl for its headers"
+    ],
+    "expected": "browser lands on /login?next=/app/coach; pre-redirect shell shows no data; raw shell 200 (ssr:false) with security headers",
+    "actual": "redirected=True -> /login?next=%2Fapp%2Fcoach next='/app/coach'; while waiting shell text[:80]=''; leaked_words=[]; raw shell HTTP 200 cache-control=None XFO=DENY nosniff=nosniff set-cookie=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/006-unauthenticated-app-url-redirects-to-login-app-coach.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:09:21+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app/coach",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:25+00:00",
+    "extra": {
+      "header_row": {
+        "path": "/app/coach",
+        "shell_status": 200,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "strict-transport-security": "max-age=31536000",
+        "set-cookie": false,
+        "content-type": "text/html; charset=utf-8"
+      }
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Unauthenticated /app URL redirects to login \u2014 /app/seo/rank-tracker",
+    "promise": "Every dashboard URL bounces an anonymous visitor to /login?next=\u2026 and renders no tenant data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp%2Fseo%2Frank-tracker",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app/seo/rank-tracker with no session",
+      "wait for the client redirect",
+      "GET the raw shell with curl for its headers"
+    ],
+    "expected": "browser lands on /login?next=/app/seo/rank-tracker; pre-redirect shell shows no data; raw shell 200 (ssr:false) with security headers",
+    "actual": "redirected=True -> /login?next=%2Fapp%2Fseo%2Frank-tracker next='/app/seo/rank-tracker'; while waiting shell text[:80]=''; leaked_words=[]; raw shell HTTP 200 cache-control=None XFO=DENY nosniff=nosniff set-cookie=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/007-unauthenticated-app-url-redirects-to-login-app-seo-rank-trac.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:09:25+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app/seo/rank-tracker",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:28+00:00",
+    "extra": {
+      "header_row": {
+        "path": "/app/seo/rank-tracker",
+        "shell_status": 200,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "strict-transport-security": "max-age=31536000",
+        "set-cookie": false,
+        "content-type": "text/html; charset=utf-8"
+      }
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Unauthenticated /app URL redirects to login \u2014 /app/settings",
+    "promise": "Every dashboard URL bounces an anonymous visitor to /login?next=\u2026 and renders no tenant data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp%2Fsettings",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app/settings with no session",
+      "wait for the client redirect",
+      "GET the raw shell with curl for its headers"
+    ],
+    "expected": "browser lands on /login?next=/app/settings; pre-redirect shell shows no data; raw shell 200 (ssr:false) with security headers",
+    "actual": "redirected=True -> /login?next=%2Fapp%2Fsettings next='/app/settings'; while waiting shell text[:80]=''; leaked_words=[]; raw shell HTTP 200 cache-control=None XFO=DENY nosniff=nosniff set-cookie=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/008-unauthenticated-app-url-redirects-to-login-app-settings.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:09:28+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app/settings",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:31+00:00",
+    "extra": {
+      "header_row": {
+        "path": "/app/settings",
+        "shell_status": 200,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "strict-transport-security": "max-age=31536000",
+        "set-cookie": false,
+        "content-type": "text/html; charset=utf-8"
+      }
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Unauthenticated /app URL redirects to login \u2014 /app/settings/api-keys",
+    "promise": "Every dashboard URL bounces an anonymous visitor to /login?next=\u2026 and renders no tenant data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp%2Fsettings%2Fapi-keys",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app/settings/api-keys with no session",
+      "wait for the client redirect",
+      "GET the raw shell with curl for its headers"
+    ],
+    "expected": "browser lands on /login?next=/app/settings/api-keys; pre-redirect shell shows no data; raw shell 200 (ssr:false) with security headers",
+    "actual": "redirected=True -> /login?next=%2Fapp%2Fsettings%2Fapi-keys next='/app/settings/api-keys'; while waiting shell text[:80]=''; leaked_words=[]; raw shell HTTP 200 cache-control=None XFO=DENY nosniff=nosniff set-cookie=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/009-unauthenticated-app-url-redirects-to-login-app-settings-api-.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:09:31+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app/settings/api-keys",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:35+00:00",
+    "extra": {
+      "header_row": {
+        "path": "/app/settings/api-keys",
+        "shell_status": 200,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "strict-transport-security": "max-age=31536000",
+        "set-cookie": false,
+        "content-type": "text/html; charset=utf-8"
+      }
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Unauthenticated /app URL redirects to login \u2014 /app/affiliates",
+    "promise": "Every dashboard URL bounces an anonymous visitor to /login?next=\u2026 and renders no tenant data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp%2Faffiliates",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app/affiliates with no session",
+      "wait for the client redirect",
+      "GET the raw shell with curl for its headers"
+    ],
+    "expected": "browser lands on /login?next=/app/affiliates; pre-redirect shell shows no data; raw shell 200 (ssr:false) with security headers",
+    "actual": "redirected=True -> /login?next=%2Fapp%2Faffiliates next='/app/affiliates'; while waiting shell text[:80]=''; leaked_words=[]; raw shell HTTP 200 cache-control=None XFO=DENY nosniff=nosniff set-cookie=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/010-unauthenticated-app-url-redirects-to-login-app-affiliates.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:09:35+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app/affiliates",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:38+00:00",
+    "extra": {
+      "header_row": {
+        "path": "/app/affiliates",
+        "shell_status": 200,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "strict-transport-security": "max-age=31536000",
+        "set-cookie": false,
+        "content-type": "text/html; charset=utf-8"
+      }
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Unauthenticated /app URL redirects to login \u2014 /app/content/generate",
+    "promise": "Every dashboard URL bounces an anonymous visitor to /login?next=\u2026 and renders no tenant data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp%2Fcontent%2Fgenerate",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app/content/generate with no session",
+      "wait for the client redirect",
+      "GET the raw shell with curl for its headers"
+    ],
+    "expected": "browser lands on /login?next=/app/content/generate; pre-redirect shell shows no data; raw shell 200 (ssr:false) with security headers",
+    "actual": "redirected=True -> /login?next=%2Fapp%2Fcontent%2Fgenerate next='/app/content/generate'; while waiting shell text[:80]=''; leaked_words=[]; raw shell HTTP 200 cache-control=None XFO=DENY nosniff=nosniff set-cookie=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/011-unauthenticated-app-url-redirects-to-login-app-content-gener.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:09:38+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app/content/generate",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:41+00:00",
+    "extra": {
+      "header_row": {
+        "path": "/app/content/generate",
+        "shell_status": 200,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "strict-transport-security": "max-age=31536000",
+        "set-cookie": false,
+        "content-type": "text/html; charset=utf-8"
+      }
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Unauthenticated /app URL redirects to login \u2014 /app/addons",
+    "promise": "Every dashboard URL bounces an anonymous visitor to /login?next=\u2026 and renders no tenant data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp%2Faddons",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app/addons with no session",
+      "wait for the client redirect",
+      "GET the raw shell with curl for its headers"
+    ],
+    "expected": "browser lands on /login?next=/app/addons; pre-redirect shell shows no data; raw shell 200 (ssr:false) with security headers",
+    "actual": "redirected=True -> /login?next=%2Fapp%2Faddons next='/app/addons'; while waiting shell text[:80]=''; leaked_words=[]; raw shell HTTP 200 cache-control=None XFO=DENY nosniff=nosniff set-cookie=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/012-unauthenticated-app-url-redirects-to-login-app-addons.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:09:41+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app/addons",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:45+00:00",
+    "extra": {
+      "header_row": {
+        "path": "/app/addons",
+        "shell_status": 200,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "strict-transport-security": "max-age=31536000",
+        "set-cookie": false,
+        "content-type": "text/html; charset=utf-8"
+      }
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Unauthenticated /app URL redirects to login \u2014 /app/seo/page-auditor",
+    "promise": "Every dashboard URL bounces an anonymous visitor to /login?next=\u2026 and renders no tenant data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp%2Fseo%2Fpage-auditor",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app/seo/page-auditor with no session",
+      "wait for the client redirect",
+      "GET the raw shell with curl for its headers"
+    ],
+    "expected": "browser lands on /login?next=/app/seo/page-auditor; pre-redirect shell shows no data; raw shell 200 (ssr:false) with security headers",
+    "actual": "redirected=True -> /login?next=%2Fapp%2Fseo%2Fpage-auditor next='/app/seo/page-auditor'; while waiting shell text[:80]=''; leaked_words=[]; raw shell HTTP 200 cache-control=None XFO=DENY nosniff=nosniff set-cookie=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/013-unauthenticated-app-url-redirects-to-login-app-seo-page-audi.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:09:45+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app/seo/page-auditor",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:48+00:00",
+    "extra": {
+      "header_row": {
+        "path": "/app/seo/page-auditor",
+        "shell_status": 200,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "strict-transport-security": "max-age=31536000",
+        "set-cookie": false,
+        "content-type": "text/html; charset=utf-8"
+      }
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Unauthenticated /app URL redirects to login \u2014 /app/affiliates/programs",
+    "promise": "Every dashboard URL bounces an anonymous visitor to /login?next=\u2026 and renders no tenant data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp%2Faffiliates%2Fprograms",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app/affiliates/programs with no session",
+      "wait for the client redirect",
+      "GET the raw shell with curl for its headers"
+    ],
+    "expected": "browser lands on /login?next=/app/affiliates/programs; pre-redirect shell shows no data; raw shell 200 (ssr:false) with security headers",
+    "actual": "redirected=True -> /login?next=%2Fapp%2Faffiliates%2Fprograms next='/app/affiliates/programs'; while waiting shell text[:80]=''; leaked_words=[]; raw shell HTTP 200 cache-control=None XFO=DENY nosniff=nosniff set-cookie=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/014-unauthenticated-app-url-redirects-to-login-app-affiliates-pr.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:09:48+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app/affiliates/programs",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:51+00:00",
+    "extra": {
+      "header_row": {
+        "path": "/app/affiliates/programs",
+        "shell_status": 200,
+        "cache-control": null,
+        "x-frame-options": "DENY",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "strict-transport-security": "max-age=31536000",
+        "set-cookie": false,
+        "content-type": "text/html; charset=utf-8"
+      }
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Response headers on /app/* shells (authenticated-shaped responses)",
+    "promise": "The 200 SSR shell served for /app/* (before the client redirect) carries platform security headers, sets no session cookie, and is not cached with data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp%2Faffiliates%2Fprograms",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "curl each of the 14 /app/* URLs with no cookies",
+      "read cache-control + security headers + set-cookie"
+    ],
+    "expected": "every shell: X-Content-Type-Options nosniff, X-Frame-Options DENY, HSTS present, no Set-Cookie; cache-control not caching tenant data",
+    "actual": "nosniff on all=True; XFO DENY on all=True; HSTS on all=True; Set-Cookie paths=[]; distinct cache-control values=['(none)']; cacheable-with-maxage paths=[]",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/015-response-headers-on-app-shells-authenticated-shaped-response.jpg",
+    "network": [],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:51+00:00",
+    "extra": {
+      "rows": [
+        {
+          "path": "/app",
+          "shell_status": 200,
+          "cache-control": null,
+          "x-frame-options": "DENY",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "strict-origin-when-cross-origin",
+          "strict-transport-security": "max-age=31536000",
+          "set-cookie": false,
+          "content-type": "text/html; charset=utf-8"
+        },
+        {
+          "path": "/app/pages",
+          "shell_status": 200,
+          "cache-control": null,
+          "x-frame-options": "DENY",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "strict-origin-when-cross-origin",
+          "strict-transport-security": "max-age=31536000",
+          "set-cookie": false,
+          "content-type": "text/html; charset=utf-8"
+        },
+        {
+          "path": "/app/billing",
+          "shell_status": 200,
+          "cache-control": null,
+          "x-frame-options": "DENY",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "strict-origin-when-cross-origin",
+          "strict-transport-security": "max-age=31536000",
+          "set-cookie": false,
+          "content-type": "text/html; charset=utf-8"
+        },
+        {
+          "path": "/app/settings/domains",
+          "shell_status": 200,
+          "cache-control": null,
+          "x-frame-options": "DENY",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "strict-origin-when-cross-origin",
+          "strict-transport-security": "max-age=31536000",
+          "set-cookie": false,
+          "content-type": "text/html; charset=utf-8"
+        },
+        {
+          "path": "/app/affiliates/payouts",
+          "shell_status": 200,
+          "cache-control": null,
+          "x-frame-options": "DENY",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "strict-origin-when-cross-origin",
+          "strict-transport-security": "max-age=31536000",
+          "set-cookie": false,
+          "content-type": "text/html; charset=utf-8"
+        },
+        {
+          "path": "/app/coach",
+          "shell_status": 200,
+          "cache-control": null,
+          "x-frame-options": "DENY",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "strict-origin-when-cross-origin",
+          "strict-transport-security": "max-age=31536000",
+          "set-cookie": false,
+          "content-type": "text/html; charset=utf-8"
+        },
+        {
+          "path": "/app/seo/rank-tracker",
+          "shell_status": 200,
+          "cache-control": null,
+          "x-frame-options": "DENY",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "strict-origin-when-cross-origin",
+          "strict-transport-security": "max-age=31536000",
+          "set-cookie": false,
+          "content-type": "text/html; charset=utf-8"
+        },
+        {
+          "path": "/app/settings",
+          "shell_status": 200,
+          "cache-control": null,
+          "x-frame-options": "DENY",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "strict-origin-when-cross-origin",
+          "strict-transport-security": "max-age=31536000",
+          "set-cookie": false,
+          "content-type": "text/html; charset=utf-8"
+        },
+        {
+          "path": "/app/settings/api-keys",
+          "shell_status": 200,
+          "cache-control": null,
+          "x-frame-options": "DENY",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "strict-origin-when-cross-origin",
+          "strict-transport-security": "max-age=31536000",
+          "set-cookie": false,
+          "content-type": "text/html; charset=utf-8"
+        },
+        {
+          "path": "/app/affiliates",
+          "shell_status": 200,
+          "cache-control": null,
+          "x-frame-options": "DENY",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "strict-origin-when-cross-origin",
+          "strict-transport-security": "max-age=31536000",
+          "set-cookie": false,
+          "content-type": "text/html; charset=utf-8"
+        },
+        {
+          "path": "/app/content/generate",
+          "shell_status": 200,
+          "cache-control": null,
+          "x-frame-options": "DENY",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "strict-origin-when-cross-origin",
+          "strict-transport-security": "max-age=31536000",
+          "set-cookie": false,
+          "content-type": "text/html; charset=utf-8"
+        },
+        {
+          "path": "/app/addons",
+          "shell_status": 200,
+          "cache-control": null,
+          "x-frame-options": "DENY",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "strict-origin-when-cross-origin",
+          "strict-transport-security": "max-age=31536000",
+          "set-cookie": false,
+          "content-type": "text/html; charset=utf-8"
+        },
+        {
+          "path": "/app/seo/page-auditor",
+          "shell_status": 200,
+          "cache-control": null,
+          "x-frame-options": "DENY",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "strict-origin-when-cross-origin",
+          "strict-transport-security": "max-age=31536000",
+          "set-cookie": false,
+          "content-type": "text/html; charset=utf-8"
+        },
+        {
+          "path": "/app/affiliates/programs",
+          "shell_status": 200,
+          "cache-control": null,
+          "x-frame-options": "DENY",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "strict-origin-when-cross-origin",
+          "strict-transport-security": "max-age=31536000",
+          "set-cookie": false,
+          "content-type": "text/html; charset=utf-8"
+        }
+      ],
+      "note": "The /app/* shell is a 200 HTML document with ssr:false (no server data); the redirect to /login is client-side. The shell therefore carries no tenant data to cache."
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Server function requires auth (no header) \u2014 listTenantPages (/app/pages)",
+    "promise": "A workspace-scoped server function called with no Authorization header returns 401 and no data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "curl GET /_serverFn/4dc67d39250e\u2026 with no Authorization header"
+    ],
+    "expected": "HTTP 401; body is a bare 'Unauthorized' message; no rows, no stack trace, no secrets",
+    "actual": "HTTP 401; body='Unauthorized: No authorization header provided\\n'; leak_scan={'stack_trace': False, 'key_hits': [], 'unexpected_jwt': []}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/016-server-function-requires-auth-no-header-listtenantpages-app-.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:09:51+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/login",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:52+00:00",
+    "extra": {
+      "function_id": "4dc67d39250e652ef4b39db4da85261b8ca02b91b7585a31442cb1d0611e04c9",
+      "response_headers": {
+        "date": "Wed, 02 Sep 2026 08:09:54 GMT",
+        "content-type": "text/plain;charset=UTF-8",
+        "content-length": "46",
+        "strict-transport-security": "max-age=31536000",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "x-tss-raw": "true",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=Jg3Lqu09w1caYl0VEo8ifH%2FuA3qAUDRQv14Zaqss%2Bd%2FcGJzSr6iWnwqE7%2FyR%2FJGtBjzSFih%2BkvN%2FolHmMC8GxMBbDysOz75wu%2BpNDivoXrN0xWrlvZ8IYo6HWAVe6jfmGOA79xE%3D\"}]}",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "server": "cloudflare",
+        "cf-ray": "a34b0903db83ef62-IAD",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      }
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Server function requires auth (no header) \u2014 getPageEntitlement (/app/billing)",
+    "promise": "A workspace-scoped server function called with no Authorization header returns 401 and no data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "curl GET /_serverFn/cb2022abb911\u2026 with no Authorization header"
+    ],
+    "expected": "HTTP 401; body is a bare 'Unauthorized' message; no rows, no stack trace, no secrets",
+    "actual": "HTTP 401; body='Unauthorized: No authorization header provided\\n'; leak_scan={'stack_trace': False, 'key_hits': [], 'unexpected_jwt': []}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/017-server-function-requires-auth-no-header-getpageentitlement-a.jpg",
+    "network": [],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:52+00:00",
+    "extra": {
+      "function_id": "cb2022abb91103664894958b217bb84acb3774caf60d46e115c2b9e31a69006b",
+      "response_headers": {
+        "date": "Wed, 02 Sep 2026 08:09:54 GMT",
+        "content-type": "text/plain;charset=UTF-8",
+        "content-length": "46",
+        "strict-transport-security": "max-age=31536000",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "x-tss-raw": "true",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=iDlelh8IVlkLB2p21iOf5vr%2BSPNnFjUoEM64CL5dD5ZAIt8mxugvpmfvufnwcQj1QCYAFCdN0Bq0e%2F2bh41H%2FcApm%2BgC7FxSBnUTO%2BYT7zrsDOgL9HBVElAoLJuIoZdZdyl99V0%3D\"}]}",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "server": "cloudflare",
+        "cf-ray": "a34b0904ece4563a-IAD",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      }
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Server function rejects a garbage Bearer token \u2014 listTenantPages",
+    "promise": "A forged Bearer token is rejected with 401 'Unauthorized: Invalid token'; no data; no internal error surface",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "curl GET /_serverFn/listTenantPages with 'Authorization: Bearer not-a-real-token.deadbeef.xyz'"
+    ],
+    "expected": "HTTP 401 'Unauthorized: Invalid token'; no data; no stack trace",
+    "actual": "HTTP 200; rejected(no data)=True; data_leak=False; x-tss-serialized=true; internal error message leaked='Invalid UTF-8 sequence'; body='{\"t\":10,\"i\":0,\"p\":{\"k\":[\"result\",\"error\",\"context\"],\"v\":[{\"t\":2,\"s\":1},{\"t\":25,\"i\":1,\"s\":{\"message\":{\"t\":1,\"s\":\"Invalid UTF-8 sequence\"}},\"c\":\"$TSR/Error\"},{\"t\":10,\"i\":2,\"p\":{\"k\":[],\"v\":[]},\"o\":0}]},\"o\":0}\\n'; leak_scan={'stack_trace': False, 'key_hits': [], 'unexpected_jwt': []}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/018-server-function-rejects-a-garbage-bearer-token-listtenantpag.jpg",
+    "network": [],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Failed",
+    "severity": "P2",
+    "customer_impact": "No bypass and no data leak (request is rejected, zero rows returned), BUT a malformed JWT makes supabase.auth.getClaims() throw before the middleware's `throw new Response(401)`, so the caller gets HTTP 200 with an internal library message (\"Invalid UTF-8 sequence\" / \"Missing exp claim\") instead of the intended clean 401. The middleware's 401 branch is dead code for malformed tokens.",
+    "repro": [
+      "curl -H 'Authorization: Bearer not-a-real-token.deadbeef.xyz' https://www.founders.click/_serverFn/4dc67d39250e652ef4b39db4da85261b8ca02b91b7585a31442cb1d0611e04c9",
+      "observe HTTP 200 with x-tss-serialized:true and message 'Invalid UTF-8 sequence' (a structurally-valid JWT missing exp gives 'Missing exp claim') instead of HTTP 401",
+      "NOTE: an empty/non-Bearer/no-Authorization request DOES return a clean 401 (verified separately); only malformed tokens that fail getClaims' local decode slip past the Response throw"
+    ],
+    "recorded_at": "2026-09-02T08:09:52+00:00",
+    "extra": {
+      "function_id": "4dc67d39250e652ef4b39db4da85261b8ca02b91b7585a31442cb1d0611e04c9",
+      "response_headers": {
+        "date": "Wed, 02 Sep 2026 08:09:54 GMT",
+        "content-type": "application/json",
+        "content-length": "205",
+        "strict-transport-security": "max-age=31536000",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "x-tss-serialized": "true",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=jLhwv1cL4ExhMsNBsu98GTkirMNArWKXS2BovFuG4kgxeR1b5YPgUFnmNuUEPFvC0DJ0cvpxV7S5LY5oVKErwMPay77rjpJg%2FhxTIe40vKXuoVZwSxbhYRpM0sTuaSzf377lUi4%3D\"}]}",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "server": "cloudflare",
+        "cf-ray": "a34b09061aefd8d1-IAD",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "rejected_no_data": true,
+      "root_cause": "src/integrations/supabase/auth-middleware.ts calls supabase.auth.getClaims(token) which decodes the JWT locally and throws a plain Error for a malformed token; that Error is not a Response, so the subsequent `throw new Response('Unauthorized: Invalid token', {status:401})` never runs and TanStack serializes the thrown Error as a 200 result."
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Public API \u2014 domain-config (no hostname)",
+    "promise": "Public endpoint answers safely: expected status, no stack trace, no secret, no other tenant's data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "curl -X GET /api/public/domain-config"
+    ],
+    "expected": "HTTP [400]; hostname_required; no stack trace / keys / cross-tenant data",
+    "actual": "HTTP 400; content-type='application/json'; cache-control=None; body='{\"error\":\"hostname_required\"}\\n'; leak_scan={'stack_trace': False, 'key_hits': [], 'unexpected_jwt': []}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/019-public-api-domain-config-no-hostname.jpg",
+    "network": [],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:52+00:00",
+    "extra": {
+      "headers": {
+        "date": "Wed, 02 Sep 2026 08:09:55 GMT",
+        "content-type": "application/json",
+        "content-length": "29",
+        "strict-transport-security": "max-age=31536000",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=52FiL5L%2BYbxrQ0WWCfefM7f%2Bn7dGj4Mwk5FVNjB3ySclQH25EG1ersFvDdXIX01n%2Feu3pqz9klJopvBqmrkxPudP6a4X1T15F5l69wq%2FFqScXjKFZsoFAIUWxxGsvTqk8Furq9A%3D\"}]}",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "server": "cloudflare",
+        "cf-ray": "a34b09073fa1e627-IAD",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "expected_status": [
+        400
+      ]
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Public API \u2014 domain-config (unknown hostname)",
+    "promise": "Public endpoint answers safely: expected status, no stack trace, no secret, no other tenant's data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "curl -X GET /api/public/domain-config?hostname=live-acceptance-unknown-2026.example.com"
+    ],
+    "expected": "HTTP [404]; domain_not_found, no config for a host we don't manage; no stack trace / keys / cross-tenant data",
+    "actual": "HTTP 404; content-type='application/json'; cache-control='public, max-age=10'; body='{\"error\":\"domain_not_found\"}\\n'; leak_scan={'stack_trace': False, 'key_hits': [], 'unexpected_jwt': []}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/020-public-api-domain-config-unknown-hostname.jpg",
+    "network": [],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:53+00:00",
+    "extra": {
+      "headers": {
+        "date": "Wed, 02 Sep 2026 08:09:56 GMT",
+        "content-type": "application/json",
+        "content-length": "28",
+        "cache-control": "public, max-age=10",
+        "strict-transport-security": "max-age=31536000",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=x%2Fisjkaezo3uHRkKMaDXW1cwM3n1sB18fQrfeX%2FYjVp%2FkTalAM%2B9CBU4QcvaBXOvz6yW6U%2BZl%2Bi1c3%2BnSbOV5nk3IUVg2HxCkwlutpPGhWi0h2aRukIu%2FbKU27UTTrr1i9oqcJM%3D\"}]}",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "server": "cloudflare",
+        "cf-ray": "a34b09085d1098dc-IAD",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "expected_status": [
+        404
+      ]
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Public API \u2014 domain-token (unknown hostname)",
+    "promise": "Public endpoint answers safely: expected status, no stack trace, no secret, no other tenant's data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "curl -X GET /api/public/domain-token?hostname=live-acceptance-unknown-2026.example.com"
+    ],
+    "expected": "HTTP [404]; not found; verification tokens never handed out for unknown/verified hosts; no stack trace / keys / cross-tenant data",
+    "actual": "HTTP 404; content-type='text/plain;charset=UTF-8'; cache-control=None; body='not found\\n'; leak_scan={'stack_trace': False, 'key_hits': [], 'unexpected_jwt': []}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/021-public-api-domain-token-unknown-hostname.jpg",
+    "network": [],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:54+00:00",
+    "extra": {
+      "headers": {
+        "date": "Wed, 02 Sep 2026 08:09:56 GMT",
+        "content-type": "text/plain;charset=UTF-8",
+        "content-length": "9",
+        "strict-transport-security": "max-age=31536000",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=PHbnDOk9mBQSfCPaVMDxlLh2SVyvEeQfHMAC%2BcH%2FmgMBphsAHC8335GXe3g%2FHmwz9twPbf0tsv8Kbfjydx43g0zatO%2Fv0DMYairxjxkGccfSM8kTrek3yFow%2FShLx2pEOgVwvwQ%3D\"}]}",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "server": "cloudflare",
+        "cf-ray": "a34b09105deb211a-IAD",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "expected_status": [
+        404
+      ]
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Public API \u2014 page-lookup (GET not allowed)",
+    "promise": "Public endpoint answers safely: expected status, no stack trace, no secret, no other tenant's data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "curl -X GET /api/public/page-lookup"
+    ],
+    "expected": "HTTP [405]; method_not_allowed (POST-only JSON API); no stack trace / keys / cross-tenant data",
+    "actual": "HTTP 405; content-type='application/json; charset=utf-8'; cache-control='no-store'; body='{\"ok\":false,\"error\":\"method_not_allowed\"}\\n'; leak_scan={'stack_trace': False, 'key_hits': [], 'unexpected_jwt': []}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/022-public-api-page-lookup-get-not-allowed.jpg",
+    "network": [],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:54+00:00",
+    "extra": {
+      "headers": {
+        "date": "Wed, 02 Sep 2026 08:09:56 GMT",
+        "content-type": "application/json; charset=utf-8",
+        "content-length": "41",
+        "access-control-allow-origin": "*",
+        "allow": "POST, OPTIONS",
+        "cache-control": "no-store",
+        "strict-transport-security": "max-age=31536000",
+        "access-control-allow-headers": "content-type",
+        "access-control-allow-methods": "POST, OPTIONS",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=cixhNFVmmOqh9p8QXnYRNoTVRZu6qKOx%2BUnIX44%2BPXS%2FRcxlb65q9MtiqDh5K7zmOUBycJAlMEu3dfe8UONsDR2CmSnMjXFLEE%2F1WmFBVLgb5rndX%2Bc4qOpS6L6u1mFZbiaQXg4%3D\"}]}",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "server": "cloudflare",
+        "cf-ray": "a34b0912a8bec207-IAD",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "expected_status": [
+        405
+      ]
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Public API \u2014 page-lookup (POST unknown host)",
+    "promise": "Public endpoint answers safely: expected status, no stack trace, no secret, no other tenant's data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "curl -X POST /api/public/page-lookup (body {\"hostname\": \"live-acceptance-unknown-2026.example.com\", \"sl)"
+    ],
+    "expected": "HTTP [200]; ok:false domain_not_found; no other tenant's page; no stack trace / keys / cross-tenant data",
+    "actual": "HTTP 200; content-type='application/json; charset=utf-8'; cache-control='no-store'; body='{\"ok\":false,\"error\":\"domain_not_found\"}\\n'; leak_scan={'stack_trace': False, 'key_hits': [], 'unexpected_jwt': []}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/023-public-api-page-lookup-post-unknown-host.jpg",
+    "network": [],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:54+00:00",
+    "extra": {
+      "headers": {
+        "date": "Wed, 02 Sep 2026 08:09:57 GMT",
+        "content-type": "application/json; charset=utf-8",
+        "content-length": "39",
+        "access-control-allow-origin": "*",
+        "cache-control": "no-store",
+        "strict-transport-security": "max-age=31536000",
+        "access-control-allow-headers": "content-type",
+        "access-control-allow-methods": "POST, OPTIONS",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=ouOU%2FzjFsTi4poseJKnkFhqEHvbLTf1QdEVzaflQWPV9DluaDpy%2F%2BzrBdSGH5CR9D8JqGSxc7f%2BjCCWDeIjIZeIbXKZUX7QHuFq%2FxQmFOX1ZqxsZzR%2FqT5cNm7QWTU%2FGAi6yxNQ%3D\"}]}",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "server": "cloudflare",
+        "cf-ray": "a34b0913de952ff2-IAD",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "expected_status": [
+        200
+      ]
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Public API \u2014 sitemap-by-host (no hostname)",
+    "promise": "Public endpoint answers safely: expected status, no stack trace, no secret, no other tenant's data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "curl -X GET /api/public/sitemap-by-host"
+    ],
+    "expected": "HTTP [400]; hostname required; no stack trace / keys / cross-tenant data",
+    "actual": "HTTP 400; content-type='text/plain;charset=UTF-8'; cache-control=None; body='hostname required\\n'; leak_scan={'stack_trace': False, 'key_hits': [], 'unexpected_jwt': []}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/024-public-api-sitemap-by-host-no-hostname.jpg",
+    "network": [],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:54+00:00",
+    "extra": {
+      "headers": {
+        "date": "Wed, 02 Sep 2026 08:09:57 GMT",
+        "content-type": "text/plain;charset=UTF-8",
+        "content-length": "17",
+        "strict-transport-security": "max-age=31536000",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=w9FVerYPgHu0DI8dDZlGf5HVloCs%2F%2FUwop5jF8IZHWmgw50Kk0cxb8gYodkzRvWQ%2F%2FdhkfHmLyXy%2BQitSEXCM5LUGBB4ccX2TJXdUlHQGZ9MrfWfOLgkIKdm8H72FnBso6Mw2mM%3D\"}]}",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "server": "cloudflare",
+        "cf-ray": "a34b09156cd405dd-IAD",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "expected_status": [
+        400
+      ]
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Public API \u2014 sitemap-by-host (unknown host)",
+    "promise": "Public endpoint answers safely: expected status, no stack trace, no secret, no other tenant's data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "curl -X GET /api/public/sitemap-by-host?hostname=live-acceptance-unknown-2026.example.com"
+    ],
+    "expected": "HTTP [404]; not found; no stack trace / keys / cross-tenant data",
+    "actual": "HTTP 404; content-type='text/plain;charset=UTF-8'; cache-control=None; body='not found\\n'; leak_scan={'stack_trace': False, 'key_hits': [], 'unexpected_jwt': []}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/025-public-api-sitemap-by-host-unknown-host.jpg",
+    "network": [],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:55+00:00",
+    "extra": {
+      "headers": {
+        "date": "Wed, 02 Sep 2026 08:09:57 GMT",
+        "content-type": "text/plain;charset=UTF-8",
+        "content-length": "9",
+        "strict-transport-security": "max-age=31536000",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=Wf2LnlsK8CpCqbsei44BAk27W7dYYusCZSi2JOFXnsHEaDqZuYQrfJFOtjJ9XG%2FMbkxwCXw%2FeNYaNjHk7MI7E2OKk%2BFDoM8%2FCnrK1QFa7qlQKDr8JiEbBCNWL6Vms47IFQkBb5Y%3D\"}]}",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "server": "cloudflare",
+        "cf-ray": "a34b0916899bc06c-IAD",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "expected_status": [
+        404
+      ]
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Public API \u2014 edge-health GET (build identity)",
+    "promise": "Public endpoint answers safely: expected status, no stack trace, no secret, no other tenant's data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "curl -X GET /api/public/edge-health"
+    ],
+    "expected": "HTTP [200]; public build info (commit SHA of a private repo is not a secret); no stack trace / keys / cross-tenant data",
+    "actual": "HTTP 200; content-type='application/json'; cache-control='no-store, max-age=0'; body='{\"sha\":\"baf9985e1ada8500bc5bd414f967824b6b13772d\",\"shaShort\":\"baf9985\",\"builtAt\":\"2026-09-02T03:46:32.825Z\"}\\n'; leak_scan={'stack_trace': False, 'key_hits': [], 'unexpected_jwt': []}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/026-public-api-edge-health-get-build-identity.jpg",
+    "network": [],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:55+00:00",
+    "extra": {
+      "headers": {
+        "date": "Wed, 02 Sep 2026 08:09:57 GMT",
+        "content-type": "application/json",
+        "content-length": "108",
+        "cache-control": "no-store, max-age=0",
+        "strict-transport-security": "max-age=31536000",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=SBn%2B3lDSz%2BhKbVs9dAqPiZkkQXDHwyW%2FW6gYR8Mh2AzF2m8sdm6G3pODIO5yisRvTYsQJLSmGH4VrrVzI8NwJRmWzRXysf27w%2FHTzZBmDoSHJlZYj48%2FlVgMoqBTVnXOrGuVy5Q%3D\"}]}",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "server": "cloudflare",
+        "cf-ray": "a34b09188f16e608-IAD",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "expected_status": [
+        200
+      ]
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Public API \u2014 edge-health POST (unsigned)",
+    "promise": "Public endpoint answers safely: expected status, no stack trace, no secret, no other tenant's data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "curl -X POST /api/public/edge-health (body {\"hostname\": \"live-acceptance-unknown-2026.example.com\", \"st)"
+    ],
+    "expected": "HTTP [202]; always 202; unknown host recorded nothing (telemetry never load-bearing); no stack trace / keys / cross-tenant data",
+    "actual": "HTTP 202; content-type='application/json'; cache-control='no-store'; body='{\"ok\":true}\\n'; leak_scan={'stack_trace': False, 'key_hits': [], 'unexpected_jwt': []}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/027-public-api-edge-health-post-unsigned.jpg",
+    "network": [],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:55+00:00",
+    "extra": {
+      "headers": {
+        "date": "Wed, 02 Sep 2026 08:09:58 GMT",
+        "content-type": "application/json",
+        "content-length": "11",
+        "cache-control": "no-store",
+        "strict-transport-security": "max-age=31536000",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=Ky7fvf0cyCLPTFyv12LPqWLmJaHupNi9zd9CT5RmUfqIqW54FfZCg4KTOOnXFYgPJQRAZGrS%2Blg0jk%2BagvWPOaACIzuQoWmwsULxXd8BCirCgTamEdDK2YA0sgHdlR14uAiNTUg%3D\"}]}",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "server": "cloudflare",
+        "cf-ray": "a34b0919aff92dfc-IAD",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "expected_status": [
+        202
+      ]
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Public API \u2014 hooks/auth-send-email (unsigned POST)",
+    "promise": "Public endpoint answers safely: expected status, no stack trace, no secret, no other tenant's data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "curl -X POST /api/public/hooks/auth-send-email (body {\"user\": {\"email\": \"x@example.com\"}})"
+    ],
+    "expected": "HTTP [401]; invalid signature / hook not configured \u2014 a forged call must never send mail; no stack trace / keys / cross-tenant data",
+    "actual": "HTTP 401; content-type='text/plain;charset=UTF-8'; cache-control=None; body='{\"error\":\"invalid signature\"}\\n'; leak_scan={'stack_trace': False, 'key_hits': [], 'unexpected_jwt': []}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/028-public-api-hooks-auth-send-email-unsigned-post.jpg",
+    "network": [],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:55+00:00",
+    "extra": {
+      "headers": {
+        "date": "Wed, 02 Sep 2026 08:09:58 GMT",
+        "content-type": "text/plain;charset=UTF-8",
+        "content-length": "29",
+        "strict-transport-security": "max-age=31536000",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=AtGT1Ql4xeoDJqrJ9Sx5P6S7YyyW2Vzd4KQlI2HRD0FME7xbJ%2FiEE5ibSJcik3C17HKJDnBZJsoV%2BodQjQVi1xH%2BsWZK7%2BGrdOfYEml%2Bfzojr1%2FagfnK%2Bj54%2BAKimmhspwcRhvI%3D\"}]}",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "server": "cloudflare",
+        "cf-ray": "a34b091b1d890589-IAD",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "expected_status": [
+        401
+      ]
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Public API \u2014 hooks/canonical-audit (no secret)",
+    "promise": "Public endpoint answers safely: expected status, no stack trace, no secret, no other tenant's data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "curl -X POST /api/public/hooks/canonical-audit (body {})"
+    ],
+    "expected": "HTTP [401]; Unauthorized without CRON_SECRET bearer; no stack trace / keys / cross-tenant data",
+    "actual": "HTTP 401; content-type='application/json'; cache-control=None; body='{\"error\":\"Unauthorized\"}\\n'; leak_scan={'stack_trace': False, 'key_hits': [], 'unexpected_jwt': []}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/029-public-api-hooks-canonical-audit-no-secret.jpg",
+    "network": [],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:56+00:00",
+    "extra": {
+      "headers": {
+        "date": "Wed, 02 Sep 2026 08:09:58 GMT",
+        "content-type": "application/json",
+        "content-length": "24",
+        "strict-transport-security": "max-age=31536000",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=yQfPbp9eVmfQeIvY2clzBT1lzHVAsGXYLGOA0GR307%2FaM6ocb78MDehOK3TxoKsjmsF51qlfBFv%2Bhjv%2Bwbt4Ux%2FAP%2BSpxF7oyE8E7ksICyGbMQ%2B%2FwVEhvHSbs18kckOggp32yzY%3D\"}]}",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "server": "cloudflare",
+        "cf-ray": "a34b091dbf4fd649-IAD",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "expected_status": [
+        401
+      ]
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Public API \u2014 hooks/sync-sharetribe (no secret)",
+    "promise": "Public endpoint answers safely: expected status, no stack trace, no secret, no other tenant's data",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "curl -X POST /api/public/hooks/sync-sharetribe (body {})"
+    ],
+    "expected": "HTTP [401, 500]; unauthorized without CRON_SECRET (500 'server misconfigured' if the secret is unset); no stack trace / keys / cross-tenant data",
+    "actual": "HTTP 500; content-type='text/plain;charset=UTF-8'; cache-control=None; body='server misconfigured\\n'; leak_scan={'stack_trace': False, 'key_hits': [], 'unexpected_jwt': []}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/030-public-api-hooks-sync-sharetribe-no-secret.jpg",
+    "network": [],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:09:56+00:00",
+    "extra": {
+      "headers": {
+        "date": "Wed, 02 Sep 2026 08:09:59 GMT",
+        "content-type": "text/plain;charset=UTF-8",
+        "content-length": "20",
+        "strict-transport-security": "max-age=31536000",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+        "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=H4VA7Tbhofe1yrImhN6Y%2FGQG0K9ZMNo3BTU6ptToLH5CYpPorox7Xzek3ZSWX4WcFRn%2FWJxdUCeXC81QqmVhspD2wHOXHojtxbAtxuD3wZMKAVPkmVs8qKEGTP%2BnyFjNP%2FogKts%3D\"}]}",
+        "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "server": "cloudflare",
+        "cf-ray": "a34b091fbdad05d7-IAD",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "expected_status": [
+        401,
+        500
+      ]
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Rate limit \u2014 help search hit 30\u00d7 quickly stays friendly",
+    "promise": "A customer searching help repeatedly sees results/empty states, never a broken page",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/help/search?q=billing",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "GET /help/search?q=\u2026 30 times in quick succession",
+      "then render the UI"
+    ],
+    "expected": "all 200; the search UI renders a normal results/empty state (no error screen); if limited, a friendly message not a crash",
+    "actual": "status counts over 30 requests={200: 30}; first limited response=None; UI text[:120]='founders.click Help Language English Espa\u00f1ol Fran\u00e7ais Deutsch Suomi Svenska Sign in Start free trial Help Center Search '; broken_page=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/031-rate-limit-help-search-hit-30-quickly-stays-friendly.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:10:09+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/search?q=billing",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:10:11+00:00",
+    "extra": {
+      "statuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "note": "help-search server fn limit is 120/min/isolate; 30 requests should never trip it"
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "Rate limit \u2014 sitemap-by-host hit 130\u00d7 (limit 120/min/isolate)",
+    "promise": "Hammering the public sitemap endpoint yields a clean 429 (or is spread across isolates), never a 5xx/crash",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/help/search?q=billing",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "GET /api/public/sitemap-by-host?hostname=www.founders.click 130 times in quick succession"
+    ],
+    "expected": "A clean 429 'rate limited' once ~120 is crossed on a single isolate, or steady 200/404 if Cloudflare spread the load across isolates; never a 5xx",
+    "actual": "status counts over 130 requests={404: 130}; first 429=None; got_429=False; any_5xx=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/032-rate-limit-sitemap-by-host-hit-130-limit-120-min-isolate.jpg",
+    "network": [],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:10:37+00:00",
+    "extra": {
+      "statuses": [
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404,
+        404
+      ],
+      "note": "Per-isolate in-memory limiter; Cloudflare may spread 130 requests across isolates so a 429 is not guaranteed. Recording the first limited response as asked."
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "No secrets in browser output \u2014 landing (/)",
+    "promise": "Only the public anon key is exposed in inline scripts / window; no service_role, sk_live, whsec, LOVABLE_API_KEY, EMAILIT or extra JWTs",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /",
+      "dump every inline <script> text + suspicious window keys",
+      "grep for secret patterns and long eyJ JWTs"
+    ],
+    "expected": "No secret-pattern hits; no JWT other than the known public anon key; no service_role / LOVABLE_API_KEY / EMAILIT",
+    "actual": "2 inline scripts; anon key present=False (expected/public); secret-pattern findings=none; unexpected JWTs=0 []; suspicious window keys={'onkeydown': 'object', 'onkeypress': 'object', 'onkeyup': 'object'}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/033-no-secrets-in-browser-output-landing.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:10:37+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:10:39+00:00",
+    "extra": {
+      "summary": {
+        "inlineCount": 2,
+        "findings": {},
+        "unexpected_jwt_count": 0,
+        "anon_key_present": false,
+        "suspect_window_keys": {
+          "onkeydown": "object",
+          "onkeypress": "object",
+          "onkeyup": "object"
+        }
+      },
+      "window_key_count": 236
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "No secrets in browser output \u2014 login (/login)",
+    "promise": "Only the public anon key is exposed in inline scripts / window; no service_role, sk_live, whsec, LOVABLE_API_KEY, EMAILIT or extra JWTs",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /login",
+      "dump every inline <script> text + suspicious window keys",
+      "grep for secret patterns and long eyJ JWTs"
+    ],
+    "expected": "No secret-pattern hits; no JWT other than the known public anon key; no service_role / LOVABLE_API_KEY / EMAILIT",
+    "actual": "0 inline scripts; anon key present=False (expected/public); secret-pattern findings=none; unexpected JWTs=0 []; suspicious window keys={'onkeydown': 'object', 'onkeypress': 'object', 'onkeyup': 'object'}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/034-no-secrets-in-browser-output-login-login.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:10:39+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/login",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:10:41+00:00",
+    "extra": {
+      "summary": {
+        "inlineCount": 0,
+        "findings": {},
+        "unexpected_jwt_count": 0,
+        "anon_key_present": false,
+        "suspect_window_keys": {
+          "onkeydown": "object",
+          "onkeypress": "object",
+          "onkeyup": "object"
+        }
+      },
+      "window_key_count": 236
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "No secrets in browser output \u2014 signup (/signup)",
+    "promise": "Only the public anon key is exposed in inline scripts / window; no service_role, sk_live, whsec, LOVABLE_API_KEY, EMAILIT or extra JWTs",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/signup",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /signup",
+      "dump every inline <script> text + suspicious window keys",
+      "grep for secret patterns and long eyJ JWTs"
+    ],
+    "expected": "No secret-pattern hits; no JWT other than the known public anon key; no service_role / LOVABLE_API_KEY / EMAILIT",
+    "actual": "0 inline scripts; anon key present=False (expected/public); secret-pattern findings=none; unexpected JWTs=0 []; suspicious window keys={'onkeydown': 'object', 'onkeypress': 'object', 'onkeyup': 'object'}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/035-no-secrets-in-browser-output-signup-signup.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:10:41+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/signup",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:10:43+00:00",
+    "extra": {
+      "summary": {
+        "inlineCount": 0,
+        "findings": {},
+        "unexpected_jwt_count": 0,
+        "anon_key_present": false,
+        "suspect_window_keys": {
+          "onkeydown": "object",
+          "onkeypress": "object",
+          "onkeyup": "object"
+        }
+      },
+      "window_key_count": 236
+    }
+  },
+  {
+    "phase": "phase10-public-security",
+    "feature": "No secrets in browser output \u2014 help (/help)",
+    "promise": "Only the public anon key is exposed in inline scripts / window; no service_role, sk_live, whsec, LOVABLE_API_KEY, EMAILIT or extra JWTs",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/help",
+    "account": "anonymous attacker (desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /help",
+      "dump every inline <script> text + suspicious window keys",
+      "grep for secret patterns and long eyJ JWTs"
+    ],
+    "expected": "No secret-pattern hits; no JWT other than the known public anon key; no service_role / LOVABLE_API_KEY / EMAILIT",
+    "actual": "0 inline scripts; anon key present=False (expected/public); secret-pattern findings=none; unexpected JWTs=0 []; suspicious window keys={'onkeydown': 'object', 'onkeypress': 'object', 'onkeyup': 'object'}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase10-public-security/036-no-secrets-in-browser-output-help-help.jpg",
+    "network": [
+      {
+        "t": "2026-09-02T08:10:44+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-02T08:10:46+00:00",
+    "extra": {
+      "summary": {
+        "inlineCount": 0,
+        "findings": {},
+        "unexpected_jwt_count": 0,
+        "anon_key_present": false,
+        "suspect_window_keys": {
+          "onkeydown": "object",
+          "onkeypress": "object",
+          "onkeyup": "object"
+        }
+      },
+      "window_key_count": 236
+    }
+  }
+]
