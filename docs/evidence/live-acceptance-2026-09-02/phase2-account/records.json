@@ -510,5 +510,94 @@
     "customer_impact": "After a handful of auth emails per hour project-wide, password reset is refused with a rate-limit error.",
     "repro": [],
     "recorded_at": "2026-09-05T05:59:42+00:00"
+  },
+  {
+    "phase": "phase2-account",
+    "feature": "Sign up with a new email",
+    "promise": "Create a founders.click workspace and start a 14-day free trial (signup page)",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/signup",
+    "account": "new visitor \u2192 account D",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /signup",
+      "fill name/email/password",
+      "click Start free trial"
+    ],
+    "expected": "Account created; told to check email for a confirmation link (or land on /app)",
+    "actual": "unexpected: founders.click 14-day free trial. No card required. Your name Email Password Start free trial By creating an account you agree to the Terms of Service and Privacy Policy. Continue with Google Already ; toasts=['email rate limit exceeded']",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase2-account/011-sign-up-with-a-new-email.jpg",
+    "network": [
+      {
+        "t": "2026-09-05T06:06:37+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/signup",
+        "status": 200
+      },
+      {
+        "t": "2026-09-05T06:06:40+00:00",
+        "method": "POST",
+        "url": "https://xbxhzinnfhosoztqaaao.supabase.co/auth/v1/signup?redirect_to=https%3A%2F%2Fwww.founders.click%2Fapp",
+        "status": 429,
+        "body": "{\"code\":\"over_email_send_rate_limit\",\"message\":\"email rate limit exceeded\"}"
+      }
+    ],
+    "console_errors": [
+      "error: Failed to load resource: the server responded with a status of 429 ()"
+    ],
+    "persistence": "not checked",
+    "status": "Failed",
+    "severity": "P0",
+    "customer_impact": "Customers cannot create accounts",
+    "repro": [],
+    "recorded_at": "2026-09-05T06:06:44+00:00",
+    "extra": {
+      "terms_link_present": true
+    }
+  },
+  {
+    "phase": "phase2-account",
+    "feature": "Contact support (public form)",
+    "promise": "Get in touch with the founders.click support team; we typically reply within a day (help/contact)",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/help/contact",
+    "account": "anonymous visitor (contact form)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /help/contact",
+      "fill email/name/subject/message",
+      "submit"
+    ],
+    "expected": "Ticket accepted; confirmation shown; confirmation email arrives at the submitter's address",
+    "actual": "ui: founders.click Help Language English Espa\u00f1ol Fran\u00e7ais Deutsch Suomi Svenska Sign in Start free trial Help Center Search articles\u2026 \u2318K Contact Help Contact Contact support We typically reply within 1 bu toasts=[]",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase2-account/011-contact-support-public-form.jpg",
+    "network": [
+      {
+        "t": "2026-09-05T06:06:40+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/contact",
+        "status": 200
+      },
+      {
+        "t": "2026-09-05T06:07:14+00:00",
+        "method": "POST",
+        "url": "https://www.founders.click/_serverFn/3fd163f1136006d6fbf31da913ed2096497aba5a4e3a403c69d2678acfc59e14",
+        "status": 200,
+        "body": "{\"t\":10,\"i\":0,\"p\":{\"k\":[\"result\",\"error\",\"context\"],\"v\":[{\"t\":10,\"i\":1,\"p\":{\"k\":[\"ok\",\"ticketId\"],\"v\":[{\"t\":2,\"s\":2},{\"t\":1,\"s\":\"7e3a9f2b-c228-4285-a883-be0f5faa62d0\"}]},\"o\":0},{\"t\":2,\"s\":1},{\"t\":11,\"i\":2,\"p\":{\"k\":[],\"v\":[]},\"o\":0}]},\"o\":0}"
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-05T06:07:17+00:00",
+    "extra": {
+      "form_fields": "Your name Email * Category Other Technical issue Billing Sales / pre-purchase Other Subject * Message * 10\u20135,000 characters. Send message",
+      "delivery": "see inbox check"
+    }
   }
 ]

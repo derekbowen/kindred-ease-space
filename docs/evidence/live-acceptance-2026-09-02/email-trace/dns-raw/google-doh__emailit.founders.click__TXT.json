@@ -1,0 +1,1 @@
+{"Status":0,"TC":false,"RD":true,"RA":true,"AD":false,"CD":false,"Question":[{"name":"emailit.founders.click.","type":16}],"Answer":[{"name":"emailit.founders.click.","type":16,"TTL":300,"data":"v=spf1 include:_spf.emailit.com ~all"}],"Comment":"Response from 172.64.33.132."}
