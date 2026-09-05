@@ -1,0 +1,1 @@
+{"Status":3,"TC":false,"RD":true,"RA":true,"AD":false,"CD":false,"Question":[{"name":"spf.emailitmail.com","type":16}],"Authority":[{"name":"emailitmail.com","type":6,"TTL":1800,"data":"lynn.ns.cloudflare.com. dns.cloudflare.com. 2412718021 10000 2400 604800 1800"}]}

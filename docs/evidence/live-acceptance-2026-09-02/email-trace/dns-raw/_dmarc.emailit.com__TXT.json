@@ -1,0 +1,1 @@
+{"Status":0,"TC":false,"RD":true,"RA":true,"AD":false,"CD":false,"Question":[{"name":"_dmarc.emailit.com","type":16}],"Answer":[{"name":"_dmarc.emailit.com","type":16,"TTL":300,"data":"\"v=DMARC1; p=none; rua=mailto:jiri.zizka@funfirst.cz\""}]}
