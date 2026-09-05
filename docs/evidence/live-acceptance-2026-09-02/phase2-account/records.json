@@ -425,5 +425,90 @@
     "customer_impact": "",
     "repro": [],
     "recorded_at": "2026-09-05T05:51:25+00:00"
+  },
+  {
+    "phase": "phase2-account",
+    "feature": "Sign up with a new email",
+    "promise": "Create a founders.click workspace and start a 14-day free trial (signup page)",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/signup",
+    "account": "new visitor \u2192 account C",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /signup",
+      "fill name/email/password",
+      "click Start free trial"
+    ],
+    "expected": "Account created; told to check email for a confirmation link (or land on /app)",
+    "actual": "reached 'check your email' screen; toasts=['Check your email to confirm your account.']",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase2-account/009-sign-up-with-a-new-email.jpg",
+    "network": [
+      {
+        "t": "2026-09-05T05:59:29+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/signup",
+        "status": 200
+      },
+      {
+        "t": "2026-09-05T05:59:32+00:00",
+        "method": "POST",
+        "url": "https://xbxhzinnfhosoztqaaao.supabase.co/auth/v1/signup?redirect_to=https%3A%2F%2Fwww.founders.click%2Fapp",
+        "status": 200,
+        "body": "{\"id\":\"9a494017-f516-4660-82d2-58b61ddb0b7e\",\"aud\":\"authenticated\",\"role\":\"authenticated\",\"email\":\"derekbowencorp+fclive-c@gmail.com\",\"phone\":\"\",\"confirmation_sent_at\":\"2026-09-05T05:59:32.059306176Z\",\"app_metadata\":{\"provider\":\"email\",\"providers\":[\"email\"]},\"user_metadata\":{\"display_name\":\"Live Test C\",\"email\":\"derekbowencorp+fclive-c@gmail.com\",\"email_verified\":false,\"full_name\":\"Live Test C\",\"phone_verified\":false,\"sub\":\"9a494017-f516-4660-82d2-58b61ddb0b7e\"},\"identities\":[{\"identity_id\":\"8978c852-005d-47cb-9b8f-2d226b396d06\",\"id\":\"9a494017-f516-4660-82d2-58b61ddb0b7e\",\"user_id\":\"9a494017-f"
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-05T05:59:36+00:00",
+    "extra": {
+      "terms_link_present": true
+    }
+  },
+  {
+    "phase": "phase2-account",
+    "feature": "Request a password reset",
+    "promise": "We'll email you a reset link",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/reset-password",
+    "account": "account A (logged out)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /reset-password",
+      "enter the account email",
+      "click Send reset link"
+    ],
+    "expected": "Confirmation that an email was sent; the email arrives in the inbox",
+    "actual": "GoTrue refused: 'email rate limit exceeded' (project-wide auth email limit reached by the audit's own sends). The hook was NOT invoked for this request. Customer-visible: an error, no email. Earlier request (05:51Z) was accepted.",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase2-account/010-request-a-password-reset.jpg",
+    "network": [
+      {
+        "t": "2026-09-05T05:59:37+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/reset-password",
+        "status": 200
+      },
+      {
+        "t": "2026-09-05T05:59:39+00:00",
+        "method": "POST",
+        "url": "https://xbxhzinnfhosoztqaaao.supabase.co/auth/v1/recover?redirect_to=https%3A%2F%2Fwww.founders.click%2Freset-password",
+        "status": 429,
+        "body": "{\"code\":\"over_email_send_rate_limit\",\"message\":\"email rate limit exceeded\"}"
+      }
+    ],
+    "console_errors": [
+      "error: Failed to load resource: the server responded with a status of 429 ()"
+    ],
+    "persistence": "not checked",
+    "status": "Blocked",
+    "severity": "P2",
+    "customer_impact": "After a handful of auth emails per hour project-wide, password reset is refused with a rate-limit error.",
+    "repro": [],
+    "recorded_at": "2026-09-05T05:59:42+00:00"
   }
 ]

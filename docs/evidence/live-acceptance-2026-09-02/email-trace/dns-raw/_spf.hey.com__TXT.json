@@ -1,0 +1,1 @@
+{"Status":0,"TC":false,"RD":true,"RA":true,"AD":false,"CD":false,"Question":[{"name":"_spf.hey.com","type":16}],"Answer":[{"name":"_spf.hey.com","type":16,"TTL":120,"data":"\"v=spf1 ip4:204.62.114.0/23 -all\""}]}
