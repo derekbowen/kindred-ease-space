@@ -208,5 +208,222 @@
       "Sign in \u2192 'Email not confirmed'"
     ],
     "recorded_at": "2026-09-05T05:09:19+00:00"
+  },
+  {
+    "phase": "phase2-account",
+    "feature": "Log in with the confirmed account",
+    "promise": "Sign in and reach the workspace dashboard",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "account A",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /login",
+      "enter email + password",
+      "click Sign in"
+    ],
+    "expected": "Land on /app with the dashboard rendered",
+    "actual": "ok=False url=https://www.founders.click/login msg='Email not confirmed' dashboard_text=yes",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase2-account/003-log-in-with-the-confirmed-account.jpg",
+    "network": [
+      {
+        "t": "2026-09-05T05:49:55+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/login",
+        "status": 200
+      },
+      {
+        "t": "2026-09-05T05:49:58+00:00",
+        "method": "POST",
+        "url": "https://xbxhzinnfhosoztqaaao.supabase.co/auth/v1/token?grant_type=password",
+        "status": 400,
+        "body": "{\"code\":\"email_not_confirmed\",\"message\":\"Email not confirmed\"}"
+      }
+    ],
+    "console_errors": [
+      "error: Failed to load resource: the server responded with a status of 400 ()"
+    ],
+    "persistence": "not checked",
+    "status": "Failed",
+    "severity": "P0",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-05T05:50:17+00:00"
+  },
+  {
+    "phase": "phase2-account",
+    "feature": "Log in with the confirmed account",
+    "promise": "Sign in and reach the workspace dashboard",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login",
+    "account": "account B",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /login",
+      "enter email + password",
+      "click Sign in"
+    ],
+    "expected": "Land on /app with the dashboard rendered",
+    "actual": "ok=False url=https://www.founders.click/login msg='Email not confirmed' dashboard_text=yes",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase2-account/004-log-in-with-the-confirmed-account.jpg",
+    "network": [
+      {
+        "t": "2026-09-05T05:50:18+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/login",
+        "status": 200
+      },
+      {
+        "t": "2026-09-05T05:50:21+00:00",
+        "method": "POST",
+        "url": "https://xbxhzinnfhosoztqaaao.supabase.co/auth/v1/token?grant_type=password",
+        "status": 400,
+        "body": "{\"code\":\"email_not_confirmed\",\"message\":\"Email not confirmed\"}"
+      }
+    ],
+    "console_errors": [
+      "error: Failed to load resource: the server responded with a status of 400 ()"
+    ],
+    "persistence": "not checked",
+    "status": "Failed",
+    "severity": "P0",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-05T05:50:40+00:00"
+  },
+  {
+    "phase": "phase2-account",
+    "feature": "Unauthenticated access to /app",
+    "promise": "Dashboard pages require sign-in",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp",
+    "account": "account A",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app in a fresh profile with no session"
+    ],
+    "expected": "Redirect to /login with next= preserved",
+    "actual": "\u2192 https://www.founders.click/login?next=%2Fapp",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase2-account/005-unauthenticated-access-to-app.jpg",
+    "network": [
+      {
+        "t": "2026-09-05T05:50:41+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-05T05:50:46+00:00"
+  },
+  {
+    "phase": "phase2-account",
+    "feature": "Unauthenticated access to /app/pages",
+    "promise": "Dashboard pages require sign-in",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp%2Fpages",
+    "account": "account A",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app/pages in a fresh profile with no session"
+    ],
+    "expected": "Redirect to /login with next= preserved",
+    "actual": "\u2192 https://www.founders.click/login?next=%2Fapp%2Fpages",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase2-account/006-unauthenticated-access-to-app-pages.jpg",
+    "network": [
+      {
+        "t": "2026-09-05T05:50:46+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app/pages",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-05T05:50:51+00:00"
+  },
+  {
+    "phase": "phase2-account",
+    "feature": "Unauthenticated access to /app/settings",
+    "promise": "Dashboard pages require sign-in",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/login?next=%2Fapp%2Fsettings",
+    "account": "account A",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /app/settings in a fresh profile with no session"
+    ],
+    "expected": "Redirect to /login with next= preserved",
+    "actual": "\u2192 https://www.founders.click/login?next=%2Fapp%2Fsettings",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase2-account/007-unauthenticated-access-to-app-settings.jpg",
+    "network": [
+      {
+        "t": "2026-09-05T05:50:51+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/app/settings",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-05T05:50:57+00:00"
+  },
+  {
+    "phase": "phase2-account",
+    "feature": "Request a password reset",
+    "promise": "We'll email you a reset link",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/reset-password",
+    "account": "account B (logged out)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /reset-password",
+      "enter the account email",
+      "click Send reset link"
+    ],
+    "expected": "Confirmation that an email was sent; the email arrives in the inbox",
+    "actual": "ui: founders.click We'll email you a reset link Email Send reset link Back to sign in Check your email for a reset link. toasts=['Check your email for a reset link.'] (inbox receipt recorded separately)",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase2-account/008-request-a-password-reset.jpg",
+    "network": [
+      {
+        "t": "2026-09-05T05:51:19+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/reset-password",
+        "status": 200
+      },
+      {
+        "t": "2026-09-05T05:51:22+00:00",
+        "method": "POST",
+        "url": "https://xbxhzinnfhosoztqaaao.supabase.co/auth/v1/recover?redirect_to=https%3A%2F%2Fwww.founders.click%2Freset-password",
+        "status": 200,
+        "body": "{}"
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-05T05:51:25+00:00"
   }
 ]
