@@ -513,7 +513,7 @@
   },
   {
     "phase": "phase2-account",
-    "feature": "Sign up with a new email",
+    "feature": "Sign up refused: \"email rate limit exceeded\" (project-wide auth email limit)",
     "promise": "Create a founders.click workspace and start a 14-day free trial (signup page)",
     "environment": "https://www.founders.click",
     "url": "https://www.founders.click/signup",
@@ -526,7 +526,7 @@
       "click Start free trial"
     ],
     "expected": "Account created; told to check email for a confirmation link (or land on /app)",
-    "actual": "unexpected: founders.click 14-day free trial. No card required. Your name Email Password Start free trial By creating an account you agree to the Terms of Service and Privacy Policy. Continue with Google Already ; toasts=['email rate limit exceeded']",
+    "actual": "POST /auth/v1/signup \u2192 429 {code:'over_email_send_rate_limit', message:'email rate limit exceeded'}; toast 'email rate limit exceeded'; the form stays on /signup and no account is created. Sequence in the preceding hour: 05:51 reset (accepted), 05:59:28 signup C (accepted), 05:59:36 reset (429), 06:06:36 signup D (429) \u2014 i.e. roughly 2 accepted auth emails per hour project-wide before every further signup and reset is refused. Same limit blocked the Outlook resend for ~50 min on 2026-09-01.",
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase2-account/011-sign-up-with-a-new-email.jpg",
     "network": [
       {
@@ -549,8 +549,11 @@
     "persistence": "not checked",
     "status": "Failed",
     "severity": "P0",
-    "customer_impact": "Customers cannot create accounts",
-    "repro": [],
+    "customer_impact": "Beyond ~2 auth emails per hour across ALL customers, new signups and password resets are refused outright with a rate-limit error.",
+    "repro": [
+      "trigger two auth emails (signups/resets) within an hour",
+      "attempt a third signup \u2192 429 'email rate limit exceeded'"
+    ],
     "recorded_at": "2026-09-05T06:06:44+00:00",
     "extra": {
       "terms_link_present": true
