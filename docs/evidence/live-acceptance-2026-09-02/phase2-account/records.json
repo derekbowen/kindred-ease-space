@@ -164,5 +164,49 @@
     "extra": {
       "supporting": "Cannot see Worker logs or the EmailIt dashboard from the audit environment; the exact rejection reason needs the EmailIt send log for 06:48Z/06:51Z/07:21Z UTC."
     }
+  },
+  {
+    "phase": "phase2-account",
+    "feature": "Confirmation email delivery \u2014 3-day follow-up (Gmail, both test accounts)",
+    "promise": "'Check your email to confirm your account.'",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/signup",
+    "account": "accounts A and B",
+    "browser": "Gmail inbox via connector; GoTrue password login probe (curl)",
+    "preconditions": "Sends at 06:48Z and 07:21Z on 2026-09-02; support-ticket receipt at 06:51Z",
+    "actions": [
+      "2026-09-05 05:09Z: Gmail search in:anywhere newer_than:7d for both aliases and from:founders.click",
+      "GoTrue password login for A and B"
+    ],
+    "expected": "Emails delivered; accounts confirmable",
+    "actual": "Gmail: zero messages from founders.click in 7 days (inbox, spam, all folders). GoTrue: both accounts still 'email_not_confirmed' 70 hours after signup. Outlook account (derekcbowen@outlook.com) also still unconfirmed 4 days after its resend.",
+    "screenshot": "(inbox query result: empty)",
+    "network": [
+      {
+        "t": "2026-09-05T05:09:19+00:00",
+        "method": "POST",
+        "url": "\u2026/auth/v1/token?grant_type=password (A)",
+        "status": 400,
+        "body": "email_not_confirmed"
+      },
+      {
+        "t": "2026-09-05T05:09:19+00:00",
+        "method": "POST",
+        "url": "\u2026/auth/v1/token?grant_type=password (B)",
+        "status": 400,
+        "body": "email_not_confirmed"
+      }
+    ],
+    "console_errors": [],
+    "persistence": "n/a",
+    "status": "Failed",
+    "severity": "P0",
+    "customer_impact": "No new customer can activate an account; the failure is total, not a delay.",
+    "repro": [
+      "sign up at /signup with any address",
+      "wait any length of time \u2014 nothing arrives",
+      "Sign in \u2192 'Email not confirmed'"
+    ],
+    "recorded_at": "2026-09-05T05:09:19+00:00"
   }
 ]
