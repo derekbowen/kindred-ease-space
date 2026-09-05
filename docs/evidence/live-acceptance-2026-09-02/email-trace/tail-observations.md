@@ -71,3 +71,40 @@ The support-ticket receipt (2026-09-02 06:51:51Z) is a different path — it
 is sent by `src/lib/help.server.ts` through `sendEmail()` (EmailIt) — and
 also never arrived; that one *does* implicate EmailIt or its sending-domain
 setup, and needs the EmailIt send log for 06:51Z.
+
+---
+
+## Run #4 (2026-09-05 06:20:01–06:25:02Z) — VALID capture (added by the synthesis pass)
+
+Run [33949514845](https://github.com/derekbowen/kindred-ease-space/actions/runs/33949514845),
+job 101261510343, workflow at `d925ffd` (object-reassembling parser). Verbatim
+excerpt saved as `tail-raw/run4-job-101261510343-excerpt.log`. It parsed 4
+Worker invocations out of 460 pretty-printed lines and printed:
+
+```
+2026-09-05T06:21:39.997Z ok fetch POST www.founders.click/_serverFn/REDACTED ua=Mozilla/5.0 (X11; Linux x86_64) AppleWeb
+   log: [email] send failed 401 UnauthorizedError
+   log: [email] send failed 401 UnauthorizedError
+2026-09-05T06:23:04.626Z ok fetch POST www.founders.click/api/public/hooks/auth-send-email ua=curl/8.5.0
+   log: [auth-send-email] rejected: bad signature/timestamp
+2026-09-05T06:23:05.082Z ok fetch POST founders-click.derekbowencorp.workers.dev/api/public/hooks/auth-send-email ua=curl/8.5.0
+   log: [auth-send-email] rejected: bad signature/timestamp
+```
+
+- The 06:21:39.997Z event is the support ticket submitted at 06:21:42Z
+  (`../phase2-account/records.json:650-693`, ticket
+  `3c5724b6-42a8-4e78-ac43-be05274a360f`). Its two `[email] send failed 401
+  UnauthorizedError` lines are the staff notification and the user receipt
+  (`src/lib/help.server.ts:386-409`): **EmailIt answered HTTP 401 to the
+  Worker's API key** (`src/lib/email.server.ts:119-122` formats that line;
+  `provider-docs.md` §2 gives the live 401 body shape).
+- The two 06:23Z hook events are unsigned curl probes made by the synthesis
+  agent; they show the tail sees the hook route on both hostnames.
+- No GoTrue call to the hook occurred in this window, but no auth email was
+  requested in it either (project inside its 2/hour refusal), so this run says
+  nothing about whether Supabase calls the hook. The retracted claim above
+  stays retracted.
+- Gmail checked at ~06:25Z: zero founders.click messages in 7 days; the 09-05
+  ticket receipts (06:07Z, 06:13Z, 06:21Z) did not arrive.
+
+Full reading in `EMAIL_TRACE.md`.
