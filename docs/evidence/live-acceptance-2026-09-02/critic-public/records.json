@@ -1,0 +1,153 @@
+[
+  {
+    "phase": "critic-public",
+    "feature": "Help centre \u2014 article body renders (re-check of phase11 'Help centre \u2014 article page')",
+    "promise": "Opening a help article (HTTP 200) shows THAT article: its title as the h1, its body, and the 'Was this helpful?' feedback control",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/help/account-billing/understanding-page-limits",
+    "account": "completeness critic (anonymous, desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open each of ['/help/sharetribe-integration/handling-multiple-marketplaces', '/help/account-billing/understanding-page-limits'] (all return HTTP 200)",
+      "compare the visible h1 with the article's own <title>; check for the article body, 'Was this helpful?' and 'Still need help?'"
+    ],
+    "expected": "visible h1 == the article's title; article body present; 'Was this helpful?' + 'Still need help?' present; not the category listing",
+    "actual": "handling-multiple-marketplaces: title='Handling multiple marketplaces in one workspace' but visible h1='Sharetribe Integration'; feedback=False stillNeedHelp=False OTHER-CATEGORIES-listing=True min-read-rows=0 \u2192 renders_article=False; understanding-page-limits: title='Understanding page limits and upgrading' but visible h1='Account & Billing'; feedback=False stillNeedHelp=False OTHER-CATEGORIES-listing=True min-read-rows=0 \u2192 renders_article=False",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/critic-public/001-help-centre-article-body-renders-re-check-of-phase11-help-ce.jpg",
+    "network": [
+      {
+        "t": "2026-09-05T05:19:23+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help",
+        "status": 200
+      },
+      {
+        "t": "2026-09-05T05:19:29+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/sharetribe-integration/handling-multiple-marketplaces",
+        "status": 200
+      },
+      {
+        "t": "2026-09-05T05:19:32+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/account-billing/understanding-page-limits",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Failed",
+    "severity": "P1",
+    "customer_impact": "Customers cannot read ANY help article: every article URL 200s with the article's <title> but the page shown is the parent CATEGORY listing (help.$category.tsx renders no <Outlet>, so the /$category/$article child never mounts). No article body, no feedback control. This contradicts the phase11 'Help centre \u2014 article page' Verified record.",
+    "repro": [
+      "open /help/sharetribe-integration/handling-multiple-marketplaces \u2014 HTTP 200, <title> is the article, but the h1 and body are the category listing ('OTHER CATEGORIES' block, 0 article rows); no 'Was this helpful?'"
+    ],
+    "recorded_at": "2026-09-05T05:19:34+00:00",
+    "extra": {
+      "findings": [
+        {
+          "href": "/help/sharetribe-integration/handling-multiple-marketplaces",
+          "article_title_from_title_tag": "Handling multiple marketplaces in one workspace",
+          "title": "Handling multiple marketplaces in one workspace \u2014 founders.click Help",
+          "h1": "Sharetribe Integration",
+          "crumb": "Help",
+          "feedback": false,
+          "stillNeedHelp": false,
+          "otherCategories": true,
+          "minReadMarkers": 0,
+          "hasArticleEl": false,
+          "renders_article": false
+        },
+        {
+          "href": "/help/account-billing/understanding-page-limits",
+          "article_title_from_title_tag": "Understanding page limits and upgrading",
+          "title": "Understanding page limits and upgrading \u2014 founders.click Help",
+          "h1": "Account & Billing",
+          "crumb": "Help",
+          "feedback": false,
+          "stillNeedHelp": false,
+          "otherCategories": true,
+          "minReadMarkers": 0,
+          "hasArticleEl": false,
+          "renders_article": false
+        }
+      ],
+      "contradicts": "phase11-public record 'Help centre \u2014 article page' (Verified) \u2014 its own actual shows h1=category name, feedback widget=False",
+      "root_cause": "src/routes/help.$category.tsx has no <Outlet>; the article child route loader runs (so <title> is the article) but its component never renders."
+    }
+  },
+  {
+    "phase": "critic-public",
+    "feature": "Help home article links resolve (no 404s from /help)",
+    "promise": "Every article the help home surfaces (popular / recently updated / category cards) opens",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/help/getting-started/publishing-pages-and-getting-indexed",
+    "account": "completeness critic (anonymous, desktop 1366x900)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "collect article links (/help/<cat>/<article>) shown on /help",
+      "GET each",
+      "open one dead link in the browser"
+    ],
+    "expected": "all linked articles return HTTP 200",
+    "actual": "6 article links on /help; live(200)=2; dead(404)=4 ['/help/getting-started/publishing-pages-and-getting-indexed', '/help/getting-started/welcome-to-founders-click', '/help/getting-started/connecting-your-sharetribe-marketplace', '/help/billing/bring-your-own-ai-key-byok']; browser-visited first dead link \u2192 {'status': 404, 'text': 'founders.click Help Language English Espa\u00f1ol Fran\u00e7ais Deutsch Suomi Svenska Sign in Start free trial Help Center Search '}",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/critic-public/002-help-home-article-links-resolve-no-404s-from-help.jpg",
+    "network": [
+      {
+        "t": "2026-09-05T05:19:34+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/help/getting-started/publishing-pages-and-getting-indexed",
+        "status": 404,
+        "body": "<!DOCTYPE html><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/assets/styles-Cg50sYyr.css\" data-precedence=\"default\"/><title>Help Center</title><meta name=\"author\" content=\"founders.click\"/><meta property=\"og:type\" content=\"website\"/><meta property=\"og:site_name\" content=\"founders.click\"/><meta name=\"twitter:card\" content=\"summary_large_image\"/><meta name=\"twitter:title\" content=\"founders.click \u2014 Growth engine for Sharetribe\"/><meta name=\"twitter:description\" content=\"AI SEO + content factory + lead"
+      }
+    ],
+    "console_errors": [
+      "error: Failed to load resource: the server responded with a status of 404 ()",
+      "pageerror: Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+    ],
+    "persistence": "not checked",
+    "status": "Failed",
+    "severity": "P1",
+    "customer_impact": "The help home links (and the help sitemap lists) Getting-Started articles that 404 in production \u2014 a customer clicking 'Welcome to founders.click' / 'Publishing pages and getting indexed' / 'Connecting your Sharetribe marketplace' from the home page hits a 404.",
+    "repro": [
+      "open /help \u2192 click a Getting Started article \u2192 404 (e.g. /help/getting-started/publishing-pages-and-getting-indexed)"
+    ],
+    "recorded_at": "2026-09-05T05:19:35+00:00",
+    "extra": {
+      "checked": [
+        {
+          "href": "/help/sharetribe-integration/handling-multiple-marketplaces",
+          "text": "sharetribe integrationHandling multiple marketplaces in one workspaceRun several",
+          "status": 200
+        },
+        {
+          "href": "/help/getting-started/publishing-pages-and-getting-indexed",
+          "text": "getting startedPublishing pages and getting indexedPublish, ping Google, and wat",
+          "status": 404
+        },
+        {
+          "href": "/help/account-billing/understanding-page-limits",
+          "text": "account billingUnderstanding page limits and upgradingEach plan has a published-",
+          "status": 200
+        },
+        {
+          "href": "/help/getting-started/welcome-to-founders-click",
+          "text": "getting startedWelcome to founders.clickA quick tour of what founders.click does",
+          "status": 404
+        },
+        {
+          "href": "/help/getting-started/connecting-your-sharetribe-marketplace",
+          "text": "getting startedConnecting your Sharetribe marketplaceGenerate Integration API cr",
+          "status": 404
+        },
+        {
+          "href": "/help/billing/bring-your-own-ai-key-byok",
+          "text": "billingBring Your Own AI Key (BYOK)Connect your own OpenAI, Anthropic, Google AI",
+          "status": 404
+        }
+      ]
+    }
+  }
+]

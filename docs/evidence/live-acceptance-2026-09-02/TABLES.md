@@ -2,12 +2,12 @@
 
 | Status | Records |
 |---|---|
-| Verified | 77 |
-| Failed | 8 |
+| Verified | 76 |
+| Failed | 11 |
 | Blocked | 117 |
 | Not implemented | 12 |
 | Intentionally disabled | 18 |
-| **Total** | **232** |
+| **Total** | **234** |
 
 ## Defect log (Failed, by severity)
 
@@ -15,6 +15,9 @@
 |---|---|---|---|---|---|
 | P0 | phase2-account | Sign up END TO END: receive the real confirmation email and open the … | NO email of any kind from founders.click reached Gmail after 42 minutes (three separate sends to two aliases: 2 confirmations + 1 ticket receipt). Gmail received unrelated mail normally in the same window (LinkedIn 05:5… | open https://www.founders.click/signup; sign up with any Gmail address; wait — no email arrives in inbox or spam; try Sign in → 'Email not confirmed' | docs/evidence/live-acceptance-2026-09-02/phase2-account/001-sign-up-account-b.jpg |
 | P0 | phase2-account | Confirmation email delivery — 3-day follow-up (Gmail, both test accou… | Gmail: zero messages from founders.click in 7 days (inbox, spam, all folders). GoTrue: both accounts still 'email_not_confirmed' 70 hours after signup. Outlook account (derekcbowen@outlook.com) also still unconfirmed 4 … | sign up at /signup with any address; wait any length of time — nothing arrives; Sign in → 'Email not confirmed' | (inbox query result: empty) |
+| P1 | critic-public | Help centre — article body renders (re-check of phase11 'Help centre … | handling-multiple-marketplaces: title='Handling multiple marketplaces in one workspace' but visible h1='Sharetribe Integration'; feedback=False stillNeedHelp=False OTHER-CATEGORIES-listing=True min-read-rows=0 → renders… | open /help/sharetribe-integration/handling-multiple-marketplaces — HTTP 200, <title> is the article, but the h1 and body are the category listing ('OTHER CATEG… | docs/evidence/live-acceptance-2026-09-02/critic-public/001-help-centre-article-body-rende… |
+| P1 | critic-public | Help home article links resolve (no 404s from /help) | 6 article links on /help; live(200)=2; dead(404)=4 ['/help/getting-started/publishing-pages-and-getting-indexed', '/help/getting-started/welcome-to-founders-click', '/help/getting-started/connecting-your-sharetribe-mark… | open /help → click a Getting Started article → 404 (e.g. /help/getting-started/publishing-pages-and-getting-indexed) | docs/evidence/live-acceptance-2026-09-02/critic-public/002-help-home-article-links-resolv… |
+| P1 | phase11-public/desktop | Help centre — article page | SUPERSEDED BY CRITIC: the page that rendered is the parent CATEGORY (h1='Sharetribe Integration', no feedback widget, no article body) — the article itself never renders; the original pass condition (body length > 300) … | open /help/sharetribe-integration/handling-multiple-marketplaces | docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/009-help-centre-article-p… |
 | P1 | phase2-account | Contact support (public form) | Server function returned ok:true ticketId ab749c8c-cad4-45d9-8ebf-ca2e25fb0fac (06:51:51Z). Visible confirmation: see screenshot 002. Email to derekbowencorp+fclive-a@gmail.com: NOT received (checked in:anywhere at +33 … | open /help/contact; submit a ticket with your email; check inbox and spam — nothing arrives | docs/evidence/live-acceptance-2026-09-02/phase2-account/002-contact-support-public-form.j… |
 | P2 | phase10-public-security | Server function rejects a garbage Bearer token — listTenantPages | HTTP 200; rejected(no data)=True; data_leak=False; x-tss-serialized=true; internal error message leaked='Invalid UTF-8 sequence'; body='{"t":10,"i":0,"p":{"k":["result","error","context"],"v":[{"t":2,"s":1},{"t":25,"i":… | curl -H 'Authorization: Bearer not-a-real-token.deadbeef.xyz' https://www.founders.click/_serverFn/4dc67d39250e652ef4b39db4da85261b8ca02b91b7585a31442cb1d0611e… | docs/evidence/live-acceptance-2026-09-02/phase10-public-security/018-server-function-reje… |
 | P2 | phase11-public/desktop | Landing page — 25 MB demo video does not block the page | video present=True preload='metadata' poster='/product-demo-poster.jpg' paused=True overlay=True readyState=0 networkState=3; DCL=477ms load=1070ms; mp4 bytes transferred before any play=25,845,756 (entries=[{'name': 'p… | open https://www.founders.click/ in Chrome with DevTools → Network; do not click Play; observe product-demo.mp4 transfers 25.8 MB (initiator: video, HTTP 200, … | docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/005-landing-page-25-mb-de… |
@@ -175,6 +178,13 @@
 | Not implemented | phase1-inventory | Help article 'Bring your own AI key (BYOK)' (admin-added, not in seed) | LIVE: http=404 not_found=True (category /help/billing http=404). | docs/evidence/live-acceptance-2026-09-02/phase1-inventory/001-marketing-landing-full.jpg |
 
 ## Full evidence matrix
+
+### critic-public — Failed 2
+
+| Feature | Status | Sev | Actual | Persistence | Console errs | 4xx/5xx | Screenshot |
+|---|---|---|---|---|---|---|---|
+| Help centre — article body renders (re-check of phase11 'Help centre … | Failed | P1 | handling-multiple-marketplaces: title='Handling multiple marketplaces in one workspace' but visible h1='Sharetribe Integration'; feedback=False stillNeedHelp=False OTHER-CATEGORIES-listing=True min-r… | not checked | 0 | 0 | docs/evidence/live-acceptance-2026-09-02/critic-public/001-help-centre-article-… |
+| Help home article links resolve (no 404s from /help) | Failed | P1 | 6 article links on /help; live(200)=2; dead(404)=4 ['/help/getting-started/publishing-pages-and-getting-indexed', '/help/getting-started/welcome-to-founders-click', '/help/getting-started/connecting-… | not checked | 2 | 1 | docs/evidence/live-acceptance-2026-09-02/critic-public/002-help-home-article-li… |
 
 ### phase1-inventory — Blocked 117, Intentionally disabled 18, Not implemented 12
 
@@ -369,7 +379,7 @@
 | No secrets in browser output — signup (/signup) | Verified | - | 0 inline scripts; anon key present=False (expected/public); secret-pattern findings=none; unexpected JWTs=0 []; suspicious window keys={'onkeydown': 'object', 'onkeypress': 'object', 'onkeyup': 'obje… | not checked | 0 | 0 | docs/evidence/live-acceptance-2026-09-02/phase10-public-security/035-no-secrets… |
 | No secrets in browser output — help (/help) | Verified | - | 0 inline scripts; anon key present=False (expected/public); secret-pattern findings=none; unexpected JWTs=0 []; suspicious window keys={'onkeydown': 'object', 'onkeypress': 'object', 'onkeyup': 'obje… | not checked | 0 | 0 | docs/evidence/live-acceptance-2026-09-02/phase10-public-security/036-no-secrets… |
 
-### phase11-public/desktop — Failed 1, Verified 35
+### phase11-public/desktop — Failed 2, Verified 34
 
 | Feature | Status | Sev | Actual | Persistence | Console errs | 4xx/5xx | Screenshot |
 |---|---|---|---|---|---|---|---|
@@ -381,7 +391,7 @@
 | Landing page — no console errors, no failed resources | Verified | - | console_errors=[]; failed_or_4xx5xx_requests=[] | not checked | 0 | 0 | docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/006-landing-pag… |
 | Help centre — home | Verified | - | HTTP 200; h1='How can we help?'; categories=4 (first={'href': '/help/sharetribe-integration', 'text': '4 articlesSharetribe IntegrationCredentials, sync troublesho'}); article links=10; search box=Tr… | not checked | 0 | 0 | docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/007-help-centre… |
 | Help centre — category page | Verified | - | HTTP 200; h1='Sharetribe Integration'; breadcrumb='HelpSharetribe Integration'; articles=4 e.g. ['/help/sharetribe-integration/handling-multiple-marketplaces', '/help/sharetribe-integration/where-to-… | not checked | 0 | 0 | docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/008-help-centre… |
-| Help centre — article page | Verified | - | HTTP 200; title='Handling multiple marketplaces in one workspace — founders.click Help'; h1='Sharetribe Integration'; text chars=827; paragraphs=9; 'was this helpful' widget=False; console=[] | not checked | 0 | 0 | docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/009-help-centre… |
+| Help centre — article page | Failed | P1 | SUPERSEDED BY CRITIC: the page that rendered is the parent CATEGORY (h1='Sharetribe Integration', no feedback widget, no article body) — the article itself never renders; the original pass condition … | not checked | 0 | 0 | docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/009-help-centre… |
 | Help centre — search with a hit | Verified | - | query='Sharetribe' HTTP 200; results=7; first rows=['/help/getting-started/connecting-your-sharetribe-marketplace', '/help/getting-started/welcome-to-founders-click', '/help/sharetribe-integration/ha… | not checked | 0 | 0 | docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/010-help-centre… |
 | Help centre — search with no hit | Verified | - | HTTP 200; no-match copy=True; tips=True; contact links=4; console=[]; body starts: 'founders.click Help Language English Español Français Deutsch Suomi Svenska Sign in Start free trial Help Center Se… | not checked | 0 | 0 | docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/011-help-centre… |
 | Help centre — contact form renders | Verified | - | HTTP 200; h1='Contact support'; fields=['name', 'email', 'button', 'category', 'subject', 'message']; submit=['Other', 'Send message']; console=[] | not checked | 0 | 0 | docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/012-help-centre… |

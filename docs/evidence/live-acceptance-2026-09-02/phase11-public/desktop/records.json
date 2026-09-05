@@ -765,7 +765,7 @@
       "open /help/sharetribe-integration/handling-multiple-marketplaces"
     ],
     "expected": "HTTP 200, article title, body text",
-    "actual": "HTTP 200; title='Handling multiple marketplaces in one workspace \u2014 founders.click Help'; h1='Sharetribe Integration'; text chars=827; paragraphs=9; 'was this helpful' widget=False; console=[]",
+    "actual": "SUPERSEDED BY CRITIC: the page that rendered is the parent CATEGORY (h1='Sharetribe Integration', no feedback widget, no article body) \u2014 the article itself never renders; the original pass condition (body length > 300) was too permissive. See critic-public/records.json. Original: HTTP 200; title='Handling multiple marketplaces in one workspace \u2014 founders.click Help'; h1='Sharetribe Integration'; text chars=827; paragraphs=9; 'was this helpful' widget=False; console=[]",
     "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase11-public/desktop/009-help-centre-article-page.jpg",
     "network": [
       {
@@ -777,9 +777,9 @@
     ],
     "console_errors": [],
     "persistence": "not checked",
-    "status": "Verified",
-    "severity": "-",
-    "customer_impact": "",
+    "status": "Failed",
+    "severity": "P1",
+    "customer_impact": "Help articles cannot be read; 4 of 6 article links on /help return 404.",
     "repro": [],
     "recorded_at": "2026-09-02T07:46:06+00:00"
   },

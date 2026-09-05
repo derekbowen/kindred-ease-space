@@ -31,8 +31,9 @@ Through the public site, without an account (77 Verified records):
 - Read the marketing page: hero, "Everything included" grid, pricing for
   five plans ($29–$299), FAQ accordion operable by keyboard; all 11 links
   resolve; no console errors; JSON-LD present.
-- Used the help centre: home, category, article, search with results (7
-  for "Sharetribe") and the no-results state with contact links.
+- Used the help centre home, a category listing, search with results (7
+  for "Sharetribe") and the no-results state with contact links — but
+  **could not read a single help article** (see failures).
 - Read real, dated Terms and Privacy pages linked from the footer.
 - Was correctly refused on the signup form for empty, malformed-email and
   short-password input; saw "Invalid login credentials" 0.8 s after a wrong
@@ -66,6 +67,8 @@ activated, so nothing behind the login was reached.
 | P3 | Mobile (390×844): primary buttons are 36 px tall (Start free trial, Sign in, Continue with Google) — under the 40–44 px touch-target guideline. | Mis-taps on phones. | `phase11-public/mobile/` |
 | P3 | Mobile header has **no menu**: Help and Sign in are hidden below the `sm` breakpoint with no alternative. | A phone visitor cannot reach Sign in from the header (must scroll to the footer). | `phase11-public/mobile/` |
 | P1 | Support ticket "We'll email you shortly" — no email. (Same root cause as P0; listed because it is a separate customer promise.) | Ticket ID shown, silence afterwards. | `phase2-account/002-contact-support-public-form.jpg` |
+| **P1** | **Help articles cannot be read.** Opening any article URL renders the parent *category* page (category h1, "other categories" list, no article body, no feedback widget) — the article route has no outlet. Found by the critic pass; the first-pass record had wrongly passed on body length and is now marked Failed. | Click an article → see the category list again. | `critic-public/records.json` #1 |
+| **P1** | **4 of the 6 article links on the help home page return 404** (`getting-started/welcome-to-founders-click`, `…/connecting-your-sharetribe-marketplace`, `…/publishing-pages-and-getting-indexed`, `billing/bring-your-own-ai-key-byok`); the same URLs are listed in `/help/sitemap.xml`. | Broken links from the help home and from search engines. | `critic-public/records.json` #2 |
 
 ### What was blocked
 
@@ -172,7 +175,7 @@ Per-record test results are in `TABLES.md`. Summary by area:
 
 | Area | Features | Verified | Failed | Blocked | Not impl. | Disabled |
 |---|---|---|---|---|---|---|
-| Marketing site, legal, help centre | 12 | 12 (public phase) | 1 (video) | — | — | — |
+| Marketing site, legal, help centre | 12 | 10 (public phase) | 3 (video; help articles unreadable; help links 404) | — | — | — |
 | Account lifecycle (signup, confirm, login, logout, reset, session, profile, deletion) | 11 | 2 (form; unauth redirects) | 2 (delivery; ticket email) | 6 (need confirmed account) | 1 (deletion) | — |
 | Dashboard shell + Overview (dashboard, coach, SEO coach, briefing) | 9 | — | — | 9 | — | — |
 | Content (pages list/editor/publish/unpublish/preview, bulk import, quick builder, generate, bulk editor, export, import) | 14 | — | — | 12 | 1 (Generate Content backend) | 3 stubs |
@@ -192,7 +195,8 @@ Per-record test results are in `TABLES.md`. Summary by area:
 |---|---|---|---|---|---|
 | Landing page | Verified | Verified (no overflow) · Failed P3 (no header menu) | Verified (headline 4.0 s, interactive 13.7 s) | Verified (no state carried) | Blocked (not installed) |
 | Pricing + FAQ | Verified (keyboard) | Verified | — | — | Blocked |
-| Help centre + search + contact | Verified | Verified | — | — | Blocked |
+| Help centre home + search + contact | Verified | Verified | — | — | Blocked |
+| Help centre — read an article | **Failed P1** (category renders; 4/6 links 404) | — | — | — | Blocked |
 | Terms / Privacy | Verified | — | — | — | Blocked |
 | Signup form validation | Verified | Failed P3 (36 px targets) | — | — | Blocked |
 | Signup → confirmation email → activation | **Failed P0** | — | — | — | Blocked |
@@ -225,6 +229,8 @@ Per-record test results are in `TABLES.md`. Summary by area:
 | D8 | P2 | Marketing advertises Lead Inbox and Competitor radar; both are "Coming soon" stubs. | Landing "Everything included" → /app/ops/lead-inbox?showStubs=1. | `phase1-inventory/feature-matrix.md` §Advertised but absent 1–2 |
 | D9 | P2 | Help centre describes nine features that do not exist and wrong plan limits. | /help/… articles listed in §Advertised but absent 10–22. | same, items 10–22 |
 | D10 | P1 (legal) | Terms promise in-app cancellation; Privacy promises deletion; neither exists. | /terms §cancellation, /privacy §rights; no control anywhere in /app/settings. | same, item 23 |
+| D11 | P1 | Help article pages render the parent category instead of the article. | Open /help/sharetribe-integration/handling-multiple-marketplaces-in-one-workspace → category h1, no article body. | `critic-public/records.json` #1 + screenshot |
+| D12 | P1 | Four of six article links on /help (and their sitemap entries) return 404. | Open /help → click "Welcome to founders.click" → 404. | `critic-public/records.json` #2 + screenshot |
 
 Defects from the earlier code audit (`docs/AUDIT_2026-09-02.md`: billing
 reconciliation, trial expiry, refunds, dunning, schema not in migrations,
@@ -272,8 +278,12 @@ completion and old-password refusal · profile editing · Outlook delivery.
   phase ran.
 - The multi-agent public phase completed its inventory, public-journey and
   security-boundary work (evidence on disk) but its critic pass was cut off
-  by an environment restart; a standalone critic pass was run afterwards and
-  its additions, if any, are under `critic-public/`.
+  by an environment restart. A standalone critic pass was run afterwards
+  (`critic-public/`): it confirmed every cited public-phase screenshot exists
+  on disk, judged the security-boundary and public-journey evidence
+  trustworthy, and found one contradicted record — "help article page" had
+  passed on body length while the category, not the article, was rendering.
+  That record is now Failed and the two critic records (D11, D12) supersede it.
 - Not attempted: anything requiring production changes, Stripe, a second
   browser engine, or database access.
 
@@ -283,7 +293,8 @@ completion and old-password refusal · profile editing · Outlook delivery.
 
 1. **Email delivery (D1, D2).** Read the EmailIt send log for the three timestamps; fix sender-domain verification (add SPF for founders.click; DKIM exists), API key or account state; then re-run `phase2_account.py signup/confirm/login/reset-*` and confirm real inbox receipt on Gmail and Outlook with provider message IDs. Consider making the hook log a metric on EmailIt failure so silence is visible.
 2. **Unblock authenticated testing**: with a confirmed test account, run the prepared authenticated workflow; expect a second defect log.
-3. **Copy honesty (D8, D9, D10)**: remove Lead Inbox and Competitor radar from the landing grid and README; hide or finish Generate Content; rewrite the nine help articles; align Terms/Privacy with the real cancel/delete process or build them.
+3. **Help centre (D11, D12)**: render the article route (add the outlet in the category route or make the article a sibling route); publish or unlink the four 404 articles and regenerate `/help/sitemap.xml`; retest by opening every article link from /help in the browser.
+4. **Copy honesty (D8, D9, D10)**: remove Lead Inbox and Competitor radar from the landing grid and README; hide or finish Generate Content; rewrite the nine help articles; align Terms/Privacy with the real cancel/delete process or build them.
 4. **Garbage-bearer 401 (D4)**: make the auth middleware reject undecodable tokens with 401 before any handler runs; add a test.
 5. **Landing performance (D3)**: `preload="none"` plus poster, or lazy-load the video on interaction; verify transfer in DevTools.
 6. **Mobile (D5, D6)**: 44 px primary buttons on auth pages; a header menu (or always-visible Sign in) on small screens.
