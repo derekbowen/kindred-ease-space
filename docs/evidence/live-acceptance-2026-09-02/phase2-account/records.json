@@ -730,5 +730,45 @@
     "customer_impact": "",
     "repro": [],
     "recorded_at": "2026-09-05T06:59:25+00:00"
+  },
+  {
+    "phase": "phase2-account",
+    "feature": "Request a password reset",
+    "promise": "We'll email you a reset link",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/reset-password",
+    "account": "account A (logged out)",
+    "browser": "Chromium (Playwright) 1366x900",
+    "preconditions": "",
+    "actions": [
+      "open /reset-password",
+      "enter the account email",
+      "click Send reset link"
+    ],
+    "expected": "Confirmation that an email was sent; the email arrives in the inbox",
+    "actual": "ui: founders.click We'll email you a reset link Email Send reset link Back to sign in Check your email for a reset link. toasts=['Check your email for a reset link.'] (inbox receipt recorded separately)",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/phase2-account/016-request-a-password-reset.jpg",
+    "network": [
+      {
+        "t": "2026-09-05T07:01:14+00:00",
+        "method": "GET",
+        "url": "https://www.founders.click/reset-password",
+        "status": 200
+      },
+      {
+        "t": "2026-09-05T07:01:17+00:00",
+        "method": "POST",
+        "url": "https://xbxhzinnfhosoztqaaao.supabase.co/auth/v1/recover?redirect_to=https%3A%2F%2Fwww.founders.click%2Freset-password",
+        "status": 200,
+        "body": "{}"
+      }
+    ],
+    "console_errors": [],
+    "persistence": "not checked",
+    "status": "Verified",
+    "severity": "-",
+    "customer_impact": "",
+    "repro": [],
+    "recorded_at": "2026-09-05T07:01:20+00:00"
   }
 ]
