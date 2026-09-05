@@ -41,7 +41,17 @@ jobs:
           # for events that logged anything about email or the auth hook.
           node -e '
             const fs = require("fs");
-            const lines = fs.readFileSync("/tmp/tail.jsonl","utf8").split("\n").filter(Boolean);
+            const raw = fs.readFileSync("/tmp/tail.jsonl","utf8");
+            // wrangler tail --format json pretty-prints each event over many
+            // lines; reassemble objects by scanning for balanced top-level braces.
+            const lines = []; let depth = 0, buf = "", inStr = false, esc = false;
+            for (const ch of raw) {
+              if (depth === 0 && ch !== "{") continue;
+              buf += ch;
+              if (inStr) { if (esc) esc = false; else if (ch === "\\") esc = true; else if (ch === "\"") inStr = false; continue; }
+              if (ch === "\"") inStr = true; else if (ch === "{") depth++; else if (ch === "}") { depth--; if (depth === 0) { lines.push(buf); buf = ""; } }
+            }
+            console.log("--- raw head ---"); console.log(raw.slice(0, 1500)); console.log("--- parsed objects:", lines.length, "---");
             const hist = {}; let shown = 0; const sanitized = [];
             const ts = (e) => { const d = new Date(e.eventTimestamp || 0); return isNaN(d) ? "(no-ts)" : d.toISOString(); };
             for (const l of lines) {
