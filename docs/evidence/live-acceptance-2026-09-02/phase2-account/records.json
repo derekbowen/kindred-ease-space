@@ -770,5 +770,46 @@
     "customer_impact": "",
     "repro": [],
     "recorded_at": "2026-09-05T07:01:20+00:00"
+  },
+  {
+    "phase": "phase2-account",
+    "feature": "Password reset email \u2014 end to end (hook reached, provider rejected)",
+    "promise": "'We'll email you a reset link' \u2014 the customer receives a reset email",
+    "environment": "https://www.founders.click",
+    "url": "https://www.founders.click/reset-password",
+    "account": "account A",
+    "browser": "Chromium (Playwright) + CI Worker tail (run #5)",
+    "preconditions": "GoTrue rate-limit hour elapsed; tail attached 06:57:53Z",
+    "actions": [
+      "06:59:11Z and 07:01:12Z: request reset for A through the UI (both POST /auth/v1/recover \u2192 200)",
+      "read the Worker tail for the same window"
+    ],
+    "expected": "Hook called by Supabase, EmailIt accepts (201), email arrives",
+    "actual": "Hook WAS called by Supabase (06:59:22.651Z and 07:01:17.217Z, ua Go-http-client/2.0, signature verified) and EmailIt answered 401 UnauthorizedError both times: '[email] send failed 401 UnauthorizedError' / '[auth-send-email] EmailIt send FAILED recovery UnauthorizedError'. Hook returned 200 so the UI said 'Check your email'. Nothing in Gmail.",
+    "screenshot": "docs/evidence/live-acceptance-2026-09-02/email-trace/run5-tail-sanitized.json",
+    "network": [
+      {
+        "t": "2026-09-05T06:59:11+00:00",
+        "method": "POST",
+        "url": "\u2026/auth/v1/recover",
+        "status": 200
+      },
+      {
+        "t": "2026-09-05T07:01:12+00:00",
+        "method": "POST",
+        "url": "\u2026/auth/v1/recover",
+        "status": 200
+      }
+    ],
+    "console_errors": [],
+    "persistence": "n/a",
+    "status": "Failed",
+    "severity": "P0",
+    "customer_impact": "No auth email of any type can be delivered: the production EmailIt API key is rejected (401). Root cause of the signup P0.",
+    "repro": [
+      "/reset-password \u2192 submit",
+      "tail the Worker: [email] send failed 401 UnauthorizedError"
+    ],
+    "recorded_at": "2026-09-05T07:03:00+00:00"
   }
 ]

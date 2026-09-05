@@ -1,4 +1,20 @@
-# founders.click — live acceptance test (baseline)
+# founders.click — live acceptance test
+
+**Scope note (2026-09-05):** the *public, unauthenticated* baseline below is
+complete. The **authenticated product baseline is not** — every journey
+behind a login is still Blocked (no test account could be activated; the
+operator's manual confirmation did not land on the test-account rows — all
+three still return `email_not_confirmed`). This document must not be read as
+"product baseline complete".
+
+**Email root cause (2026-09-05, proven from production Worker logs):**
+EmailIt rejects the Worker's API key — `401 UnauthorizedError` — for
+*every* email type. Supabase does call our hook (observed, signature
+verified); the hook then fails at EmailIt and returns 200 by design, which
+is why the UI reports success. Full causal report, evidence and the
+minimal correction: `docs/evidence/live-acceptance-2026-09-02/email-trace/CAUSAL_REPORT.md`.
+Email remains **FAILED** until a newly created account receives and uses a
+real confirmation email through the browser.
 
 Tested as a customer, in a real Chromium browser, against the deployed
 product at https://www.founders.click. Started 2026-09-02 06:48 UTC; email
