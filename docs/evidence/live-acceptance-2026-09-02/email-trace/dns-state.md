@@ -22,7 +22,8 @@ those, it says so.
 | 3 | The apex `founders.click` has **no SPF TXT and no MX**. The missing apex SPF is *not* an EmailIt requirement (EmailIt puts SPF on the `emailit.` subdomain) and is not what blocks delivery; it is a posture gap only. The missing MX, however, means **`support@founders.click` cannot receive mail**: the staff-notification email (`src/lib/help.server.ts:389`) and every `Reply-To: support@founders.click` (`help.server.ts:404`, `help-tickets.functions.ts:165`, `email-templates.functions.ts:173`) point at a dead address unless `SUPPORT_INBOX_EMAIL` is overridden in the Worker. | High (DNS) / Medium (env unknown) |
 | 4 | `go.emailitmail.com.founders.click MX 10 inbound.emailitmail.com` is an operator paste error: the *value* of EmailIt's optional tracking CNAME (`go.emailitmail.com`) was typed into the Name field of EmailIt's optional inbound MX (`inbound.emailitmail.com`). The intended record was `inbound.founders.click MX 10 inbound.emailitmail.com`. It is inert for outbound mail and cannot explain non-delivery. | High |
 | 5 | `go.founders.click` is a **Cloudflare-proxied** CNAME to EmailIt's tracking host `go.emailitmail.com` (HTTPS through it returns EmailIt's exact 3-byte body `:-)` behind `via: 1.1 Caddy`). Because it is proxied, public DNS shows Cloudflare A records rather than a CNAME, so EmailIt's DNS check for tracking will report `missing`. Optional feature; not a verification blocker. | High |
-| 6 | The only DNS-consistent ways this could still be a "domain" problem are on EmailIt's side and invisible here: (a) the domain was never marked verified in the workspace ("Check DNS" never run / stuck), or (b) the domain was created in EmailIt under a different name than `founders.click`. EmailIt's docs are internally inconsistent about where the SPF/MX go relative to the domain name, so the observed records fit either `founders.click` (per the Creating-a-Domain guide) or `emailit.founders.click` (per one API sample). If (b), EmailIt rejects every send with `From/Sender domain is not valid or not verified`, and the hook swallows it (`auth-send-email.ts:89-98`). Discriminator: `GET https://api.emailit.com/v2/domains` — the `name`, `verified_at`, `spf_status`, `dkim_status`, `mx_status`, `return_path_status` fields. | Medium |
+| 6 | The only DNS-consistent ways this could still be a "domain" problem are on EmailIt's side and invisible here: (a) the domain was never marked verified in the workspace ("Check DNS" never run / stuck), or (b) the domain was created in EmailIt under a different name than `founders.click`. EmailIt's docs are internally inconsistent about where the SPF/MX go relative to the domain name, so the observed records fit either `founders.click` (per the Creating-a-Domain guide) or `emailit.founders.click` (per one API sample). If (b), EmailIt rejects every send with HTTP 422 `From/Sender domain is not valid or not verified` (status code per `provider-docs.md` §5), and the hook swallows it (`auth-send-email.ts:89-98`). Discriminator: `GET https://api.emailit.com/v2/domains` — the `name`, `verified_at`, `spf_status`, `dkim_status`, `mx_status`, `return_path_status` fields. | Medium |
+| 7 | Scope limit: DNS/sending-domain state only matters for sends that actually reach EmailIt. `tail-observations.md` shows the 05:59:28Z signup produced **zero** requests to this Worker's hook, so the auth-confirmation path may not touch EmailIt (or this DNS) at all; the support-ticket receipt path (`help.server.ts` → `sendEmail()`) does. | High (as a bound on this task) |
 
 ## 1. Full record dump
 
@@ -218,7 +219,9 @@ Net: **3 of 3 required records present and correct; 1 of 1 optional
 authentication record present; the two optional feature records (tracking,
 inbound) are mis-entered.** Nothing in DNS should keep the domain from
 verifying, and nothing in DNS should cause Gmail or Outlook to refuse or
-junk correctly-signed mail.
+junk correctly-signed mail. If the EmailIt workspace nevertheless shows the
+domain unverified, the failure is in EmailIt's stored state (never checked,
+stale key, different `name`), not in what the public resolvers serve today.
 
 ## 4. Would SPF / DKIM / DMARC pass for `noreply@founders.click` sent by EmailIt?
 
@@ -369,6 +372,33 @@ None of these is a DNS change. If the domain list shows `founders.click`
 with `verified_at` set and all four statuses `ok`, the sending domain is
 eliminated as a cause and the trace moves entirely to the API call / account
 (Task A/C).
+
+Bound on relevance: per `tail-observations.md`, Supabase did not call this
+Worker's send-email hook for the 05:59:28Z signup, so for the *auth* emails
+the EmailIt path in this repository (and therefore this DNS) may never have
+been exercised. The DNS findings above apply with certainty only to the
+in-repo `sendEmail()` callers that demonstrably run: ticket receipts / staff
+notifications (`src/lib/help.server.ts:366-405`), ticket status changes, help
+feedback follow-ups, and the welcome email. The AUP rule quoted in
+`provider-docs.md` §8 ("APEX of the sending domains need to have a working
+website") is satisfied: the apex resolves and redirects to `www`.
+
+## 7a. Reconciliation with sibling notes in this folder
+
+- `provider-docs.md` §8 and `dns-observations.md` reach the same conclusion on
+  the three required records and DMARC (present, exact values). They describe
+  the optional tracking CNAME and inbound MX as "absent". This task refines
+  that: tracking **was** created, as `go.founders.click` with the Cloudflare
+  proxy on (§5), and the inbound MX **was** attempted but landed on the
+  mis-named `go.emailitmail.com.founders.click` (§1.6, §5). Neither changes
+  the verification verdict; both are cosmetic for delivery.
+- `dns-observations.md` does not cover the apex MX consequence for
+  `support@founders.click` / `Reply-To` (§6.1), the DKIM key decode, the
+  Google-resolver cross-check, PTR/FCrDNS of EmailIt's MTAs, or the
+  guide-vs-API-sample ambiguity about which EmailIt domain `name` the observed
+  layout corresponds to (§7). Those are additive, not contradictory.
+- The earlier Phase-2 precondition "NO SPF record on founders.click" is
+  literally true and materially misleading; both DNS notes now say so.
 
 ## 8. Raw evidence index
 
