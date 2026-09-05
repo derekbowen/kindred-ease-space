@@ -42,18 +42,25 @@ jobs:
           node -e '
             const fs = require("fs");
             const lines = fs.readFileSync("/tmp/tail.jsonl","utf8").split("\n").filter(Boolean);
-            let shown = 0;
+            const hist = {}; let shown = 0;
             for (const l of lines) {
               let e; try { e = JSON.parse(l); } catch { continue; }
+              const req = e.event && e.event.request; const url = (req && req.url) || "";
+              let host = "", path = "";
+              try { const u = new URL(url); host = u.host; path = u.pathname; } catch {}
+              const key = host + " " + (req ? req.method : "-") + " " + path.replace(/[0-9a-f-]{20,}/g, ":id").slice(0,60);
+              hist[key] = (hist[key] || 0) + 1;
               const logs = (e.logs||[]).map(x => (x.message||[]).join(" "));
-              const url = (e.event && e.event.request && e.event.request.url) || "";
-              const path = url.replace(/^https?:\/\/[^/]+/, "").slice(0,80);
-              const interesting = logs.some(m => /\[email\]|\[auth-send-email\]|EmailIt|emailit|\[help\]|welcome/i.test(m)) || /hooks\/auth-send-email/.test(url);
+              const ua = (req && req.headers && (req.headers["user-agent"] || req.headers["User-Agent"])) || "";
+              const interesting = logs.some(m => /\[email\]|\[auth-send-email\]|emailit|\[help\]|welcome/i.test(m))
+                || /hooks\/auth-send-email/.test(path) || /supabase|gotrue|webhook/i.test(ua) || !/^www\.founders\.click$/.test(host);
               if (!interesting) continue;
               shown++;
-              console.log(`${new Date(e.eventTimestamp).toISOString()} ${e.outcome} ${e.event && e.event.request ? e.event.request.method : ""} ${path}`);
+              console.log(`${new Date(e.eventTimestamp).toISOString()} ${e.outcome} ${req ? req.method : ""} ${host}${path.slice(0,80)} ua=${ua.slice(0,40)}`);
               for (const m of logs) console.log("   log:", m.slice(0,400));
               for (const x of (e.exceptions||[])) console.log("   exception:", (x.name||"")+": "+(x.message||"").slice(0,300));
             }
-            console.log(`--- ${shown} email-related events shown of ${lines.length} ---`);
+            console.log(`--- ${shown} notable events shown of ${lines.length} ---`);
+            console.log("--- request histogram (host method path) ---");
+            for (const [k,v] of Object.entries(hist).sort((a,b)=>b[1]-a[1]).slice(0,40)) console.log(String(v).padStart(5), k);
           '
