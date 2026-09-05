@@ -64,6 +64,15 @@ mobile layout (390×844) · keyboard reachability (Tab to the primary action) ·
 console + network errors. Click every customer-visible control (buttons,
 tabs, dropdowns, dialogs, links); note controls that do nothing.
 
+## Evidence standard (every record)
+
+Exact URL · test account · exact browser actions · expected result · actual
+customer-visible result · screenshot (the harness attaches one; take extra
+ones with `await s.shot("name")` and mention them in `actual`) · console
+errors · failed or relevant network requests · **persistence after refresh
+AND after a new login in a fresh Session** for any save/create/edit — put
+both results in the `persistence` field · status · severity.
+
 ## Status rules
 
 - **Verified** — full customer outcome achieved in the UI, with evidence.
