@@ -1,0 +1,53 @@
+[
+ {
+  "t": "2026-09-05T06:21:07.766Z",
+  "outcome": "ok",
+  "kind": "fetch",
+  "method": "GET",
+  "host": "www.founders.click",
+  "path": "/help/contact",
+  "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, l",
+  "logs": [],
+  "exceptions": []
+ },
+ {
+  "t": "2026-09-05T06:21:39.997Z",
+  "outcome": "ok",
+  "kind": "fetch",
+  "method": "POST",
+  "host": "www.founders.click",
+  "path": "/_serverFn/REDACTED",
+  "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, l",
+  "logs": [
+   "[email] send failed 401 UnauthorizedError",
+   "[email] send failed 401 UnauthorizedError"
+  ],
+  "exceptions": []
+ },
+ {
+  "t": "2026-09-05T06:23:04.626Z",
+  "outcome": "ok",
+  "kind": "fetch",
+  "method": "POST",
+  "host": "www.founders.click",
+  "path": "/api/public/hooks/auth-send-email",
+  "ua": "curl/8.5.0",
+  "logs": [
+   "[auth-send-email] rejected: bad signature/timestamp"
+  ],
+  "exceptions": []
+ },
+ {
+  "t": "2026-09-05T06:23:05.082Z",
+  "outcome": "ok",
+  "kind": "fetch",
+  "method": "POST",
+  "host": "founders-click.derekbowencorp.workers.dev",
+  "path": "/api/public/hooks/auth-send-email",
+  "ua": "curl/8.5.0",
+  "logs": [
+   "[auth-send-email] rejected: bad signature/timestamp"
+  ],
+  "exceptions": []
+ }
+]
