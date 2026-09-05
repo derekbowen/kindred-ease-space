@@ -1,0 +1,111 @@
+[
+ {
+  "t": "2026-09-05T06:59:19.904Z",
+  "outcome": "ok",
+  "kind": "fetch",
+  "method": "GET",
+  "host": "www.founders.click",
+  "path": "/reset-password",
+  "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, l",
+  "logs": [],
+  "exceptions": []
+ },
+ {
+  "t": "2026-09-05T06:59:22.651Z",
+  "outcome": "ok",
+  "kind": "fetch",
+  "method": "POST",
+  "host": "www.founders.click",
+  "path": "/api/public/hooks/auth-send-email",
+  "ua": "Go-http-client/2.0",
+  "logs": [
+   "[email] send failed 401 UnauthorizedError",
+   "[auth-send-email] EmailIt send FAILED recovery UnauthorizedError"
+  ],
+  "exceptions": []
+ },
+ {
+  "t": "2026-09-05T06:59:53.130Z",
+  "outcome": "ok",
+  "kind": "fetch",
+  "method": "GET",
+  "host": "www.founders.click",
+  "path": "/",
+  "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) App",
+  "logs": [],
+  "exceptions": []
+ },
+ {
+  "t": "2026-09-05T07:00:00.477Z",
+  "outcome": "ok",
+  "kind": "fetch",
+  "method": "POST",
+  "host": "www.founders.click",
+  "path": "/api/public/hooks/sync-sharetribe",
+  "ua": "pg_net/0.20.0",
+  "logs": [
+   "[sync-sharetribe] CRON_SECRET not configured"
+  ],
+  "exceptions": []
+ },
+ {
+  "t": "2026-09-05T07:01:01.780Z",
+  "outcome": "ok",
+  "kind": "fetch",
+  "method": "GET",
+  "host": "www.founders.click",
+  "path": "/api/public/edge-health",
+  "ua": "curl/8.5.0",
+  "logs": [],
+  "exceptions": []
+ },
+ {
+  "t": "2026-09-05T07:01:02.153Z",
+  "outcome": "ok",
+  "kind": "fetch",
+  "method": "POST",
+  "host": "www.founders.click",
+  "path": "/api/public/hooks/auth-send-email",
+  "ua": "curl/8.5.0",
+  "logs": [
+   "[auth-send-email] rejected: bad signature/timestamp"
+  ],
+  "exceptions": []
+ },
+ {
+  "t": "2026-09-05T07:01:02.505Z",
+  "outcome": "ok",
+  "kind": "fetch",
+  "method": "GET",
+  "host": "www.founders.click",
+  "path": "/",
+  "ua": "curl/8.5.0",
+  "logs": [],
+  "exceptions": []
+ },
+ {
+  "t": "2026-09-05T07:01:14.391Z",
+  "outcome": "ok",
+  "kind": "fetch",
+  "method": "GET",
+  "host": "www.founders.click",
+  "path": "/reset-password",
+  "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, l",
+  "logs": [],
+  "exceptions": []
+ },
+ {
+  "t": "2026-09-05T07:01:17.217Z",
+  "outcome": "ok",
+  "kind": "fetch",
+  "method": "POST",
+  "host": "www.founders.click",
+  "path": "/api/public/hooks/auth-send-email",
+  "ua": "Go-http-client/2.0",
+  "logs": [
+   "[email] send failed 401 UnauthorizedError",
+   "[auth-send-email] EmailIt send FAILED recovery UnauthorizedError"
+  ],
+  "exceptions": []
+ }
+]
