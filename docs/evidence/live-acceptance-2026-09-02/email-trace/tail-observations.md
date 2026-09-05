@@ -1,5 +1,15 @@
 # Worker log tail during live sends — observations
 
+> **RETRACTED (2026-09-05 06:20Z).** Runs #1–#3 of the tail workflow parsed
+> `wrangler tail --format json` as one JSON object per line. wrangler
+> pretty-prints each event across many lines, so the parser saw only
+> fragments: the "555 events / 0 email-related" figures below are line
+> counts, not events, and the sanitized artifact from run #3 contains two
+> empty fragments. **Nothing below about "no hook call" is established.**
+> Run #4 onward reassembles whole objects and prints the raw head of the
+> stream for validation. The section is kept for the record of what was
+> claimed and why it was wrong.
+
 Read-only capture from CI (`.github/workflows/email-trace-tail.yml`, run
 [33948559228](https://github.com/derekbowen/kindred-ease-space/actions/runs/33948559228)),
 `wrangler tail founders-click --format json`, attached 2026-09-05 05:58:22Z,
