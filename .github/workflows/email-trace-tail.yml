@@ -1,0 +1,57 @@
+name: Email trace (tail Worker logs)
+
+# Read-only diagnostic: streams the founders-click Worker's console output for
+# a bounded window so the EmailIt API response to a signup/reset/ticket send
+# can be seen. The code logs status + message only, never keys or bodies.
+# Dispatch from any branch; changes nothing in production.
+
+on:
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "How long to tail (seconds)"
+        default: "240"
+
+concurrency:
+  group: email-trace-tail
+  cancel-in-progress: false
+
+jobs:
+  tail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Tail founders-click for the window
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKER_DEPLOY_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set +e
+          echo "tail window: ${{ github.event.inputs.seconds }}s starting $(date -u +%FT%TZ)"
+          timeout "${{ github.event.inputs.seconds }}" bunx wrangler tail founders-click --format json > /tmp/tail.jsonl 2> /tmp/tail.err
+          echo "wrangler exit: $?"
+          echo "--- stderr (auth/permission problems show here) ---"
+          head -40 /tmp/tail.err
+          echo "--- events: $(wc -l < /tmp/tail.jsonl) ---"
+          # Print every console line the Worker logged plus the request URL path
+          # for events that logged anything about email or the auth hook.
+          node -e '
+            const fs = require("fs");
+            const lines = fs.readFileSync("/tmp/tail.jsonl","utf8").split("\n").filter(Boolean);
+            let shown = 0;
+            for (const l of lines) {
+              let e; try { e = JSON.parse(l); } catch { continue; }
+              const logs = (e.logs||[]).map(x => (x.message||[]).join(" "));
+              const url = (e.event && e.event.request && e.event.request.url) || "";
+              const path = url.replace(/^https?:\/\/[^/]+/, "").slice(0,80);
+              const interesting = logs.some(m => /\[email\]|\[auth-send-email\]|EmailIt|emailit|\[help\]|welcome/i.test(m)) || /hooks\/auth-send-email/.test(url);
+              if (!interesting) continue;
+              shown++;
+              console.log(`${new Date(e.eventTimestamp).toISOString()} ${e.outcome} ${e.event && e.event.request ? e.event.request.method : ""} ${path}`);
+              for (const m of logs) console.log("   log:", m.slice(0,400));
+              for (const x of (e.exceptions||[])) console.log("   exception:", (x.name||"")+": "+(x.message||"").slice(0,300));
+            }
+            console.log(`--- ${shown} email-related events shown of ${lines.length} ---`);
+          '
