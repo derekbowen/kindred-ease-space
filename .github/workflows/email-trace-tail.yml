@@ -7,10 +7,12 @@ name: Email trace (tail Worker logs)
 
 on:
   workflow_dispatch:
-    inputs:
-      seconds:
-        description: "How long to tail (seconds)"
-        default: "240"
+  push:
+    branches: [claude/ecstatic-lamport-li8bun]
+    paths: [".github/email-trace-trigger"]
+
+env:
+  TAIL_SECONDS: "300"
 
 concurrency:
   group: email-trace-tail
@@ -29,8 +31,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set +e
-          echo "tail window: ${{ github.event.inputs.seconds }}s starting $(date -u +%FT%TZ)"
-          timeout "${{ github.event.inputs.seconds }}" bunx wrangler tail founders-click --format json > /tmp/tail.jsonl 2> /tmp/tail.err
+          echo "tail window: ${TAIL_SECONDS}s starting $(date -u +%FT%TZ)"
+          timeout "${TAIL_SECONDS}" bunx wrangler tail founders-click --format json > /tmp/tail.jsonl 2> /tmp/tail.err
           echo "wrangler exit: $?"
           echo "--- stderr (auth/permission problems show here) ---"
           head -40 /tmp/tail.err
