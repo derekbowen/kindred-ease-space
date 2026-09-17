@@ -32,6 +32,7 @@ import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/ap
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
 import { Route as SWsSlugRouteImport } from './routes/s.$ws.$slug'
 import { Route as HelpCategoryArticleRouteImport } from './routes/help.$category.$article'
+import { Route as ApiPublicVersionRouteImport } from './routes/api/public/version'
 import { Route as ApiPublicSitemapByHostRouteImport } from './routes/api/public/sitemap-by-host'
 import { Route as ApiPublicPageLookupRouteImport } from './routes/api/public/page-lookup'
 import { Route as ApiPublicEdgeHealthRouteImport } from './routes/api/public/edge-health'
@@ -218,6 +219,11 @@ const HelpCategoryArticleRoute = HelpCategoryArticleRouteImport.update({
   id: '/$article',
   path: '/$article',
   getParentRoute: () => HelpCategoryRoute,
+} as any)
+const ApiPublicVersionRoute = ApiPublicVersionRouteImport.update({
+  id: '/api/public/version',
+  path: '/api/public/version',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicSitemapByHostRoute = ApiPublicSitemapByHostRouteImport.update({
   id: '/api/public/sitemap-by-host',
@@ -677,6 +683,7 @@ export interface FileRoutesByFullPath {
   '/api/public/edge-health': typeof ApiPublicEdgeHealthRoute
   '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
+  '/api/public/version': typeof ApiPublicVersionRoute
   '/help/$category/$article': typeof HelpCategoryArticleRoute
   '/s/$ws/$slug': typeof SWsSlugRoute
   '/app/': typeof AuthenticatedAppIndexRoute
@@ -771,6 +778,7 @@ export interface FileRoutesByTo {
   '/api/public/edge-health': typeof ApiPublicEdgeHealthRoute
   '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
+  '/api/public/version': typeof ApiPublicVersionRoute
   '/help/$category/$article': typeof HelpCategoryArticleRoute
   '/s/$ws/$slug': typeof SWsSlugRoute
   '/app': typeof AuthenticatedAppIndexRoute
@@ -869,6 +877,7 @@ export interface FileRoutesById {
   '/api/public/edge-health': typeof ApiPublicEdgeHealthRoute
   '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
+  '/api/public/version': typeof ApiPublicVersionRoute
   '/help/$category/$article': typeof HelpCategoryArticleRoute
   '/s/$ws/$slug': typeof SWsSlugRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
@@ -967,6 +976,7 @@ export interface FileRouteTypes {
     | '/api/public/edge-health'
     | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
+    | '/api/public/version'
     | '/help/$category/$article'
     | '/s/$ws/$slug'
     | '/app/'
@@ -1061,6 +1071,7 @@ export interface FileRouteTypes {
     | '/api/public/edge-health'
     | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
+    | '/api/public/version'
     | '/help/$category/$article'
     | '/s/$ws/$slug'
     | '/app'
@@ -1158,6 +1169,7 @@ export interface FileRouteTypes {
     | '/api/public/edge-health'
     | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
+    | '/api/public/version'
     | '/help/$category/$article'
     | '/s/$ws/$slug'
     | '/_authenticated/app/'
@@ -1241,6 +1253,7 @@ export interface RootRouteChildren {
   ApiPublicEdgeHealthRoute: typeof ApiPublicEdgeHealthRoute
   ApiPublicPageLookupRoute: typeof ApiPublicPageLookupRoute
   ApiPublicSitemapByHostRoute: typeof ApiPublicSitemapByHostRoute
+  ApiPublicVersionRoute: typeof ApiPublicVersionRoute
   SWsSlugRoute: typeof SWsSlugRoute
   ApiPublicHooksAuthSendEmailRoute: typeof ApiPublicHooksAuthSendEmailRoute
   ApiPublicHooksCanonicalAuditRoute: typeof ApiPublicHooksCanonicalAuditRoute
@@ -1409,6 +1422,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/help/$category/$article'
       preLoaderRoute: typeof HelpCategoryArticleRouteImport
       parentRoute: typeof HelpCategoryRoute
+    }
+    '/api/public/version': {
+      id: '/api/public/version'
+      path: '/api/public/version'
+      fullPath: '/api/public/version'
+      preLoaderRoute: typeof ApiPublicVersionRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/public/sitemap-by-host': {
       id: '/api/public/sitemap-by-host'
@@ -2201,6 +2221,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicEdgeHealthRoute: ApiPublicEdgeHealthRoute,
   ApiPublicPageLookupRoute: ApiPublicPageLookupRoute,
   ApiPublicSitemapByHostRoute: ApiPublicSitemapByHostRoute,
+  ApiPublicVersionRoute: ApiPublicVersionRoute,
   SWsSlugRoute: SWsSlugRoute,
   ApiPublicHooksAuthSendEmailRoute: ApiPublicHooksAuthSendEmailRoute,
   ApiPublicHooksCanonicalAuditRoute: ApiPublicHooksCanonicalAuditRoute,
