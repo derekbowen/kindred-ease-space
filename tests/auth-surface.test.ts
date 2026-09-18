@@ -20,11 +20,18 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-let pass = 0, fail = 0;
+let pass = 0,
+  fail = 0;
 const failed: string[] = [];
 function t(name: string, cond: boolean, extra = "") {
-  if (cond) { pass++; console.log(`  PASS  ${name}`); }
-  else { fail++; failed.push(name); console.log(`  FAIL  ${name}\n        ${extra}`); }
+  if (cond) {
+    pass++;
+    console.log(`  PASS  ${name}`);
+  } else {
+    fail++;
+    failed.push(name);
+    console.log(`  FAIL  ${name}\n        ${extra}`);
+  }
 }
 
 /**
@@ -52,12 +59,29 @@ const PUBLIC_ALLOWLIST: Record<string, string> = {
   logPublic404: "records a 404 seen on a public page",
 };
 
-/** Patterns that constitute a real authorization check. */
+/**
+ * Patterns that constitute a real authorization check.
+ *
+ * `assertAdmin` is STRICTER than the workspace checks above it, not a loophole:
+ * it requires the platform `admin` role via has_role(), which workspace
+ * ownership does not confer and which members cannot grant themselves
+ * (user_roles is not writable by `authenticated`). A function guarded by it is
+ * reachable by fewer people than one guarded by assertWorkspaceOwner — which is
+ * exactly right for entitlement grants, where the danger is an owner granting
+ * themselves free capacity.
+ */
 const AUTHZ = new RegExp(
   [
-    "assertWorkspaceMember", "assertWorkspaceOwner", "assertMember",
-    "is_workspace_member", "is_workspace_owner",
-    "assertInternal", "requireInternal", "assertWorkspaceAdmin", "assertOwner",
+    "assertWorkspaceMember",
+    "assertWorkspaceOwner",
+    "assertMember",
+    "is_workspace_member",
+    "is_workspace_owner",
+    "assertInternal",
+    "requireInternal",
+    "assertWorkspaceAdmin",
+    "assertOwner",
+    "assertAdmin",
   ].join("|"),
 );
 
@@ -90,16 +114,16 @@ console.log("\n=== every server function is authenticated or explicitly public =
     (f) => !f.body.split(".handler")[0]!.includes("requireSupabaseAuth"),
   );
   const undeclared = unguarded.filter((f) => !(f.name in PUBLIC_ALLOWLIST));
-  t("no server function is unauthenticated without being on the allowlist",
+  t(
+    "no server function is unauthenticated without being on the allowlist",
     undeclared.length === 0,
-    undeclared.map((f) => `${f.name} (${f.file})`).join("\n        "));
+    undeclared.map((f) => `${f.name} (${f.file})`).join("\n        "),
+  );
 
   // Keep the allowlist honest in the other direction too: an entry that has
   // since gained auth should be removed, so the list stays a real inventory of
   // the public surface rather than accumulating stale exemptions.
-  const stale = Object.keys(PUBLIC_ALLOWLIST).filter(
-    (n) => !unguarded.some((f) => f.name === n),
-  );
+  const stale = Object.keys(PUBLIC_ALLOWLIST).filter((n) => !unguarded.some((f) => f.name === n));
   t("no stale entries left on the public allowlist", stale.length === 0, stale.join(", "));
 }
 
@@ -113,9 +137,11 @@ console.log("\n=== authenticated + workspace-scoped implies an authorization che
     const scoped = /workspaceId|workspaceIdSchema/.test(f.body);
     return authed && admin && scoped && !AUTHZ.test(f.body);
   });
-  t("no authenticated workspace-scoped function skips authorization",
+  t(
+    "no authenticated workspace-scoped function skips authorization",
     risky.length === 0,
-    risky.map((f) => `${f.name} (${f.file})`).join("\n        "));
+    risky.map((f) => `${f.name} (${f.file})`).join("\n        "),
+  );
 }
 
 console.log("\n=== the entitlement columns are never written by app code ===");
@@ -126,9 +152,11 @@ console.log("\n=== the entitlement columns are never written by app code ===");
   const writers = fns.filter(
     (f) => ENTITLEMENT_COLS.test(f.body) && /\.update\(|\.upsert\(|\.insert\(/.test(f.body),
   );
-  t("no server function writes entitlement columns",
+  t(
+    "no server function writes entitlement columns",
     writers.length === 0,
-    writers.map((f) => `${f.name} (${f.file})`).join("\n        "));
+    writers.map((f) => `${f.name} (${f.file})`).join("\n        "),
+  );
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

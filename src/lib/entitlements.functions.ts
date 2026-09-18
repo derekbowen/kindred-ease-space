@@ -3,6 +3,8 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { planByKey, TRIAL_PAGE_LIMIT } from "@/lib/plan-catalog";
+import { decideCapacity, effectivePageLimit, type BillingState } from "@/lib/billing-capacity";
+import { readGrantedPages } from "@/lib/entitlement-grants.server";
 
 const sb = () => supabaseAdmin as any;
 
@@ -15,6 +17,12 @@ export type PageEntitlement = {
   pageLimitBase: number;
   pageLimitAddon: number;
   pageLimitBonus: number;
+  /**
+   * Pages from active admin grants (beta/promotional/manual). Additive on top
+   * of paid capacity, and the entire allowance for a workspace with no usable
+   * subscription — see workspace_entitlement_grants.
+   */
+  pageLimitGranted: number;
   publishedPages: number;
   draftPages: number;
   suspendedPages: number;
@@ -23,6 +31,16 @@ export type PageEntitlement = {
   trialEndsAt: string | null;
   isTrial: boolean;
   aiBalance: number;
+  /**
+   * What the billing facts say right now, independent of whether a webhook
+   * ever landed. `billingState`/`canPublish`/`pagesServe` are derived on every
+   * read, so an entitlement can no longer outlive the subscription that paid
+   * for it — see src/lib/billing-capacity.ts.
+   */
+  billingState: BillingState;
+  canPublish: boolean;
+  pagesServe: boolean;
+  billingReason: string;
 };
 
 /**
@@ -62,7 +80,7 @@ async function countByStatus(workspaceId: string, status: string): Promise<numbe
 }
 
 export async function readEntitlement(workspaceId: string): Promise<PageEntitlement> {
-  const [wsRes, published, drafts, suspended, { data: bal }] = await Promise.all([
+  const [wsRes, published, drafts, suspended, { data: bal }, granted] = await Promise.all([
     sb()
       .from("workspaces")
       .select(
@@ -74,6 +92,10 @@ export async function readEntitlement(workspaceId: string): Promise<PageEntitlem
     countByStatus(workspaceId, "draft"),
     countByStatus(workspaceId, "billing_suspended"),
     sb().from("credit_balances").select("balance").eq("workspace_id", workspaceId).maybeSingle(),
+    // Fails CLOSED here, unlike the public serving path: this read drives the
+    // admin/app view and the pre-publish check, where under-reporting capacity
+    // shows a confusing number, and over-reporting it hands out free pages.
+    readGrantedPages(workspaceId),
   ]);
   const ws = wsRes.data;
   if (!ws) {
@@ -92,7 +114,19 @@ export async function readEntitlement(workspaceId: string): Promise<PageEntitlem
   const base = ws.page_limit_base ?? TRIAL_PAGE_LIMIT;
   const addon = ws.page_limit_addon ?? 0;
   const bonus = bonusActive ? (ws.page_limit_bonus ?? 0) : 0;
-  const limit = base + addon + bonus;
+
+  // The stored columns are what Stripe last told us. What they MEAN depends on
+  // the subscription's current state, and that has to be recomputed rather
+  // than trusted: a webhook that never arrived would otherwise read as a
+  // permanent grant. An expired trial or a lapsed subscription has no
+  // capacity, whatever page_limit_base still says.
+  const decision = decideCapacity({
+    subscriptionStatus: ws.subscription_status,
+    trialEndsAt: ws.trial_ends_at,
+    currentPeriodEnd: ws.current_period_end,
+    grantedPages: granted,
+  });
+  const limit = effectivePageLimit({ base, addon, bonus, granted }, decision);
 
   const status: string = ws.subscription_status ?? "trialing";
   const isTrial = status === "trialing";
@@ -107,6 +141,7 @@ export async function readEntitlement(workspaceId: string): Promise<PageEntitlem
     pageLimitBase: base,
     pageLimitAddon: addon,
     pageLimitBonus: bonus,
+    pageLimitGranted: granted,
     publishedPages: published,
     draftPages: drafts,
     suspendedPages: suspended,
@@ -115,6 +150,10 @@ export async function readEntitlement(workspaceId: string): Promise<PageEntitlem
     trialEndsAt: ws.trial_ends_at ?? null,
     isTrial,
     aiBalance: bal?.balance ?? 0,
+    billingState: decision.state,
+    canPublish: decision.publish,
+    pagesServe: decision.serve,
+    billingReason: decision.reason,
   };
 }
 

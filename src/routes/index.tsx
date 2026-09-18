@@ -384,8 +384,9 @@ function HowItWorks() {
   );
 }
 
-// Tiers differ by monthly credit allowance only — every feature is available on
-// every plan. Page estimates are approximate and depend on page length.
+// Tiers differ by published-page capacity — every feature is available on
+// every plan. Capacity is the product; the AI allowance is sized to match it
+// and is not sold separately (docs/SOURCE_OF_TRUTH.md). Page estimates are approximate and depend on page length.
 // Single source of truth (§37): the same catalog drives the homepage, the
 // billing dashboard, checkout and Stripe — no scattered pricing constants.
 const PLANS = PAGE_PLANS;
@@ -505,7 +506,7 @@ const FAQS = [
   {
     question: "Is AI generation extra?",
     answer:
-      "No — every plan includes a monthly AI generation allowance sized for its page capacity, covering page generation, rewrites and audits. If you run heavier workloads you can add extra generation capacity at $10 per 1,000 generation credits, but most customers never need to.",
+      "No. Every plan includes a monthly AI generation allowance sized for its page capacity, covering page generation, rewrites and audits. You buy published pages, not generation — if you need more, you move up a plan or add page capacity.",
   },
   {
     question: "What happens if I cancel?",

@@ -29,7 +29,6 @@ function BillingPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [ent, setEnt] = useState<PageEntitlement | null>(null);
   const [addonQty, setAddonQty] = useState(1);
-  const [packQty, setPackQty] = useState(1);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -125,6 +124,29 @@ function BillingPage() {
     usagePct >= 100 ? "text-red-500" : usagePct >= 90 ? "text-amber-500" : "text-emerald-500";
   const barTone = usagePct >= 100 ? "bg-red-500" : usagePct >= 90 ? "bg-amber-500" : "bg-primary";
 
+  // Only ever break capacity into parts that are ACTUALLY IN FORCE. The stored
+  // columns outlive a lapsed subscription, so printing "100 plan + 50 extra
+  // capacity" beside a limit of 0 tells the customer they have capacity they do
+  // not have — the same mistake, in the UI, that this release fixed in the gate.
+  // `pageLimit` is the one number that decides anything; this only explains it.
+  const capacityParts: string[] = [];
+  if (ent?.canPublish) {
+    if (ent.billingState !== "granted") {
+      // 'granted' means Stripe refused and the grant is the whole allowance, so
+      // the paid columns contribute nothing and must not be listed.
+      if (ent.pageLimitAddon > 0) {
+        capacityParts.push(`${ent.pageLimitBase.toLocaleString()} plan`);
+        capacityParts.push(`${ent.pageLimitAddon.toLocaleString()} extra capacity`);
+      }
+      if (ent.pageLimitBonus > 0) {
+        capacityParts.push(`${ent.pageLimitBonus.toLocaleString()} bonus`);
+      }
+    }
+    if (ent.pageLimitGranted > 0) {
+      capacityParts.push(`${ent.pageLimitGranted.toLocaleString()} complimentary`);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -163,14 +185,35 @@ function BillingPage() {
             <CardTitle>Current plan</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{ent?.planName ?? "—"}</div>
+            <div className="text-2xl font-bold">{ent?.isTrial ? "Free trial" : (ent?.planName ?? "—")}</div>
             <div className="text-xs text-muted-foreground capitalize">
-              {ent?.monthlyPrice ? `$${ent.monthlyPrice}/month · ` : ""}
+              {/* A trial has no price. `plan` is written as 'starter' at
+                  provisioning, so showing its price here told every trial
+                  user they were already paying $29/month. */}
+              {!ent?.isTrial && ent?.monthlyPrice ? `$${ent.monthlyPrice}/month · ` : ""}
               {ent?.subscriptionStatus ?? ""}
             </div>
-            {ent?.currentPeriodEnd && (
+            {ent?.isTrial && ent?.trialEndsAt && (
+              <div className="text-xs mt-1">
+                Trial ends {new Date(ent.trialEndsAt).toLocaleDateString()}
+              </div>
+            )}
+            {!ent?.isTrial && ent?.currentPeriodEnd && (
               <div className="text-xs mt-1">
                 Renews {new Date(ent.currentPeriodEnd).toLocaleDateString()}
+              </div>
+            )}
+            {/* When pages have stopped serving, the billing page is where the
+                customer comes to find out why. Say it plainly rather than
+                leaving them to infer it from a dead site. */}
+            {ent && !ent.pagesServe && (
+              <div className="text-xs mt-2 rounded border border-destructive/40 bg-destructive/5 p-2 text-destructive">
+                Your published pages are not being served. {ent.billingReason}
+              </div>
+            )}
+            {ent && ent.pagesServe && !ent.canPublish && (
+              <div className="text-xs mt-2 rounded border border-amber-500/40 bg-amber-500/5 p-2">
+                {ent.billingReason}
               </div>
             )}
             {ent?.isTrial && ent?.trialEndsAt && (
@@ -213,10 +256,9 @@ function BillingPage() {
               {ent ? `${ent.remaining.toLocaleString()} publishing slots remaining` : ""}
               {ent && ent.draftPages > 0 && ` · ${ent.draftPages.toLocaleString()} drafts (free)`}
             </div>
-            {ent && ent.pageLimitAddon > 0 && (
+            {capacityParts.length > 0 && (
               <div className="mt-1 text-xs text-muted-foreground">
-                {ent.pageLimitBase.toLocaleString()} plan + {ent.pageLimitAddon.toLocaleString()}{" "}
-                extra capacity
+                {capacityParts.join(" + ")}
               </div>
             )}
           </CardContent>
@@ -231,23 +273,17 @@ function BillingPage() {
             <div className="text-2xl font-bold tabular-nums">
               {ent?.aiBalance.toLocaleString() ?? "—"}
             </div>
-            <div className="text-xs text-muted-foreground">generation credits available</div>
-            <div className="flex items-center gap-2 pt-1">
-              <Input
-                type="number"
-                min={1}
-                value={packQty}
-                onChange={(e) => setPackQty(Math.max(1, +e.target.value))}
-                className="w-16 h-8"
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => checkout("credits", packQty)}
-                disabled={loading}
-              >
-                Add {(packQty * 1000).toLocaleString()} (${packQty * 10})
-              </Button>
+            <div className="text-xs text-muted-foreground">
+              generation credits remaining this month
+            </div>
+            {/* Credits are INTERNAL metering, not a SKU. Selling them here
+                contradicted the product decision that capacity is what the
+                customer buys (docs/SOURCE_OF_TRUTH.md), and gave the billing
+                page two competing units. The allowance is still worth showing
+                — it is what the plan includes — but it is not for sale.
+                More capacity is bought as pages, below. */}
+            <div className="text-xs text-muted-foreground pt-1">
+              Included with your plan. Need more pages? Upgrade below.
             </div>
           </CardContent>
         </Card>

@@ -70,7 +70,10 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: "/app/pages", label: "Pages", icon: LayoutTemplate },
       { to: "/app/content/quick-page-builder", label: "Quick Page Builder", icon: Sparkles },
-      { to: "/app/content/generate", label: "Generate Content", icon: FileText },
+      // The generate-content-batch edge function does not exist; the page says
+      // so itself. Every other unfinished feature is marked, so leaving this
+      // one unmarked presented a headline capability we cannot deliver.
+      { to: "/app/content/generate", label: "Generate Content", icon: FileText, stub: true },
       {
         to: "/app/content/migration",
         label: "Content Migration",
@@ -181,10 +184,9 @@ export const NAV_SECTIONS: NavSection[] = [
       },
       {
         to: "/app/ops/plan-requests",
-        label: "Plan Requests",
+        label: "Entitlements & Beta",
         icon: HandCoins,
         internalOnly: true,
-        stub: true,
       },
       { to: "/app/ops/admin-team", label: "Admin Team", icon: Users, stub: true },
 
