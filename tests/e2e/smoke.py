@@ -23,7 +23,19 @@ import time
 from pathlib import Path
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 
-BASE_URL = (sys.argv[1] if len(sys.argv) > 1 else os.environ.get("SMOKE_BASE_URL", "http://localhost:8080")).rstrip("/")
+# An UNSET GitHub Actions secret arrives as an EMPTY STRING, not an absent
+# variable, so os.environ.get(name, default) returns "" and the default never
+# applies. That produced BASE_URL="" and a bare page.goto("/"), which Chromium
+# rejects as an invalid URL — a failure naming neither the cause nor the
+# setting to change, and every scheduled run died there. Treat empty exactly
+# like absent, then refuse anything that is not an absolute URL, by name.
+_base = (sys.argv[1] if len(sys.argv) > 1 else "") or os.environ.get("SMOKE_BASE_URL") or "http://localhost:8080"
+BASE_URL = _base.rstrip("/")
+if not BASE_URL.startswith(("http://", "https://")):
+    sys.exit(
+        f"[FAIL] BASE_URL must be an absolute URL, got {BASE_URL!r}. "
+        "Pass it as argv[1] or set SMOKE_BASE_URL (e.g. https://www.founders.click)."
+    )
 OUT = Path("/tmp/browser/smoke")
 OUT.mkdir(parents=True, exist_ok=True)
 

@@ -1,7 +1,11 @@
 name: E2E Smoke
 
 # Required repo secrets:
-#   SMOKE_BASE_URL          — e.g. https://kindred-ease-space.lovable.app
+#   SMOKE_BASE_URL          — OPTIONAL override. Defaults to the canonical
+#                             production URL https://www.founders.click.
+#                             (It previously named a Lovable preview host, which
+#                             is not authoritative for this app — see
+#                             deploy-app.yml.)
 #   SUPABASE_TEST_EMAIL     — pre-confirmed test account (optional; signup-only path runs without)
 #   SUPABASE_TEST_PASSWORD  — password for that account
 
@@ -39,7 +43,13 @@ jobs:
 
       - name: Run smoke test
         env:
-          SMOKE_BASE_URL: ${{ secrets.SMOKE_BASE_URL }}
+          # The production URL is PUBLIC and must not depend on a secret being
+          # set. It did: an unset SMOKE_BASE_URL arrives as an empty string, so
+          # every run died in page.goto("/") with "Cannot navigate to invalid
+          # URL" and the smoke signal was dead while still looking configured.
+          # The secret now only OVERRIDES the canonical production URL, which is
+          # the same one deploy-app.yml smokes and production-monitor.yml watches.
+          SMOKE_BASE_URL: ${{ secrets.SMOKE_BASE_URL || 'https://www.founders.click' }}
           SUPABASE_TEST_EMAIL: ${{ secrets.SUPABASE_TEST_EMAIL }}
           SUPABASE_TEST_PASSWORD: ${{ secrets.SUPABASE_TEST_PASSWORD }}
         run: python tests/e2e/smoke.py
