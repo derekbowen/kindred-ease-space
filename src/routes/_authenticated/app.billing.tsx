@@ -80,7 +80,10 @@ function BillingPage() {
   }, [pendingRefresh, workspaceId, loadBilling]);
 
   async function checkout(
-    mode: "subscription" | "credits" | "page_addon",
+    // "credits" is deliberately absent: AI credit packs were withdrawn as a
+    // customer-facing SKU and create-checkout answers 410 for them. Leaving the
+    // literal in this union kept a removed product one call site from returning.
+    mode: "subscription" | "page_addon",
     quantity = 1,
     tier?: string,
   ) {

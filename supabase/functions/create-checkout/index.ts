@@ -1,7 +1,6 @@
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import {
-  ensureCreditPackPrice,
   ensureSubscriptionPrice,
   ensureAddonPrice,
   ensurePageAddonPrice,
@@ -45,12 +44,28 @@ Deno.serve(async (req) => {
     const quantity = Math.max(1, Math.min(maxQty, Math.floor(Number(rawQuantity) || 1)));
 
     // Validate inputs to avoid leaking TypeErrors from Stripe
-    const validModes = ["credits", "subscription", "addon", "page_addon"] as const;
+    const validModes = ["subscription", "addon", "page_addon"] as const;
     if (!workspace_id || typeof workspace_id !== "string") {
       return new Response(JSON.stringify({ error: "invalid_request" }), {
         status: 400,
         headers: corsHeaders,
       });
+    }
+    // AI credits were withdrawn as a customer-facing SKU. The UI stopped
+    // offering them, but this endpoint kept accepting mode:"credits" and would
+    // provision a $10/1,000-credit price for anyone who posted it directly —
+    // a product we do not sell, purchasable by API. Refused explicitly rather
+    // than as a generic invalid_mode so the answer is unambiguous if it is ever
+    // deliberately restored: the catalog entry and ensureCreditPackPrice() are
+    // left intact in _shared/stripe-catalog.ts for exactly that reason.
+    if (mode === "credits") {
+      return new Response(
+        JSON.stringify({
+          error: "credits_unavailable",
+          message: "AI credit packs are no longer sold. Page capacity is included with every plan.",
+        }),
+        { status: 410, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
     if (!validModes.includes(mode)) {
       return new Response(JSON.stringify({ error: "invalid_mode" }), {
@@ -217,13 +232,11 @@ Deno.serve(async (req) => {
     const origin = rawOrigin && allowedOrigins.includes(rawOrigin) ? rawOrigin : allowedOrigins[0];
     const isSubscription = mode === "subscription" || mode === "addon" || mode === "page_addon";
     const selectedPrice =
-      mode === "credits"
-        ? await ensureCreditPackPrice(stripe)
-        : mode === "addon"
-          ? await ensureAddonPrice(stripe, addon_key)
-          : mode === "page_addon"
-            ? await ensurePageAddonPrice(stripe)
-            : await ensureSubscriptionPrice(stripe, tier);
+      mode === "addon"
+        ? await ensureAddonPrice(stripe, addon_key)
+        : mode === "page_addon"
+          ? await ensurePageAddonPrice(stripe)
+          : await ensureSubscriptionPrice(stripe, tier);
 
     const returnPath = mode === "addon" ? "addons" : "billing";
 
