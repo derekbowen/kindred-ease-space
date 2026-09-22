@@ -65,7 +65,7 @@ export const EDGE_HOSTNAME = "proxy.founders.click";
  * enough for a slow DNS change and short enough to be recoverable. */
 export const UNVERIFIED_DOMAIN_CLAIM_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-const ALREADY_CONNECTED_ERROR =
+export const ALREADY_CONNECTED_ERROR =
   "That hostname is already connected to a workspace. Unverified claims expire after 7 days; a verified domain must be removed by its owner first.";
 
 /** Pure decision: may `prior` (the existing workspace_domains row for the
@@ -84,6 +84,95 @@ export function shouldReclaimUnverifiedDomain(
   if (!Number.isFinite(created)) return false;
   const age = now.getTime() - created;
   return age >= UNVERIFIED_DOMAIN_CLAIM_TTL_MS;
+}
+
+/** The slice of a supabase client the reclaim step uses; injectable so the
+ * step can be exercised against an in-memory fake. */
+export type ReclaimDb = { from: (table: string) => any };
+
+/**
+ * Take a stale, unverified claim on `hostname` away from the workspace that
+ * holds it (`prior`), so the caller's workspace can claim it. The decision
+ * that this is allowed is shouldReclaimUnverifiedDomain; this is the doing.
+ *
+ * THE INVARIANT: a hostname is only ever reclaimed AFTER the previous
+ * claimant can no longer match it through EITHER branch of the host resolver
+ * (current_workspace_id_by_host and workspaceIdForHost in sitemap.server.ts):
+ * not through workspace_domains (its row is deleted) and not through the
+ * legacy workspaces.marketplace_domain + domain_verified_at branch (the claim
+ * seeded marketplace_domain the moment it was made, and domain_verified_at may
+ * still be stamped from an older verification, so both are cleared).
+ *
+ * There is no transaction across PostgREST calls, so the order makes every
+ * stopping point safe:
+ *   1. Clear the prior workspace's marketplace_domain (and the flag that only
+ *      meant something next to it) while its row still exists. If this
+ *      fails nothing has changed and the whole add can simply be retried.
+ *   2. Delete the row, guarded on verified = false. Zero rows deleted means
+ *      the claimant verified in the window between our read and this write:
+ *      the seed cleared in step 1 is put back from the now-verified row, and
+ *      the reclaim is refused — we never take a live domain.
+ * A failure in step 2 leaves the row in place and the seed cleared; a retry
+ * finds the row again, clears nothing new, and completes.
+ */
+export async function reclaimStaleDomainClaim(
+  db: ReclaimDb,
+  prior: { id: string; workspace_id: string },
+  hostname: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  // 1. The prior claimant must stop resolving this hostname before the
+  //    hostname changes hands.
+  const { data: cleared, error: clearErr } = await db
+    .from("workspaces")
+    .update({ marketplace_domain: null, domain_verified_at: null })
+    .eq("id", prior.workspace_id)
+    .eq("marketplace_domain", hostname)
+    .select("id");
+  if (clearErr) {
+    return {
+      ok: false,
+      error: `Couldn't release the previous claim on that hostname: ${clearErr.message}`,
+    };
+  }
+  const seedWasCleared = Array.isArray(cleared) && cleared.length > 0;
+
+  // 2. Now the row — and only while it is still unverified.
+  const { data: deleted, error: delErr } = await db
+    .from("workspace_domains")
+    .delete()
+    .eq("id", prior.id)
+    .eq("verified", false)
+    .select("id");
+  if (delErr) {
+    return {
+      ok: false,
+      error: `Couldn't release the previous claim on that hostname: ${delErr.message}`,
+    };
+  }
+  if (Array.isArray(deleted) && deleted.length > 0) return { ok: true };
+
+  // Nothing deleted: the claimant verified in the window. Their domain is
+  // live; put back what step 1 took, from the row that now proves it.
+  if (seedWasCleared) {
+    const { data: live } = await db
+      .from("workspace_domains")
+      .select("verified_at")
+      .eq("id", prior.id)
+      .maybeSingle();
+    const { error: restoreErr } = await db
+      .from("workspaces")
+      .update({ marketplace_domain: hostname, domain_verified_at: live?.verified_at ?? null })
+      .eq("id", prior.workspace_id)
+      .is("marketplace_domain", null);
+    if (restoreErr) {
+      console.error(
+        "[domains] claimant verified during reclaim; could not restore its marketplace_domain",
+        hostname,
+        restoreErr.message,
+      );
+    }
+  }
+  return { ok: false, error: ALREADY_CONNECTED_ERROR };
 }
 
 async function dohQuery(name: string, type: "A" | "CNAME" | "NS" | "TXT"): Promise<string[]> {
@@ -252,42 +341,12 @@ export const addWorkspaceDomain = createServerFn({ method: "POST" })
       if (!shouldReclaimUnverifiedDomain(prior, data.workspaceId)) {
         return { ok: false as const, error: ALREADY_CONNECTED_ERROR };
       }
-      // `verified = false` again on the delete: if the claimant verified in
-      // the window between our read and this write, nothing is deleted and
-      // their claim stands — we never delete a live domain.
-      const { data: reclaimed, error: delErr } = await sb()
-        .from("workspace_domains")
-        .delete()
-        .eq("id", prior.id)
-        .eq("verified", false)
-        .select("id");
-      if (delErr) return { ok: false as const, error: delErr.message };
-      if (!reclaimed || reclaimed.length === 0) {
-        return { ok: false as const, error: ALREADY_CONNECTED_ERROR };
-      }
-      // The claim also seeded workspaces.marketplace_domain on the prior
-      // workspace (see "Seed marketplace_domain" below). Left there, the host
-      // resolver's legacy branch — marketplace_domain plus the workspace-level
-      // domain_verified_at — could still name THAT workspace for this hostname
-      // once it is verified here, and two matches for one host used to be
-      // settled by whatever the planner returned first. The hostname is no
-      // longer theirs, and neither is a verified flag that only meant
-      // something next to it. Best-effort: their row is already gone, so a
-      // failure here must not strand the hostname unclaimed; the resolver
-      // (20260923000500) ranks a verified workspace_domains row above the
-      // legacy branch regardless.
-      const { error: clearErr } = await sb()
-        .from("workspaces")
-        .update({ marketplace_domain: null, domain_verified_at: null })
-        .eq("id", prior.workspace_id)
-        .eq("marketplace_domain", hostname);
-      if (clearErr) {
-        console.error(
-          "[domains] reclaimed hostname but could not clear the prior workspace's marketplace_domain",
-          hostname,
-          clearErr.message,
-        );
-      }
+      // Clears the prior workspace's marketplace_domain seed FIRST, then
+      // deletes the row (guarded on verified = false), so the previous
+      // claimant can no longer match this hostname through either resolver
+      // branch by the time it changes hands. See reclaimStaleDomainClaim.
+      const reclaimed = await reclaimStaleDomainClaim(sb(), prior, hostname);
+      if (!reclaimed.ok) return { ok: false as const, error: reclaimed.error };
     }
 
     // Capture the customer's CURRENT origin and DNS provider BEFORE any

@@ -21,9 +21,12 @@ import { readFileSync, existsSync, readdirSync, statSync } from "fs";
 import { resolve, dirname, join } from "path";
 import { fileURLToPath } from "url";
 import {
+  ALREADY_CONNECTED_ERROR,
+  reclaimStaleDomainClaim,
   shouldReclaimUnverifiedDomain,
   UNVERIFIED_DOMAIN_CLAIM_TTL_MS,
 } from "../src/lib/admin-domains.functions";
+import { preferredHostMatch, type HostMatch } from "../src/lib/sitemap.server";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -313,24 +316,181 @@ console.log("\n=== h) a reclaimed hostname cannot resolve to its previous claima
 // reclaim that seed pointed the resolver's legacy branch at the OLD workspace
 // while the verified workspace_domains row pointed at the new one, and the
 // resolver picked with LIMIT 1 and no ORDER BY.
+//
+// Source shape first, then the step itself is driven against an in-memory
+// pair of tables and BOTH resolver branches are evaluated over the resulting
+// state with the same two predicates the SQL function and workspaceIdForHost
+// use. If the previous tenant can still be named for the hostname, it fails.
+const reclaimBody = domainsSrc.slice(
+  domainsSrc.indexOf("export async function reclaimStaleDomainClaim"),
+  domainsSrc.indexOf("async function dohQuery"),
+);
+const clearAt = reclaimBody.indexOf(".update({ marketplace_domain: null, domain_verified_at: null })");
+t("reclaim clears the prior workspace's marketplace_domain AND domain_verified_at", clearAt > 0);
+t(
+  "…only on the prior workspace, and only when it still carries this hostname",
+  /\.update\(\{ marketplace_domain: null, domain_verified_at: null \}\)\s*\.eq\("id", prior\.workspace_id\)\s*\.eq\("marketplace_domain", hostname\)/.test(reclaimBody),
+);
+t("…BEFORE the row is deleted, so the hostname never changes hands while the seed can still match",
+  clearAt > 0 && clearAt < reclaimBody.indexOf(".delete()"));
+t("a failed clear is a refusal, never a log-and-continue",
+  /if \(clearErr\) \{\s*return \{\s*ok: false,/.test(reclaimBody) && !/if \(clearErr\) \{\s*console\.error/.test(reclaimBody));
+t("a delete that removed nothing (claimant verified in the window) is refused with the standard message",
+  /if \(Array\.isArray\(deleted\) && deleted\.length > 0\) return \{ ok: true \};[\s\S]*return \{ ok: false, error: ALREADY_CONNECTED_ERROR \};/.test(reclaimBody));
+t("…and the seed it cleared is put back from the now-verified row",
+  /\.update\(\{ marketplace_domain: hostname, domain_verified_at: live\?\.verified_at \?\? null \}\)\s*\.eq\("id", prior\.workspace_id\)\s*\.is\("marketplace_domain", null\)/.test(reclaimBody));
 const addBody = domainsSrc.slice(
   domainsSrc.indexOf("export const addWorkspaceDomain"),
   domainsSrc.indexOf("async function tryFileVerify"),
 );
-t(
-  "reclaim refuses when the race guard deleted nothing (the claimant verified meanwhile)",
-  /\.eq\("verified", false\)\s*\.select\("id"\);[\s\S]*?if \(!reclaimed \|\| reclaimed\.length === 0\) \{\s*return \{ ok: false as const, error: ALREADY_CONNECTED_ERROR \};/.test(addBody),
-);
-const clearAt = addBody.indexOf(".update({ marketplace_domain: null, domain_verified_at: null })");
-t("reclaim clears the prior workspace's marketplace_domain AND domain_verified_at", clearAt > 0);
-t(
-  "…only on the prior workspace, and only when it still carries this hostname",
-  /\.update\(\{ marketplace_domain: null, domain_verified_at: null \}\)\s*\.eq\("id", prior\.workspace_id\)\s*\.eq\("marketplace_domain", hostname\)/.test(addBody),
-);
-t("…after the row is gone, before this workspace's insert",
-  clearAt > addBody.indexOf('.eq("verified", false)') && clearAt < addBody.indexOf(".insert({"));
-t("…and a failure to clear is logged, not turned into a stranded hostname",
-  /if \(clearErr\) \{\s*console\.error\(/.test(addBody) && !/if \(clearErr\) return/.test(addBody));
+t("the handler runs the reclaim step and stops on its refusal, before inserting",
+  /const reclaimed = await reclaimStaleDomainClaim\(sb\(\), prior, hostname\);\s*if \(!reclaimed\.ok\) return \{ ok: false as const, error: reclaimed\.error \};/.test(addBody) &&
+    addBody.indexOf("reclaimStaleDomainClaim(sb()") < addBody.indexOf(".insert({"));
+
+type DomainRow = { id: string; workspace_id: string; hostname: string; verified: boolean; verified_at: string | null };
+type WsRow = { id: string; marketplace_domain: string | null; domain_verified_at: string | null };
+type Tables = { workspace_domains: DomainRow[]; workspaces: WsRow[] };
+
+/** Just enough of the supabase query builder for the reclaim step, applied
+ * to plain arrays. `failing` names "<table>.<op>" calls that return an error. */
+function fakeDb(state: Tables, failing: Set<string> = new Set()) {
+  const ops: string[] = [];
+  class Q {
+    table: keyof Tables;
+    op = "select";
+    payload: Record<string, unknown> | null = null;
+    filters: Array<[string, unknown]> = [];
+    single = false;
+    constructor(table: keyof Tables) {
+      this.table = table;
+    }
+    select() { return this; }
+    update(p: Record<string, unknown>) { this.op = "update"; this.payload = p; return this; }
+    delete() { this.op = "delete"; return this; }
+    eq(c: string, v: unknown) { this.filters.push([c, v]); return this; }
+    is(c: string, v: unknown) { this.filters.push([c, v]); return this; }
+    maybeSingle() { this.single = true; return this; }
+    then(res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) {
+      return Promise.resolve(this.run()).then(res, rej);
+    }
+    run() {
+      const key = `${this.table}.${this.op}`;
+      ops.push(key);
+      if (failing.has(key)) return { data: null, error: { message: "boom" } };
+      const all = state[this.table] as Array<Record<string, unknown>>;
+      const rows = all.filter((r) => this.filters.every(([c, v]) => r[c] === v));
+      if (this.op === "update") for (const r of rows) Object.assign(r, this.payload);
+      if (this.op === "delete") (state as Record<string, unknown[]>)[this.table] = all.filter((r) => !rows.includes(r));
+      const out = rows.map((r) => ({ ...r }));
+      return { data: this.single ? (out[0] ?? null) : out, error: null };
+    }
+  }
+  return { db: { from: (table: string) => new Q(table as keyof Tables) }, ops };
+}
+
+/** Both resolver branches over the fake state: exactly the two predicates of
+ * current_workspace_id_by_host (20260923000500) and workspaceIdForHost. */
+function candidatesFor(state: Tables, host: string): HostMatch[] {
+  const h = host.toLowerCase().replace(/^www\./, "");
+  return [
+    ...state.workspace_domains
+      .filter((d) => d.verified && d.hostname.toLowerCase() === h)
+      .map((d) => ({ workspaceId: d.workspace_id, source: "workspace_domains" as const, verifiedAt: d.verified_at })),
+    ...state.workspaces
+      .filter((w) => w.marketplace_domain === h && w.domain_verified_at !== null)
+      .map((w) => ({ workspaceId: w.id, source: "marketplace_domain" as const, verifiedAt: w.domain_verified_at })),
+  ];
+}
+const H = "customer.com";
+const PRIOR = { id: "row-theirs", workspace_id: THEIRS };
+const fresh = (): Tables => ({
+  workspace_domains: [{ id: "row-theirs", workspace_id: THEIRS, hostname: H, verified: false, verified_at: null }],
+  // The worst case the coordinator asked about: the previous workspace still
+  // carries the seed AND a stamped domain_verified_at (from an older
+  // verification of some other hostname).
+  workspaces: [
+    { id: THEIRS, marketplace_domain: H, domain_verified_at: "2026-03-01T00:00:00Z" },
+    { id: MINE, marketplace_domain: null, domain_verified_at: null },
+  ],
+});
+const resolves = (state: Tables) => preferredHostMatch(candidatesFor(state, H))?.workspaceId ?? null;
+const errorOf = (r: { ok: boolean; error?: string }) => ("error" in r ? String(r.error) : "");
+
+t("before the reclaim, seed + stale stamp resolve the hostname to the previous tenant (the hole)", resolves(fresh()) === THEIRS);
+
+{
+  const s = fresh();
+  const { db, ops } = fakeDb(s);
+  const r = await reclaimStaleDomainClaim(db, PRIOR, H);
+  t("reclaim succeeds", r.ok, errorOf(r));
+  t("the seed is cleared BEFORE the row is deleted, and nothing else is touched",
+    ops.join(" > ") === "workspaces.update > workspace_domains.delete", ops.join(" > "));
+  const a = s.workspaces.find((w) => w.id === THEIRS)!;
+  t("the previous tenant's marketplace_domain and domain_verified_at are both cleared",
+    a.marketplace_domain === null && a.domain_verified_at === null, JSON.stringify(a));
+  t("its row is gone", !s.workspace_domains.some((d) => d.id === "row-theirs"));
+  t("the hostname resolves to NOBODY through either branch — never the previous tenant", resolves(s) === null, String(resolves(s)));
+  // The new claimant claims (which seeds its marketplace_domain) and verifies.
+  s.workspace_domains.push({ id: "row-mine", workspace_id: MINE, hostname: H, verified: true, verified_at: "2026-09-22T00:00:00Z" });
+  s.workspaces.find((w) => w.id === MINE)!.marketplace_domain = H;
+  t("once the new claimant verifies, the hostname resolves to it", resolves(s) === MINE, String(resolves(s)));
+  // Even a domain_verified_at that somehow reappears on the previous tenant
+  // (a later verification of a different domain under old code) has no seed
+  // to attach to.
+  a.domain_verified_at = "2026-12-01T00:00:00Z";
+  t("a re-stamped domain_verified_at on the previous tenant changes nothing without the seed", resolves(s) === MINE);
+  t("the other workspace is untouched", s.workspaces.find((w) => w.id === MINE)!.domain_verified_at === null);
+}
+
+{
+  const s = fresh();
+  const { db, ops } = fakeDb(s, new Set(["workspaces.update"]));
+  const r = await reclaimStaleDomainClaim(db, PRIOR, H);
+  t("when the clear fails the reclaim is refused", !r.ok && /release the previous claim/.test(errorOf(r)), errorOf(r));
+  t("…and the row is NOT deleted", ops.length === 1 && s.workspace_domains.length === 1, ops.join(" > "));
+  t("…so nothing changed hands: the state is exactly as before", resolves(s) === THEIRS && s.workspaces[0]!.marketplace_domain === H);
+}
+
+{
+  const s = fresh();
+  const failing = new Set(["workspace_domains.delete"]);
+  const { db } = fakeDb(s, failing);
+  const r1 = await reclaimStaleDomainClaim(db, PRIOR, H);
+  t("when the delete fails after the clear, the reclaim is refused", !r1.ok, errorOf(r1));
+  t("…with the row still present and the seed already cleared",
+    s.workspace_domains.length === 1 && s.workspaces[0]!.marketplace_domain === null);
+  t("…which already stops the previous tenant resolving the hostname", resolves(s) === null);
+  failing.clear();
+  const r2 = await reclaimStaleDomainClaim(db, PRIOR, H);
+  t("a retry completes from that state", r2.ok && s.workspace_domains.length === 0, errorOf(r2));
+}
+
+{
+  // The race: the claimant verified between our read and the delete.
+  const s = fresh();
+  s.workspace_domains[0]!.verified = true;
+  s.workspace_domains[0]!.verified_at = "2026-09-21T00:00:00Z";
+  const { db, ops } = fakeDb(s);
+  const r = await reclaimStaleDomainClaim(db, PRIOR, H);
+  t("a claimant that verified in the window keeps the hostname", !r.ok && errorOf(r) === ALREADY_CONNECTED_ERROR, errorOf(r));
+  t("its row is untouched", s.workspace_domains.length === 1 && s.workspace_domains[0]!.verified);
+  const a = s.workspaces.find((w) => w.id === THEIRS)!;
+  t("the seed the clear took is restored from the now-verified row",
+    a.marketplace_domain === H && a.domain_verified_at === "2026-09-21T00:00:00Z", JSON.stringify(a));
+  t("and the hostname resolves to it — the rightful, verified owner", resolves(s) === THEIRS);
+  t("the restore is a second workspaces update, nothing more",
+    ops.filter((o) => o === "workspaces.update").length === 2 && !ops.includes("workspace_domains.update"), ops.join(" > "));
+}
+
+{
+  const s = fresh();
+  s.workspaces[0]!.marketplace_domain = "other.example";
+  const { db } = fakeDb(s);
+  const r = await reclaimStaleDomainClaim(db, PRIOR, H);
+  t("a prior workspace whose marketplace_domain is a different hostname keeps it and its stamp",
+    r.ok && s.workspaces[0]!.marketplace_domain === "other.example" && s.workspaces[0]!.domain_verified_at === "2026-03-01T00:00:00Z");
+  t("…and the reclaimed hostname still resolves to nobody", resolves(s) === null);
+}
 
 const verifyBody = domainsSrc.slice(
   domainsSrc.indexOf("export const verifyWorkspaceDomain"),
