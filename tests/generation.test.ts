@@ -479,6 +479,50 @@ console.log("\n=== settlement → billing_status ===");
     settle.includes('if (mode === "platform")') &&
       server.includes('ent.billingState === "granted"'),
   );
+
+  // Settlement is idempotent by PAGE against the credit ledger, which
+  // deduct_credits writes in the same transaction as the balance change. A
+  // run that died after deducting but before recording it on the item must
+  // not deduct again on the retry.
+  const ledgerCheck = settle.indexOf("findLedgerCharge(opts.workspaceId, opts.refId)");
+  t("settleGeneration consults the ledger for this page first", ledgerCheck > 0);
+  t(
+    "the ledger check precedes the free-quota consume",
+    ledgerCheck < settle.indexOf('rpc("consume_platform_ai_credit"'),
+  );
+  t(
+    "the ledger check precedes the deduction",
+    ledgerCheck < settle.indexOf('rpc("deduct_credits"'),
+  );
+  t(
+    "a prior ledger charge is reported as the charge, not re-deducted",
+    /if \(prior !== null\) \{\s*billing = "credits";\s*creditsCharged = prior;/.test(settle),
+  );
+  const ledgerFn = server.slice(
+    server.indexOf("export async function findLedgerCharge"),
+    server.indexOf("export async function settleGeneration"),
+  );
+  t(
+    "the ledger lookup is keyed by workspace, page id and the ai_usage reason, spends only",
+    ledgerFn.includes('.eq("workspace_id", workspaceId)') &&
+      ledgerFn.includes('.eq("ref_id", refId)') &&
+      ledgerFn.includes('.eq("reason", "ai_usage")') &&
+      ledgerFn.includes('.lt("delta", 0)'),
+  );
+  t(
+    "a ledger read failure throws instead of deducting blind",
+    /if \(error\) throw new Error\(`credit ledger read failed/.test(ledgerFn),
+  );
+  const fns = read("src/lib/generation.functions.ts");
+  t(
+    "batch settlement passes the page id as the ledger key",
+    (fns.match(/feature: "batch_generation",\s*refId: (page\.id|row\.page_id),/g) ?? []).length ===
+      2,
+  );
+  t(
+    "quick page settlement passes the page id as the ledger key",
+    /feature: "quick_page",\s*refId: page\.id,/.test(read("src/lib/admin-quick-page.functions.ts")),
+  );
 }
 
 console.log("\n=== model policy ===");

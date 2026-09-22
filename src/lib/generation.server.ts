@@ -895,11 +895,35 @@ export async function persistGeneratedPage(input: {
 }
 
 /**
+ * Credits already deducted for this page, or null. deduct_credits writes the
+ * ledger row in the same transaction as the balance change, so the ledger —
+ * not the item, not memory — is the truth about whether a page was paid for.
+ * A settlement that died between the deduction and the item update is
+ * recognised here on the retry instead of charging a second time. Throws on
+ * a read error: not knowing must never turn into a fresh deduction.
+ */
+export async function findLedgerCharge(workspaceId: string, refId: string): Promise<number | null> {
+  const { data, error } = await sb()
+    .from("credit_ledger")
+    .select("delta")
+    .eq("workspace_id", workspaceId)
+    .eq("ref_id", refId)
+    .eq("reason", "ai_usage")
+    .lt("delta", 0)
+    .limit(1);
+  if (error) throw new Error(`credit ledger read failed: ${error.message}`);
+  const row = (data ?? [])[0] as { delta: number } | undefined;
+  return row ? Math.abs(Number(row.delta) || 0) : null;
+}
+
+/**
  * Step 3: settle. Runs ONLY after a page row exists.
  *   BYOK      → nothing to charge; logged for the usage history only.
  *   granted   → included in the beta grant; logged, not charged.
- *   platform  → spend the free quota first (consume_platform_ai_credit), then
- *               purchased credits (deduct_credits).
+ *   platform  → already in the ledger for this page? then it is paid (a
+ *               crashed earlier settlement) → otherwise spend the free quota
+ *               first (consume_platform_ai_credit), then purchased credits
+ *               (deduct_credits).
  * A deduction that fails is reported as `unbilled` with creditsCharged 0 —
  * never as a charge that did not happen — and logged loudly for ops. The
  * caller decides what that means for its record (a batch item fails so its
@@ -923,10 +947,20 @@ export async function settleGeneration(opts: {
   let failure: string | null = null;
 
   if (mode === "platform") {
-    const { error: qErr } = await supabaseAdmin.rpc("consume_platform_ai_credit", {
-      _workspace_id: opts.workspaceId,
-    });
-    if (!qErr) {
+    // Idempotent by page: a deduction already on the ledger for this page is
+    // THE charge. Checked before touching the free quota too, so a retry after
+    // a crash cannot pay twice in either currency for a page paid in credits.
+    const prior = opts.refId ? await findLedgerCharge(opts.workspaceId, opts.refId) : null;
+    const { error: qErr } =
+      prior === null
+        ? await supabaseAdmin.rpc("consume_platform_ai_credit", {
+            _workspace_id: opts.workspaceId,
+          })
+        : { error: null };
+    if (prior !== null) {
+      billing = "credits";
+      creditsCharged = prior;
+    } else if (!qErr) {
       billing = "free_quota";
     } else if (
       typeof qErr.message === "string" &&
