@@ -9,21 +9,23 @@
  * session could read it, so a run that never happened left no trace an
  * operator would ever see.
  *
- * ON THE GATE. Access is by SEND_EMAIL_HOOK_SECRET, the same shared secret the
- * email probe uses, deliberately NOT CRON_SECRET: gating the diagnostic behind
- * the very credential whose absence it reports would make it useless in
- * exactly the outage it is for. One ops credential opens both diagnostics.
- * Compared in constant time, with byte-identical rejections so this cannot
- * become an oracle for whether that secret is set.
+ * ON THE GATE. Access is by OPS_PROBE_SECRET, the shared secret dedicated to
+ * the ops probes (src/lib/ops-probe-auth.ts), deliberately NOT CRON_SECRET:
+ * gating the diagnostic behind the very credential whose absence it reports
+ * would make it useless in exactly the outage it is for. It is no longer
+ * SEND_EMAIL_HOOK_SECRET either — that is the key Auth signs the send-email
+ * hook with, and a signing key must never travel as a plaintext bearer token.
+ * One ops credential opens both diagnostics, compared in constant time, with
+ * byte-identical rejections so this cannot become an oracle for whether that
+ * secret is set.
  *
  * Read-only. No sync is triggered, nothing is written, and no customer content
  * is returned — workspace ids, timestamps, counts and the sync's own recorded
  * error strings only.
  */
 import { createFileRoute } from "@tanstack/react-router";
-import { timingSafeEqual } from "node:crypto";
-import { decodeSecret } from "@/lib/auth-email-hook";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { opsProbeAuthorised } from "@/lib/ops-probe-auth";
 import { assessSyncHealth, type IntegrationRow } from "@/lib/sync-health";
 
 function json(body: unknown, status = 200) {
@@ -33,25 +35,11 @@ function json(body: unknown, status = 200) {
   });
 }
 
-function authorised(presented: string | null): boolean {
-  const configured = process.env.SEND_EMAIL_HOOK_SECRET;
-  if (!configured || !presented) return false;
-  const a = decodeSecret(presented);
-  const b = decodeSecret(configured);
-  if (!a || !b || a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
 export const Route = createFileRoute("/api/public/ops/sync-health")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        const presented =
-          request.headers.get("x-founders-probe-secret") ??
-          request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
-          null;
-
-        if (!authorised(presented)) {
+        if (!opsProbeAuthorised(request)) {
           // Identical for "no secret configured" and "wrong secret".
           return json({ error: "unauthorized" }, 401);
         }

@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { decideCapacity } from "@/lib/billing-capacity";
 import { readGrantedPagesOrNull } from "@/lib/entitlement-grants.server";
+import { buildListingCounter, isThinPage, type ListingLocation } from "@/lib/thin-page";
 
 const sb = () => supabaseAdmin as any;
 
@@ -42,30 +43,88 @@ export function isPlatformHost(hostname: string): boolean {
   return PLATFORM_HOSTS.has(normalizeHost(hostname));
 }
 
+/** One candidate answer to "which workspace does this host belong to?". */
+export type HostMatch = {
+  workspaceId: string;
+  /**
+   * Where the match came from. A verified `workspace_domains` row is proof of
+   * ownership of THIS hostname (a DNS/file challenge passed for it).
+   * `marketplace_domain` is the legacy workspace-level field: seeded the moment
+   * a hostname is claimed, gated only by the workspace-level domain_verified_at.
+   */
+  source: "workspace_domains" | "marketplace_domain";
+  /** verified_at (custom domain) or domain_verified_at (legacy). */
+  verifiedAt: string | null;
+};
+
+/**
+ * THE PREFERENCE RULE, shared with current_workspace_id_by_host (migration
+ * 20260923000500). The two sources can name different workspaces for one
+ * hostname — an unverified claim expires after seven days and the hostname
+ * can then be claimed and verified elsewhere, while the first workspace still
+ * carries it in marketplace_domain — and "first match wins" used to mean
+ * whichever the query returned first.
+ *
+ * Order: a verified custom domain outranks the legacy branch; within a
+ * source the most recent verification wins, then the lowest workspace id.
+ * Deterministic, so the sitemap and the page path agree with the database.
+ */
+export function preferredHostMatch(matches: readonly HostMatch[]): HostMatch | null {
+  if (matches.length === 0) return null;
+  const rank = (m: HostMatch) => (m.source === "workspace_domains" ? 0 : 1);
+  // Unknown or unparseable dates sort LAST within a source (SQL: NULLS LAST).
+  const at = (m: HostMatch) => {
+    const t = m.verifiedAt ? Date.parse(m.verifiedAt) : NaN;
+    return Number.isFinite(t) ? t : Number.MIN_SAFE_INTEGER;
+  };
+  const byId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  return [...matches].sort(
+    (a, b) => rank(a) - rank(b) || at(b) - at(a) || byId(a.workspaceId, b.workspaceId),
+  )[0]!;
+}
+
 /**
  * Resolve a public host to a workspace id via a verified custom domain OR a
- * verified marketplace_domain. Mirrors current_workspace_id_by_host's trust
- * boundary (verified only) so unverified/spoofed hosts never expose a sitemap.
+ * verified marketplace_domain. Mirrors current_workspace_id_by_host: the same
+ * trust boundary (verified only, so unverified/spoofed hosts never expose a
+ * sitemap) and the same preference between the two sources.
  */
 export async function workspaceIdForHost(hostname: string): Promise<string | null> {
   const h = normalizeHost(hostname);
   if (!h || !h.includes(".") || isPlatformHost(h)) return null;
 
-  const { data: domain } = await sb()
-    .from("workspace_domains")
-    .select("workspace_id")
-    .eq("hostname", h)
-    .eq("verified", true)
-    .maybeSingle();
-  if (domain?.workspace_id) return domain.workspace_id as string;
+  const [domains, workspaces] = await Promise.all([
+    sb()
+      .from("workspace_domains")
+      .select("workspace_id, verified_at")
+      .eq("hostname", h)
+      .eq("verified", true),
+    sb()
+      .from("workspaces")
+      .select("id, domain_verified_at")
+      .eq("marketplace_domain", h)
+      .not("domain_verified_at", "is", null),
+  ]);
+  if (domains.error) {
+    console.error("[workspaceIdForHost] workspace_domains read failed:", domains.error.message);
+  }
+  if (workspaces.error) {
+    console.error("[workspaceIdForHost] workspaces read failed:", workspaces.error.message);
+  }
 
-  const { data: ws } = await sb()
-    .from("workspaces")
-    .select("id")
-    .eq("marketplace_domain", h)
-    .not("domain_verified_at", "is", null)
-    .maybeSingle();
-  return (ws?.id as string) ?? null;
+  const matches: HostMatch[] = [
+    ...((domains.data ?? []) as any[]).map((d) => ({
+      workspaceId: String(d.workspace_id),
+      source: "workspace_domains" as const,
+      verifiedAt: (d.verified_at as string | null) ?? null,
+    })),
+    ...((workspaces.data ?? []) as any[]).map((w) => ({
+      workspaceId: String(w.id),
+      source: "marketplace_domain" as const,
+      verifiedAt: (w.domain_verified_at as string | null) ?? null,
+    })),
+  ];
+  return preferredHostMatch(matches)?.workspaceId ?? null;
 }
 
 /**
@@ -117,29 +176,72 @@ export async function tenantSitemapXml(hostname: string): Promise<string | null>
   // sitemap URL would fail to resolve.
   const h = requestHost(hostname);
 
-  const [{ data: tenantPages }, { data: legacyPages }] = await Promise.all([
+  // body_markdown and listing_filter ride along with each page, and the
+  // workspace's published listings come in one read: together they let the
+  // sitemap apply the page's own thin-page rule (below) without a count query
+  // per page. Bodies are the largest part of the payload; page counts are
+  // bounded by plan capacity, and this response is cached for an hour.
+  const [{ data: tenantPages }, { data: legacyPages }, listingsRead] = await Promise.all([
     sb()
       .from("tenant_pages")
-      .select("slug, updated_at")
+      .select("slug, updated_at, body_markdown, listing_filter")
       .eq("workspace_id", workspaceId)
       .eq("status", "published")
       .order("updated_at", { ascending: false })
       .limit(50_000),
     sb()
       .from("content_pages")
-      .select("slug, updated_at")
+      .select("slug, updated_at, body_markdown")
       .eq("workspace_id", workspaceId)
       .eq("status", "published")
       .eq("in_sitemap", true)
       .order("updated_at", { ascending: false })
       .limit(50_000),
+    sb()
+      .from("tenant_listings")
+      .select("city, state, category", { count: "exact" })
+      .eq("workspace_id", workspaceId)
+      .eq("state_published", true)
+      .limit(50_000),
   ]);
 
+  // THE THIN-PAGE RULE, applied here too. a.$slug.tsx renders a page with no
+  // listings and under 300 body characters as `noindex, follow`; listing such
+  // a URL here tells Google to crawl a page that then asks not to be indexed,
+  // which Search Console reports as an error against the whole sitemap.
+  //
+  // Fails OPEN, like everything else on this path: if the listings read
+  // errored, or was cut short by the API row cap so some pages' listings were
+  // never seen, every page would look empty and a paying customer's sitemap
+  // would shrink over a transient. Then the filter is skipped, not guessed.
+  const listingRows = (listingsRead.data ?? []) as ListingLocation[];
+  const listingsComplete =
+    !listingsRead.error &&
+    (listingsRead.count == null || listingsRead.count <= listingRows.length);
+  if (!listingsComplete) {
+    console.error(
+      "[tenantSitemapXml] listings read incomplete, skipping the thin-page filter:",
+      listingsRead.error?.message ?? `${listingRows.length} of ${listingsRead.count} rows`,
+    );
+  }
+  const countListings = listingsComplete ? buildListingCounter(listingRows) : null;
+
   const seen = new Set<string>();
-  const rows = [...(tenantPages || []), ...(legacyPages || [])].filter((p: any) => {
+  const rows = [
+    ...(tenantPages || []).map((p: any) => ({ ...p, legacy: false })),
+    // Legacy content_pages render with no listings at all (see
+    // getPublicTenantPage), so only their body decides.
+    ...(legacyPages || []).map((p: any) => ({ ...p, legacy: true })),
+  ].filter((p: any) => {
     const slug = String(p.slug || "").replace(/^\/+/, "");
     if (!slug || seen.has(slug)) return false;
+    // Claimed before the thin test: the page path serves the first match for
+    // a slug, so a thin tenant page must not let a legacy twin take its place.
     seen.add(slug);
+    if (countListings) {
+      const listingCount = p.legacy ? 0 : countListings(p.listing_filter ?? {});
+      if (isThinPage({ listingCount, bodyMarkdown: p.body_markdown })) return false;
+    }
     return true;
   });
 

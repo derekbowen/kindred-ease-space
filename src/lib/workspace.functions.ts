@@ -238,7 +238,11 @@ export const updateWorkspaceProfile = createServerFn({ method: "POST" })
     });
     if (!isOwner) throw new Error("Not allowed");
 
-    const patch: { name?: string; marketplace_domain?: string | null } = {};
+    const patch: {
+      name?: string;
+      marketplace_domain?: string | null;
+      domain_verified_at?: string | null;
+    } = {};
     if (data.name !== undefined) patch.name = data.name;
     if (data.marketplaceDomain !== undefined) {
       const normalized = data.marketplaceDomain
@@ -255,6 +259,35 @@ export const updateWorkspaceProfile = createServerFn({ method: "POST" })
         throw new Error("Invalid domain — use a hostname like yourmarketplace.com");
       }
       patch.marketplace_domain = normalized || null;
+
+      // A CHANGED marketplace_domain IS AN UNPROVEN HOSTNAME. domain_verified_at
+      // is what lets the host resolver's legacy branch send public traffic for
+      // marketplace_domain to this workspace, and it was stamped for the
+      // hostname verified in Settings → Domains, not for whatever is typed
+      // here. Carrying it across let an owner point public resolution at any
+      // hostname with no challenge at all. On a change the flag is reset: to
+      // the verification date of this workspace's own verified custom domain
+      // when the new value IS that domain, otherwise to null. Re-saving the
+      // unchanged value leaves it alone.
+      const { data: current, error: readErr } = await supabaseAdmin
+        .from("workspaces")
+        .select("marketplace_domain")
+        .eq("id", data.workspaceId)
+        .maybeSingle();
+      if (readErr) throw new Error(readErr.message);
+      if ((current?.marketplace_domain ?? null) !== patch.marketplace_domain) {
+        patch.domain_verified_at = null;
+        if (patch.marketplace_domain) {
+          const { data: own } = await supabaseAdmin
+            .from("workspace_domains")
+            .select("verified_at")
+            .eq("workspace_id", data.workspaceId)
+            .eq("hostname", patch.marketplace_domain)
+            .eq("verified", true)
+            .maybeSingle();
+          if (own?.verified_at) patch.domain_verified_at = own.verified_at;
+        }
+      }
     }
     const { error } = await supabaseAdmin
       .from("workspaces")

@@ -19,23 +19,22 @@
  * make it useless in exactly the situation it is for.
  *
  * Access is therefore by shared secret: the caller must present
- * SEND_EMAIL_HOOK_SECRET, which is already provisioned for the hook and is of
- * the same sensitivity as the mail path itself. Compared in constant time,
- * with the same decoder the hook uses so the dashboard's `v1,whsec_…` form
- * works verbatim.
+ * OPS_PROBE_SECRET, a credential dedicated to the ops probes. It used to be
+ * SEND_EMAIL_HOOK_SECRET — the key Auth signs the send-email hook with — which
+ * put a signing key into every runbook and shell history that ever called
+ * this. See src/lib/ops-probe-auth.ts for the gate and why it has no fallback.
  *
  * Sending is opt-in. Without `?send=1` this only reads DNS and reports
  * configuration, so the common case is side-effect free.
  */
 import { createFileRoute } from "@tanstack/react-router";
-import { timingSafeEqual } from "node:crypto";
-import { decodeSecret } from "@/lib/auth-email-hook";
 import {
   checkSendingDomain,
   returnPathFromEnv,
   sendingDomainFromEnv,
 } from "@/lib/email-deliverability";
 import { sendEmail } from "@/lib/email.server";
+import { opsProbeAuthorised } from "@/lib/ops-probe-auth";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body, null, 2), {
@@ -44,29 +43,14 @@ function json(body: unknown, status = 200) {
   });
 }
 
-/** Constant-time compare of the presented secret against the configured one. */
-function authorised(presented: string | null): boolean {
-  const configured = process.env.SEND_EMAIL_HOOK_SECRET;
-  if (!configured || !presented) return false;
-  const a = decodeSecret(presented);
-  const b = decodeSecret(configured);
-  if (!a || !b || a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
 export const Route = createFileRoute("/api/public/ops/email-probe")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const presented =
-          request.headers.get("x-founders-probe-secret") ??
-          request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
-          null;
-
-        if (!authorised(presented)) {
+        if (!opsProbeAuthorised(request)) {
           // Deliberately identical for "no secret configured" and "wrong
           // secret": this endpoint is unauthenticated, so it must not become an
-          // oracle for whether the hook secret is set.
+          // oracle for whether the probe secret is set.
           return json({ error: "unauthorized" }, 401);
         }
 

@@ -15,6 +15,10 @@ import {
   SHARETRIBE_UNAVAILABLE_MESSAGE,
   SYNC_ALL_BATCH_LIMIT,
 } from "../src/lib/sharetribe-sync.server";
+import {
+  MARKETPLACE_ALREADY_CONNECTED_ERROR,
+  isMarketplaceTakenError,
+} from "../src/lib/sharetribe-sync.functions";
 
 let p = 0, f = 0;
 const t = (n: string, c: boolean, x = "") => { if (c) { p++; console.log("  PASS  " + n); } else { f++; console.log("  FAIL  " + n + "  " + x); } };
@@ -198,6 +202,55 @@ t("client_secret_vault_id made nullable", /ALTER COLUMN client_secret_vault_id D
 t("marketplace_id is NOT dropped/nullable", !/marketplace_id DROP NOT NULL/.test(m1) && /marketplace_id still required/.test(m1));
 t("comment explains why no secret in marketplace mode", /COMMENT ON COLUMN public\.tenant_integrations\.client_secret_vault_id[\s\S]*NULL for auth_mode = marketplace/.test(m1));
 t("migration 1 ends with a verification block", /AS check,[\s\S]*AS ok[\s\S]*UNION ALL/.test(m1));
+
+console.log("\n=== One workspace per marketplace (S3) ===");
+// Connecting proves a working Client ID, not ownership. Until an ownership
+// challenge exists the database refuses a second workspace on the same
+// marketplace, and the app turns that refusal into a message that names nobody.
+t("migration 1 adds UNIQUE (provider, marketplace_id)",
+  /ADD CONSTRAINT tenant_integrations_provider_marketplace_id_key\s+UNIQUE \(provider, marketplace_id\)/.test(m1));
+t("the constraint is guarded so the file re-runs cleanly",
+  /IF NOT EXISTS \(\s*SELECT 1 FROM pg_constraint\s+WHERE conname = 'tenant_integrations_provider_marketplace_id_key'/.test(m1));
+t("verification checks the constraint exists and is a unique constraint",
+  /one workspace per \(provider, marketplace_id\)[\s\S]*conname = 'tenant_integrations_provider_marketplace_id_key'[\s\S]*contype = 'u'/.test(m1));
+const rb1 = readFileSync(join(import.meta.dir, "..", "supabase", "rollback", "20260923000100_marketplace_api_connection_rollback.sql"), "utf8");
+t("rollback drops the constraint", /DROP CONSTRAINT IF EXISTS tenant_integrations_provider_marketplace_id_key/.test(rb1));
+
+t("SQLSTATE 23505 is the marketplace-taken signal", isMarketplaceTakenError({ code: "23505" }));
+t("the standard unique-violation text counts even without a code",
+  isMarketplaceTakenError({ message: 'duplicate key value violates unique constraint "tenant_integrations_provider_marketplace_id_key"' }));
+t("other codes are not", !isMarketplaceTakenError({ code: "23503", message: "foreign key" }) && !isMarketplaceTakenError({ code: "PGRST116" }));
+t("no error is not", !isMarketplaceTakenError(null) && !isMarketplaceTakenError(undefined) && !isMarketplaceTakenError({}));
+t("the refusal is a full sentence that says to contact support",
+  /[.!]$/.test(MARKETPLACE_ALREADY_CONNECTED_ERROR) && /contact support/i.test(MARKETPLACE_ALREADY_CONNECTED_ERROR), MARKETPLACE_ALREADY_CONNECTED_ERROR);
+t("the refusal names no workspace, owner, id or marketplace",
+  !/[0-9a-f]{8}-[0-9a-f]{4}/i.test(MARKETPLACE_ALREADY_CONNECTED_ERROR) && !/workspace_id|owner|@|marketplace_id/i.test(MARKETPLACE_ALREADY_CONNECTED_ERROR), MARKETPLACE_ALREADY_CONNECTED_ERROR);
+
+const fnSrc = readFileSync(join(import.meta.dir, "..", "src", "lib", "sharetribe-sync.functions.ts"), "utf8");
+const connectBody = fnSrc.slice(fnSrc.indexOf("export const connectSharetribe"), fnSrc.indexOf("export const disconnectSharetribe"));
+t("connect checks for another workspace holding the marketplace before the Vault write",
+  connectBody.indexOf('.neq("workspace_id", data.workspaceId)') > 0 &&
+    connectBody.indexOf('.neq("workspace_id", data.workspaceId)') < connectBody.indexOf("tenant_set_integration_secret"));
+t("that check reads only an id, never another workspace's row",
+  /\.select\("id"\)\s*\.eq\("provider", "sharetribe"\)\s*\.eq\("marketplace_id", v\.marketplaceId\)/.test(connectBody));
+t("a 23505 on the upsert becomes the friendly refusal",
+  /if \(isMarketplaceTakenError\(upsertErr\)\) \{[\s\S]*?return \{ ok: false as const, error: MARKETPLACE_ALREADY_CONNECTED_ERROR \};/.test(connectBody));
+t("the 23505 log line carries the code, not the details with the key",
+  /already connected elsewhere", upsertErr\.code\)/.test(connectBody));
+
+console.log("\n=== Disconnect: listings first, row last, idempotent (C10) ===");
+const disconnectBody = fnSrc.slice(fnSrc.indexOf("export const disconnectSharetribe"), fnSrc.indexOf("export const runSharetribeSync"));
+const listingsAt = disconnectBody.indexOf('.from("tenant_listings")');
+const rowAt = disconnectBody.indexOf('.from("tenant_integrations")');
+t("listings are deleted before the integration row", listingsAt > 0 && rowAt > listingsAt, `${listingsAt} vs ${rowAt}`);
+t("a failed listings delete says the connection is still in place and to retry",
+  /still in place\. Try Disconnect again\./.test(disconnectBody));
+t("a failed row delete also points at Disconnect again", /could not be\. Try Disconnect again\./.test(disconnectBody));
+t("no message claims the connection was removed while listings remain", !/connection was removed, but/.test(disconnectBody));
+t("both deletes filter by workspace (never a bare delete)",
+  (disconnectBody.match(/\.delete\(\)\s*\.eq\("workspace_id", data\.workspaceId\)/g) ?? []).length === 2);
+t("the vault cleanup still runs after both deletes",
+  disconnectBody.indexOf("tenant_delete_integration_secret") > rowAt);
 
 const m2 = readFileSync(join(migDir, "20260923000200_sync_fanout_cron.sql"), "utf8");
 t("both old jobs unscheduled", m2.includes("cron.unschedule('sharetribe-sync-30min')") && m2.includes("cron.unschedule('sync-sharetribe-30min')"));

@@ -83,9 +83,10 @@ GRANT EXECUTE ON FUNCTION public.consume_platform_ai_credit(uuid) TO service_rol
 --   tenant_set_integration_secret  20260629120000 (uuid, text)
 --   tenant_set_workspace_secret    20260625215247
 --   tenant_delete_workspace_secret 20260625215247
--- A signature that has drifted is skipped with a NOTICE rather than failing
--- the migration; the verification block at the bottom treats a missing
--- function as satisfied for the same reason.
+-- A signature that has drifted is skipped here with a NOTICE so the loop
+-- reports every drifted name rather than stopping at the first; the drift
+-- guard ahead of the verification block then fails the migration if any
+-- signature did not resolve, so a skip can never pass silently.
 DO $$
 DECLARE sig text;
 BEGIN
@@ -131,7 +132,42 @@ END $$;
 -- removes the anonymous PostgREST insert path and changes nothing for the app.
 DROP POLICY IF EXISTS "Anyone can create tickets" ON public.support_tickets;
 
--- Verification: every row should say true.
+-- Drift guard ------------------------------------------------------------------
+-- Every signature the grant loops above target must resolve. The first
+-- version wrapped each verification row in coalesce(…, true), so a function
+-- whose signature had drifted was skipped by the loops AND reported OK below
+-- — the one outcome a verification block exists to prevent. Any name that
+-- does not resolve now fails the migration, loudly, with the full list; the
+-- migration runs in one transaction, so nothing above is left half-applied.
+DO $$
+DECLARE
+  sig text;
+  missing text[] := ARRAY[]::text[];
+BEGIN
+  FOREACH sig IN ARRAY ARRAY[
+    'public.consume_platform_ai_credit(uuid)',
+    'public.provision_workspace_for_user(text,text,text,boolean)',
+    'public.tenant_set_ai_credential(uuid,text,text,text,jsonb)',
+    'public.tenant_delete_ai_credential(uuid,text)',
+    'public.tenant_set_integration_secret(uuid,text)',
+    'public.tenant_set_workspace_secret(uuid,text,text)',
+    'public.tenant_delete_workspace_secret(uuid,uuid)',
+    'public.current_workspace_id_by_host(text)',
+    'public.workspace_for_host(text)'
+  ] LOOP
+    IF to_regprocedure(sig) IS NULL THEN
+      missing := missing || sig;
+    END IF;
+  END LOOP;
+  IF cardinality(missing) > 0 THEN
+    RAISE EXCEPTION 'launch_hardening: signature drift — % does not resolve, so its grants were skipped. Fix the signature list, then re-run.',
+      array_to_string(missing, ', ');
+  END IF;
+END $$;
+
+-- Verification: every row should say true. Nothing here is wrapped in
+-- coalesce(…, true): the drift guard guarantees every signature resolves,
+-- so a NULL from has_function_privilege would be a real failure, not a skip.
 SELECT 'consume_platform_ai_credit: anon cannot execute' AS check,
        NOT has_function_privilege('anon', 'public.consume_platform_ai_credit(uuid)', 'EXECUTE') AS ok
 UNION ALL SELECT 'consume_platform_ai_credit: authenticated cannot execute',
@@ -142,29 +178,29 @@ UNION ALL SELECT 'consume_platform_ai_credit: membership guard present',
        (SELECT prosrc LIKE '%is_workspace_member(_workspace_id, auth.uid())%'
           FROM pg_proc WHERE oid = 'public.consume_platform_ai_credit(uuid)'::regprocedure)
 UNION ALL SELECT 'anon revoked: provision_workspace_for_user',
-       coalesce(NOT has_function_privilege('anon', to_regprocedure('public.provision_workspace_for_user(text,text,text,boolean)'), 'EXECUTE'), true)
+       NOT has_function_privilege('anon', to_regprocedure('public.provision_workspace_for_user(text,text,text,boolean)'), 'EXECUTE')
 UNION ALL SELECT 'anon revoked: tenant_set_ai_credential',
-       coalesce(NOT has_function_privilege('anon', to_regprocedure('public.tenant_set_ai_credential(uuid,text,text,text,jsonb)'), 'EXECUTE'), true)
+       NOT has_function_privilege('anon', to_regprocedure('public.tenant_set_ai_credential(uuid,text,text,text,jsonb)'), 'EXECUTE')
 UNION ALL SELECT 'anon revoked: tenant_delete_ai_credential',
-       coalesce(NOT has_function_privilege('anon', to_regprocedure('public.tenant_delete_ai_credential(uuid,text)'), 'EXECUTE'), true)
+       NOT has_function_privilege('anon', to_regprocedure('public.tenant_delete_ai_credential(uuid,text)'), 'EXECUTE')
 UNION ALL SELECT 'anon revoked: tenant_set_integration_secret',
-       coalesce(NOT has_function_privilege('anon', to_regprocedure('public.tenant_set_integration_secret(uuid,text)'), 'EXECUTE'), true)
+       NOT has_function_privilege('anon', to_regprocedure('public.tenant_set_integration_secret(uuid,text)'), 'EXECUTE')
 UNION ALL SELECT 'anon revoked: tenant_set_workspace_secret',
-       coalesce(NOT has_function_privilege('anon', to_regprocedure('public.tenant_set_workspace_secret(uuid,text,text)'), 'EXECUTE'), true)
+       NOT has_function_privilege('anon', to_regprocedure('public.tenant_set_workspace_secret(uuid,text,text)'), 'EXECUTE')
 UNION ALL SELECT 'anon revoked: tenant_delete_workspace_secret',
-       coalesce(NOT has_function_privilege('anon', to_regprocedure('public.tenant_delete_workspace_secret(uuid,uuid)'), 'EXECUTE'), true)
+       NOT has_function_privilege('anon', to_regprocedure('public.tenant_delete_workspace_secret(uuid,uuid)'), 'EXECUTE')
 UNION ALL SELECT 'authenticated kept: tenant + provision RPCs',
-       coalesce(has_function_privilege('authenticated', to_regprocedure('public.provision_workspace_for_user(text,text,text,boolean)'), 'EXECUTE'), true)
-       AND coalesce(has_function_privilege('authenticated', to_regprocedure('public.tenant_set_ai_credential(uuid,text,text,text,jsonb)'), 'EXECUTE'), true)
-       AND coalesce(has_function_privilege('authenticated', to_regprocedure('public.tenant_delete_ai_credential(uuid,text)'), 'EXECUTE'), true)
-       AND coalesce(has_function_privilege('authenticated', to_regprocedure('public.tenant_set_integration_secret(uuid,text)'), 'EXECUTE'), true)
-       AND coalesce(has_function_privilege('authenticated', to_regprocedure('public.tenant_set_workspace_secret(uuid,text,text)'), 'EXECUTE'), true)
-       AND coalesce(has_function_privilege('authenticated', to_regprocedure('public.tenant_delete_workspace_secret(uuid,uuid)'), 'EXECUTE'), true)
+       has_function_privilege('authenticated', to_regprocedure('public.provision_workspace_for_user(text,text,text,boolean)'), 'EXECUTE')
+       AND has_function_privilege('authenticated', to_regprocedure('public.tenant_set_ai_credential(uuid,text,text,text,jsonb)'), 'EXECUTE')
+       AND has_function_privilege('authenticated', to_regprocedure('public.tenant_delete_ai_credential(uuid,text)'), 'EXECUTE')
+       AND has_function_privilege('authenticated', to_regprocedure('public.tenant_set_integration_secret(uuid,text)'), 'EXECUTE')
+       AND has_function_privilege('authenticated', to_regprocedure('public.tenant_set_workspace_secret(uuid,text,text)'), 'EXECUTE')
+       AND has_function_privilege('authenticated', to_regprocedure('public.tenant_delete_workspace_secret(uuid,uuid)'), 'EXECUTE')
 UNION ALL SELECT 'host resolvers: anon and authenticated revoked',
-       coalesce(NOT has_function_privilege('anon', to_regprocedure('public.current_workspace_id_by_host(text)'), 'EXECUTE'), true)
-       AND coalesce(NOT has_function_privilege('authenticated', to_regprocedure('public.current_workspace_id_by_host(text)'), 'EXECUTE'), true)
-       AND coalesce(NOT has_function_privilege('anon', to_regprocedure('public.workspace_for_host(text)'), 'EXECUTE'), true)
-       AND coalesce(NOT has_function_privilege('authenticated', to_regprocedure('public.workspace_for_host(text)'), 'EXECUTE'), true)
+       NOT has_function_privilege('anon', to_regprocedure('public.current_workspace_id_by_host(text)'), 'EXECUTE')
+       AND NOT has_function_privilege('authenticated', to_regprocedure('public.current_workspace_id_by_host(text)'), 'EXECUTE')
+       AND NOT has_function_privilege('anon', to_regprocedure('public.workspace_for_host(text)'), 'EXECUTE')
+       AND NOT has_function_privilege('authenticated', to_regprocedure('public.workspace_for_host(text)'), 'EXECUTE')
 UNION ALL SELECT 'support_tickets: anon insert policy gone',
        NOT EXISTS (SELECT 1 FROM pg_policies
                     WHERE schemaname = 'public' AND tablename = 'support_tickets'
