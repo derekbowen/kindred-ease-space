@@ -58,6 +58,34 @@ function genToken(): string {
  * edge reads per-domain routing from the database, never from config files. */
 export const EDGE_HOSTNAME = "proxy.founders.click";
 
+/** How long an unverified claim holds a hostname before addWorkspaceDomain
+ * may reclaim it for someone else. workspace_domains.hostname is UNIQUE
+ * regardless of verification, so without an expiry a typo, an abandoned
+ * trial or a squatter blocked the real owner forever. Seven days is long
+ * enough for a slow DNS change and short enough to be recoverable. */
+export const UNVERIFIED_DOMAIN_CLAIM_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+const ALREADY_CONNECTED_ERROR =
+  "That hostname is already connected to a workspace. Unverified claims expire after 7 days; a verified domain must be removed by its owner first.";
+
+/** Pure decision: may `prior` (the existing workspace_domains row for the
+ * hostname being added) be deleted so `workspaceId` can claim it? Only a
+ * stale, unverified claim from ANOTHER workspace qualifies. A verified row is
+ * somebody's live domain; the same workspace's own row is a duplicate they
+ * can see and remove themselves. Anything unparseable fails closed. */
+export function shouldReclaimUnverifiedDomain(
+  prior: { workspace_id: string; verified: boolean; created_at: string },
+  workspaceId: string,
+  now: Date = new Date(),
+): boolean {
+  if (prior.verified) return false;
+  if (prior.workspace_id === workspaceId) return false;
+  const created = Date.parse(prior.created_at);
+  if (!Number.isFinite(created)) return false;
+  const age = now.getTime() - created;
+  return age >= UNVERIFIED_DOMAIN_CLAIM_TTL_MS;
+}
+
 async function dohQuery(name: string, type: "A" | "CNAME" | "NS" | "TXT"): Promise<string[]> {
   try {
     const ctrl = new AbortController();
@@ -210,6 +238,31 @@ export const addWorkspaceDomain = createServerFn({ method: "POST" })
       };
     }
 
+    // The hostname may already be claimed. A stale unverified claim from
+    // another workspace is reclaimed here so the real owner can proceed;
+    // anything younger, or verified, keeps its refusal. There is nothing to
+    // deprovision — an unverified row never reached the edge.
+    const { data: prior, error: priorErr } = await sb()
+      .from("workspace_domains")
+      .select("id, workspace_id, verified, created_at")
+      .eq("hostname", hostname)
+      .maybeSingle();
+    if (priorErr) return { ok: false as const, error: priorErr.message };
+    if (prior) {
+      if (!shouldReclaimUnverifiedDomain(prior, data.workspaceId)) {
+        return { ok: false as const, error: ALREADY_CONNECTED_ERROR };
+      }
+      // `verified = false` again on the delete: if the claimant verified in
+      // the window between our read and this write, the unique index below
+      // refuses the insert rather than us deleting a live domain.
+      const { error: delErr } = await sb()
+        .from("workspace_domains")
+        .delete()
+        .eq("id", prior.id)
+        .eq("verified", false);
+      if (delErr) return { ok: false as const, error: delErr.message };
+    }
+
     // Capture the customer's CURRENT origin and DNS provider BEFORE any
     // cutover — full-proxy mode routes non-/a/* traffic back to this origin.
     const detected = await detectDomainDns(hostname);
@@ -233,7 +286,8 @@ export const addWorkspaceDomain = createServerFn({ method: "POST" })
       .maybeSingle();
     if (error) {
       if (String(error.message).toLowerCase().includes("duplicate")) {
-        return { ok: false as const, error: "That hostname is already connected." };
+        // Lost a race with another claimant since the lookup above.
+        return { ok: false as const, error: ALREADY_CONNECTED_ERROR };
       }
       return { ok: false as const, error: error.message };
     }
