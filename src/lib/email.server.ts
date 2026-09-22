@@ -166,7 +166,7 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
   <p><strong>Three steps to your first ranked page:</strong></p>
   <ol>
     <li>Connect your Sharetribe marketplace</li>
-    <li>Sync your listings (we do this automatically every 30 min)</li>
+    <li>Import your listings (you can re-sync any time from Settings → Sharetribe)</li>
     <li>Generate your first City Hub page</li>
   </ol>
   <p style="margin:28px 0;"><a href="{{appUrl}}" style="${btnStyle}">Open your dashboard</a></p>

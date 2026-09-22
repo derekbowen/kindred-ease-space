@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { sendEmail, welcomeEmailTemplate } from "@/lib/email.server";
+import { SUPPORT_INBOX_EMAIL, sendEmail, welcomeEmailTemplate } from "@/lib/email.server";
 
 type ProvisionResult = { workspace_id: string; created: boolean; slug: string | null };
 
@@ -156,6 +156,7 @@ export const createWorkspace = createServerFn({ method: "POST" })
             subject: tpl.subject,
             html: tpl.html,
             text: tpl.text,
+            replyTo: SUPPORT_INBOX_EMAIL,
             idempotencyKey: `welcome-${ws.workspace_id}`,
             meta: { workspace_id: ws.workspace_id, kind: "welcome" },
           });
@@ -198,6 +199,7 @@ export const ensureWorkspace = createServerFn({ method: "POST" })
                 subject: tpl.subject,
                 html: tpl.html,
                 text: tpl.text,
+                replyTo: SUPPORT_INBOX_EMAIL,
                 idempotencyKey: `welcome-${ws.workspace_id}`,
                 meta: { workspace_id: ws.workspace_id, kind: "welcome" },
               });

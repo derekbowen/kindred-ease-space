@@ -34,13 +34,14 @@ export const Route = createFileRoute("/s/$ws/$slug")({
 
 function PreviewPage() {
   const { page } = Route.useLoaderData();
+  const { ws } = Route.useParams();
   return (
     <div>
       <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2 text-center text-xs text-amber-700 dark:text-amber-300">
         Preview — connect your marketplace domain in Settings → Domains to publish this page for
         search engines.
       </div>
-      <CityHub page={page} />
+      <CityHub page={page} basePath={`/s/${ws}`} homeHref={null} />
     </div>
   );
 }

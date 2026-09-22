@@ -10,7 +10,20 @@ function fmtPrice(amount: number | null, currency: string | null) {
   }
 }
 
-export function CityHub({ page }: { page: PublicTenantPage }) {
+export function CityHub({
+  page,
+  basePath = "/a",
+  homeHref = "/",
+}: {
+  page: PublicTenantPage;
+  /** Prefix for internal links to sibling pages. "/a" on a tenant host; the
+   * platform preview passes "/s/{workspace}" so related links stay inside the
+   * preview instead of 404ing on founders.click. */
+  basePath?: string;
+  /** Breadcrumb root. null renders the workspace name as plain text (the
+   * preview has no workspace home on the platform host). */
+  homeHref?: string | null;
+}) {
   const city = page.variables?.city as string | undefined;
   const state = page.variables?.state as string | undefined;
   const categoryPlural = (page.variables?.category_plural as string) || "listings";
@@ -23,9 +36,13 @@ export function CityHub({ page }: { page: PublicTenantPage }) {
         <main className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
           <header className="max-w-3xl">
             <nav aria-label="Breadcrumb" className="text-xs text-muted-foreground">
-              <a href="/" className="hover:text-foreground">
-                {page.workspace_name || "Home"}
-              </a>
+              {homeHref ? (
+                <a href={homeHref} className="hover:text-foreground">
+                  {page.workspace_name || "Home"}
+                </a>
+              ) : (
+                <span>{page.workspace_name || "Home"}</span>
+              )}
               <span className="mx-1.5">/</span>
               <span className="text-foreground">{page.h1 || page.title}</span>
             </nav>
@@ -166,7 +183,7 @@ export function CityHub({ page }: { page: PublicTenantPage }) {
               {page.related_pages.map((r) => (
                 <li key={r.slug}>
                   <a
-                    href={`/a/${r.slug}`}
+                    href={`${basePath}/${r.slug}`}
                     className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                   >
                     {r.title}

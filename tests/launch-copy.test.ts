@@ -220,6 +220,27 @@ t("shell uses the shared visibility rule", shell.includes("isNavItemVisible"));
 t("shell shows the beta banner", /Free beta/.test(shell) && shell.includes('to="/beta"'));
 
 // ---------------------------------------------------------------------------
+console.log("\npreview links stay inside the preview");
+
+const cityHub = read("src/components/templates/CityHub.tsx");
+t("CityHub related links use basePath, not a hardcoded /a/", cityHub.includes("`${basePath}/${r.slug}`") && !cityHub.includes("`/a/${r.slug}`"));
+t("CityHub defaults basePath to /a for tenant hosts", /basePath = "\/a"/.test(cityHub));
+t("CityHub can render the breadcrumb root as plain text", /homeHref \? \(/.test(cityHub));
+const preview = read("src/routes/s.$ws.$slug.tsx");
+t("preview passes /s/{ws} as basePath", preview.includes("basePath={`/s/${ws}`}"));
+t("preview has no workspace home link on the platform host", preview.includes("homeHref={null}"));
+
+// ---------------------------------------------------------------------------
+console.log("\nrelease path and welcome email honesty");
+
+const wf = read(".github/workflows/deploy-app.yml");
+t("deploy job only runs on main", /if: github\.ref == 'refs\/heads\/main'/.test(wf));
+const wsFns = read("src/lib/workspace.functions.ts");
+t("every welcome email replies to the support inbox", (wsFns.match(/replyTo: SUPPORT_INBOX_EMAIL/g) || []).length === (wsFns.match(/idempotencyKey: `welcome-/g) || []).length && (wsFns.match(/replyTo: SUPPORT_INBOX_EMAIL/g) || []).length >= 1);
+const emailSrv = read("src/lib/email.server.ts");
+t("welcome email no longer promises a 30-minute sync", !/every 30 min/.test(emailSrv));
+
+// ---------------------------------------------------------------------------
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.log("Failed:\n  " + failed.join("\n  "));
