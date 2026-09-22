@@ -184,5 +184,64 @@ console.log("\n=== malformed timestamps do not throw or fake freshness ===");
   t("verdict is never_run", r.verdict === "never_run", r.verdict);
 }
 
+console.log("\n=== the route's gate: OPS_PROBE_SECRET only ===");
+{
+  // Hermetic: with no Supabase configuration the admin client throws on first
+  // use, so an authorised call reaches the "could not read" branch (503) and
+  // never the network. Unset explicitly rather than trusting the environment.
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.SERVICE_ROLE_KEY;
+
+  const PROBE = "ops-probe-3f9c1d7e5b2a4c8d9e0f1a2b3c4d5e6f";
+  const HOOK = "v1,whsec_dGVzdHNlY3JldHRlc3RzZWNyZXR0ZXN0c2VjcmV0MDA=";
+  process.env.OPS_PROBE_SECRET = PROBE;
+  // The hook secret is configured on purpose: it must not be a credential here.
+  process.env.SEND_EMAIL_HOOK_SECRET = HOOK;
+  delete process.env.CRON_SECRET;
+
+  const { Route } = await import("../src/routes/api/public/ops/sync-health");
+  const GET = (Route as any).options.server.handlers.GET as (ctx: { request: Request }) => Promise<Response>;
+  const call = (secret?: string, bearer = false) => {
+    const headers: Record<string, string> = {};
+    if (secret !== undefined) {
+      if (bearer) headers["authorization"] = `Bearer ${secret}`;
+      else headers["x-founders-probe-secret"] = secret;
+    }
+    return GET({ request: new Request("https://www.founders.click/api/public/ops/sync-health", { headers }) });
+  };
+
+  const none = await call();
+  const wrong = await call("ops-probe-000000000000000000000000000000");
+  const hook = await call(HOOK);
+  const hookBearer = await call(HOOK, true);
+  t("no secret is rejected", none.status === 401, String(none.status));
+  t("wrong secret is rejected", wrong.status === 401, String(wrong.status));
+  t("the send-email hook secret is rejected", hook.status === 401, String(hook.status));
+  t("…also as a Bearer token", hookBearer.status === 401, String(hookBearer.status));
+  const bodies = [await none.text(), await wrong.text(), await hook.text()];
+  t("every rejection is byte-identical (no configuration oracle)",
+    bodies.every((b) => b === bodies[0]), bodies.join(" | "));
+
+  const ok = await call(PROBE);
+  t("the probe secret passes the gate", ok.status !== 401, String(ok.status));
+  t("…and a failed read is reported as its own state, not as healthy", ok.status === 503,
+    String(ok.status));
+  const okBody = (await ok.json()) as any;
+  t("verdict is unknown when the table cannot be read", okBody.verdict === "unknown", okBody.verdict);
+  t("the read error is named", /Could not read tenant_integrations/.test(okBody.error ?? ""), okBody.error);
+  t("cronSecretConfigured is reported as presence only", okBody.cronSecretConfigured === false);
+  t("the probe secret passes as a Bearer token too", (await call(PROBE, true)).status === 503);
+  t("nothing in the response echoes a secret",
+    !JSON.stringify(okBody).includes(PROBE) && !JSON.stringify(okBody).includes(HOOK));
+
+  delete process.env.OPS_PROBE_SECRET;
+  const closed = await call(PROBE);
+  const closedHook = await call(HOOK);
+  t("with OPS_PROBE_SECRET unset the probe is closed", closed.status === 401, String(closed.status));
+  t("…and the hook secret is still no fallback", closedHook.status === 401, String(closedHook.status));
+  t("unset is indistinguishable from wrong", (await closed.text()) === bodies[0]);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) { console.log("Failed: " + failed.join(", ")); process.exit(1); }

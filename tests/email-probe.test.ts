@@ -5,11 +5,22 @@
  * nobody can log in, so a session gate would make it useless exactly when it
  * is needed. That puts the weight on the shared-secret check, which is what
  * most of this file tests.
+ *
+ * The regression that shaped the gate: the probe used to accept
+ * SEND_EMAIL_HOOK_SECRET, the HMAC key Auth signs the send-email hook with.
+ * It must now accept ONLY the dedicated OPS_PROBE_SECRET, and the hook secret
+ * must open nothing here even when the probe secret is unset.
  */
-const SECRET = "v1,whsec_dGVzdHNlY3JldHRlc3RzZWNyZXR0ZXN0c2VjcmV0MDA=";
-const OTHER = "v1,whsec_b3RoZXJzZWNyZXRvdGhlcnNlY3JldG90aGVyc2VjMDA=";
+import { opsProbeSecretMatches } from "../src/lib/ops-probe-auth";
 
-process.env.SEND_EMAIL_HOOK_SECRET = SECRET;
+const PROBE = "ops-probe-3f9c1d7e5b2a4c8d9e0f1a2b3c4d5e6f";
+const OTHER = "ops-probe-000000000000000000000000000000";
+const HOOK = "v1,whsec_dGVzdHNlY3JldHRlc3RzZWNyZXR0ZXN0c2VjcmV0MDA=";
+
+process.env.OPS_PROBE_SECRET = PROBE;
+// Configured, so the config report can say so — and so the gate test below
+// proves that having it configured does NOT make it a valid credential.
+process.env.SEND_EMAIL_HOOK_SECRET = HOOK;
 process.env.FROM_EMAIL = "founders.click <noreply@founders.click>";
 process.env.EMAILIT_DKIM_SELECTOR = "emailit";
 // Deliberately unset: with no API key, sendEmail short-circuits and returns a
@@ -53,23 +64,69 @@ console.log("\n=== the secret gate ===");
   const wrong = await call({ secret: OTHER });
   t("wrong secret is rejected", wrong.status === 401, String(wrong.status));
 
-  // The endpoint is public, so its error must not reveal whether the hook
+  // THE regression: the Auth hook's signing key is not a probe credential.
+  const hook = await call({ secret: HOOK });
+  t("the send-email hook secret is rejected", hook.status === 401, String(hook.status));
+  const hookBearer = await call({ secret: HOOK, bearer: true });
+  t("…also as a Bearer token", hookBearer.status === 401, String(hookBearer.status));
+
+  // The endpoint is public, so its error must not reveal whether the probe
   // secret is configured — otherwise it becomes a probe for that fact.
   const noneBody = await none.text();
   const wrongBody = await wrong.text();
-  t("both rejections are byte-identical (no configuration oracle)", noneBody === wrongBody,
-    `${noneBody} vs ${wrongBody}`);
+  const hookBody = await hook.text();
+  t("all rejections are byte-identical (no configuration oracle)",
+    noneBody === wrongBody && wrongBody === hookBody, `${noneBody} vs ${wrongBody} vs ${hookBody}`);
 
-  const ok = await call({ secret: SECRET });
-  t("correct secret is accepted", ok.status === 200, String(ok.status));
+  const ok = await call({ secret: PROBE });
+  t("correct OPS_PROBE_SECRET is accepted", ok.status === 200, String(ok.status));
 
-  const viaBearer = await call({ secret: SECRET, bearer: true });
+  const viaBearer = await call({ secret: PROBE, bearer: true });
   t("Authorization: Bearer works too", viaBearer.status === 200, String(viaBearer.status));
+}
+
+console.log("\n=== no OPS_PROBE_SECRET means closed, never a fallback ===");
+{
+  const wrongBody = await (await call({ secret: OTHER })).text();
+  delete process.env.OPS_PROBE_SECRET;
+
+  const formerlyRight = await call({ secret: PROBE });
+  t("with the probe secret unset, the previously correct value is rejected",
+    formerlyRight.status === 401, String(formerlyRight.status));
+
+  // The hook secret is still configured. It must not become the gate.
+  const hook = await call({ secret: HOOK });
+  t("with the probe secret unset, the hook secret still opens nothing",
+    hook.status === 401, String(hook.status));
+
+  const empty = await call({ secret: "" });
+  t("an empty secret is rejected", empty.status === 401, String(empty.status));
+
+  t("unset and wrong are indistinguishable from outside",
+    (await formerlyRight.text()) === wrongBody && (await hook.text()) === wrongBody);
+
+  process.env.OPS_PROBE_SECRET = PROBE;
+  t("restored: the probe secret works again", (await call({ secret: PROBE })).status === 200);
+}
+
+console.log("\n=== the comparison itself ===");
+{
+  t("equal values match", opsProbeSecretMatches(PROBE, PROBE));
+  t("surrounding whitespace is tolerated (a secret pasted with a newline)",
+    opsProbeSecretMatches(`${PROBE}\n`, ` ${PROBE} `));
+  t("a different value of the same length does not match", !opsProbeSecretMatches(OTHER, PROBE));
+  t("a different length does not match and does not throw",
+    !opsProbeSecretMatches(PROBE.slice(0, 10), PROBE) && !opsProbeSecretMatches(`${PROBE}x`, PROBE));
+  t("a prefix does not match", !opsProbeSecretMatches(PROBE, `${PROBE}-suffix`));
+  t("unset configured never matches, even an empty presentation",
+    !opsProbeSecretMatches("", undefined) && !opsProbeSecretMatches("", "") && !opsProbeSecretMatches(null, null));
+  t("empty presented never matches a configured value", !opsProbeSecretMatches("", PROBE));
+  t("whitespace-only presented never matches", !opsProbeSecretMatches("   ", PROBE));
 }
 
 console.log("\n=== config-only is side-effect free ===");
 {
-  const res = await call({ secret: SECRET });
+  const res = await call({ secret: PROBE });
   const body = (await res.json()) as any;
   t("reports config-only", body.probe === "config-only", body.probe);
   t("no send was attempted", body.send === undefined);
@@ -82,18 +139,20 @@ console.log("\n=== config-only is side-effect free ===");
   t("includes a deliverability verdict", typeof body.deliverability?.verdict === "string",
     JSON.stringify(body.deliverability)?.slice(0, 120));
   t("never echoes a secret or key",
-    !JSON.stringify(body).includes("whsec_") && !JSON.stringify(body).includes(SECRET));
+    !JSON.stringify(body).includes("whsec_") &&
+      !JSON.stringify(body).includes(HOOK) &&
+      !JSON.stringify(body).includes(PROBE));
 }
 
 console.log("\n=== send mode ===");
 {
-  const noBody = await call({ secret: SECRET, send: true });
+  const noBody = await call({ secret: PROBE, send: true });
   t("send=1 without a recipient is rejected", noBody.status === 400, String(noBody.status));
 
-  const badAddr = await call({ secret: SECRET, send: true, body: { to: "not-an-email" } });
+  const badAddr = await call({ secret: PROBE, send: true, body: { to: "not-an-email" } });
   t("send=1 with a malformed address is rejected", badAddr.status === 400, String(badAddr.status));
 
-  const sent = await call({ secret: SECRET, send: true, body: { to: "probe@example.com" } });
+  const sent = await call({ secret: PROBE, send: true, body: { to: "probe@example.com" } });
   t("send=1 with a recipient returns 200", sent.status === 200, String(sent.status));
   const body = (await sent.json()) as any;
   t("reports send mode", body.probe === "send", body.probe);
