@@ -36,3 +36,4 @@ dist-ssr
 
 # Claude worktrees used during development
 .claude/
+tests/_build/

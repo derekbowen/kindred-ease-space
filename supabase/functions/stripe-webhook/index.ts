@@ -593,10 +593,33 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ received: true }), { status: 200 });
   } catch (e) {
     console.error("webhook handler error", e);
-    await markEvent("error", e instanceof Error ? e.message : String(e));
+    await markEvent("error", describeError(e));
     return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500 });
   }
 });
+
+/**
+ * supabase-js errors are plain objects, not Error instances; String(e) on one
+ * is "[object Object]", which is what the audit row used to record for every
+ * failed database write. Keep the message and code, bounded.
+ */
+function describeError(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === "object") {
+    const o = e as { message?: unknown; code?: unknown };
+    const parts = [
+      typeof o.message === "string" ? o.message : null,
+      typeof o.code === "string" ? `code=${o.code}` : null,
+    ].filter(Boolean);
+    if (parts.length) return parts.join(" ").slice(0, 500);
+    try {
+      return JSON.stringify(e).slice(0, 500);
+    } catch {
+      /* fall through */
+    }
+  }
+  return String(e);
+}
 
 async function resolveTierFromPrice(stripe: Stripe, priceId: string | null) {
   if (!priceId) return "unknown";
