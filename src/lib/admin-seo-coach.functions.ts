@@ -149,7 +149,7 @@ ADMIN TOOLS YOU CAN RECOMMEND (route → purpose):
 - /app/seo/keyword-opportunities → import GSC queries, find easy wins
 - /app/seo/internal-links → recommend internal linking
 - /app/content/bulk-editor → triage published pages (tenant + legacy)
-- /app/content/quick-page-builder → spin up a new /p/{slug} page in 30s
+- /app/content/quick-page-builder → spin up a new /a/{slug} page in 30s
 - /app/pages → manual page editor with live preview
 - /app/seo/gsc-import → re-sync Search Console data
 - /app/seo/competitor-tracker → scrape competitor pages

@@ -153,7 +153,7 @@ function PagesList() {
             <p className="max-w-lg text-sm text-muted-foreground">
               Programmatic landing pages wired to your Sharetribe listings. Every published page
               lives at{" "}
-              <code className="rounded bg-muted px-1 font-mono text-xs">/p/{"{slug}"}</code> on your
+              <code className="rounded bg-muted px-1 font-mono text-xs">/a/{"{slug}"}</code> on your
               domain.
             </p>
           </div>
@@ -272,7 +272,7 @@ function PagesList() {
                     </span>
                   </div>
                   <h3 className="mt-2 font-semibold leading-snug line-clamp-2">{r.title}</h3>
-                  <p className="mt-1 font-mono text-[11px] text-muted-foreground">/p/{r.slug}</p>
+                  <p className="mt-1 font-mono text-[11px] text-muted-foreground">/a/{r.slug}</p>
                 </div>
                 <div className="flex items-center justify-between px-4 py-3">
                   <span className="text-xs text-muted-foreground">

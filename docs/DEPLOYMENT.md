@@ -98,7 +98,7 @@ workflow. CI only *verifies they exist* before deploying, against
 ```bash
 bun run build              # generates .output/server/wrangler.json
 cd .output/server
-for k in $(grep -vE '^\s*#|^\s*$' ../../scripts/required-secrets.txt | awk '{print $1}'); do
+for k in $(grep -vE '^\s*#|^\s*$|^\[' ../../scripts/required-secrets.txt | awk '{print $1}'); do
   bunx wrangler secret put "$k"
 done
 bunx wrangler secret list  # confirm

@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { GENERATION_DAILY_CAP } from "@/lib/generation-limits";
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { SiteFooter } from "@/components/site/SiteFooter";
 import { canonicalUrl } from "@/lib/canonical";
@@ -70,15 +71,16 @@ function BetaPage() {
               publishing slot.
             </li>
             <li>
-              <strong>AI generation.</strong> Included. Generation is metered by a monthly allowance
-              rather than billed per use, and the allowance is sized to your page capacity.
+              <strong>AI generation.</strong> Included during the beta, within a fair-use cap of{" "}
+              {GENERATION_DAILY_CAP} generated pages per workspace per day. Generating a draft never
+              uses a publishing slot.
             </li>
           </ul>
 
           <h2 id="what-costs-money">What costs money</h2>
           <p>
             Only a paid plan, and only if you choose one. Plans are priced by published-page
-            capacity — every feature is available on every plan:
+            capacity — every core feature is available on every plan:
           </p>
           <ul>
             {PAGE_PLANS.map((p) => (
@@ -90,6 +92,11 @@ function BetaPage() {
             <li>
               <strong>Extra capacity</strong> — ${PAGE_ADDON.monthlyPrice}/month per{" "}
               {PAGE_ADDON.pagesPerUnit.toLocaleString()} pages, on top of any plan.
+            </li>
+            <li>
+              <strong>Add-ons</strong> — Affiliate Programs and DM Champ are optional monthly add-ons,
+              priced separately on the Add-ons page in the app. They only start after a checkout you
+              complete.
             </li>
           </ul>
           <p>
@@ -114,7 +121,8 @@ function BetaPage() {
             <li>You can reconnect or disconnect your Sharetribe marketplace at any time.</li>
           </ul>
           <p>
-            We will tell you before a beta grant ends. We may extend, resize or end the beta program
+            A beta grant's end date is shown on your dashboard and billing page from the day it is
+            set. We may extend, resize or end the beta program
             itself; if we do, the same rules apply — pages pause, nothing is deleted, and you keep
             your data.
           </p>

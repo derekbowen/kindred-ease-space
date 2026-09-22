@@ -6,7 +6,7 @@ export const Route = createFileRoute("/_authenticated/app/content/migration")({
   component: () => (
     <StubToolPage
       title="Content Migration"
-      description="Import legacy URLs into /p/{slug} with redirects."
+      description="Import legacy URLs into /a/{slug} with redirects."
       internalOnly={false}
     />
   ),

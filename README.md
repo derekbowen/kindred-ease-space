@@ -9,7 +9,7 @@ Replace your agency. Move at AI speed.
 - AI Coach: contextual agent that reads your data, suggests actions, can execute fixes
 - Page builder with live preview and city gap detection
 - Lead tools, affiliates, billing, workspace settings
-- Public tenant pages (/p/slug), help center, sitemaps
+- Public tenant pages (/a/slug), help center, sitemaps
 
 ## Live
 

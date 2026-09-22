@@ -472,7 +472,7 @@ function Pricing() {
               </p>
               <p className="flex gap-2.5 text-sm text-zinc-300">
                 <Check className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" aria-hidden="true" />
-                <span>Every feature unlocked</span>
+                <span>Every core feature unlocked</span>
               </p>
               <p className="text-sm leading-relaxed text-zinc-500">{tier.blurb}</p>
             </div>
@@ -531,7 +531,7 @@ const FAQS = [
   {
     question: "Is AI generation extra?",
     answer:
-      "No. Every plan includes a monthly AI generation allowance sized for its page capacity, covering page generation, rewrites and audits. You buy published pages, not generation — if you need more, you move up a plan or add page capacity.",
+      "No. Every plan includes a monthly AI generation allowance sized for its page capacity, covering page generation and rewrites. You buy published pages, not generation — if you need more, you move up a plan or add page capacity.",
   },
   {
     question: "What happens if I cancel?",

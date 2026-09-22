@@ -241,6 +241,49 @@ const emailSrv = read("src/lib/email.server.ts");
 t("welcome email no longer promises a 30-minute sync", !/every 30 min/.test(emailSrv));
 
 // ---------------------------------------------------------------------------
+console.log("\nreview follow-ups: copy matches code");
+
+const dataExport = read("src/routes/_authenticated/app.content.data-export.tsx");
+t("Data Export offers the live page model", dataExport.includes('table="tenant_pages"'));
+t("Data Export offers the imported listings", dataExport.includes('table="tenant_listings"'));
+const dataIo = read("src/lib/admin-data-io.functions.ts");
+t("export allowlist includes tenant_listings", /EXPORT_TABLES = \[\.\.\.TABLES, "tenant_listings"\]/.test(dataIo));
+t("import allowlist did not widen to listings", /const TABLES = \["content_plan", "content_pages", "tenant_pages"\] as const;/.test(dataIo));
+
+const billing = read("src/routes/_authenticated/app.billing.tsx");
+const betaPage = read("src/routes/beta.tsx");
+const homeSrc = read("src/routes/index.tsx");
+t("billing discloses add-ons as separately priced", /add-ons \(Affiliate Programs, DM Champ\) are priced separately/i.test(billing));
+t("/beta discloses add-ons as separately priced", /<strong>Add-ons<\/strong>/.test(betaPage) && /priced separately/.test(betaPage));
+t("billing discloses the daily generation cap", billing.includes("GENERATION_DAILY_CAP") && /fair-use cap/.test(billing));
+t("/beta discloses the daily generation cap", betaPage.includes("GENERATION_DAILY_CAP") && /fair-use cap/.test(betaPage));
+t("no page still promises a monthly AI allowance on the beta", !/metered by a monthly\s+allowance/.test(billing) && !/metered by a monthly allowance/.test(betaPage));
+t("homepage no longer claims every feature", !homeSrc.includes("Every feature unlocked") && homeSrc.includes("Every core feature unlocked"));
+t("homepage FAQ no longer claims audits are included", !/rewrites and audits/.test(homeSrc));
+t("/beta no longer promises a notice we do not send", !/We will tell you before a beta grant ends/.test(betaPage));
+t("/beta says the grant end date is shown in the app", /end date is shown on your dashboard/.test(betaPage));
+t('"Free beta" on billing requires the grant to be the entitlement', /inBeta = Boolean\(beta\?\.beta && ent && ent\.billingState === "granted"\)/.test(billing));
+const ent = read("src/lib/entitlements.functions.ts");
+t("readBetaStatus consults the billing state", /decision\.state !== "granted"\) return none/.test(ent));
+
+console.log("\nreview follow-ups: public path is /a/, stubs are unreachable");
+for (const f of [
+  "src/components/pages/PageLivePreview.tsx",
+  "src/routes/_authenticated/app.settings.tsx",
+  "src/routes/_authenticated/app.pages.tsx",
+  "src/routes/_authenticated/app.pages.bulk.tsx",
+  "src/routes/_authenticated/app.content.migration.tsx",
+]) {
+  t(`${f} does not advertise /p/`, !/\/p\/\{|\/p\/\$\{|\/p\/slug|\/p\/\{"/.test(read(f)));
+}
+const stub = read("src/components/StubToolPage.tsx");
+t("stub pages send customers to the dashboard", /navigate\(\{ to: "\/app", replace: true \}\)/.test(stub) && /showStubs/.test(stub));
+const settings = read("src/routes/_authenticated/app.settings.tsx");
+t("settings hides the AI-provider and API-key cards at launch", /showAdvanced &&/.test(settings) && settings.indexOf("const showAdvanced") < settings.indexOf('title="AI providers"'));
+const deployDoc = read("docs/DEPLOYMENT.md");
+t("deploy doc's secret loop skips section headers", /\^\\\[/.test(deployDoc));
+
+// ---------------------------------------------------------------------------
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.log("Failed:\n  " + failed.join("\n  "));

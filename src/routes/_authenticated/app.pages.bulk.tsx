@@ -202,7 +202,7 @@ function BulkPage() {
                     <div className="min-w-0">
                       <p className="truncate font-medium">{r.title || "—"}</p>
                       <p className="font-mono text-[11px] text-muted-foreground">
-                        /p/{r.slug}
+                        /a/{r.slug}
                         {(r.city || r.state) &&
                           ` · ${[r.city, r.state].filter(Boolean).join(", ")}`}
                       </p>

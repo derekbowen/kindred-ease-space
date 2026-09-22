@@ -18,7 +18,7 @@ export function PageLivePreview({ page, domain }: { page: PreviewPage; domain?: 
         </div>
         <div className="mx-auto flex max-w-[70%] flex-1 items-center justify-center rounded-md bg-background/80 px-3 py-1">
           <span className="truncate font-mono text-[10px] text-muted-foreground">
-            {host}/p/{page.slug || "your-slug"}
+            {host}/a/{page.slug || "your-slug"}
           </span>
         </div>
         <Badge variant="outline" className="text-[9px] shrink-0">

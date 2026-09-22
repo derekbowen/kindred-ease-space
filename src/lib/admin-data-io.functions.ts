@@ -7,6 +7,17 @@ import { z } from "zod";
 // Tables exposed to the admin data-io tool. All are workspace-scoped.
 const TABLES = ["content_plan", "content_pages", "tenant_pages"] as const;
 type TableName = (typeof TABLES)[number];
+// Export covers everything a customer owns, including the live page model and
+// the imported marketplace listings; import stays limited to the legacy tables.
+const EXPORT_TABLES = [...TABLES, "tenant_listings"] as const;
+type ExportTableName = (typeof EXPORT_TABLES)[number];
+// tenant_listings has no created_at; its rows are keyed by id.
+const EXPORT_ORDER: Record<ExportTableName, string> = {
+  content_plan: "created_at",
+  content_pages: "created_at",
+  tenant_pages: "created_at",
+  tenant_listings: "id",
+};
 
 // ---------- CSV helpers ----------
 function csvEscape(v: unknown): string {
@@ -73,7 +84,7 @@ function coerceValue(raw: string): unknown {
 }
 
 // ---------- Server functions ----------
-const tableInput = z.object({ workspaceId: workspaceIdSchema, table: z.enum(TABLES) });
+const tableInput = z.object({ workspaceId: workspaceIdSchema, table: z.enum(EXPORT_TABLES) });
 
 export const exportTable = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -90,7 +101,7 @@ export const exportTable = createServerFn({ method: "POST" })
         .from(data.table)
         .select("*")
         .eq("workspace_id", workspaceId)
-        .order("created_at", { ascending: true })
+        .order(EXPORT_ORDER[data.table], { ascending: true })
         .range(from, from + pageSize - 1);
       if (error) throw new Error(error.message);
       if (!rows || rows.length === 0) break;
@@ -105,7 +116,10 @@ export const exportTable = createServerFn({ method: "POST" })
     };
   });
 
-async function getTableColumns(table: TableName, workspaceId: string): Promise<string[]> {
+async function getTableColumns(
+  table: ExportTableName,
+  workspaceId: string,
+): Promise<string[]> {
   const { data, error } = await supabaseAdmin
     .from(table)
     .select("*")

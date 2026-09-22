@@ -25,7 +25,7 @@ trusting a workspace id from the client.
 | --- | --- | --- |
 | Payment truth | **Stripe** | `subscriptions`, `workspaces.subscription_status`, `workspaces.current_period_end` |
 | Plan catalog | `supabase/functions/_shared/stripe-catalog.ts` | `src/lib/plan-catalog.ts` (app-side mirror — keep in sync) |
-| Published-page capacity | `workspaces.page_limit_base` + `page_limit_addon` + `page_limit_bonus` | `PageEntitlement.pageLimit` (computed per read) |
+| Published-page capacity | `workspaces.page_limit_base` + `page_limit_addon` + `page_limit_bonus`, plus active `workspace_entitlement_grants`, all gated by `decideCapacity()` / `workspace_capacity()` on every read | `PageEntitlement.pageLimit` (computed per read) |
 | Current published count | `count(*)` over `tenant_pages WHERE status='published'` | never cached |
 | Webhook idempotency | `stripe_webhook_events` | — |
 | Billing audit trail | `billing_events` | — |

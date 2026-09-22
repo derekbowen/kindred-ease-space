@@ -209,6 +209,25 @@ export async function readBetaStatus(workspaceId: string): Promise<BetaStatus> {
   ).filter((g) => isGrantActive(g as GrantRow));
   if (active.length === 0) return none;
   const pageLimit = active.reduce((sum, g) => sum + Math.max(0, Math.trunc(g.page_limit)), 0);
+  // "Beta" means the grant IS the entitlement. A paying (or trialing) workspace
+  // that also holds a promotional grant is not on a free beta and must not be
+  // told "no charge": the grant is additive there, the commercial state stands.
+  const { data: ws, error: wsErr } = await sb()
+    .from("workspaces")
+    .select("subscription_status, trial_ends_at, current_period_end")
+    .eq("id", workspaceId)
+    .maybeSingle();
+  if (wsErr || !ws) {
+    if (wsErr) console.error("[entitlements] beta status workspace read failed", workspaceId, wsErr.message);
+    return none;
+  }
+  const decision = decideCapacity({
+    subscriptionStatus: ws.subscription_status,
+    trialEndsAt: ws.trial_ends_at,
+    currentPeriodEnd: ws.current_period_end,
+    grantedPages: pageLimit,
+  });
+  if (decision.state !== "granted") return none;
   let expiresAt: string | null = null;
   for (const g of active) {
     if (g.expires_at === null) {

@@ -1,6 +1,8 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Construction } from "lucide-react";
+import { useEffect } from "react";
+import { useNavigate } from "@tanstack/react-router";
 
 export function StubToolPage({
   title,
@@ -11,6 +13,16 @@ export function StubToolPage({
   description: string;
   internalOnly?: boolean;
 }) {
+  // A stub is not a product. Outside internal testing (?showStubs=1) a customer
+  // who reaches one by URL is sent to the dashboard instead of "Coming soon".
+  const navigate = useNavigate();
+  const revealed =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("showStubs") === "1";
+  useEffect(() => {
+    if (!revealed) navigate({ to: "/app", replace: true });
+  }, [revealed, navigate]);
+  if (!revealed) return null;
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">

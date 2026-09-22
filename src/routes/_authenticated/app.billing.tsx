@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { GENERATION_DAILY_CAP } from "@/lib/generation-limits";
 import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -134,7 +135,9 @@ function BillingPage() {
   }
 
   const hasPlan = Boolean(ent && !ent.isTrial && ent.planKey);
-  const inBeta = Boolean(beta?.beta);
+  // "Free beta" only when the grant IS the entitlement. A paying customer with a
+  // promotional grant on top is not in a free beta and must not be told so.
+  const inBeta = Boolean(beta?.beta && ent && ent.billingState === "granted");
   const cheapest = PAGE_PLANS[0];
   const dearest = PAGE_PLANS[PAGE_PLANS.length - 1];
   const usagePct = ent && ent.pageLimit > 0 ? (ent.publishedPages / ent.pageLimit) * 100 : 0;
@@ -336,8 +339,8 @@ function BillingPage() {
                       : "with no end date set"
                   }.`
                 : `The trial: up to ${TRIAL_PAGE_LIMIT} published pages, no card required.`}{" "}
-              Drafts are always free and unlimited. AI generation is included, metered by a monthly
-              allowance rather than billed per use.
+              Drafts are always free and unlimited. AI page generation is included, within a
+              fair-use cap of {GENERATION_DAILY_CAP} generated pages per workspace per day.
             </p>
           </div>
           <div>
@@ -347,7 +350,9 @@ function BillingPage() {
               {dearest.monthlyPrice} per month for {cheapest.includedPages.toLocaleString()} to{" "}
               {dearest.includedPages.toLocaleString()} published pages, plus optional extra capacity
               at ${PAGE_ADDON.monthlyPrice}/month per {PAGE_ADDON.pagesPerUnit.toLocaleString()}{" "}
-              pages. Nothing is charged without a checkout you complete yourself.
+              pages. Optional add-ons (Affiliate Programs, DM Champ) are priced separately on the
+              Add-ons page and only start after a checkout you complete. Nothing is charged
+              without a checkout you complete yourself.
             </p>
           </div>
           <div>
@@ -367,7 +372,8 @@ function BillingPage() {
       <div>
         <h2 className="text-lg font-semibold mb-1">Plans</h2>
         <p className="text-sm text-muted-foreground mb-4">
-          Every plan unlocks every feature — pick one for how many pages you publish.
+          Every plan unlocks every core feature — pick one for how many pages you publish. Add-ons
+          are priced separately.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           {PAGE_PLANS.map((p) => {

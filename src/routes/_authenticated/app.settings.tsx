@@ -31,6 +31,11 @@ function SettingsRoute() {
 }
 
 function SettingsPage() {
+  // Bring-your-own AI keys and API keys are outside launch scope; the cards
+  // only show with ?showStubs=1 so the sidebar rule and this page agree.
+  const showAdvanced =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("showStubs") === "1";
   const [me, setMe] = useState<Awaited<ReturnType<typeof getMe>> | null>(null);
   const [ctx, setCtx] = useState<Awaited<ReturnType<typeof getSettingsContext>> | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -110,7 +115,7 @@ function SettingsPage() {
         <CardHeader>
           <CardTitle>Workspace</CardTitle>
           <CardDescription>
-            Your marketplace name and primary domain. Pages at <code>/p/{"{slug}"}</code> resolve on
+            Your marketplace name and primary domain. Pages at <code>/a/{"{slug}"}</code> resolve on
             this hostname.
           </CardDescription>
         </CardHeader>
@@ -181,6 +186,8 @@ function SettingsPage() {
           to="/app/settings/integrations/sharetribe"
           icon={Plug}
         />
+        {showAdvanced && (
+          <>
         <StatusCard
           title="AI providers"
           ok={(ctx?.configuredAiProviders.length ?? 0) > 0}
@@ -203,6 +210,8 @@ function SettingsPage() {
           to="/app/settings/api-keys"
           icon={KeyRound}
         />
+          </>
+        )}
       </div>
 
       <Card>
