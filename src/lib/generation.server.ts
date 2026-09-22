@@ -363,7 +363,9 @@ export async function resolveGenerationKey(
     "OPENROUTER_API_KEY",
   );
   if (!found) {
-    throw new Error("No AI key configured. Add a BYOK OpenRouter key under Settings → API Keys.");
+    throw new Error(
+      "Page generation is not available right now: no AI key is configured for this workspace. Contact support.",
+    );
   }
   return found;
 }
