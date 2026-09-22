@@ -141,7 +141,7 @@ t(
   "authenticated and service_role re-granted explicitly",
   sql.includes("format('GRANT EXECUTE ON FUNCTION %s TO authenticated, service_role', sig)"),
 );
-t("missing signature is skipped with a NOTICE, not a failure", /IF to_regprocedure\(sig\) IS NULL THEN\s+RAISE NOTICE/.test(sql));
+t("grant loop skips a missing signature with a NOTICE (so every drifted name is reported)", /IF to_regprocedure\(sig\) IS NULL THEN\s+RAISE NOTICE/.test(sql));
 
 console.log("\n=== c) host resolvers are service-role only ===");
 for (const sig of ["public.current_workspace_id_by_host(text)", "public.workspace_for_host(text)"])
@@ -207,7 +207,29 @@ t(
 for (const h of ["help_search_v2", "help_suggest_titles", "count_providers_by_category"])
   t(`${h} is left alone`, !sql.includes(h));
 
-console.log("\n=== f) verification block convention ===");
+console.log("\n=== f) drift guard: a signature that does not resolve fails the migration ===");
+// The first version wrapped every verification row in coalesce(…, true), so
+// a drifted signature was skipped by the grant loops AND reported OK. Now a
+// DO block ahead of the verification collects every unresolved name and
+// raises, which (one transaction per migration) rolls the whole file back.
+const driftAt = sql.indexOf("missing := missing || sig");
+t("drift guard collects unresolved signatures", driftAt > 0);
+t("drift guard raises with the full list",
+  /IF cardinality\(missing\) > 0 THEN\s+RAISE EXCEPTION 'launch_hardening: signature drift[^']*'[\s\S]*?array_to_string\(missing, ', '\)/.test(sql));
+const guardBlock = sql.slice(sql.lastIndexOf("DO $$", driftAt), sql.indexOf("END $$;", driftAt));
+for (const sig of [
+  "public.consume_platform_ai_credit(uuid)",
+  ...ANON_REVOKED,
+  "public.current_workspace_id_by_host(text)",
+  "public.workspace_for_host(text)",
+])
+  t(`drift guard covers ${sig}`, guardBlock.includes(`'${sig}'`));
+t("drift guard runs after the grant loops", driftAt > sql.indexOf("format('GRANT EXECUTE ON FUNCTION %s TO service_role', sig)"));
+t("drift guard runs before the verification block", driftAt < raw.indexOf("-- Verification"));
+t("verification never treats a missing function as satisfied (no coalesce(…, true))",
+  !/coalesce\(\s*(NOT\s+)?has_function_privilege/i.test(sql), "coalesce wrapper still present");
+
+console.log("\n=== g) verification block convention ===");
 const verifyAt = raw.indexOf("-- Verification");
 t("verification block is last", verifyAt > 0 && !/;\s*\S/.test(withoutComments(raw.slice(verifyAt)).replace(/;\s*$/, "")));
 t("verification uses the check/ok shape", /AS check,/.test(sql) && /AS ok\b/.test(sql) && /UNION ALL SELECT/.test(sql));
