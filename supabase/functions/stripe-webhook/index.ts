@@ -107,18 +107,37 @@ async function reactivatePages(admin: Admin, workspace_id: string) {
   return count ?? 0;
 }
 
+/**
+ * Which Stripe mode this deployment serves. The same source is deployed twice:
+ * as `stripe-webhook` (live keys) and as `stripe-webhook-test` (test-mode keys
+ * under the _TEST names). Edge function secrets are project-wide, so the
+ * deployment name — visible in the request path — is what selects the secrets.
+ * A test-mode endpoint can then be exercised end to end against the deployed
+ * code without ever touching the live signing secret.
+ */
+export function stripeEnvFor(url: string) {
+  const test = new URL(url).pathname.endsWith("/stripe-webhook-test");
+  const suffix = test ? "_TEST" : "";
+  return {
+    test,
+    apiKey: Deno.env.get("STRIPE_SECRET_KEY" + suffix),
+    webhookSecret: Deno.env.get("STRIPE_WEBHOOK_SECRET" + suffix),
+  };
+}
+
 Deno.serve(async (req) => {
   // Initialize per-request, not at module scope. A missing/rotated
   // STRIPE_SECRET_KEY at module scope crashes worker cold-start with an
   // opaque error instead of returning a clean 500 per request.
-  const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2024-06-20" });
+  const env = stripeEnvFor(req.url);
+  const stripe = new Stripe(env.apiKey!, { apiVersion: "2024-06-20" });
   const admin = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
   const sig = req.headers.get("stripe-signature");
-  const secret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
+  const secret = env.webhookSecret;
   const body = await req.text();
 
   let event: Stripe.Event;
@@ -128,6 +147,15 @@ Deno.serve(async (req) => {
   } catch (e) {
     console.error("webhook verify failed", e);
     return new Response(JSON.stringify({ error: "Invalid webhook signature" }), { status: 400 });
+  }
+
+  // A live deployment only acts on live events and the test deployment only on
+  // test events. Stripe keeps the two endpoints separate, so a mismatch here
+  // means a misconfigured endpoint; acknowledge it (a 4xx would make Stripe
+  // retry forever) and touch nothing.
+  if (event.livemode === env.test) {
+    console.warn(`[stripe-webhook] ignoring ${event.type} ${event.id}: livemode=${event.livemode} on ${env.test ? "test" : "live"} deployment`);
+    return new Response(JSON.stringify({ received: true, ignored: "mode_mismatch" }), { status: 200 });
   }
 
   // Idempotency: claim the event id before doing business work. A concurrent or

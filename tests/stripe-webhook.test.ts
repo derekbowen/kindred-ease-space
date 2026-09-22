@@ -32,6 +32,9 @@ const g = globalThis as unknown as {
 const SECRET = "whsec_test_" + "a".repeat(32);
 g.__edgeEnv.STRIPE_SECRET_KEY = "sk_test_placeholder";
 g.__edgeEnv.STRIPE_WEBHOOK_SECRET = SECRET;
+const TEST_SECRET = "whsec_testmode_" + "c".repeat(32);
+g.__edgeEnv.STRIPE_SECRET_KEY_TEST = "sk_test_placeholder_testmode";
+g.__edgeEnv.STRIPE_WEBHOOK_SECRET_TEST = TEST_SECRET;
 g.__edgeEnv.SUPABASE_URL = "http://supabase.invalid";
 g.__edgeEnv.SUPABASE_SERVICE_ROLE_KEY = "service-role-placeholder";
 
@@ -68,12 +71,12 @@ function signed(payload: string, opts: { secret?: string; timestamp?: number } =
 function reset() {
   g.__sbCalls.length = 0; g.__sbResponses = {}; g.__sbRpc = {}; g.__stripeStubs = {}; g.__stripeCalls.length = 0;
 }
-async function deliver(event: Record<string, unknown>, headerOverride?: string | null) {
+async function deliver(event: Record<string, unknown>, headerOverride?: string | null, path = "/stripe-webhook") {
   const body = JSON.stringify(event);
   const headers: Record<string, string> = { "content-type": "application/json" };
   const sig = headerOverride === undefined ? signed(body) : headerOverride;
   if (sig !== null) headers["stripe-signature"] = sig;
-  const res = await handler(new Request("http://edge.invalid/stripe-webhook", { method: "POST", headers, body }));
+  const res = await handler(new Request("http://edge.invalid" + path, { method: "POST", headers, body }));
   const json = await res.json().catch(() => ({}));
   return { status: res.status, json };
 }
@@ -81,7 +84,7 @@ const calls = (table: string, op?: string) => g.__sbCalls.filter((c) => c.table 
 const WS = "11111111-1111-4111-8111-111111111111";
 function subEvent(id: string, status: string, extra: Record<string, unknown> = {}, type = "customer.subscription.updated") {
   return {
-    id, object: "event", type, created: Math.floor(Date.now() / 1000),
+    id, object: "event", type, livemode: true, created: Math.floor(Date.now() / 1000),
     data: { object: {
       id: "sub_1", object: "subscription", status, metadata: { workspace_id: WS, plan_tier: "starter" },
       items: { data: [{ quantity: 1, price: { id: "price_1", unit_amount: 2900 } }] },
@@ -173,7 +176,7 @@ console.log("\n=== failed payment: grace, then suspension only when Stripe gives
 reset();
 g.__sbResponses["subscriptions.select"] = [{ data: { workspace_id: WS } }];
 {
-  const ev = { id: "evt_pf", object: "event", type: "invoice.payment_failed", created: Math.floor(Date.now() / 1000),
+  const ev = { id: "evt_pf", object: "event", type: "invoice.payment_failed", livemode: true, created: Math.floor(Date.now() / 1000),
     data: { object: { id: "in_1", object: "invoice", subscription: "sub_1", attempt_count: 1, next_payment_attempt: 1 } } };
   const r = await deliver(ev);
   t("payment_failed -> 200", r.status === 200);
@@ -227,12 +230,46 @@ reset();
 g.__sbRpc["grant_credits"] = () => ({ data: null, error: { message: "ledger down" } });
 g.__stripeStubs["checkout.sessions.listLineItems"] = async () => ({ data: [{ quantity: 1 }] });
 {
-  const ev = { id: "evt_credits", object: "event", type: "checkout.session.completed", created: Math.floor(Date.now() / 1000),
+  const ev = { id: "evt_credits", object: "event", type: "checkout.session.completed", livemode: true, created: Math.floor(Date.now() / 1000),
     data: { object: { id: "cs_1", object: "checkout.session", metadata: { workspace_id: WS, mode: "credits", credits_per_pack: "1000" }, payment_intent: "pi_1", amount_total: 1000, currency: "usd" } } };
   const r = await deliver(ev);
   t("failed credit grant -> 500 (never ACK a purchase that was not granted)", r.status === 500, String(r.status));
   const mark = calls("stripe_webhook_events", "update").at(-1);
   t("crashed attempt recorded as error on the event row", mark?.payload?.processing_status === "error" && /ledger down/.test(String(mark?.payload?.error)), JSON.stringify(mark?.payload));
+}
+
+
+// ---------------------------------------------------------------------------
+console.log("\n=== test-mode deployment: separate secrets, no cross-mode processing ===");
+reset();
+{
+  const ev = { ...subEvent("evt_tm_livesecret", "active"), livemode: false };
+  const r = await deliver(ev, signed(JSON.stringify(ev)), "/stripe-webhook-test");
+  t("test deployment rejects a payload signed with the LIVE secret -> 400", r.status === 400, String(r.status));
+  t("… and writes nothing", g.__sbCalls.length === 0);
+}
+reset();
+g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "active").data.object;
+{
+  const ev = { ...subEvent("evt_tm_ok", "active"), livemode: false };
+  const r = await deliver(ev, signed(JSON.stringify(ev), { secret: TEST_SECRET }), "/stripe-webhook-test");
+  t("test deployment processes a test-mode event signed with the TEST secret -> 200", r.status === 200 && r.json.received === true, JSON.stringify(r.json));
+  t("… recording exactly one event claim", calls("stripe_webhook_events", "insert").length === 1);
+  t("… and granting the entitlement", calls("workspaces", "update").some((c) => typeof c.payload?.page_limit_base === "number"));
+}
+reset();
+{
+  const ev = { ...subEvent("evt_tm_live_on_test", "active"), livemode: true };
+  const r = await deliver(ev, signed(JSON.stringify(ev), { secret: TEST_SECRET }), "/stripe-webhook-test");
+  t("a LIVE event reaching the test deployment is acknowledged and ignored", r.status === 200 && r.json.ignored === "mode_mismatch", JSON.stringify(r.json));
+  t("… with no writes at all", g.__sbCalls.length === 0);
+}
+reset();
+{
+  const ev = { ...subEvent("evt_test_on_live", "active"), livemode: false };
+  const r = await deliver(ev);
+  t("a TEST event reaching the live deployment is acknowledged and ignored", r.status === 200 && r.json.ignored === "mode_mismatch", JSON.stringify(r.json));
+  t("… with no writes at all", g.__sbCalls.length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
