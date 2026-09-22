@@ -25,7 +25,8 @@ export function SetupChecklist({ status }: { status: SetupStatus }) {
     {
       id: "sharetribe",
       label: "Connect Sharetribe",
-      description: "Pull your listings so we can build SEO pages around them.",
+      description:
+        "Read-only, needs just a Client ID. We import your published listings and build SEO pages around them.",
       done: status.sharetribeConnected,
       to: "/app/settings/integrations/sharetribe",
       icon: Plug,
@@ -34,7 +35,8 @@ export function SetupChecklist({ status }: { status: SetupStatus }) {
     {
       id: "listings",
       label: "Sync listings",
-      description: "Run a sync after connecting — city and category pages need listing data.",
+      description:
+        "Run a sync after connecting — city and category pages need listing data. It then refreshes about every 30 minutes.",
       done: status.hasListings,
       to: "/app/settings/integrations/sharetribe",
       icon: RefreshCw,

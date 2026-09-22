@@ -1,4 +1,10 @@
-// Public cron hook that runs Sharetribe sync for all connected workspaces.
+// Public cron hook that runs the Sharetribe sync.
+//   * body {workspace_id} — sync that one workspace. This is what the pg_cron
+//     fan-out (enqueue_sharetribe_syncs) calls, once per connected workspace,
+//     so each Worker request does one tenant's worth of subrequests.
+//   * no body — safety-net mode: sync at most SYNC_ALL_BATCH_LIMIT workspaces,
+//     oldest last_sync_at first, and report which ran. Never the whole fleet;
+//     a single request has a bounded subrequest budget.
 // Auth: caller must present `Authorization: Bearer ${CRON_SECRET}`. The
 // /api/public/* prefix already bypasses platform auth; the anon key is NOT
 // a secret (it ships to every browser), so previously requiring `apikey:
@@ -6,7 +12,11 @@
 
 import { createFileRoute } from "@tanstack/react-router";
 import { timingSafeEqual } from "crypto";
-import { runSharetribeSyncAll, runSharetribeSyncForWorkspace } from "@/lib/sharetribe-sync.server";
+import {
+  runSharetribeSyncBounded,
+  runSharetribeSyncForWorkspace,
+  SYNC_ALL_BATCH_LIMIT,
+} from "@/lib/sharetribe-sync.server";
 
 function safeEqual(a: string, b: string): boolean {
   const len = Math.max(a.length, b.length);
@@ -45,7 +55,7 @@ export const Route = createFileRoute("/api/public/hooks/sync-sharetribe")({
             const r = await runSharetribeSyncForWorkspace(body.workspace_id);
             return Response.json({ scope: "single", ok: true, ...r });
           }
-          const r = await runSharetribeSyncAll();
+          const r = await runSharetribeSyncBounded(SYNC_ALL_BATCH_LIMIT);
           return Response.json({ scope: "all", success: true, ...r });
         } catch (e) {
           console.error("[sync-sharetribe] failed", e);

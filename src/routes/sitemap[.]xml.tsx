@@ -4,7 +4,7 @@ import { tenantSitemapXml } from "@/lib/sitemap.server";
 
 // Only public, indexable routes. Auth pages (/login, /signup, /reset-password)
 // are intentionally excluded — they're Disallow'd in robots.txt.
-const ROUTES = ["/", "/help", "/privacy", "/terms"];
+const ROUTES = ["/", "/help", "/privacy", "/terms", "/beta"];
 
 export const Route = createFileRoute("/sitemap.xml")({
   server: {

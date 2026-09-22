@@ -6,7 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, CheckCircle2, AlertCircle, Plug, RefreshCw, Trash2 } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  AlertTriangle,
+  Plug,
+  RefreshCw,
+  Trash2,
+  ShieldCheck,
+  KeyRound,
+} from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import {
   getSharetribeIntegration,
@@ -24,17 +35,42 @@ export const Route = createFileRoute("/_authenticated/app/settings/integrations/
   component: SharetribeIntegrationPage,
 });
 
+type AuthMode = "marketplace" | "integration";
+
 type IntegrationRow = {
   id: string;
   marketplace_url: string;
   marketplace_id: string;
+  marketplace_name: string | null;
   client_id: string;
+  auth_mode: AuthMode | null;
   status: string;
   last_sync_at: string | null;
   last_sync_status: string | null;
   last_sync_error: string | null;
   listings_count: number | null;
 };
+
+const MODE_LABEL: Record<AuthMode, string> = {
+  marketplace: "Marketplace API (read-only)",
+  integration: "Integration API (advanced)",
+};
+
+/** Human wording for the last sync outcome — never a raw status code. */
+function syncStatusLabel(row: IntegrationRow): { text: string; tone: "ok" | "warn" | "bad" | "muted" } {
+  if (!row.last_sync_at) return { text: "Not synced yet", tone: "muted" };
+  const when = new Date(row.last_sync_at).toLocaleString();
+  switch (row.last_sync_status) {
+    case "success":
+      return { text: `Last synced ${when}`, tone: "ok" };
+    case "warning":
+      return { text: `Last synced ${when} with a warning`, tone: "warn" };
+    case "failed":
+      return { text: `Last sync failed ${when}`, tone: "bad" };
+    default:
+      return { text: `Last synced ${when}`, tone: "muted" };
+  }
+}
 
 function SharetribeIntegrationPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
@@ -46,8 +82,8 @@ function SharetribeIntegrationPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  const [authMode, setAuthMode] = useState<AuthMode>("marketplace");
   const [marketplaceUrl, setMarketplaceUrl] = useState("");
-  const [marketplaceId, setMarketplaceId] = useState("");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
 
@@ -83,6 +119,11 @@ function SharetribeIntegrationPage() {
     setIntegration(r.integration as IntegrationRow | null);
   }
 
+  const canSubmit =
+    marketplaceUrl.trim().length >= 8 &&
+    clientId.trim().length >= 8 &&
+    (authMode === "marketplace" || clientSecret.length >= 8);
+
   async function onConnect() {
     if (!workspaceId) return;
     setBusy(true);
@@ -90,17 +131,28 @@ function SharetribeIntegrationPage() {
     setMsg(null);
     try {
       const r = await connect({
-        data: { workspaceId, marketplaceUrl, marketplaceId, clientId, clientSecret },
+        data: {
+          workspaceId,
+          marketplaceUrl,
+          authMode,
+          clientId: clientId.trim(),
+          clientSecret: authMode === "integration" ? clientSecret : undefined,
+        },
       });
       if (r.ok) {
-        setMsg("Connected. Run an initial sync below.");
+        setMsg(
+          r.marketplaceName
+            ? `Connected to ${r.marketplaceName}. Run your first sync below.`
+            : "Connected. Run your first sync below.",
+        );
         setClientSecret("");
         await reload();
       } else {
         setErr(r.error);
       }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to connect");
+      console.error("[sharetribe] connect failed", e);
+      setErr("Something went wrong while connecting. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -114,13 +166,17 @@ function SharetribeIntegrationPage() {
     try {
       const r = await sync({ data: { workspaceId } });
       if (r.ok) {
-        setMsg(`Synced ${r.upserted} listings (${r.removed} removed).`);
-        await reload();
+        setMsg(
+          `Synced ${r.upserted} listing${r.upserted === 1 ? "" : "s"}` +
+            (r.removed ? ` and removed ${r.removed} that are no longer published.` : "."),
+        );
       } else {
         setErr(r.error);
       }
+      await reload();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Sync failed");
+      console.error("[sharetribe] sync failed", e);
+      setErr("Something went wrong while syncing. Please try again.");
     } finally {
       setSyncing(false);
     }
@@ -130,10 +186,20 @@ function SharetribeIntegrationPage() {
     if (!workspaceId) return;
     if (!confirm("Disconnect Sharetribe and delete all synced listings?")) return;
     setBusy(true);
+    setErr(null);
+    setMsg(null);
     try {
-      await disconnect({ data: { workspaceId } });
-      setIntegration(null);
-      setMsg("Disconnected.");
+      const r = await disconnect({ data: { workspaceId } });
+      if (r.ok) {
+        setIntegration(null);
+        setMsg("Disconnected. Your listings have been removed from founders.click.");
+      } else {
+        setErr(r.error);
+        await reload();
+      }
+    } catch (e) {
+      console.error("[sharetribe] disconnect failed", e);
+      setErr("Something went wrong while disconnecting. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -147,6 +213,9 @@ function SharetribeIntegrationPage() {
     );
   }
 
+  const statusInfo = integration ? syncStatusLabel(integration) : null;
+  const connectedMode: AuthMode = integration?.auth_mode === "marketplace" ? "marketplace" : "integration";
+
   return (
     <div className="max-w-3xl space-y-6 pb-10">
       <SettingsNav />
@@ -157,7 +226,8 @@ function SharetribeIntegrationPage() {
             <Plug className="h-6 w-6" /> Sharetribe Integration
           </h1>
           <p className="text-muted-foreground mt-1">
-            Connect your Sharetribe Flex marketplace so we can sync listings and render SEO pages.
+            Connect your Sharetribe marketplace so we can import your published listings and build
+            SEO pages around them.
           </p>
         </div>
         <InlineCoach
@@ -178,13 +248,17 @@ function SharetribeIntegrationPage() {
         </div>
       )}
 
-      {integration ? (
+      {integration && statusInfo ? (
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Connected</CardTitle>
+              <CardTitle>{integration.marketplace_name || "Connected"}</CardTitle>
               <Badge variant={integration.status === "connected" ? "default" : "destructive"}>
-                {integration.status}
+                {integration.status === "connected"
+                  ? "Connected"
+                  : integration.status === "error"
+                    ? "Needs attention"
+                    : "Pending"}
               </Badge>
             </div>
             <CardDescription>{integration.marketplace_url}</CardDescription>
@@ -192,36 +266,53 @@ function SharetribeIntegrationPage() {
           <CardContent className="space-y-3 text-sm">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <div className="text-muted-foreground text-xs">Marketplace ID</div>
-                <div className="font-mono">{integration.marketplace_id}</div>
+                <div className="text-muted-foreground text-xs">Connection</div>
+                <div className="flex items-center gap-1.5">
+                  {connectedMode === "marketplace" ? (
+                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+                  ) : (
+                    <KeyRound className="h-3.5 w-3.5 text-amber-500" />
+                  )}
+                  {MODE_LABEL[connectedMode]}
+                </div>
               </div>
               <div>
-                <div className="text-muted-foreground text-xs">Client ID</div>
-                <div className="font-mono truncate">{integration.client_id}</div>
+                <div className="text-muted-foreground text-xs">Marketplace</div>
+                <div>{integration.marketplace_name || "—"}</div>
               </div>
               <div>
-                <div className="text-muted-foreground text-xs">Listings synced</div>
+                <div className="text-muted-foreground text-xs">Listings imported</div>
                 <div>{integration.listings_count ?? 0}</div>
               </div>
               <div>
-                <div className="text-muted-foreground text-xs">Last sync</div>
-                <div>
-                  {integration.last_sync_at
-                    ? new Date(integration.last_sync_at).toLocaleString()
-                    : "Never"}{" "}
-                  {integration.last_sync_status && (
-                    <span className="text-muted-foreground">({integration.last_sync_status})</span>
-                  )}
+                <div className="text-muted-foreground text-xs">Sync status</div>
+                <div
+                  className={
+                    statusInfo.tone === "ok"
+                      ? "text-emerald-400"
+                      : statusInfo.tone === "warn"
+                        ? "text-amber-400"
+                        : statusInfo.tone === "bad"
+                          ? "text-red-400"
+                          : "text-muted-foreground"
+                  }
+                >
+                  {statusInfo.text}
                 </div>
               </div>
             </div>
             {integration.last_sync_error && (
-              <div className="rounded border border-red-500/30 bg-red-500/5 p-2 text-xs text-red-300">
-                {integration.last_sync_error}
+              <div className="rounded border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-200 flex items-start gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span>{integration.last_sync_error}</span>
               </div>
             )}
+            <p className="text-xs text-muted-foreground">
+              Listings are refreshed automatically about every 30 minutes. Listings that are no
+              longer published on your marketplace are removed on the next sync.
+            </p>
             <div className="flex gap-2 pt-2">
-              <Button onClick={onSync} disabled={syncing}>
+              <Button onClick={onSync} disabled={syncing || busy}>
                 {syncing ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
@@ -229,7 +320,11 @@ function SharetribeIntegrationPage() {
                 )}
                 Sync now
               </Button>
-              <Button variant="destructive" onClick={onDisconnect} disabled={busy || !isOwner}>
+              <Button
+                variant="destructive"
+                onClick={onDisconnect}
+                disabled={busy || syncing || !isOwner}
+              >
                 <Trash2 className="h-4 w-4 mr-2" /> Disconnect
               </Button>
             </div>
@@ -240,53 +335,140 @@ function SharetribeIntegrationPage() {
           <CardHeader>
             <CardTitle>Connect your marketplace</CardTitle>
             <CardDescription>
-              Get these values from your Sharetribe Console → Build → Integrations.
+              Choose how founders.click should read your listings. The Marketplace API is the right
+              choice for almost everyone.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-5">
+            <RadioGroup
+              value={authMode}
+              onValueChange={(v) => setAuthMode(v as AuthMode)}
+              className="grid gap-3"
+              disabled={!isOwner}
+            >
+              <label
+                htmlFor="mode-marketplace"
+                className={`flex items-start gap-3 rounded-md border p-3 cursor-pointer ${
+                  authMode === "marketplace" ? "border-primary bg-primary/5" : "border-border"
+                }`}
+              >
+                <RadioGroupItem id="mode-marketplace" value="marketplace" className="mt-0.5" />
+                <div className="space-y-1">
+                  <div className="text-sm font-medium flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-emerald-500" />
+                    Marketplace API
+                    <Badge variant="secondary" className="text-[10px]">
+                      Recommended
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Read-only access to public listing data. Needs only a Client ID — no secret.
+                  </p>
+                </div>
+              </label>
+              <label
+                htmlFor="mode-integration"
+                className={`flex items-start gap-3 rounded-md border p-3 cursor-pointer ${
+                  authMode === "integration" ? "border-primary bg-primary/5" : "border-border"
+                }`}
+              >
+                <RadioGroupItem id="mode-integration" value="integration" className="mt-0.5" />
+                <div className="space-y-1">
+                  <div className="text-sm font-medium flex items-center gap-2">
+                    <KeyRound className="h-4 w-4 text-amber-500" />
+                    Integration API
+                    <Badge variant="outline" className="text-[10px]">
+                      Advanced
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Client ID + Client Secret. Full marketplace access — only if you need it.
+                  </p>
+                </div>
+              </label>
+            </RadioGroup>
+
+            {authMode === "marketplace" ? (
+              <ol className="list-decimal pl-5 space-y-1 text-sm text-muted-foreground">
+                <li>
+                  Open your Sharetribe Console and go to <span className="text-foreground">Build → Applications</span>.
+                </li>
+                <li>
+                  Create an application (any name works, e.g. <span className="text-foreground">founders.click</span>) and copy its{" "}
+                  <span className="text-foreground">Client ID</span>.
+                </li>
+                <li>Paste it below, together with your marketplace address.</li>
+              </ol>
+            ) : (
+              <ol className="list-decimal pl-5 space-y-1 text-sm text-muted-foreground">
+                <li>
+                  Open your Sharetribe Console and go to <span className="text-foreground">Build → Applications</span>.
+                </li>
+                <li>
+                  Create an <span className="text-foreground">Integration API</span> application and copy its{" "}
+                  <span className="text-foreground">Client ID</span> and <span className="text-foreground">Client Secret</span>.
+                </li>
+                <li>Paste both below, together with your marketplace address.</li>
+              </ol>
+            )}
+
+            {authMode === "marketplace" ? (
+              <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-200 flex items-start gap-2">
+                <ShieldCheck className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>
+                  This grants read-only access to the same public listing data your marketplace
+                  already shows visitors. Nothing is written to your marketplace.
+                </span>
+              </div>
+            ) : (
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-200 flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>
+                  An Integration API secret grants full read and write access to your marketplace.
+                  Use it only if you need features that require it. The secret is stored encrypted
+                  in Supabase Vault, is never returned to the browser, and is deleted when you
+                  disconnect.
+                </span>
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label htmlFor="mu">Marketplace URL</Label>
               <Input
                 id="mu"
-                placeholder="https://your-marketplace.sharetribe.com"
+                placeholder="https://your-marketplace.com"
                 value={marketplaceUrl}
                 onChange={(e) => setMarketplaceUrl(e.target.value)}
                 disabled={!isOwner}
               />
+              <p className="text-xs text-muted-foreground">
+                The address visitors use to browse your marketplace. Used to link back to each listing.
+              </p>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="mid">Marketplace ID (UUID)</Label>
-              <Input
-                id="mid"
-                placeholder="00000000-0000-0000-0000-000000000000"
-                value={marketplaceId}
-                onChange={(e) => setMarketplaceId(e.target.value)}
-                disabled={!isOwner}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="cid">Integration API Client ID</Label>
+              <Label htmlFor="cid">Client ID</Label>
               <Input
                 id="cid"
                 value={clientId}
                 onChange={(e) => setClientId(e.target.value)}
                 disabled={!isOwner}
+                autoComplete="off"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="cs">Integration API Client Secret</Label>
-              <Input
-                id="cs"
-                type="password"
-                value={clientSecret}
-                onChange={(e) => setClientSecret(e.target.value)}
-                disabled={!isOwner}
-              />
-              <p className="text-xs text-muted-foreground">
-                Stored encrypted in Supabase Vault. Never sent back to the browser.
-              </p>
-            </div>
-            <Button onClick={onConnect} disabled={busy || !isOwner} className="w-full">
+            {authMode === "integration" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="cs">Client Secret</Label>
+                <Input
+                  id="cs"
+                  type="password"
+                  value={clientSecret}
+                  onChange={(e) => setClientSecret(e.target.value)}
+                  disabled={!isOwner}
+                  autoComplete="off"
+                />
+              </div>
+            )}
+            <Button onClick={onConnect} disabled={busy || !isOwner || !canSubmit} className="w-full">
               {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               Validate &amp; Connect
             </Button>
