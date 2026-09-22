@@ -90,6 +90,21 @@ function resolveRequestHost(): string | undefined {
   }
 }
 
+/**
+ * What a public page slug may look like. Slugs are produced by slugifyPage
+ * (lowercase letters, digits, dashes; 80 characters) and arrive here from the
+ * URL. Anything else is refused BEFORE the slug touches a query: the redirect
+ * lookup below interpolates it into a PostgREST `.or(...)` expression, where a
+ * value such as `x,slug.neq.zzz` is not a slug but two extra filter terms that
+ * widen the match to other rows. Refusing early also keeps junk out of the
+ * 404 log.
+ */
+export const PUBLIC_PAGE_SLUG_RE = /^[a-z0-9-]{1,200}$/;
+
+export function isPublicPageSlug(slug: string): boolean {
+  return PUBLIC_PAGE_SLUG_RE.test(slug);
+}
+
 export type PublicListing = {
   id: string;
   title: string;
@@ -146,6 +161,9 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
       let workspaceId: string | null = null;
       const preview = Boolean(data.workspaceSlug);
 
+      // Not a slug — not a page. Nothing below may see it.
+      if (!isPublicPageSlug(data.slug)) return { page: null, host, preview };
+
       if (data.workspaceSlug) {
         const { data: ws } = await sb()
           .from("workspaces")
@@ -165,13 +183,16 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
       // stops; until now nothing on this path consulted billing at all, so a
       // cancelled customer kept serving on their own domain indefinitely.
       //
-      // Preview is deliberately exempt: an owner whose subscription lapsed
-      // should still be able to see what they get back by paying.
+      // The platform-hosted preview (/s/{workspace}/{slug}) is NOT exempt. It
+      // is a public URL that anyone can open, so exempting it kept a lapsed
+      // tenant's pages viewable on founders.click — the opposite of "pages
+      // pause when access ends". An owner who wants to see what paying brings
+      // back has the editor for that.
       //
       // Fails OPEN. If this read errors we serve the page. A transient
       // database blip must never take down a paying customer's live site —
       // the cost of carrying a lapsed one for a few minutes is far lower.
-      if (!preview) {
+      {
         const { data: billing, error: billingError } = await sb()
           .from("workspaces")
           .select("subscription_status, trial_ends_at, current_period_end")
@@ -199,7 +220,7 @@ export const getPublicTenantPage = createServerFn({ method: "GET" })
           });
           if (granted !== null && !decision.serve) {
             console.warn(
-              `[getPublicTenantPage] withholding ${host ?? "?"}/${data.slug}: ${decision.state} — ${decision.reason}`,
+              `[getPublicTenantPage] withholding ${preview ? `preview ${data.workspaceSlug}` : (host ?? "?")}/${data.slug}: ${decision.state} — ${decision.reason}`,
             );
             return { page: null, host, preview, billingBlocked: true };
           }

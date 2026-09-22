@@ -412,4 +412,22 @@ t("…unless the new value is this workspace's own verified custom domain, whose
 t("a read failure fails the save rather than guessing", /if \(readErr\) throw new Error\(readErr\.message\);/.test(profileBody));
 t("only an owner reaches any of this", profileBody.indexOf("is_workspace_owner") > 0 && profileBody.indexOf("is_workspace_owner") < profileBody.indexOf("patch.domain_verified_at"));
 
+console.log("\n=== k) the platform preview is not a way around the billing gate (S8) ===");
+// /s/{workspace}/{slug} is a public URL. Exempting it from the billing gate
+// kept a lapsed tenant's pages viewable on founders.click, against the
+// promise that pages pause when access ends.
+const pageSrc = readFileSync(resolve(ROOT, "src/lib/public-tenant-page.functions.ts"), "utf8");
+const pageHandler = pageSrc.slice(pageSrc.indexOf("export const getPublicTenantPage"));
+t("the billing gate is no longer wrapped in `if (!preview)`", !/if \(!preview\) \{\s*const \{ data: billing/.test(pageHandler));
+const billingAt = pageHandler.indexOf('.select("subscription_status, trial_ends_at, current_period_end")');
+t("the billing read happens for every resolved workspace", billingAt > 0);
+t("a withheld page reports billingBlocked for preview and live alike",
+  /return \{ page: null, host, preview, billingBlocked: true \};/.test(pageHandler));
+t("the gate still fails open on a billing read error", /billing read failed, serving anyway/.test(pageHandler));
+t("the gate still fails open on a grant read failure", /granted !== null && !decision\.serve/.test(pageHandler));
+t("the gate runs before any page content is read",
+  billingAt < pageHandler.indexOf('.from("tenant_pages")') && billingAt < pageHandler.indexOf('.from("content_pages")'));
+const previewRoute = readFileSync(resolve(ROOT, "src/routes/s.$ws.$slug.tsx"), "utf8");
+t("the preview route turns page: null into a 404", /if \(!r\.page\) throw notFound\(\);/.test(previewRoute));
+
 finish();
