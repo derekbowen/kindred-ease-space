@@ -361,7 +361,9 @@ export async function submitTicket(params: {
   const ticketId = data!.id as string;
   const priority = ((data as any)!.priority as string) ?? "normal";
 
-  // Fire-and-forget email notifications — never block ticket creation.
+  // Fire-and-forget email notifications — never block ticket creation, and
+  // never let an email failure fail the ticket: the row is the record, the
+  // mail is how someone finds out about it.
   try {
     const { sendEmail, newTicketStaffTemplate, ticketReceivedUserTemplate, SUPPORT_INBOX_EMAIL } =
       await import("./email.server");
@@ -383,18 +385,39 @@ export async function submitTicket(params: {
       }),
     ]);
 
+    // The support-inbox notification is unconditional. The admin-editable
+    // template can be disabled, and previously that silently dropped the one
+    // email that tells us a customer is waiting — a ticket nobody sees is a
+    // ticket nobody answers. With no template, send a plain-text summary
+    // carrying everything needed to act: id, category, requester, message.
+    const category = params.category ?? "uncategorised";
+    const staffFallback = {
+      subject: `[Support] #${ticketId.slice(0, 8)} · ${category} · ${params.subject}`,
+      text: [
+        `New support ticket ${ticketId}`,
+        `Category: ${category}`,
+        `Priority: ${priority}`,
+        `From: ${params.name ? `${params.name} <${params.email}>` : params.email}`,
+        params.workspaceId ? `Workspace: ${params.workspaceId}` : null,
+        "",
+        params.message,
+      ]
+        .filter((l) => l !== null)
+        .join("\n"),
+    };
+
     await Promise.allSettled([
-      staffTpl
-        ? sendEmail({
-            to: SUPPORT_INBOX_EMAIL,
-            subject: staffTpl.subject,
-            html: staffTpl.html,
-            text: staffTpl.text,
-            replyTo: params.email,
-            idempotencyKey: `ticket-staff-${ticketId}`,
-            meta: { ticket_id: ticketId, kind: "ticket_new_staff" },
-          })
-        : Promise.resolve(),
+      sendEmail({
+        to: SUPPORT_INBOX_EMAIL,
+        subject: staffTpl?.subject ?? staffFallback.subject,
+        html: staffTpl?.html,
+        text: staffTpl?.text ?? staffFallback.text,
+        replyTo: params.email,
+        idempotencyKey: `ticket-${ticketId}`,
+        meta: { ticket_id: ticketId, kind: "ticket_new_staff" },
+      }).then((r) => {
+        if (!r.ok) console.error("[help] submitTicket inbox notify failed", ticketId, r.error);
+      }),
       userTpl
         ? sendEmail({
             to: params.email,

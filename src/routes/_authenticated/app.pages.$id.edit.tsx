@@ -214,7 +214,7 @@ function EditPage() {
               {isNew ? "New page" : "Edit page"}
             </h1>
             <p className="text-sm text-muted-foreground">
-              Renders at <code className="font-mono text-xs">/p/{slug || "slug"}</code>
+              Renders at <code className="font-mono text-xs">/a/{slug || "slug"}</code>
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -307,7 +307,7 @@ function EditPage() {
           <div className="space-y-1.5">
             <Label>URL slug</Label>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">/p/</span>
+              <span className="text-sm text-muted-foreground">/a/</span>
               <Input
                 value={slug}
                 onChange={(e) => {

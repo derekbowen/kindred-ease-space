@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Sparkles, FileText, Store, Coins, BarChart3 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { getWorkspaceOverview } from "@/lib/workspace.functions";
+import { getBetaStatus } from "@/lib/entitlements.functions";
 import { DailyBriefing } from "@/components/coach/DailyBriefing";
 import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
 
@@ -51,7 +52,17 @@ function DashboardPage() {
     enabled: !!workspaceId,
   });
 
-  if (!workspaceId || isLoading) {
+  // A beta tenant has an admin grant and no trial to convert from. Resolve it
+  // before rendering the status card so the "pick a plan" nag never flashes
+  // at someone who was promised free access.
+  const { data: beta, isLoading: betaLoading } = useQuery({
+    queryKey: ["beta-status", workspaceId],
+    queryFn: () => getBetaStatus({ data: { workspaceId: workspaceId! } }),
+    enabled: !!workspaceId,
+    staleTime: 60_000,
+  });
+
+  if (!workspaceId || isLoading || betaLoading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-64" />
@@ -89,22 +100,47 @@ function DashboardPage() {
         </p>
       </div>
 
-      {ws?.subscription_status === "trialing" && daysLeft !== null && (
-        <Card className="border-orange-500/30 bg-orange-500/5">
-          <CardContent className="py-4 flex items-center justify-between">
+      {beta?.beta ? (
+        // Never nag a beta tenant: their access is a grant, not a countdown
+        // to a credit card. Say what they have and when (if ever) it ends.
+        <Card className="border-emerald-500/30 bg-emerald-500/5">
+          <CardContent className="py-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="font-medium">
-                Trial — {daysLeft} day{daysLeft === 1 ? "" : "s"} left
+                Free beta — {beta.pageLimit.toLocaleString()} page
+                {beta.pageLimit === 1 ? "" : "s"} included, no charge
               </div>
               <div className="text-xs text-muted-foreground">
-                Pick a plan to keep generating after the trial ends.
+                {beta.expiresAt
+                  ? `Beta access runs until ${new Date(beta.expiresAt).toLocaleDateString()}.`
+                  : "No end date set."}{" "}
+                We'll tell you well before anything changes.
               </div>
             </div>
-            <Button asChild>
-              <Link to="/app/billing">Choose a plan</Link>
+            <Button asChild variant="outline">
+              <Link to="/beta">What's included</Link>
             </Button>
           </CardContent>
         </Card>
+      ) : (
+        ws?.subscription_status === "trialing" &&
+        daysLeft !== null && (
+          <Card className="border-orange-500/30 bg-orange-500/5">
+            <CardContent className="py-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-medium">
+                  Trial — {daysLeft} day{daysLeft === 1 ? "" : "s"} left
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  When it ends, your published pages pause until you pick a plan; drafts are kept.
+                </div>
+              </div>
+              <Button asChild>
+                <Link to="/app/billing">Choose a plan</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )
       )}
 
       <SetupChecklist status={setupStatus} />
@@ -189,9 +225,8 @@ function DashboardPage() {
           <Button variant="outline" size="sm" asChild>
             <Link to="/app/seo/gsc-import">Import GSC data</Link>
           </Button>
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/app/seo/click-report">View click report</Link>
-          </Button>
+          {/* The click report is still a stub (nothing writes city_link_clicks);
+              the dashboard must not link a customer to a "coming soon" page. */}
           <Button variant="ghost" size="sm" asChild>
             <Link to="/app/coach">
               <Sparkles className="h-3.5 w-3.5 mr-1.5" />
