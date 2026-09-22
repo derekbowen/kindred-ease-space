@@ -5,7 +5,8 @@
 -- (a city with enough published listings and no page yet). Items are the unit
 -- of work the browser drives one at a time, and they are idempotent by
 -- (workspace_id, target_key) — NOT by slug, which gets suffixed on collision.
--- A done item is never regenerated and never charged twice.
+-- A done item is never regenerated and never charged twice; billing_status
+-- records what actually happened to each item's charge.
 --
 -- platform_settings holds the two platform-wide knobs ops can flip without a
 -- deploy: a pause switch and a per-workspace daily cap. Nobody but the
@@ -45,17 +46,49 @@ CREATE TABLE IF NOT EXISTS public.generation_items (
   prompt_tokens int,
   completion_tokens int,
   credits_charged int NOT NULL DEFAULT 0,
+  -- What actually happened to the platform charge for this item:
+  --   pending  → no settlement recorded yet. A page can exist before its
+  --              charge does (the crash window), which is exactly what a
+  --              re-claim looks for: settle, never regenerate.
+  --   charged  → credits deducted (credits_charged says how many)
+  --   free     → BYOK key, free platform quota, a beta grant, or an existing
+  --              page was linked — nothing owed
+  --   unbilled → the deduction FAILED after generation. The item is failed
+  --              with credits_charged 0 (never a charge that did not happen)
+  --              and its retry settles without generating again.
+  billing_status text NOT NULL DEFAULT 'pending',
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT generation_items_status_check
     CHECK (status IN ('pending','running','done','failed','skipped')),
+  CONSTRAINT generation_items_billing_status_check
+    CHECK (billing_status IN ('pending','charged','free','unbilled')),
   -- The idempotency key: one row per target per workspace, ever.
   CONSTRAINT generation_items_workspace_target_key UNIQUE (workspace_id, target_key)
 );
 CREATE INDEX IF NOT EXISTS generation_items_job_idx ON public.generation_items(job_id);
--- The daily cap counts items done in the last 24h per workspace.
+-- The daily cap counts items done, running OR pending in the last 24h per
+-- workspace — a reservation, so two tabs cannot each fit under the cap and
+-- together overrun it.
 CREATE INDEX IF NOT EXISTS generation_items_ws_status_updated_idx
   ON public.generation_items(workspace_id, status, updated_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- Quick Page idempotency + the other half of the daily-cap ledger.
+-- The browser generates a request id and keeps it across retries until it
+-- gets a response, so a lost response + resubmit returns the page that
+-- already exists instead of creating slug-2 and charging twice. Batch pages
+-- deliberately carry NO request id (they are keyed by generation_items), so
+-- the cap can count both generators without double counting:
+--   batch = generation_items in the window, quick = pages with a request id.
+-- ---------------------------------------------------------------------------
+ALTER TABLE public.tenant_pages ADD COLUMN IF NOT EXISTS generation_request_id uuid;
+CREATE UNIQUE INDEX IF NOT EXISTS tenant_pages_generation_request_uidx
+  ON public.tenant_pages(workspace_id, generation_request_id)
+  WHERE generation_request_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS tenant_pages_generated_created_idx
+  ON public.tenant_pages(workspace_id, created_at DESC)
+  WHERE generation_request_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS public.platform_settings (
   key text PRIMARY KEY,
@@ -125,6 +158,17 @@ UNION ALL SELECT 'generation_paused seeded',
        EXISTS (SELECT 1 FROM public.platform_settings WHERE key = 'generation_paused')
 UNION ALL SELECT 'generation_daily_cap seeded',
        EXISTS (SELECT 1 FROM public.platform_settings WHERE key = 'generation_daily_cap')
+UNION ALL SELECT 'items carry billing_status',
+       EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'generation_items'
+                  AND column_name = 'billing_status')
+UNION ALL SELECT 'tenant_pages.generation_request_id present',
+       EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'tenant_pages'
+                  AND column_name = 'generation_request_id')
+UNION ALL SELECT 'generation request id unique per workspace',
+       EXISTS (SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public' AND indexname = 'tenant_pages_generation_request_uidx')
 UNION ALL SELECT 'jobs readable by authenticated',
        has_table_privilege('authenticated', 'public.generation_jobs', 'SELECT')
 UNION ALL SELECT 'items not writable by authenticated',

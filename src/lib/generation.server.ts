@@ -19,13 +19,16 @@ import { checkPageBeforePublish, type ContractCheck } from "@/lib/seo/page-contr
  * prompt, ONE inventory-grounding rule, ONE metering path and ONE model policy.
  *
  * Ordering matters and is the whole point of this module:
- *   1. generatePageContent  — cheap availability check, then the AI call.
- *      Nothing is charged here. A failed generation costs the customer nothing
- *      and a retry does not pay twice.
+ *   0. resolveBillingMode    — who pays, decided BEFORE anything is spent:
+ *      BYOK (the customer's own provider bill), a beta grant (included), or
+ *      the platform key — which must be able to pay for a whole page, not
+ *      merely hold a positive balance.
+ *   1. generatePageContent  — the AI call. Nothing is charged here. A failed
+ *      generation costs the customer nothing and a retry does not pay twice.
  *   2. persistGeneratedPage — the draft row. Never auto-publishes.
  *   3. settleGeneration     — charges the platform quota/credits ONLY now,
- *      and only when the key came from the platform (BYOK is the customer's
- *      own provider bill).
+ *      and reports honestly: a deduction that did not happen is recorded as
+ *      'unbilled', never as a charge.
  *
  * The pure helpers at the top have no I/O so tests can import this file
  * without a database or network (supabaseAdmin is a lazy proxy).
@@ -45,7 +48,7 @@ import { checkPageBeforePublish, type ContractCheck } from "@/lib/seo/page-contr
 export const GENERATION_DEFAULT_MODEL = "google/gemini-3-flash-preview";
 
 /** A typical city page: ~1.5K prompt tokens (brief + inventory) and ~1.5K out. */
-const TYPICAL_PAGE_TOKENS = { prompt: 1500, completion: 1500 };
+export const TYPICAL_PAGE_TOKENS = { prompt: 1500, completion: 1500 };
 
 /** Credits one page is likely to cost on a platform key, for the cost hint. */
 export function estimatedCreditsPerPage(model: string): number {
@@ -71,6 +74,16 @@ export const GENERATION_MODEL_OPTIONS: Array<{ id: string; label: string; hint: 
   }));
 
 /**
+ * The model ids a customer may ask for, as a tuple for z.enum. Anything else
+ * is rejected at the input boundary: an unknown id must never be "resolved"
+ * to the most expensive model on the customer's behalf.
+ */
+export const GENERATION_MODEL_IDS = GENERATION_MODEL_OPTIONS.map((m) => m.id) as [
+  string,
+  ...string[],
+];
+
+/**
  * Stable identity for a batch target. Batch items are idempotent by THIS key,
  * never by slug — slugs get suffixed on collision (findUniqueTenantSlug) so
  * two runs for the same city would otherwise produce austin, austin-2, ...
@@ -85,6 +98,32 @@ export function buildTargetKey(t: { city: string; state?: string | null }): stri
     .toLowerCase()
     .replace(/\s+/g, " ");
   return `city:${city}|${state}`;
+}
+
+const normPlace = (s: unknown) =>
+  String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+/**
+ * Does an existing page cover this city? The single eligibility predicate the
+ * Page Builder, the batch target list and the pre-generation duplicate check
+ * all share. City must match; when BOTH sides carry a state the states must
+ * match too (Portland, OR must not hide Portland, ME). A page with no state
+ * recorded is taken to cover the city in any state — the conservative choice,
+ * since the alternative is generating a second page for the same place.
+ */
+export function pageCoversCity(
+  page: { city?: string | null; state?: string | null },
+  target: { city: string; state?: string | null },
+): boolean {
+  const pc = normPlace(page.city);
+  if (!pc || pc !== normPlace(target.city)) return false;
+  const ps = normPlace(page.state);
+  const ts = normPlace(target.state);
+  if (ps && ts) return ps === ts;
+  return true;
 }
 
 export type CityTargetInput = {
@@ -120,50 +159,223 @@ export function selectTargets(
 }
 
 /** Pages a workspace may still generate today. Never negative. */
-export function dailyCapRemaining(cap: number, doneLast24h: number): number {
+export function dailyCapRemaining(cap: number, consumedLast24h: number): number {
   const c = Number.isFinite(cap) ? Math.max(0, Math.floor(cap)) : 0;
-  const d = Number.isFinite(doneLast24h) ? Math.max(0, Math.floor(doneLast24h)) : 0;
+  const d = Number.isFinite(consumedLast24h) ? Math.max(0, Math.floor(consumedLast24h)) : 0;
   return Math.max(0, c - d);
 }
 
-export type ExistingItemLike = { target_key: string; status: string };
+export const DAILY_CAP_WINDOW_MS = 24 * 3600_000;
+
+/**
+ * The daily cap is a RESERVATION, not a tally of finished pages: an item that
+ * is queued or being written has already been promised a slot, so it counts
+ * the moment it exists. Otherwise two browser tabs could each start a job
+ * that fits the cap and together overrun it. Failed and skipped items release
+ * their slot; done items hold it for the rest of the window.
+ */
+export const DAILY_CAP_COUNTED_STATUSES = ["done", "running", "pending"] as const;
+
+export function countsTowardDailyCap(
+  item: { status: string; updated_at: string | null | undefined },
+  now = Date.now(),
+): boolean {
+  if (!(DAILY_CAP_COUNTED_STATUSES as readonly string[]).includes(item.status)) return false;
+  const t = item.updated_at ? Date.parse(item.updated_at) : Number.NaN;
+  if (!Number.isFinite(t)) return true; // unknown age: count it (fail closed)
+  return now - t <= DAILY_CAP_WINDOW_MS;
+}
+
+/**
+ * The pause switch as ops actually set it. The seed is a JSON boolean, but a
+ * hand edit through the dashboard easily lands as the string "true" — that
+ * must pause too. Anything else (false, "false", missing, garbage) is "not
+ * paused"; a READ failure is handled by the caller and fails closed.
+ */
+export function isGenerationPaused(value: unknown): boolean {
+  if (value === true) return true;
+  if (typeof value === "string") return value.trim().toLowerCase() === "true";
+  return false;
+}
+
+/**
+ * How many times one item may be attempted before it is failed for good. A
+ * provider that keeps erroring on one city must not be retried forever; the
+ * fourth attempt is refused with a clear message instead of a claim. Policy
+ * refusals (paused, cap, no credits) do NOT consume an attempt — they cost
+ * nothing and clear on their own.
+ */
+export const MAX_ITEM_ATTEMPTS = 3;
+
+export function attemptsExhausted(attempts: number | null | undefined): boolean {
+  return (Number(attempts) || 0) >= MAX_ITEM_ATTEMPTS;
+}
+
+export type ExistingItemLike = {
+  target_key: string;
+  status: string;
+  page_id: string | null;
+  updated_at?: string | null;
+  attempts?: number | null;
+};
+
+export type JobPlan = {
+  /** No item yet: insert one. */
+  create: string[];
+  /** Existing item the new job may (re)drive — the union of reattachBy. */
+  reattach: string[];
+  reattachBy: {
+    /** pending / failed / skipped: idle, safe to move. */
+    idle: string[];
+    /** running but untouched for STALE_RUNNING_MS: the driver is gone. */
+    staleRunning: string[];
+    /** done, but the draft was deleted (page_id nulled by the FK): generate again. */
+    pageDeleted: string[];
+  };
+  /** done with a live draft: reused as-is, never regenerated, never charged again. */
+  alreadyDone: string[];
+  /** running and fresh: another driver has it RIGHT NOW. Never reset — that is how two pages and two charges happen. */
+  inProgress: string[];
+  /** MAX_ITEM_ATTEMPTS reached without a page: refused until support resets it. */
+  exhausted: string[];
+};
 
 /**
  * Decide what a new job does with each requested key, given the workspace's
  * existing items (UNIQUE on workspace_id + target_key):
- *   - done      → reused as-is; NOT regenerated, NOT charged again
- *   - pending / running / failed / skipped → re-attached to the new job so the
- *                 browser can (re)drive them; still one row per key
- *   - unknown   → created
+ *   - done + page          → alreadyDone (reused; NOT regenerated, NOT charged again)
+ *   - done + page deleted  → reattach (pageDeleted) — the target is generatable again
+ *   - running, fresh       → inProgress — left alone
+ *   - running, stale       → reattach (staleRunning)
+ *   - pending/failed/skipped, attempts < MAX → reattach (idle)
+ *   - attempts >= MAX      → exhausted
+ *   - unknown              → create
  */
 export function planJobItems(
   requestedKeys: string[],
   existing: ExistingItemLike[],
-): { create: string[]; reattach: string[]; alreadyDone: string[] } {
-  const byKey = new Map(existing.map((e) => [e.target_key, e.status]));
-  const create: string[] = [];
-  const reattach: string[] = [];
-  const alreadyDone: string[] = [];
+  now = Date.now(),
+): JobPlan {
+  const byKey = new Map(existing.map((e) => [e.target_key, e]));
+  const plan: JobPlan = {
+    create: [],
+    reattach: [],
+    reattachBy: { idle: [], staleRunning: [], pageDeleted: [] },
+    alreadyDone: [],
+    inProgress: [],
+    exhausted: [],
+  };
   const seen = new Set<string>();
   for (const key of requestedKeys) {
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    const status = byKey.get(key);
-    if (status === undefined) create.push(key);
-    else if (status === "done") alreadyDone.push(key);
-    else reattach.push(key);
+    const item = byKey.get(key);
+    if (!item) {
+      plan.create.push(key);
+      continue;
+    }
+    if (item.status === "done") {
+      if (item.page_id) plan.alreadyDone.push(key);
+      else {
+        plan.reattach.push(key);
+        plan.reattachBy.pageDeleted.push(key);
+      }
+      continue;
+    }
+    if (item.status === "running" && !isStaleRunning(item.updated_at, now)) {
+      plan.inProgress.push(key);
+      continue;
+    }
+    if (attemptsExhausted(item.attempts)) {
+      plan.exhausted.push(key);
+      continue;
+    }
+    plan.reattach.push(key);
+    if (item.status === "running") plan.reattachBy.staleRunning.push(key);
+    else plan.reattachBy.idle.push(key);
   }
-  return { create, reattach, alreadyDone };
+  return plan;
 }
 
 /** Running items older than this are treated as abandoned and retried. */
 export const STALE_RUNNING_MS = 3 * 60_000;
+
+/**
+ * Hard ceiling on one provider call. It MUST be shorter than STALE_RUNNING_MS:
+ * a driver that is still waiting on the provider must never look abandoned,
+ * or a second driver reclaims the item and generates the page twice.
+ */
+export const OPENROUTER_TIMEOUT_MS = 120_000;
 
 export function isStaleRunning(updatedAt: string | null | undefined, now = Date.now()): boolean {
   if (!updatedAt) return true;
   const t = Date.parse(updatedAt);
   if (!Number.isFinite(t)) return true;
   return now - t > STALE_RUNNING_MS;
+}
+
+/**
+ * Can the platform key pay for ONE page? Free trial quota first; once that is
+ * gone the purchased balance must cover a whole page at this model's price.
+ * A balance of 1 credit against a 5-credit page used to pass ("> 0") and the
+ * deduction then failed silently — generation for free, forever.
+ * A missing quota row means the RPC will create one with the default free
+ * allowance on first consume, so null counts as "free quota available".
+ */
+export function hasPlatformFunds(p: {
+  freeQuotaRemaining: number | null;
+  balance: number | null;
+  model: string;
+}): boolean {
+  const freeLeft = p.freeQuotaRemaining === null ? true : p.freeQuotaRemaining > 0;
+  if (freeLeft) return true;
+  return (Number(p.balance) || 0) >= estimatedCreditsPerPage(p.model);
+}
+
+export type BillingMode = "byok" | "granted" | "platform";
+export type SettleBilling = "byok" | "granted" | "free_quota" | "credits" | "unbilled";
+/** generation_items.billing_status */
+export type ItemBillingStatus = "pending" | "charged" | "free" | "unbilled";
+
+/** What an item's billing_status must say once settlement has run. */
+export function billingStatusFor(
+  billing: SettleBilling,
+  creditsCharged: number,
+): ItemBillingStatus {
+  if (billing === "unbilled") return "unbilled";
+  if (billing === "credits") return creditsCharged > 0 ? "charged" : "free";
+  return "free";
+}
+
+/**
+ * billing_status the moment the draft row exists, before settlement. Only a
+ * platform-metered generation has a charge outstanding; BYOK and beta grants
+ * are settled by construction, so a crash after this point owes nothing.
+ */
+export function initialBillingStatus(mode: BillingMode): ItemBillingStatus {
+  return mode === "platform" ? "pending" : "free";
+}
+
+/** Customer-facing wording. Provider bodies never reach these strings. */
+export const PROVIDER_ERROR_MESSAGE =
+  "The AI provider returned an error; try again or contact support.";
+export const PROVIDER_TIMEOUT_MESSAGE =
+  "The AI provider took too long to respond. Try again in a minute.";
+export const GENERATION_PAUSED_MESSAGE =
+  "Paused: page generation is paused platform-wide right now. Try again later.";
+export const ATTEMPTS_EXHAUSTED_MESSAGE = `Gave up after ${MAX_ITEM_ATTEMPTS} attempts. Contact support if you need this city written.`;
+export const UNBILLED_ITEM_MESSAGE =
+  "The draft was written but could not be billed: out of AI credits. Top up in Billing, then retry — the page will not be generated again.";
+
+export function outOfCreditsMessage(model: string): string {
+  const n = estimatedCreditsPerPage(model);
+  return `Out of AI credits. A page on this model costs about ${n} credit${n === 1 ? "" : "s"}; top up in Billing to keep generating.`;
+}
+
+export function dailyCapMessage(cap: number, remaining: number): string {
+  return remaining === 0
+    ? `You've hit today's limit of ${cap} generated pages. Try again in 24 hours.`
+    : `You can generate ${remaining} more page${remaining === 1 ? "" : "s"} in the next 24 hours (limit ${cap} per day). Pick ${remaining} or fewer cities.`;
 }
 
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -286,8 +498,13 @@ type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 /**
  * One forced tool call to OpenRouter. `fetchImpl` is injectable so the
- * parsing rules (tool-call shape, short-body rejection, non-2xx text) are
- * testable offline.
+ * parsing rules (tool-call shape, short-body rejection, non-2xx handling,
+ * the timeout) are testable offline.
+ *
+ * Provider error bodies go to the server log ONLY. What is thrown — and so
+ * what lands in generation_items.error and in front of the customer — is a
+ * generic sentence. A raw upstream body can carry request ids, quota
+ * details or half a stack trace; none of that belongs in a tenant's UI.
  */
 export async function callOpenRouterWritePage(opts: {
   apiKey: string;
@@ -295,28 +512,46 @@ export async function callOpenRouterWritePage(opts: {
   systemPrompt: string;
   userPrompt: string;
   fetchImpl?: FetchLike;
+  timeoutMs?: number;
+  log?: (message: string) => void;
 }): Promise<OpenRouterResult> {
   const doFetch: FetchLike = opts.fetchImpl ?? ((i, init) => fetch(i, init));
-  const resp = await doFetch(`${OPENROUTER_BASE}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${opts.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: opts.model,
-      messages: [
-        { role: "system", content: opts.systemPrompt },
-        { role: "user", content: opts.userPrompt },
-      ],
-      tools: [WRITE_PAGE_TOOL],
-      tool_choice: { type: "function", function: { name: "write_page" } },
-    }),
-  });
+  const log = opts.log ?? ((m: string) => console.error(m));
+  const signal = AbortSignal.timeout(opts.timeoutMs ?? OPENROUTER_TIMEOUT_MS);
+
+  let resp: Response;
+  try {
+    resp = await doFetch(`${OPENROUTER_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${opts.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: opts.model,
+        messages: [
+          { role: "system", content: opts.systemPrompt },
+          { role: "user", content: opts.userPrompt },
+        ],
+        tools: [WRITE_PAGE_TOOL],
+        tool_choice: { type: "function", function: { name: "write_page" } },
+      }),
+      signal,
+    });
+  } catch (e) {
+    const name = (e as { name?: unknown } | null)?.name;
+    const timedOut = signal.aborted || name === "TimeoutError" || name === "AbortError";
+    const reason = e instanceof Error ? e.message : String(e);
+    log(
+      `[openrouter] ${timedOut ? "timeout" : "network error"} model=${opts.model}: ${reason.slice(0, 300)}`,
+    );
+    throw new Error(timedOut ? PROVIDER_TIMEOUT_MESSAGE : PROVIDER_ERROR_MESSAGE);
+  }
 
   if (!resp.ok) {
-    const t = await resp.text();
-    throw new Error(`AI provider ${resp.status}: ${t.slice(0, 300)}`);
+    const t = await resp.text().catch(() => "");
+    log(`[openrouter] HTTP ${resp.status} model=${opts.model}: ${t.slice(0, 500)}`);
+    throw new Error(PROVIDER_ERROR_MESSAGE);
   }
   const json: any = await resp.json();
   const promptTokens = Number(json?.usage?.prompt_tokens ?? 0) || 0;
@@ -371,11 +606,11 @@ export async function resolveGenerationKey(
 }
 
 /**
- * Cheap read-only check that the workspace can pay for ONE platform call:
- * free trial quota left, or a positive credit balance. Nothing is reserved —
+ * Cheap read-only check that the workspace can pay for ONE platform call at
+ * this model's price (see hasPlatformFunds). Nothing is reserved —
  * consumption happens in settleGeneration after the page row exists.
  */
-export async function assertPlatformAiAvailable(workspaceId: string): Promise<void> {
+export async function assertPlatformAiAvailable(workspaceId: string, model: string): Promise<void> {
   const [{ data: quota }, { data: bal }] = await Promise.all([
     supabaseAdmin
       .from("workspace_ai_quota")
@@ -388,13 +623,61 @@ export async function assertPlatformAiAvailable(workspaceId: string): Promise<vo
       .eq("workspace_id", workspaceId)
       .maybeSingle(),
   ]);
-  // No quota row yet means the RPC will create one with the default free
-  // allowance on first consume, so "missing" counts as available.
-  const freeLeft = quota ? (quota.platform_credits_remaining ?? 0) > 0 : true;
-  const credits = (bal?.balance ?? 0) > 0;
-  if (!freeLeft && !credits) {
-    throw new Error("Out of AI credits. Top up in Billing to keep generating.");
+  const ok = hasPlatformFunds({
+    freeQuotaRemaining: quota ? (quota.platform_credits_remaining ?? 0) : null,
+    balance: bal?.balance ?? 0,
+    model,
+  });
+  if (!ok) throw new Error(outOfCreditsMessage(model));
+}
+
+/**
+ * Is AI generation included for this workspace? True for a beta tenant whose
+ * capacity comes from an admin grant (billingState 'granted'): that is the
+ * product decision — generation is part of the grant, bounded by the daily
+ * cap and the pause switch rather than by credits. A read failure meters
+ * normally (fails closed for cost); it never hands out free generation.
+ */
+export async function isGenerationGranted(workspaceId: string): Promise<boolean> {
+  try {
+    const { readEntitlement } = await import("@/lib/entitlements.functions");
+    const ent = await readEntitlement(workspaceId);
+    return ent.billingState === "granted";
+  } catch (e) {
+    console.error(
+      "[generation] entitlement read failed; metering normally",
+      workspaceId,
+      e instanceof Error ? e.message : String(e),
+    );
+    return false;
   }
+}
+
+/** For a platform-keyed generation: included by grant, or metered (with funds). */
+export async function resolvePlatformSettlementMode(
+  workspaceId: string,
+  model: string,
+): Promise<"granted" | "platform"> {
+  if (await isGenerationGranted(workspaceId)) return "granted";
+  await assertPlatformAiAvailable(workspaceId, model);
+  return "platform";
+}
+
+export type ResolvedBilling = { key: string; source: KeySource; mode: BillingMode };
+
+/**
+ * Step 0: who pays. Throws with a customer-readable message when nobody can
+ * (no key, or a platform key without the funds for a whole page). Callers run
+ * this BEFORE claiming an item so a refusal here never counts as an attempt.
+ */
+export async function resolveBillingMode(
+  workspaceId: string,
+  model: string,
+): Promise<ResolvedBilling> {
+  const { key, source } = await resolveGenerationKey(workspaceId);
+  if (source === "byok") return { key, source, mode: "byok" };
+  const mode = await resolvePlatformSettlementMode(workspaceId, model);
+  return { key, source, mode };
 }
 
 export type GenerateInput = {
@@ -408,6 +691,8 @@ export type GenerateInput = {
   /** Category used to narrow the inventory grounding query, if known. */
   category?: string | null;
   model?: string | null;
+  /** Pre-resolved by the caller (resolveBillingMode); resolved here otherwise. */
+  billing?: ResolvedBilling;
   fetchImpl?: FetchLike;
 };
 
@@ -416,6 +701,7 @@ export type GeneratedContent = WritePageOutput & {
   completionTokens: number;
   model: string;
   keySource: KeySource;
+  billingMode: BillingMode;
 };
 
 /**
@@ -423,9 +709,8 @@ export type GeneratedContent = WritePageOutput & {
  * message on any failure (no key, no credits, provider error, thin output).
  */
 export async function generatePageContent(input: GenerateInput): Promise<GeneratedContent> {
-  const { key, source } = await resolveGenerationKey(input.workspaceId);
   const model = resolvePlatformModel(input.model ?? GENERATION_DEFAULT_MODEL);
-  if (source === "platform") await assertPlatformAiAvailable(input.workspaceId);
+  const billing = input.billing ?? (await resolveBillingMode(input.workspaceId, model));
 
   // Ground generation in the tenant's real inventory when a city is targeted.
   let inventoryFacts = "";
@@ -443,7 +728,7 @@ export async function generatePageContent(input: GenerateInput): Promise<Generat
   }
 
   const gen = await callOpenRouterWritePage({
-    apiKey: key,
+    apiKey: billing.key,
     model,
     systemPrompt: GENERATION_SYSTEM_PROMPT,
     userPrompt: buildUserPrompt({
@@ -454,14 +739,90 @@ export async function generatePageContent(input: GenerateInput): Promise<Generat
     }),
     fetchImpl: input.fetchImpl,
   });
-  return { ...gen, model, keySource: source };
+  return { ...gen, model, keySource: billing.source, billingMode: billing.mode };
 }
 
-export type PersistedPage = { id: string; slug: string; title: string; url_path: string };
+export type PersistedPage = {
+  id: string;
+  slug: string;
+  title: string;
+  url_path: string;
+  /** True when the row already existed for this generation request (replay). */
+  replayed?: boolean;
+};
+
+export type ExistingPage = {
+  id: string;
+  slug: string;
+  title: string | null;
+  status: string | null;
+  body_markdown: string | null;
+};
+
+/** The page a Quick Page request already produced, if it did. */
+export async function findPageByRequestId(
+  workspaceId: string,
+  generationRequestId: string,
+): Promise<ExistingPage | null> {
+  const { data, error } = await sb()
+    .from("tenant_pages")
+    .select("id, slug, title, status, body_markdown")
+    .eq("workspace_id", workspaceId)
+    .eq("generation_request_id", generationRequestId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as ExistingPage | null) ?? null;
+}
+
+const escapeLike = (s: string) => s.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+
+/**
+ * A page that already covers this city, by the same predicate the Page
+ * Builder uses to decide eligibility (pageCoversCity). Batch items call this
+ * right before generating: a draft that a crashed run left behind, or one the
+ * customer wrote by hand meanwhile, is linked instead of duplicated.
+ */
+export async function findExistingCityPage(
+  workspaceId: string,
+  city: string,
+  state: string | null | undefined,
+): Promise<{ id: string; slug: string } | null> {
+  const wanted = city.trim();
+  if (!wanted) return null;
+  const { data, error } = await sb()
+    .from("tenant_pages")
+    .select("id, slug, variables, created_at")
+    .eq("workspace_id", workspaceId)
+    .ilike("variables->>city", escapeLike(wanted))
+    .order("created_at", { ascending: true })
+    .limit(50);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as Array<{
+    id: string;
+    slug: string;
+    variables: Record<string, unknown> | null;
+  }>;
+  const hit = rows.find((p) =>
+    pageCoversCity(
+      {
+        city: p.variables?.city as string | undefined,
+        state: p.variables?.state as string | undefined,
+      },
+      { city: wanted, state },
+    ),
+  );
+  return hit ? { id: hit.id, slug: hit.slug } : null;
+}
 
 /**
  * Step 2: the draft row. Always status 'draft' — publishing is a separate,
  * gated step (page contract + entitlement) that callers run explicitly.
+ *
+ * With a generationRequestId the insert is idempotent per workspace (partial
+ * unique index): a concurrent duplicate request loses the race, reads the
+ * winner's row and returns it flagged `replayed`, so the caller knows NOT to
+ * settle — the winner does. Batch items never pass one; they are keyed by
+ * generation_items instead, which is what keeps the daily-cap ledger honest.
  */
 export async function persistGeneratedPage(input: {
   workspaceId: string;
@@ -472,6 +833,7 @@ export async function persistGeneratedPage(input: {
   city?: string | null;
   state?: string | null;
   categoryPlural?: string | null;
+  generationRequestId?: string | null;
 }): Promise<PersistedPage> {
   const baseSlug = slugifyPage(input.slug || input.requestedTitle);
   if (!baseSlug) throw new Error("Could not derive slug from title");
@@ -506,59 +868,144 @@ export async function persistGeneratedPage(input: {
       variables,
       listing_filter: listingFilter,
       status: "draft",
+      generation_request_id: input.generationRequestId ?? null,
     })
     .select("id, slug, title")
     .single();
-  if (insErr) throw new Error(insErr.message);
+  if (insErr) {
+    if (
+      input.generationRequestId &&
+      insErr.code === "23505" &&
+      /generation_request/.test(String(insErr.message ?? ""))
+    ) {
+      const existing = await findPageByRequestId(input.workspaceId, input.generationRequestId);
+      if (existing) {
+        return {
+          id: existing.id,
+          slug: existing.slug,
+          title: existing.title ?? pageTitle,
+          url_path: `/a/${existing.slug}`,
+          replayed: true,
+        };
+      }
+    }
+    throw new Error(insErr.message);
+  }
   return { ...inserted, url_path: `/a/${inserted.slug}` };
 }
 
 /**
- * Step 3: settle. Runs ONLY after a page row exists. Platform key → spend the
- * free quota first (consume_platform_ai_credit), then purchased credits.
- * BYOK → nothing to charge; the call is logged for the usage history only.
+ * Credits already deducted for this page, or null. deduct_credits writes the
+ * ledger row in the same transaction as the balance change, so the ledger —
+ * not the item, not memory — is the truth about whether a page was paid for.
+ * A settlement that died between the deduction and the item update is
+ * recognised here on the retry instead of charging a second time. Throws on
+ * a read error: not knowing must never turn into a fresh deduction.
+ */
+export async function findLedgerCharge(workspaceId: string, refId: string): Promise<number | null> {
+  const { data, error } = await sb()
+    .from("credit_ledger")
+    .select("delta")
+    .eq("workspace_id", workspaceId)
+    .eq("ref_id", refId)
+    .eq("reason", "ai_usage")
+    .lt("delta", 0)
+    .limit(1);
+  if (error) throw new Error(`credit ledger read failed: ${error.message}`);
+  const row = (data ?? [])[0] as { delta: number } | undefined;
+  return row ? Math.abs(Number(row.delta) || 0) : null;
+}
+
+/**
+ * Step 3: settle. Runs ONLY after a page row exists.
+ *   BYOK      → nothing to charge; logged for the usage history only.
+ *   granted   → included in the beta grant; logged, not charged.
+ *   platform  → already in the ledger for this page? then it is paid (a
+ *               crashed earlier settlement) → otherwise spend the free quota
+ *               first (consume_platform_ai_credit), then purchased credits
+ *               (deduct_credits).
+ * A deduction that fails is reported as `unbilled` with creditsCharged 0 —
+ * never as a charge that did not happen — and logged loudly for ops. The
+ * caller decides what that means for its record (a batch item fails so its
+ * retry can settle without regenerating).
  */
 export async function settleGeneration(opts: {
   workspaceId: string;
   userId?: string | null;
   keySource: KeySource;
+  billingMode?: BillingMode;
   model: string;
   promptTokens: number;
   completionTokens: number;
   feature: string;
   refId?: string | null;
-}): Promise<{ creditsCharged: number; billing: "byok" | "free_quota" | "credits" }> {
+}): Promise<{ creditsCharged: number; billing: SettleBilling; billingStatus: ItemBillingStatus }> {
+  const mode: BillingMode = opts.billingMode ?? (opts.keySource === "byok" ? "byok" : "platform");
   let creditsCharged = 0;
-  let billing: "byok" | "free_quota" | "credits" = "byok";
+  let billing: SettleBilling =
+    mode === "byok" ? "byok" : mode === "granted" ? "granted" : "unbilled";
+  let failure: string | null = null;
 
-  if (opts.keySource === "platform") {
-    const { error: qErr } = await supabaseAdmin.rpc("consume_platform_ai_credit", {
-      _workspace_id: opts.workspaceId,
-    });
-    if (!qErr) {
+  if (mode === "platform") {
+    // Idempotent by page: a deduction already on the ledger for this page is
+    // THE charge. Checked before touching the free quota too, so a retry after
+    // a crash cannot pay twice in either currency for a page paid in credits.
+    const prior = opts.refId ? await findLedgerCharge(opts.workspaceId, opts.refId) : null;
+    const { error: qErr } =
+      prior === null
+        ? await supabaseAdmin.rpc("consume_platform_ai_credit", {
+            _workspace_id: opts.workspaceId,
+          })
+        : { error: null };
+    if (prior !== null) {
+      billing = "credits";
+      creditsCharged = prior;
+    } else if (!qErr) {
       billing = "free_quota";
     } else if (
       typeof qErr.message === "string" &&
       qErr.message.includes("platform_ai_quota_exhausted")
     ) {
-      billing = "credits";
-      creditsCharged = creditsForUsage(opts.model, opts.promptTokens, opts.completionTokens);
-      if (creditsCharged > 0) {
+      const owed = creditsForUsage(opts.model, opts.promptTokens, opts.completionTokens);
+      if (owed > 0) {
         const { error } = await supabaseAdmin.rpc("deduct_credits", {
           _workspace_id: opts.workspaceId,
-          _amount: creditsCharged,
+          _amount: owed,
           _reason: "ai_usage",
           _ai_model: opts.model,
           _ref_type: opts.feature,
           _ref_id: opts.refId ?? undefined,
           _metadata: { provider: "platform", feature: opts.feature },
         });
-        // The page already exists; a failed deduction is an ops problem, not
-        // a reason to take the customer's content away.
-        if (error) console.error("[settleGeneration] deduct_credits failed", error.message);
+        if (error) {
+          failure = `deduct_credits failed (${owed} credits): ${error.message}`;
+        } else {
+          billing = "credits";
+          creditsCharged = owed;
+        }
+      } else {
+        billing = "credits";
       }
     } else {
-      console.error("[settleGeneration] consume_platform_ai_credit failed", qErr.message);
+      failure = `consume_platform_ai_credit failed: ${qErr.message}`;
+    }
+    if (failure) {
+      // The page already exists and the provider has been paid. This line is
+      // the only record that WE were not — keep it loud and greppable.
+      console.error(
+        "[settleGeneration] UNBILLED generation",
+        JSON.stringify({
+          workspaceId: opts.workspaceId,
+          feature: opts.feature,
+          refId: opts.refId ?? null,
+          model: opts.model,
+          promptTokens: opts.promptTokens,
+          completionTokens: opts.completionTokens,
+          failure,
+        }),
+      );
+      billing = "unbilled";
+      creditsCharged = 0;
     }
   }
 
@@ -572,9 +1019,72 @@ export async function settleGeneration(opts: {
     completion_tokens: opts.completionTokens,
     total_tokens: opts.promptTokens + opts.completionTokens,
     used_byok: opts.keySource === "byok",
-    status: "ok",
+    status: billing === "unbilled" ? "unbilled" : "ok",
+    error: failure ? failure.slice(0, 300) : undefined,
   });
-  return { creditsCharged, billing };
+  return { creditsCharged, billing, billingStatus: billingStatusFor(billing, creditsCharged) };
+}
+
+// ---------------------------------------------------------------------------
+// Platform-wide knobs and the daily-cap ledger (shared by batch + quick page)
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_DAILY_CAP = 50;
+
+/**
+ * platform_settings is service-role only. Fail CLOSED on any read error: if
+ * the pause switch cannot be read it is treated as thrown, and the cap as 0 —
+ * a broken settings read must never turn into an uncapped spend.
+ */
+export async function readPlatformSettings(): Promise<{ paused: boolean; dailyCap: number }> {
+  const { data, error } = await sb()
+    .from("platform_settings")
+    .select("key, value")
+    .in("key", ["generation_paused", "generation_daily_cap"]);
+  if (error) {
+    console.error("[generation] platform_settings read failed", error.message);
+    return { paused: true, dailyCap: 0 };
+  }
+  const map = new Map<string, unknown>((data ?? []).map((r: any) => [r.key, r.value]));
+  const paused = isGenerationPaused(map.get("generation_paused"));
+  const capRaw = Number(map.get("generation_daily_cap") ?? DEFAULT_DAILY_CAP);
+  return { paused, dailyCap: Number.isFinite(capRaw) ? capRaw : DEFAULT_DAILY_CAP };
+}
+
+/**
+ * Pages this workspace has consumed from its daily cap in the last 24 hours,
+ * across BOTH generators, so neither can be used to get around the other:
+ *   batch  = generation_items done/running/pending in the window (a reservation
+ *            — see DAILY_CAP_COUNTED_STATUSES);
+ *   quick  = tenant_pages created in the window that carry a
+ *            generation_request_id (every Quick Page / Opportunity Engine page
+ *            does; batch pages never do, so nothing is counted twice).
+ * Throws on a read error; callers treat that as "cannot generate".
+ */
+export async function countConsumedLast24h(
+  workspaceId: string,
+  opts: { excludeItemId?: string } = {},
+): Promise<number> {
+  const since = new Date(Date.now() - DAILY_CAP_WINDOW_MS).toISOString();
+  let itemsQ = sb()
+    .from("generation_items")
+    .select("id", { count: "exact", head: true })
+    .eq("workspace_id", workspaceId)
+    .in("status", [...DAILY_CAP_COUNTED_STATUSES])
+    .gte("updated_at", since);
+  if (opts.excludeItemId) itemsQ = itemsQ.neq("id", opts.excludeItemId);
+  const [items, quick] = await Promise.all([
+    itemsQ,
+    sb()
+      .from("tenant_pages")
+      .select("id", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId)
+      .not("generation_request_id", "is", null)
+      .gte("created_at", since),
+  ]);
+  if (items.error) throw new Error(items.error.message);
+  if (quick.error) throw new Error(quick.error.message);
+  return (items.count ?? 0) + (quick.count ?? 0);
 }
 
 /** Run the published-page contract against a stored draft. */

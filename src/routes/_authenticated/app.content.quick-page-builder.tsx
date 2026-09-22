@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +39,33 @@ export const Route = createFileRoute("/_authenticated/app/content/quick-page-bui
   component: QuickPageBuilder,
 });
 
+type BuilderCtx = {
+  domain: string | null;
+  cities: BuilderCity[];
+  gaps: BuilderCity[];
+  stats: { cityGaps: number; publishedPages: number };
+  dominantCategory: string | null;
+  /** The platform's model picker — same list and same cheap default as batch. */
+  models: Array<{ id: string; label: string; hint: string }>;
+  defaultModel: string;
+};
+
+/**
+ * Idempotency key for one generation request (RFC 4122 v4). randomUUID is
+ * missing in non-secure contexts, hence the getRandomValues fallback.
+ */
+function newRequestId(): string {
+  const c = globalThis.crypto as Crypto | undefined;
+  if (c?.randomUUID) return c.randomUUID();
+  const b = new Uint8Array(16);
+  if (c?.getRandomValues) c.getRandomValues(b);
+  else for (let i = 0; i < b.length; i++) b[i] = Math.floor(Math.random() * 256);
+  b[6] = (b[6]! & 0x0f) | 0x40;
+  b[8] = (b[8]! & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
 function QuickPageBuilder() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [ws, setWs] = useState<{
@@ -52,7 +79,9 @@ function QuickPageBuilder() {
   const [topic, setTopic] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
-  const [model, setModel] = useState("google/gemini-3.1-pro-preview");
+  // Filled from the server's default once the context loads — never a
+  // hardcoded id here, so the UI cannot drift to a pricier model than batch.
+  const [model, setModel] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
@@ -64,14 +93,14 @@ function QuickPageBuilder() {
     limitMessage?: string | null;
     published?: boolean;
     draftReason?: string | null;
+    replayed?: boolean;
   } | null>(null);
-  const [ctx, setCtx] = useState<{
-    domain: string | null;
-    cities: BuilderCity[];
-    gaps: BuilderCity[];
-    stats: { cityGaps: number; publishedPages: number };
-    dominantCategory: string | null;
-  } | null>(null);
+  const [ctx, setCtx] = useState<BuilderCtx | null>(null);
+  // The key for the NEXT generation. It survives a failed attempt and is
+  // rotated only once a response arrives, so a lost response + resubmit
+  // returns the page that request already made instead of creating slug-2
+  // and paying twice.
+  const requestIdRef = useRef<string>(newRequestId());
 
   const create = useServerFn(createQuickPage);
   const loadCtx = useServerFn(getPageBuilderContext);
@@ -88,15 +117,27 @@ function QuickPageBuilder() {
     });
   }, []);
 
+  const applyCtx = useCallback((r: any) => {
+    setCtx({
+      domain: r.domain,
+      cities: r.cities,
+      gaps: r.gaps,
+      stats: r.stats,
+      dominantCategory: r.dominantCategory ?? null,
+      models: r.models ?? [],
+      defaultModel: r.defaultModel ?? "",
+    });
+    setModel((m) => m || r.defaultModel || "");
+  }, []);
+
   useEffect(() => {
     if (!workspaceId) return;
-    loadCtx({ data: { workspaceId } }).then((r: any) =>
-      setCtx({ domain: r.domain, cities: r.cities, gaps: r.gaps, stats: r.stats, dominantCategory: r.dominantCategory ?? null }),
-    );
-  }, [workspaceId, loadCtx]);
+    loadCtx({ data: { workspaceId } }).then(applyCtx);
+  }, [workspaceId, loadCtx, applyCtx]);
 
   const slug = title ? slugifyPageTitle(title) : "";
-  const canSubmit = !!workspaceId && title.trim().length >= 3 && topic.trim().length >= 10 && !busy;
+  const canSubmit =
+    !!workspaceId && !!model && title.trim().length >= 3 && topic.trim().length >= 10 && !busy;
   const activePreset = PAGE_PRESETS.find((p) => p.id === preset) ?? PAGE_PRESETS[0];
   const category = ctx?.dominantCategory ?? undefined;
 
@@ -142,8 +183,11 @@ function QuickPageBuilder() {
           city: city || undefined,
           state: state || undefined,
           categoryPlural: ctx?.dominantCategory || "listings",
+          generationRequestId: requestIdRef.current,
         },
       });
+      // This request is complete; the next page gets a fresh key.
+      requestIdRef.current = newRequestId();
       setResult({
         url_path: res.page.url_path ?? "",
         title: res.page.title ?? "(untitled)",
@@ -153,6 +197,7 @@ function QuickPageBuilder() {
         limitMessage: res.limitMessage,
         published: res.published,
         draftReason: res.draftReason,
+        replayed: res.replayed,
       });
       setTitle("");
       setDescription("");
@@ -160,9 +205,7 @@ function QuickPageBuilder() {
       setCity("");
       setState("");
       if (workspaceId) {
-        loadCtx({ data: { workspaceId } }).then((r: any) =>
-          setCtx({ domain: r.domain, cities: r.cities, gaps: r.gaps, stats: r.stats, dominantCategory: r.dominantCategory ?? null }),
-        );
+        loadCtx({ data: { workspaceId } }).then(applyCtx);
       }
     } catch (err: any) {
       setError(err?.message || String(err));
@@ -191,7 +234,7 @@ function QuickPageBuilder() {
             <p className="max-w-xl text-sm text-muted-foreground">
               Describe the page, we write on-brand copy, wire up your listing grid, and publish live
               at{" "}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">/p/{"{slug}"}</code>.
+              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">/a/{"{slug}"}</code>.
             </p>
           </div>
           {ctx && (
@@ -326,7 +369,7 @@ function QuickPageBuilder() {
                   />
                   {slug && (
                     <p className="text-xs text-muted-foreground">
-                      Live URL: <code className="rounded bg-muted px-1 font-mono">/p/{slug}</code>
+                      Live URL: <code className="rounded bg-muted px-1 font-mono">/a/{slug}</code>
                     </p>
                   )}
                 </div>
@@ -359,22 +402,22 @@ function QuickPageBuilder() {
 
                 <div className="space-y-1.5">
                   <Label htmlFor="model">AI model</Label>
-                  <Select value={model} onValueChange={setModel}>
+                  <Select value={model} onValueChange={setModel} disabled={!ctx}>
                     <SelectTrigger id="model">
-                      <SelectValue />
+                      <SelectValue placeholder="Loading models…" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="google/gemini-3.1-pro-preview">
-                        Gemini 3.1 Pro — best quality
-                      </SelectItem>
-                      <SelectItem value="google/gemini-3.5-flash">
-                        Gemini 3.5 Flash — balanced
-                      </SelectItem>
-                      <SelectItem value="google/gemini-3-flash-preview">
-                        Gemini 3 Flash — fast & cheap
-                      </SelectItem>
+                      {(ctx?.models ?? []).map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {ctx?.models.find((m) => m.id === model)?.hint ??
+                      "Cost depends on the model you pick."}
+                  </p>
                 </div>
 
                 {error && (
@@ -403,6 +446,12 @@ function QuickPageBuilder() {
                             ? `Saved as draft — ${result.words} words`
                             : `Published — ${result.words} words`}
                         </p>
+                        {result.replayed && (
+                          <p className="text-sm text-muted-foreground">
+                            This page had already been created by an earlier attempt, so nothing was
+                            generated or charged again.
+                          </p>
+                        )}
                         {/* A draft is kept for two reasons: the plan is out of
                             page slots (offer the upgrade) or the page did not
                             pass the pre-publish checks (say what to fix). */}
@@ -419,15 +468,16 @@ function QuickPageBuilder() {
                         <p className="text-sm text-muted-foreground truncate">{result.title}</p>
                         <div className="flex flex-wrap gap-2">
                           <Button asChild size="sm">
-                            {/* /p/{slug} only resolves on a verified tenant host —
+                            {/* /a/{slug} only resolves on a verified tenant host —
                                 on the platform host it 404s, so link the verified
-                                domain when present, else the /s/ preview. */}
+                                domain when present, else the /s/{workspace}/{slug}
+                                preview. */}
                             <a
                               href={
                                 ws?.marketplace_domain && ws?.domain_verified_at
                                   ? `https://${ws.marketplace_domain}${result.url_path}`
                                   : ws?.slug
-                                    ? `/s/${ws.slug}${result.url_path.replace(/^\/p/, "")}`
+                                    ? `/s/${ws.slug}/${result.slug}`
                                     : result.url_path
                               }
                               target="_blank"
