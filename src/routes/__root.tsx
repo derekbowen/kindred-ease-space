@@ -12,6 +12,7 @@ import {
 import appCss from "../styles.css?url";
 import { installServerFnAuthFetch } from "@/integrations/supabase/server-fn-fetch";
 import { supabase } from "@/integrations/supabase/client";
+import { authLandingFromHash } from "@/lib/auth-landing";
 import { I18nProvider } from "@/lib/i18n";
 import { canonicalUrl } from "@/lib/canonical";
 import { Toaster } from "@/components/ui/sonner";
@@ -161,6 +162,11 @@ function AuthStateBridge() {
   const router = useRouter();
   const queryClient = useQueryClient();
   useEffect(() => {
+    // Where an auth link that landed on a marketing route should take the
+    // user. Decided from the URL hash BEFORE supabase-js consumes it: the
+    // client strips the fragment as it stores the session, so by the time
+    // SIGNED_IN fires the hash is gone.
+    const landing = authLandingFromHash(window.location.hash, window.location.pathname);
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
       router.invalidate();
@@ -168,6 +174,13 @@ function AuthStateBridge() {
       // session — that just produces a 401 storm. Sign-out flows clear the
       // cache themselves.
       if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
+      if (event === "SIGNED_IN" && landing) {
+        // Confirmation and recovery links redirect to the Auth "Site URL",
+        // which is the marketing homepage, with the session in the fragment.
+        // The session is stored fine, but the customer is left on a page that
+        // says "Sign in". Take them where the link was for.
+        router.navigate({ to: landing, replace: true });
+      }
     });
     return () => sub.subscription.unsubscribe();
   }, [router, queryClient]);
