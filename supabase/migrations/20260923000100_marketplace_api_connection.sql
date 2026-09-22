@@ -34,6 +34,34 @@ COMMENT ON COLUMN public.tenant_integrations.client_secret_vault_id IS
 COMMENT ON COLUMN public.tenant_integrations.marketplace_name IS
   'Display name reported by marketplace/show at connect time.';
 
+-- One marketplace, one workspace. The Marketplace API connect flow proves
+-- possession of a working Client ID, not ownership of the marketplace, so
+-- without this any workspace could connect a marketplace another workspace
+-- had already connected and publish pages against its listings. The
+-- constraint is the minimal guard: a second connection of the same
+-- (provider, marketplace_id) is refused by the database, and
+-- connectSharetribe turns the resulting 23505 into a message that names no
+-- other workspace. An ownership challenge is separate work.
+--
+-- Guarded so the file re-runs cleanly. If production already holds two
+-- workspaces on one marketplace the ALTER fails with the duplicated key —
+-- the right outcome: resolve the duplicate by hand, then re-run.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'tenant_integrations_provider_marketplace_id_key'
+       AND conrelid = 'public.tenant_integrations'::regclass
+  ) THEN
+    ALTER TABLE public.tenant_integrations
+      ADD CONSTRAINT tenant_integrations_provider_marketplace_id_key
+      UNIQUE (provider, marketplace_id);
+  END IF;
+END $$;
+
+COMMENT ON CONSTRAINT tenant_integrations_provider_marketplace_id_key ON public.tenant_integrations IS
+  'A marketplace can be connected to one founders.click workspace at a time. connectSharetribe maps the violation to a message that names no other workspace.';
+
 -- Verification: every row should say true.
 SELECT 'auth_mode column' AS check,
        EXISTS (SELECT 1 FROM information_schema.columns
@@ -52,4 +80,9 @@ UNION ALL SELECT 'marketplace_id still required',
 UNION ALL SELECT 'marketplace_name column',
        EXISTS (SELECT 1 FROM information_schema.columns
                 WHERE table_schema = 'public' AND table_name = 'tenant_integrations'
-                  AND column_name = 'marketplace_name');
+                  AND column_name = 'marketplace_name')
+UNION ALL SELECT 'one workspace per (provider, marketplace_id)',
+       EXISTS (SELECT 1 FROM pg_constraint
+                WHERE conname = 'tenant_integrations_provider_marketplace_id_key'
+                  AND conrelid = 'public.tenant_integrations'::regclass
+                  AND contype = 'u');

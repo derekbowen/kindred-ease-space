@@ -34,6 +34,32 @@ export const getSharetribeIntegration = createServerFn({ method: "GET" })
     return { integration: row ?? null };
   });
 
+/**
+ * Shown when the marketplace is already connected elsewhere. It names no
+ * other workspace, no owner and no marketplace — connect is an owner-only
+ * call, but "is marketplace X connected to somebody?" is still a question a
+ * stranger with any workspace could otherwise ask one connect attempt at a
+ * time.
+ */
+export const MARKETPLACE_ALREADY_CONNECTED_ERROR =
+  "This marketplace is already connected to another founders.click workspace. If it is yours, contact support.";
+
+/**
+ * Did a tenant_integrations write hit the one-workspace-per-marketplace rule?
+ * The upsert resolves its own (workspace_id, provider) conflict in ON
+ * CONFLICT, so a unique violation (SQLSTATE 23505) that still surfaces is the
+ * (provider, marketplace_id) constraint from 20260923000100. Matched on the
+ * SQLSTATE first and the standard message second, because supabase-js
+ * carries the code on some paths and only the text on others.
+ */
+export function isMarketplaceTakenError(
+  err: { code?: string | null; message?: string | null } | null | undefined,
+): boolean {
+  if (!err) return false;
+  if (err.code === "23505") return true;
+  return /duplicate key value violates unique constraint/i.test(err.message ?? "");
+}
+
 const connectInput = z
   .object({
     workspaceId: z.string().uuid(),
@@ -92,6 +118,27 @@ export const connectSharetribe = createServerFn({ method: "POST" })
       .eq("provider", "sharetribe")
       .maybeSingle();
 
+    // ONE WORKSPACE PER MARKETPLACE. Validation above proved the Client ID
+    // works, not that this owner owns the marketplace, so without this any
+    // workspace could connect a marketplace another workspace already has and
+    // publish pages against its listings. The database constraint
+    // (20260923000100) is the authority; this read only spares the Vault write
+    // below when the answer is already no. The reply names nobody.
+    const { data: heldElsewhere, error: heldErr } = await (supabaseAdmin as any)
+      .from("tenant_integrations")
+      .select("id")
+      .eq("provider", "sharetribe")
+      .eq("marketplace_id", v.marketplaceId)
+      .neq("workspace_id", data.workspaceId)
+      .limit(1)
+      .maybeSingle();
+    if (heldErr) {
+      // Not fatal: the constraint still decides at the upsert.
+      console.error("[connectSharetribe] marketplace ownership check failed", heldErr.message);
+    } else if (heldElsewhere) {
+      return { ok: false as const, error: MARKETPLACE_ALREADY_CONNECTED_ERROR };
+    }
+
     let vaultId: string | null = null;
     if (authMode === "integration") {
       // Save secret via vault helper, called as the user (RLS-checked).
@@ -137,6 +184,12 @@ export const connectSharetribe = createServerFn({ method: "POST" })
       { onConflict: "workspace_id,provider" },
     );
     if (upsertErr) {
+      if (isMarketplaceTakenError(upsertErr)) {
+        // Lost the race with another workspace since the check above, or the
+        // check itself failed. The details carry the key; log the code only.
+        console.error("[connectSharetribe] marketplace already connected elsewhere", upsertErr.code);
+        return { ok: false as const, error: MARKETPLACE_ALREADY_CONNECTED_ERROR };
+      }
       console.error("[connectSharetribe] upsert error", upsertErr);
       return { ok: false as const, error: "We couldn't save the connection. Try again." };
     }
@@ -150,15 +203,14 @@ export const disconnectSharetribe = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     // Disconnecting hard-deletes the integration AND every synced listing — owner-only.
     await assertWorkspaceOwner(data.workspaceId, context.userId);
-    const { error: intErr } = await (supabaseAdmin as any)
-      .from("tenant_integrations")
-      .delete()
-      .eq("workspace_id", data.workspaceId)
-      .eq("provider", "sharetribe");
-    if (intErr) {
-      console.error("[disconnectSharetribe] integration delete failed", intErr.message);
-      return { ok: false as const, error: "We couldn't remove the connection. Try again." };
-    }
+
+    // LISTINGS FIRST, ROW LAST. The row is what the Settings page keys the
+    // Disconnect button on: with the row deleted first, a failed listings
+    // delete left the UI showing the connect form, orphaned listings, and no
+    // control that could retry. In this order any failure leaves the
+    // connection visibly in place with Disconnect still there to press again,
+    // and a second press after a complete first one is a no-op (a delete that
+    // matches nothing is not an error), so the call is idempotent.
     const { error: listErr } = await (supabaseAdmin as any)
       .from("tenant_listings")
       .delete()
@@ -168,7 +220,19 @@ export const disconnectSharetribe = createServerFn({ method: "POST" })
       return {
         ok: false as const,
         error:
-          "The connection was removed, but the synced listings could not be deleted. Try again to clear them.",
+          "We couldn't remove the synced listings, so the connection is still in place. Try Disconnect again.",
+      };
+    }
+    const { error: intErr } = await (supabaseAdmin as any)
+      .from("tenant_integrations")
+      .delete()
+      .eq("workspace_id", data.workspaceId)
+      .eq("provider", "sharetribe");
+    if (intErr) {
+      console.error("[disconnectSharetribe] integration delete failed", intErr.message);
+      return {
+        ok: false as const,
+        error: "The synced listings were removed, but the connection could not be. Try Disconnect again.",
       };
     }
     // Remove the client secret from Vault — leaving a disconnected customer's

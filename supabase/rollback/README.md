@@ -6,11 +6,14 @@ Each rollback file ends with a VERIFY query and states what it will not restore.
 ## Post-migration verification (run after applying all four)
 
 ```sql
--- 000100: columns + constraint present, secret column nullable
+-- 000100: columns + constraints present, secret column nullable
 SELECT column_name, is_nullable FROM information_schema.columns
  WHERE table_schema='public' AND table_name='tenant_integrations'
    AND column_name IN ('auth_mode','marketplace_name','client_secret_vault_id');
 -- expect auth_mode NO, marketplace_name YES, client_secret_vault_id YES
+SELECT conname, contype FROM pg_constraint
+ WHERE conname IN ('tenant_integrations_auth_mode_check','tenant_integrations_provider_marketplace_id_key');
+-- expect both rows: the check constraint (c) and the one-workspace-per-marketplace unique (u)
 
 -- 000200: exactly one sharetribe job, fan-out function present
 SELECT jobname, schedule, active FROM cron.job WHERE jobname ILIKE '%sharetribe%';
