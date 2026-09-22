@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { decideCapacity } from "@/lib/billing-capacity";
 import { readGrantedPagesOrNull } from "@/lib/entitlement-grants.server";
+import { buildListingCounter, isThinPage, type ListingLocation } from "@/lib/thin-page";
 
 const sb = () => supabaseAdmin as any;
 
@@ -175,29 +176,72 @@ export async function tenantSitemapXml(hostname: string): Promise<string | null>
   // sitemap URL would fail to resolve.
   const h = requestHost(hostname);
 
-  const [{ data: tenantPages }, { data: legacyPages }] = await Promise.all([
+  // body_markdown and listing_filter ride along with each page, and the
+  // workspace's published listings come in one read: together they let the
+  // sitemap apply the page's own thin-page rule (below) without a count query
+  // per page. Bodies are the largest part of the payload; page counts are
+  // bounded by plan capacity, and this response is cached for an hour.
+  const [{ data: tenantPages }, { data: legacyPages }, listingsRead] = await Promise.all([
     sb()
       .from("tenant_pages")
-      .select("slug, updated_at")
+      .select("slug, updated_at, body_markdown, listing_filter")
       .eq("workspace_id", workspaceId)
       .eq("status", "published")
       .order("updated_at", { ascending: false })
       .limit(50_000),
     sb()
       .from("content_pages")
-      .select("slug, updated_at")
+      .select("slug, updated_at, body_markdown")
       .eq("workspace_id", workspaceId)
       .eq("status", "published")
       .eq("in_sitemap", true)
       .order("updated_at", { ascending: false })
       .limit(50_000),
+    sb()
+      .from("tenant_listings")
+      .select("city, state, category", { count: "exact" })
+      .eq("workspace_id", workspaceId)
+      .eq("state_published", true)
+      .limit(50_000),
   ]);
 
+  // THE THIN-PAGE RULE, applied here too. a.$slug.tsx renders a page with no
+  // listings and under 300 body characters as `noindex, follow`; listing such
+  // a URL here tells Google to crawl a page that then asks not to be indexed,
+  // which Search Console reports as an error against the whole sitemap.
+  //
+  // Fails OPEN, like everything else on this path: if the listings read
+  // errored, or was cut short by the API row cap so some pages' listings were
+  // never seen, every page would look empty and a paying customer's sitemap
+  // would shrink over a transient. Then the filter is skipped, not guessed.
+  const listingRows = (listingsRead.data ?? []) as ListingLocation[];
+  const listingsComplete =
+    !listingsRead.error &&
+    (listingsRead.count == null || listingsRead.count <= listingRows.length);
+  if (!listingsComplete) {
+    console.error(
+      "[tenantSitemapXml] listings read incomplete, skipping the thin-page filter:",
+      listingsRead.error?.message ?? `${listingRows.length} of ${listingsRead.count} rows`,
+    );
+  }
+  const countListings = listingsComplete ? buildListingCounter(listingRows) : null;
+
   const seen = new Set<string>();
-  const rows = [...(tenantPages || []), ...(legacyPages || [])].filter((p: any) => {
+  const rows = [
+    ...(tenantPages || []).map((p: any) => ({ ...p, legacy: false })),
+    // Legacy content_pages render with no listings at all (see
+    // getPublicTenantPage), so only their body decides.
+    ...(legacyPages || []).map((p: any) => ({ ...p, legacy: true })),
+  ].filter((p: any) => {
     const slug = String(p.slug || "").replace(/^\/+/, "");
     if (!slug || seen.has(slug)) return false;
+    // Claimed before the thin test: the page path serves the first match for
+    // a slug, so a thin tenant page must not let a legacy twin take its place.
     seen.add(slug);
+    if (countListings) {
+      const listingCount = p.legacy ? 0 : countListings(p.listing_filter ?? {});
+      if (isThinPage({ listingCount, bodyMarkdown: p.body_markdown })) return false;
+    }
     return true;
   });
 

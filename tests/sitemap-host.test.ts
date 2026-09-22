@@ -20,6 +20,7 @@ import {
   preferredHostMatch,
   type HostMatch,
 } from "../src/lib/sitemap.server";
+import { isThinPage, buildListingCounter, THIN_PAGE_MIN_BODY_CHARS } from "../src/lib/thin-page";
 
 let pass = 0, fail = 0;
 const failed: string[] = [];
@@ -125,6 +126,62 @@ console.log("\n=== host resolution prefers proof of ownership (S2) ===");
     /export async function workspaceIdForHost[\s\S]*preferredHostMatch\(matches\)/.test(sitemapSrc));
   t("workspaceIdForHost still reads verified rows only",
     /\.eq\("verified", true\)/.test(sitemapSrc) && /\.not\("domain_verified_at", "is", null\)/.test(sitemapSrc));
+}
+
+console.log("\n=== the thin-page rule is one rule, shared by the page and the sitemap (P3) ===");
+{
+  t("the threshold is 300 body characters", THIN_PAGE_MIN_BODY_CHARS === 300);
+  t("no listings and 299 characters is thin", isThinPage({ listingCount: 0, bodyMarkdown: "x".repeat(299) }));
+  t("no listings and exactly 300 characters is not thin", !isThinPage({ listingCount: 0, bodyMarkdown: "x".repeat(300) }));
+  t("one listing rescues an empty body", !isThinPage({ listingCount: 1, bodyMarkdown: "" }));
+  t("a null body with no listings is thin", isThinPage({ listingCount: 0, bodyMarkdown: null }));
+  t("an undefined body with no listings is thin", isThinPage({ listingCount: 0, bodyMarkdown: undefined }));
+  t("whitespace does not count as body", isThinPage({ listingCount: 0, bodyMarkdown: " ".repeat(400) }));
+  t("surrounding whitespace is trimmed before counting",
+    isThinPage({ listingCount: 0, bodyMarkdown: `  ${"x".repeat(299)}  ` }) &&
+      !isThinPage({ listingCount: 0, bodyMarkdown: `  ${"x".repeat(300)}  ` }));
+
+  // Both callers must use the shared predicate, not a private copy of it.
+  const ROOT = join(import.meta.dir, "..");
+  const page = readFileSync(join(ROOT, "src/routes/a.$slug.tsx"), "utf8");
+  t("a.$slug.tsx imports the shared predicate", /import \{ isThinPage \} from "@\/lib\/thin-page";/.test(page));
+  t("a.$slug.tsx decides noindex with it",
+    /const isThin = isThinPage\(\{ listingCount: p\.listings\.length, bodyMarkdown: p\.body_markdown \}\);/.test(page));
+  t("a.$slug.tsx no longer restates the numbers", !/bodyLen < 300/.test(page));
+  const sitemap = readFileSync(join(ROOT, "src/lib/sitemap.server.ts"), "utf8");
+  t("the sitemap imports the shared predicate", /from "@\/lib\/thin-page"/.test(sitemap) && /isThinPage\(\{ listingCount, bodyMarkdown: p\.body_markdown \}\)/.test(sitemap));
+  t("the sitemap reads listings in one query with an exact count",
+    /\.from\("tenant_listings"\)\s*\.select\("city, state, category", \{ count: "exact" \}\)/.test(sitemap));
+  t("the sitemap fails open when the listings read errors or is cut short",
+    /listingsComplete =\s*!listingsRead\.error &&/.test(sitemap) && /listingsRead\.count <= listingRows\.length/.test(sitemap) &&
+      /const countListings = listingsComplete \? buildListingCounter\(listingRows\) : null;/.test(sitemap));
+  t("legacy content_pages count as having no listings", /p\.legacy \? 0 : countListings\(p\.listing_filter \?\? \{\}\)/.test(sitemap));
+  t("a slug is claimed before the thin test, so a thin page never yields to a legacy twin",
+    sitemap.indexOf("seen.add(slug);") < sitemap.indexOf("if (countListings) {"));
+}
+
+console.log("\n=== listing counts per page filter, matched the way the page query matches ===");
+{
+  const count = buildListingCounter([
+    { city: "Austin", state: "TX", category: "pool" },
+    { city: "austin", state: "tx", category: "cabin" },
+    { city: "Dallas", state: "TX", category: null },
+    { city: null, state: null, category: "pool" },
+    { city: " Austin ", state: "TX", category: "pool" },
+  ]);
+  t("no filter counts every published listing", count({}) === 5, String(count({})));
+  t("null filter counts every published listing", count(null) === 5 && count(undefined) === 5);
+  t("city matches case-insensitively", count({ city: "AUSTIN" }) === 3, String(count({ city: "AUSTIN" })));
+  t("city is trimmed on both sides", count({ city: " austin " }) === 3);
+  t("city + state", count({ city: "austin", state: "tx" }) === 3);
+  t("city + category", count({ city: "Austin", category: "pool" }) === 2, String(count({ city: "Austin", category: "pool" })));
+  t("state alone", count({ state: "tx" }) === 4, String(count({ state: "tx" })));
+  t("category alone is exact, like the page's .eq()", count({ category: "pool" }) === 3 && count({ category: "Pool" }) === 0);
+  t("a listing with no city never satisfies a city filter", count({ city: "" }) === 5 && count({ city: "Nowhere" }) === 0);
+  t("empty filter values mean no filter, like the page's `if (f.city)`", count({ city: "", state: "", category: "" }) === 5);
+  t("a fully specified miss is 0", count({ city: "Dallas", state: "TX", category: "pool" }) === 0);
+  t("non-string filter values are stringified", count({ city: 42 as unknown }) === 0);
+  t("an empty catalogue counts nothing", buildListingCounter([])({}) === 0 && buildListingCounter([])({ city: "x" }) === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

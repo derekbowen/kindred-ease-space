@@ -3,6 +3,7 @@ import { getPublicTenantPage } from "@/lib/public-tenant-page.functions";
 import { safeJsonLd } from "@/lib/json-ld";
 import { CityHub } from "@/components/templates/CityHub";
 import { canonicalUrl } from "@/lib/canonical";
+import { isThinPage } from "@/lib/thin-page";
 
 // /a/ is the canonical public prefix for tenant SEO pages. On a connected
 // customer domain the Founders edge only controls the /a/* path space (DNS
@@ -55,8 +56,7 @@ export const Route = createFileRoute("/a/$slug")({
     // Thin/empty pages are a scaled-content-abuse and deindexing risk: never let
     // Google index a page with no listings and little body. noindex,follow keeps
     // it out of the index while still letting crawlers follow its links.
-    const bodyLen = (p.body_markdown ?? "").trim().length;
-    const isThin = p.listings.length === 0 && bodyLen < 300;
+    const isThin = isThinPage({ listingCount: p.listings.length, bodyMarkdown: p.body_markdown });
     if (isThin) {
       tags.push({ name: "robots", content: "noindex, follow" });
     }
