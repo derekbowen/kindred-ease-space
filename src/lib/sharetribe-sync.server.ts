@@ -1,12 +1,136 @@
 // Server-only Sharetribe sync helper. Uses service-role Supabase client
-// and Vault-decrypted credentials. Never import from client code.
+// and (for Integration API mode only) Vault-decrypted credentials.
+// Never import from client code.
+//
+// Two auth modes:
+//   * "marketplace" (default) — the Sharetribe Marketplace API with a
+//     public-read client_credentials grant. Needs only a Client ID, returns
+//     only the PUBLISHED listings a marketplace already shows every visitor,
+//     and cannot write anything. No secret is stored anywhere.
+//   * "integration" (advanced) — the Integration API with Client ID + Secret.
+//     The secret grants full read/write access to the marketplace, so it lives
+//     in Supabase Vault and we request only published listings.
+//
+// The pure pieces (request builders, error mapping, listing mapper, bounded
+// workspace selection) are exported so tests can exercise them offline.
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
-const SHARETRIBE_AUTH_URL = "https://flex-integ-api.sharetribe.com/v1/auth/token";
-const SHARETRIBE_API_BASE = "https://flex-integ-api.sharetribe.com/v1/integration_api";
+export type SharetribeAuthMode = "marketplace" | "integration";
+
+const SHARETRIBE_API = {
+  marketplace: {
+    authUrl: "https://flex-api.sharetribe.com/v1/auth/token",
+    apiBase: "https://flex-api.sharetribe.com/v1/api",
+    scope: "public-read",
+  },
+  integration: {
+    authUrl: "https://flex-integ-api.sharetribe.com/v1/auth/token",
+    apiBase: "https://flex-integ-api.sharetribe.com/v1/integration_api",
+    scope: "integ",
+  },
+} as const;
+
+/** Image variants the mapper prefers, in order. Requested explicitly from the
+ *  Marketplace API via sparse fieldsets so responses stay small. */
+const IMAGE_VARIANTS = ["square-small2x", "scaled-large", "default"] as const;
 
 type AnyRec = Record<string, any>;
+
+/**
+ * Error raised by any Sharetribe HTTP step. `kind` + `status` drive the
+ * friendly message shown to customers; `message` keeps the machine-readable
+ * `<step>:<status>:<snippet>` form for logs.
+ */
+export class SharetribeApiError extends Error {
+  kind: "auth" | "network" | "api";
+  status?: number;
+  constructor(kind: "auth" | "network" | "api", message: string, status?: number) {
+    super(message);
+    this.name = "SharetribeApiError";
+    this.kind = kind;
+    this.status = status;
+  }
+}
+
+export const SHARETRIBE_UNAVAILABLE_MESSAGE =
+  "Sharetribe is not answering right now. Try again in a minute.";
+
+/**
+ * Map any error thrown by the connect/sync flow to a sentence a marketplace
+ * owner can act on. Raw `auth_failed:400:Bad request` strings never reach the
+ * UI or the `last_sync_error` column.
+ */
+export function friendlySharetribeError(err: unknown, mode: SharetribeAuthMode): string {
+  if (err instanceof SharetribeApiError) {
+    if (err.kind === "network" || (err.status != null && err.status >= 500)) {
+      return SHARETRIBE_UNAVAILABLE_MESSAGE;
+    }
+    if (err.kind === "auth") {
+      return mode === "marketplace"
+        ? "Sharetribe didn't accept that Client ID. Copy the Client ID of a Marketplace API application from Console → Build → Applications."
+        : "Sharetribe didn't accept that Client ID and Secret. Copy the Client ID and Client Secret of an Integration API application from Console → Build → Applications.";
+    }
+    if (err.status === 401 || err.status === 403) {
+      return mode === "marketplace"
+        ? "Sharetribe rejected the connection. Check that the Client ID belongs to a Marketplace API application for this marketplace."
+        : "Sharetribe rejected the connection. Check that the Client ID and Secret belong to an Integration API application for this marketplace.";
+    }
+    return `Sharetribe returned an unexpected response${err.status ? ` (HTTP ${err.status})` : ""}. Try again, and contact support if it keeps happening.`;
+  }
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  if (message === "integration_not_found") return "Sharetribe is not connected for this workspace.";
+  if (message.startsWith("secret_decrypt_failed")) {
+    return "We couldn't read the stored Integration API secret. Reconnect Sharetribe to fix this.";
+  }
+  if (message.startsWith("upsert_failed") || message.startsWith("integration_lookup_failed")) {
+    return "We couldn't save the synced listings. Try again in a minute.";
+  }
+  return "The sync failed unexpectedly. Try again, and contact support if it keeps happening.";
+}
+
+/** Token request for either API. Marketplace mode never sends a secret. */
+export function buildTokenRequest(
+  mode: SharetribeAuthMode,
+  clientId: string,
+  clientSecret?: string,
+): { url: string; body: URLSearchParams } {
+  const api = SHARETRIBE_API[mode];
+  const body = new URLSearchParams({
+    client_id: clientId,
+    grant_type: "client_credentials",
+    scope: api.scope,
+  });
+  if (mode === "integration") {
+    if (!clientSecret) throw new SharetribeApiError("auth", "auth_failed:missing_secret");
+    body.set("client_secret", clientSecret);
+  }
+  return { url: api.authUrl, body };
+}
+
+export function buildMarketplaceShowUrl(mode: SharetribeAuthMode): string {
+  return `${SHARETRIBE_API[mode].apiBase}/marketplace/show`;
+}
+
+/**
+ * Listings query for one page. Both APIs share the JSON:API shape, so the
+ * same mapper reads both responses. Marketplace API only ever returns
+ * published listings; the Integration API is told the same explicitly so
+ * drafts, pending and closed listings are never even fetched.
+ */
+export function buildListingsQueryUrl(mode: SharetribeAuthMode, page: number): string {
+  const params = new URLSearchParams({
+    per_page: "100",
+    page: String(page),
+    include: "author,images",
+  });
+  if (mode === "integration") {
+    params.set("states", "published");
+  } else {
+    params.set("fields.image", IMAGE_VARIANTS.map((v) => `variants.${v}`).join(","));
+  }
+  return `${SHARETRIBE_API[mode].apiBase}/listings/query?${params.toString()}`;
+}
 
 function jsonApiId(value: unknown): string | undefined {
   if (typeof value === "string") return value;
@@ -36,53 +160,66 @@ async function fetchWithRetry(input: string, init: RequestInit, attempts = 3): P
       }
     }
   }
-  throw lastErr ?? new Error("network failure");
+  throw new SharetribeApiError(
+    "network",
+    `network_failure:${lastErr instanceof Error ? lastErr.message : "unknown"}`,
+  );
 }
 
-async function getAccessToken(clientId: string, clientSecret: string): Promise<string> {
-  const body = new URLSearchParams({
-    grant_type: "client_credentials",
-    scope: "integ",
-    client_id: clientId,
-    client_secret: clientSecret,
-  });
-  const res = await fetchWithRetry(SHARETRIBE_AUTH_URL, {
+async function getAccessToken(
+  mode: SharetribeAuthMode,
+  clientId: string,
+  clientSecret?: string,
+): Promise<string> {
+  const { url, body } = buildTokenRequest(mode, clientId, clientSecret);
+  const res = await fetchWithRetry(url, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`auth_failed:${res.status}:${text.slice(0, 200)}`);
+    throw new SharetribeApiError(
+      res.status === 400 || res.status === 401 ? "auth" : "api",
+      `auth_failed:${res.status}:${text.slice(0, 200)}`,
+      res.status,
+    );
   }
   const json = (await res.json()) as { access_token?: string };
-  if (!json.access_token) throw new Error("auth_failed:no_token");
+  if (!json.access_token) throw new SharetribeApiError("auth", "auth_failed:no_token");
   return json.access_token;
 }
 
-async function showMarketplace(token: string): Promise<{ id: string; name?: string } | null> {
-  const res = await fetchWithRetry(`${SHARETRIBE_API_BASE}/marketplace/show`, {
+async function showMarketplace(
+  mode: SharetribeAuthMode,
+  token: string,
+): Promise<{ id: string; name?: string }> {
+  const res = await fetchWithRetry(buildMarketplaceShowUrl(mode), {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    throw new SharetribeApiError("api", `marketplace_show_failed:${res.status}`, res.status);
+  }
   const json = (await res.json()) as AnyRec;
   const id = json?.data?.id?.uuid ?? json?.data?.id;
-  return id ? { id, name: json?.data?.attributes?.name } : null;
+  if (!id) throw new SharetribeApiError("api", "marketplace_show_failed:no_id");
+  return { id, name: json?.data?.attributes?.name };
 }
 
-/** Validate creds — used during connect flow. */
+/** Validate creds against the right API — used during connect flow. */
 export async function validateSharetribeCredentials(opts: {
+  mode: SharetribeAuthMode;
   clientId: string;
-  clientSecret: string;
+  clientSecret?: string;
 }): Promise<{ ok: true; marketplaceId: string; name?: string } | { ok: false; error: string }> {
   try {
-    const token = await getAccessToken(opts.clientId, opts.clientSecret);
-    const mp = await showMarketplace(token);
-    if (!mp) return { ok: false, error: "Could not load marketplace details" };
+    const token = await getAccessToken(opts.mode, opts.clientId, opts.clientSecret);
+    const mp = await showMarketplace(opts.mode, token);
     return { ok: true, marketplaceId: mp.id, name: mp.name };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "validation_failed" };
+    console.error("[sharetribe-validate] failed", e instanceof Error ? e.message : e);
+    return { ok: false, error: friendlySharetribeError(e, opts.mode) };
   }
 }
 
@@ -128,7 +265,20 @@ function buildJsonLd(args: {
   };
 }
 
-function mapListing(workspaceId: string, marketplaceUrl: string, raw: AnyRec, included: AnyRec[]) {
+/**
+ * Map one JSON:API listing (Marketplace or Integration API — same shape) to a
+ * tenant_listings row. Only publicData/metadata are kept; privateData never
+ * reaches the database. The Marketplace API returns published listings only
+ * and no `state` attribute, so that mode marks every row published and the
+ * stale-delete pass removes anything that has since closed.
+ */
+export function mapListing(
+  workspaceId: string,
+  marketplaceUrl: string,
+  raw: AnyRec,
+  included: AnyRec[],
+  opts: { mode: SharetribeAuthMode } = { mode: "integration" },
+) {
   const id: string = raw?.id?.uuid ?? raw?.id;
   const a = raw?.attributes ?? {};
   const price = a?.price?.amount ?? null;
@@ -210,7 +360,7 @@ function mapListing(workspaceId: string, marketplaceUrl: string, raw: AnyRec, in
       city,
       state: stateLoc,
     }),
-    state_published: state === "published",
+    state_published: opts.mode === "marketplace" ? true : state === "published",
     synced_at: new Date().toISOString(),
   };
 }
@@ -224,7 +374,7 @@ export async function runSharetribeSyncForWorkspace(workspaceId: string): Promis
 
   const { data: integration, error: intErr } = await sb
     .from("tenant_integrations")
-    .select("id, marketplace_url, client_id")
+    .select("id, marketplace_url, client_id, auth_mode")
     .eq("workspace_id", workspaceId)
     .eq("provider", "sharetribe")
     .maybeSingle();
@@ -232,17 +382,26 @@ export async function runSharetribeSyncForWorkspace(workspaceId: string): Promis
   if (intErr) throw new Error(`integration_lookup_failed:${intErr.message}`);
   if (!integration) throw new Error("integration_not_found");
 
-  const { data: secretRow, error: secretErr } = await sb.rpc("tenant_get_integration_secret", {
-    _workspace_id: workspaceId,
-  });
-  if (secretErr || !secretRow)
-    throw new Error(`secret_decrypt_failed:${secretErr?.message ?? "missing"}`);
+  // Rows created before auth_mode existed are Integration API connections.
+  const mode: SharetribeAuthMode =
+    integration.auth_mode === "marketplace" ? "marketplace" : "integration";
 
   const setStatus = async (patch: AnyRec) =>
     sb.from("tenant_integrations").update(patch).eq("id", integration.id);
 
   try {
-    const token = await getAccessToken(integration.client_id, secretRow as string);
+    // Marketplace mode never touches Vault — there is no secret to read.
+    let clientSecret: string | undefined;
+    if (mode === "integration") {
+      const { data: secretRow, error: secretErr } = await sb.rpc("tenant_get_integration_secret", {
+        _workspace_id: workspaceId,
+      });
+      if (secretErr || !secretRow)
+        throw new Error(`secret_decrypt_failed:${secretErr?.message ?? "missing"}`);
+      clientSecret = secretRow as string;
+    }
+
+    const token = await getAccessToken(mode, integration.client_id, clientSecret);
 
     const seenIds = new Set<string>();
     let page = 1;
@@ -250,14 +409,17 @@ export async function runSharetribeSyncForWorkspace(workspaceId: string): Promis
     let upserted = 0;
 
     do {
-      const url = `${SHARETRIBE_API_BASE}/listings/query?per_page=100&page=${page}&include=author,images`;
-      const res = await fetchWithRetry(url, {
+      const res = await fetchWithRetry(buildListingsQueryUrl(mode, page), {
         method: "GET",
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
-        throw new Error(`listings_query_failed:${res.status}:${text.slice(0, 200)}`);
+        throw new SharetribeApiError(
+          "api",
+          `listings_query_failed:${res.status}:${text.slice(0, 200)}`,
+          res.status,
+        );
       }
       const json = (await res.json()) as AnyRec;
       const data: AnyRec[] = json?.data ?? [];
@@ -265,7 +427,7 @@ export async function runSharetribeSyncForWorkspace(workspaceId: string): Promis
       totalPages = json?.meta?.totalPages ?? 1;
 
       const rows = data.map((d) =>
-        mapListing(workspaceId, integration.marketplace_url, d, included),
+        mapListing(workspaceId, integration.marketplace_url, d, included, { mode }),
       );
       rows.forEach((r) => seenIds.add(r.sharetribe_listing_id));
 
@@ -318,7 +480,7 @@ export async function runSharetribeSyncForWorkspace(workspaceId: string): Promis
           last_sync_at: new Date().toISOString(),
           last_sync_status: "warning",
           last_sync_error:
-            "Upstream returned 0 listings; kept last-known catalog to avoid data loss. Re-sync or disconnect to clear.",
+            "Sharetribe returned no published listings, so we kept your last synced catalog instead of deleting it. Run a sync again once your listings are back, or disconnect to clear them.",
           listings_count: existingCount ?? 0,
         });
         return { upserted, removed: 0 };
@@ -338,55 +500,106 @@ export async function runSharetribeSyncForWorkspace(workspaceId: string): Promis
     // Chain the affiliate referral sync for entitled workspaces — it had no
     // automatic trigger at all, so referrals/payouts only updated when an owner
     // clicked "Run sync now". Best-effort: never fail the listings sync over it.
-    try {
-      const { data: affSettings } = await sb
-        .from("workspace_affiliate_settings")
-        .select("addon_status")
-        .eq("workspace_id", workspaceId)
-        .maybeSingle();
-      if (affSettings?.addon_status === "active" || affSettings?.addon_status === "trialing") {
-        const { runAffiliateReferralSync } = await import("@/lib/affiliate-sync.server");
-        await runAffiliateReferralSync(workspaceId);
+    // It reads transactions through the Integration API, which a public-read
+    // Marketplace API connection cannot do, so it is skipped in that mode.
+    if (mode === "integration") {
+      try {
+        const { data: affSettings } = await sb
+          .from("workspace_affiliate_settings")
+          .select("addon_status")
+          .eq("workspace_id", workspaceId)
+          .maybeSingle();
+        if (affSettings?.addon_status === "active" || affSettings?.addon_status === "trialing") {
+          const { runAffiliateReferralSync } = await import("@/lib/affiliate-sync.server");
+          await runAffiliateReferralSync(workspaceId);
+        }
+      } catch (e) {
+        console.error("[sharetribe-sync] chained affiliate sync failed", e);
       }
-    } catch (e) {
-      console.error("[sharetribe-sync] chained affiliate sync failed", e);
     }
 
     return { upserted, removed };
   } catch (e) {
-    const message = e instanceof Error ? e.message : "sync_failed";
+    const raw = e instanceof Error ? e.message : "sync_failed";
+    console.error("[sharetribe-sync] workspace sync failed", workspaceId, raw);
+    const isAuth = e instanceof SharetribeApiError && e.kind === "auth";
     await setStatus({
       last_sync_at: new Date().toISOString(),
       last_sync_status: "failed",
-      last_sync_error: message.slice(0, 500),
-      status: message.startsWith("auth_failed") ? "error" : undefined,
+      last_sync_error: friendlySharetribeError(e, mode).slice(0, 500),
+      status: isAuth ? "error" : undefined,
     });
     throw e;
   }
 }
 
-/** Sync every connected workspace. Used by the cron hook. */
-export async function runSharetribeSyncAll(): Promise<{
-  total: number;
+/** The default number of workspaces one cron-driven "all" call may sync. */
+export const SYNC_ALL_BATCH_LIMIT = 3;
+
+/**
+ * Pick which workspaces a bounded "all" run should sync: never-synced rows
+ * first, then the stalest `last_sync_at`, capped at `limit`. Pure so the
+ * ordering can be tested without a database.
+ */
+export function selectWorkspacesForBoundedSync<T extends { last_sync_at: string | null }>(
+  rows: T[],
+  limit = SYNC_ALL_BATCH_LIMIT,
+): T[] {
+  const cap = Math.max(0, Math.floor(limit));
+  return [...rows]
+    .sort((a, b) => {
+      const ta = a.last_sync_at ? Date.parse(a.last_sync_at) : Number.NEGATIVE_INFINITY;
+      const tb = b.last_sync_at ? Date.parse(b.last_sync_at) : Number.NEGATIVE_INFINITY;
+      return ta - tb;
+    })
+    .slice(0, cap);
+}
+
+export type BoundedSyncResult = {
+  eligible: number;
+  limit: number;
+  ran: Array<{ workspace_id: string; ok: boolean; error?: string }>;
   ok: number;
   failed: number;
-}> {
+};
+
+/**
+ * Sync at most `limit` connected workspaces, oldest sync first. Used by the
+ * cron hook when it is called without a workspace_id. Bounded on purpose: one
+ * Worker request has a subrequest budget, and the scheduled fan-out already
+ * enqueues one call per workspace — this path is only a safety net.
+ */
+export async function runSharetribeSyncBounded(
+  limit = SYNC_ALL_BATCH_LIMIT,
+): Promise<BoundedSyncResult> {
   const sb = supabaseAdmin as any;
   const { data: rows } = await sb
     .from("tenant_integrations")
-    .select("workspace_id")
+    .select("workspace_id, last_sync_at")
     .eq("provider", "sharetribe")
     .in("status", ["connected", "pending"]);
-  let ok = 0;
-  let failed = 0;
-  for (const row of rows ?? []) {
+  const eligible = (rows ?? []) as Array<{ workspace_id: string; last_sync_at: string | null }>;
+  const picked = selectWorkspacesForBoundedSync(eligible, limit);
+
+  const ran: BoundedSyncResult["ran"] = [];
+  for (const row of picked) {
     try {
       await runSharetribeSyncForWorkspace(row.workspace_id);
-      ok += 1;
+      ran.push({ workspace_id: row.workspace_id, ok: true });
     } catch (e) {
       console.error("[sharetribe-sync-all] workspace failed", row.workspace_id, e);
-      failed += 1;
+      ran.push({
+        workspace_id: row.workspace_id,
+        ok: false,
+        error: e instanceof Error ? e.message : "sync_failed",
+      });
     }
   }
-  return { total: (rows ?? []).length, ok, failed };
+  return {
+    eligible: eligible.length,
+    limit,
+    ran,
+    ok: ran.filter((r) => r.ok).length,
+    failed: ran.filter((r) => !r.ok).length,
+  };
 }
