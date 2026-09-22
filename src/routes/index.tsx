@@ -4,14 +4,14 @@ import { safeJsonLd } from "@/lib/json-ld";
 import {
   ArrowRight,
   Check,
+  Download,
   Factory,
-  Inbox,
+  Globe,
+  PenLine,
   Play,
   Plus,
-  Radar,
   RefreshCw,
   Share2,
-  Sparkles,
   X,
 } from "lucide-react";
 import { canonicalUrl } from "@/lib/canonical";
@@ -43,7 +43,7 @@ export const Route = createFileRoute("/")({
       { name: "twitter:title", content: "founders.click — Growth engine for Sharetribe" },
       {
         name: "twitter:description",
-        content: "AI SEO + content factory + lead inbox for marketplace founders.",
+        content: "AI-generated SEO pages from your Sharetribe listings, hosted on your own domain.",
       },
     ],
     links: [{ rel: "canonical", href: canonicalUrl("/") }],
@@ -57,7 +57,7 @@ export const Route = createFileRoute("/")({
           applicationCategory: "BusinessApplication",
           operatingSystem: "Web",
           description:
-            "AI-powered SEO, content factory, lead inbox and ops dashboard for Sharetribe marketplace founders.",
+            "AI-generated SEO pages, hosting, sitemaps and Sharetribe listing sync for marketplace founders.",
           offers: {
             "@type": "AggregateOffer",
             priceCurrency: "USD",
@@ -124,8 +124,8 @@ function Hero() {
           The all-in-one growth engine.
         </h1>
         <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-zinc-400 sm:text-lg">
-          Publish hundreds or thousands of SEO pages for one monthly price — AI generation,
-          hosting, sitemaps and schema included. No agency retainer.
+          Publish hundreds or thousands of SEO pages for one monthly price — AI generation, hosting,
+          sitemaps and schema included. No agency retainer.
         </p>
         <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
@@ -145,6 +145,20 @@ function Hero() {
         </div>
         <p className="mt-6 text-xs text-zinc-500">
           14-day free trial · publish up to {TRIAL_PAGE_LIMIT} pages · No card required
+        </p>
+        <p className="mt-2 text-xs text-zinc-500">
+          Sharetribe marketplaces in our free beta get pages at no charge —{" "}
+          <Link
+            to="/beta"
+            className={`underline underline-offset-2 hover:text-zinc-300 ${FOCUS_RING}`}
+          >
+            see what's included
+          </Link>
+          .
+        </p>
+        <p className="mt-4 text-[11px] text-zinc-600">
+          founders.click is an independent product and is not affiliated with or endorsed by
+          Sharetribe.
         </p>
       </div>
     </section>
@@ -256,6 +270,9 @@ function ProblemFix() {
   );
 }
 
+// Only what ships at launch. Every card here maps to a `launch: true` item in
+// src/lib/app-nav.ts; tests/launch-copy.test.ts fails the build if a stubbed
+// surface is advertised again.
 const FEATURES = [
   {
     icon: Factory,
@@ -263,29 +280,30 @@ const FEATURES = [
     description: "Generate SEO landing pages in bulk from your live listings.",
   },
   {
-    icon: Radar,
-    title: "SEO Intelligence",
-    description: "Competitor radar, rank tracking, AI page auditor, keyword gaps.",
+    icon: PenLine,
+    title: "Quick Page Builder",
+    description: "Draft a single city or category page in minutes, then publish when it's ready.",
   },
   {
-    icon: Sparkles,
-    title: "AI Growth Coach",
-    description: "A daily briefing that ranks your highest-ROI actions.",
-  },
-  {
-    icon: Inbox,
-    title: "Lead Inbox",
-    description: "Capture and triage host/provider leads in one place.",
+    icon: Globe,
+    title: "Hosting on your domain",
+    description:
+      "Connect and verify your domain; we serve the pages and keep sitemaps and schema current.",
   },
   {
     icon: RefreshCw,
     title: "Sharetribe Sync",
-    description: "Your listings, synced automatically in the background.",
+    description: "Your public listings, synced automatically in the background.",
+  },
+  {
+    icon: Download,
+    title: "Data Export",
+    description: "Export your pages and listing data any time. It's yours, not ours.",
   },
   {
     icon: Share2,
     title: "Affiliate Programs",
-    description: "Run referral programs that pay out on real transactions.",
+    description: "Run referral programs that pay out on real transactions. Available as an add-on.",
   },
 ];
 
@@ -330,7 +348,7 @@ const STEPS = [
     number: "1",
     title: "Connect your marketplace",
     description:
-      "Add your Sharetribe Integration API credentials. We pull your listings, categories and locations automatically.",
+      "Connect with your Sharetribe Marketplace API client ID — read-only access to your public listings. We pull listings, categories and locations automatically.",
   },
   {
     number: "2",
@@ -342,13 +360,16 @@ const STEPS = [
     number: "3",
     title: "Publish on your domain",
     description:
-      "Connect and verify your own domain, then track positions and let the Growth Coach tell you what to ship next.",
+      "Connect and verify your own domain. We host the pages and keep sitemaps, schema and internal links current.",
   },
 ];
 
 function HowItWorks() {
   return (
-    <section aria-labelledby="how-heading" className="border-y border-white/[0.08] bg-white/[0.015]">
+    <section
+      aria-labelledby="how-heading"
+      className="border-y border-white/[0.08] bg-white/[0.015]"
+    >
       <div className="mx-auto w-full max-w-6xl px-5 py-24 sm:px-8 sm:py-28">
         <div className="max-w-2xl">
           <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-orange-500">
@@ -408,8 +429,8 @@ function Pricing() {
           Less than one agency invoice.
         </h2>
         <p className="mt-5 text-sm text-zinc-400">
-          One monthly price for a number of live, hosted SEO pages. Every plan unlocks every
-          feature — pick one for how many pages you publish.
+          One monthly price for a number of live, hosted SEO pages. Every plan unlocks every feature
+          — pick one for how many pages you publish.
         </p>
       </div>
 
@@ -485,8 +506,7 @@ function Pricing() {
       </div>
 
       <p className="mt-8 text-center text-sm text-zinc-500">
-        Need more pages without changing plans? Add capacity in blocks of 1,000 from your
-        dashboard.
+        Need more pages without changing plans? Add capacity in blocks of 1,000 from your dashboard.
       </p>
     </section>
   );
@@ -501,7 +521,12 @@ const FAQS = [
   {
     question: "Do I need to be technical?",
     answer:
-      "No. You connect your Sharetribe marketplace with your Integration API credentials, and everything else happens in the dashboard. If you can publish a listing, you can run founders.click.",
+      "No. You connect your Sharetribe marketplace with its Marketplace API client ID (read-only access to your public listings), and everything else happens in the dashboard. If you can publish a listing, you can run founders.click.",
+  },
+  {
+    question: "What is the free beta?",
+    answer:
+      "During the beta, selected Sharetribe marketplaces get a set number of published pages at no charge, with no card on file. If beta access ends without a plan, published pages pause, drafts are kept, and you can export your data at any time. The full terms are on the /beta page.",
   },
   {
     question: "Is AI generation extra?",

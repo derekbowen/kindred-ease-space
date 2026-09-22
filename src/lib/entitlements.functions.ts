@@ -4,7 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { planByKey, TRIAL_PAGE_LIMIT } from "@/lib/plan-catalog";
 import { decideCapacity, effectivePageLimit, type BillingState } from "@/lib/billing-capacity";
-import { readGrantedPages } from "@/lib/entitlement-grants.server";
+import { readGrantedPages, isGrantActive, type GrantRow } from "@/lib/entitlement-grants.server";
 
 const sb = () => supabaseAdmin as any;
 
@@ -167,6 +167,71 @@ export const getPageEntitlement = createServerFn({ method: "GET" })
     });
     if (!isMember) throw new Error("forbidden");
     return readEntitlement(data.workspaceId);
+  });
+
+export type BetaStatus = {
+  /** True when at least one admin grant is contributing pages right now. */
+  beta: boolean;
+  /** Pages the active grants add up to (0 when not in beta). */
+  pageLimit: number;
+  /**
+   * When the granted access ends, or null when no end date is set. With
+   * several active grants this is the latest expiry, and null wins: an
+   * open-ended grant means the workspace is not counting down to anything.
+   */
+  expiresAt: string | null;
+};
+
+/**
+ * What the app shell and dashboard need to tell a beta tenant the truth:
+ * whether an admin grant is active, how many pages it includes and when it
+ * ends. Grant rows are service-role only, so this is the one place the client
+ * can learn about them, and it exposes nothing that could be used to change
+ * them — no ids, no grantor, no reason.
+ *
+ * Fails to "not in beta" on a read error: the consequence is a trial card
+ * where a beta card belonged, which is a cosmetic mistake, whereas throwing
+ * would blank the whole dashboard shell for a database blip.
+ */
+export async function readBetaStatus(workspaceId: string): Promise<BetaStatus> {
+  const none: BetaStatus = { beta: false, pageLimit: 0, expiresAt: null };
+  const { data, error } = await sb()
+    .from("workspace_entitlement_grants")
+    .select("page_limit, starts_at, expires_at, revoked_at")
+    .eq("workspace_id", workspaceId)
+    .is("revoked_at", null);
+  if (error) {
+    console.error("[entitlements] beta status read failed", workspaceId, error.message);
+    return none;
+  }
+  const active = (
+    (data ?? []) as Pick<GrantRow, "page_limit" | "starts_at" | "expires_at" | "revoked_at">[]
+  ).filter((g) => isGrantActive(g as GrantRow));
+  if (active.length === 0) return none;
+  const pageLimit = active.reduce((sum, g) => sum + Math.max(0, Math.trunc(g.page_limit)), 0);
+  let expiresAt: string | null = null;
+  for (const g of active) {
+    if (g.expires_at === null) {
+      expiresAt = null;
+      break;
+    }
+    if (expiresAt === null || Date.parse(g.expires_at) > Date.parse(expiresAt)) {
+      expiresAt = g.expires_at;
+    }
+  }
+  return { beta: pageLimit > 0, pageLimit, expiresAt };
+}
+
+export const getBetaStatus = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ workspaceId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: isMember } = await sb().rpc("is_workspace_member", {
+      _workspace_id: data.workspaceId,
+      _user_id: context.userId,
+    });
+    if (!isMember) throw new Error("forbidden");
+    return readBetaStatus(data.workspaceId);
   });
 
 /**

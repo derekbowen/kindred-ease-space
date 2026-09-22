@@ -21,7 +21,9 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { getMe } from "@/lib/auth.functions";
 import { ensureWorkspace } from "@/lib/workspace.functions";
-import { NAV_SECTIONS } from "@/lib/app-nav";
+import { useQuery } from "@tanstack/react-query";
+import { NAV_SECTIONS, isNavItemVisible } from "@/lib/app-nav";
+import { getBetaStatus } from "@/lib/entitlements.functions";
 import { CoachLauncher } from "@/components/coach/CoachLauncher";
 
 export const Route = createFileRoute("/_authenticated/app")({
@@ -71,9 +73,7 @@ function AppShell() {
       .then(() => getMe().then(setMe))
       .catch((e) => {
         console.error("ensureWorkspace failed", e);
-        setProvisionError(
-          e instanceof Error ? e.message : "We couldn't set up your workspace.",
-        );
+        setProvisionError(e instanceof Error ? e.message : "We couldn't set up your workspace.");
       })
       .finally(() => setProvisioning(false));
   }, [loading, me]);
@@ -81,7 +81,9 @@ function AppShell() {
   const retryProvision = () => {
     provisionAttempted.current = false;
     setProvisionError(null);
-    getMe().then(setMe).catch(() => {});
+    getMe()
+      .then(setMe)
+      .catch(() => {});
   };
 
   const onSignOut = async () => {
@@ -96,6 +98,18 @@ function AppShell() {
   };
 
   const activeWorkspace = me?.memberships?.[0]?.workspaces;
+  const activeWorkspaceId = me?.memberships?.[0]?.workspace_id ?? null;
+
+  // Beta tenants run on an admin grant, not a trial, and must never be told
+  // to "pick a plan". The grant is the truth the banner and the plan badge
+  // read; a failed read simply shows nothing extra.
+  const { data: beta } = useQuery({
+    queryKey: ["beta-status", activeWorkspaceId],
+    queryFn: () => getBetaStatus({ data: { workspaceId: activeWorkspaceId! } }),
+    enabled: !!activeWorkspaceId,
+    staleTime: 60_000,
+  });
+  const inBeta = Boolean(beta?.beta);
 
   return (
     <SidebarProvider>
@@ -133,9 +147,10 @@ function AppShell() {
           </SidebarHeader>
           <SidebarContent>
             {NAV_SECTIONS.map((section) => {
-              // Hide scaffolded "Coming soon" pages from the sidebar so the
-              // app feels finished. Append ?showStubs=1 to any in-app URL to
-              // reveal them for internal testing.
+              // The sidebar is the launch product: only items flagged
+              // `launch` in app-nav.ts show, and stubs never do. Append
+              // ?showStubs=1 to any in-app URL to reveal everything for
+              // internal testing (the hidden routes stay routable).
               const showStubs =
                 typeof window !== "undefined" &&
                 new URLSearchParams(window.location.search).get("showStubs") === "1";
@@ -144,8 +159,8 @@ function AppShell() {
               const isInternal = Boolean(
                 (activeWorkspace as { is_internal?: boolean } | undefined)?.is_internal,
               );
-              const items = section.items.filter(
-                (i) => (showStubs || !i.stub) && (isInternal || !i.internalOnly),
+              const items = section.items.filter((i) =>
+                isNavItemVisible(i, { showStubs, isInternal }),
               );
               if (items.length === 0) return null;
               return (
@@ -200,9 +215,11 @@ function AppShell() {
             <SidebarTrigger />
             {activeWorkspace?.plan && (
               <Badge variant="outline" className="capitalize">
-                {activeWorkspace.subscription_status === "trialing"
-                  ? "Trial"
-                  : activeWorkspace.plan}
+                {inBeta
+                  ? "Beta"
+                  : activeWorkspace.subscription_status === "trialing"
+                    ? "Trial"
+                    : activeWorkspace.plan}
               </Badge>
             )}
             {activeWorkspace?.marketplace_domain && (
@@ -211,6 +228,15 @@ function AppShell() {
               </span>
             )}
           </header>
+          {inBeta && beta && (
+            <div className="border-b border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-xs text-emerald-200 sm:px-6">
+              Free beta · {beta.pageLimit.toLocaleString()} page
+              {beta.pageLimit === 1 ? "" : "s"} included · no charge ·{" "}
+              <Link to="/beta" className="underline underline-offset-2 hover:text-white">
+                What's included
+              </Link>
+            </div>
+          )}
           <main className="flex-1 w-full max-w-6xl min-w-0 px-4 py-4 sm:px-6 sm:py-6">
             {provisionError && (
               <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm">

@@ -7,8 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { getMe } from "@/lib/auth.functions";
-import { getPageEntitlement, type PageEntitlement } from "@/lib/entitlements.functions";
-import { PAGE_PLANS, PAGE_ADDON, EVERY_PLAN_INCLUDES } from "@/lib/plan-catalog";
+import {
+  getPageEntitlement,
+  getBetaStatus,
+  type PageEntitlement,
+  type BetaStatus,
+} from "@/lib/entitlements.functions";
+import { PAGE_PLANS, PAGE_ADDON, EVERY_PLAN_INCLUDES, TRIAL_PAGE_LIMIT } from "@/lib/plan-catalog";
 import { toast } from "sonner";
 
 const billingSearchSchema = z.object({
@@ -28,13 +33,20 @@ function BillingPage() {
   const search = useSearch({ from: "/_authenticated/app/billing" });
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [ent, setEnt] = useState<PageEntitlement | null>(null);
+  const [beta, setBeta] = useState<BetaStatus | null>(null);
   const [addonQty, setAddonQty] = useState(1);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadBilling = useCallback(async (wsId: string) => {
-    const e = await getPageEntitlement({ data: { workspaceId: wsId } });
+    // The grant is read separately so the "what's free" section can say when
+    // beta access ends; the entitlement only knows the page total.
+    const [e, b] = await Promise.all([
+      getPageEntitlement({ data: { workspaceId: wsId } }),
+      getBetaStatus({ data: { workspaceId: wsId } }).catch(() => null),
+    ]);
     setEnt(e);
+    setBeta(b);
   }, []);
 
   useEffect(() => {
@@ -122,6 +134,9 @@ function BillingPage() {
   }
 
   const hasPlan = Boolean(ent && !ent.isTrial && ent.planKey);
+  const inBeta = Boolean(beta?.beta);
+  const cheapest = PAGE_PLANS[0];
+  const dearest = PAGE_PLANS[PAGE_PLANS.length - 1];
   const usagePct = ent && ent.pageLimit > 0 ? (ent.publishedPages / ent.pageLimit) * 100 : 0;
   const usageTone =
     usagePct >= 100 ? "text-red-500" : usagePct >= 90 ? "text-amber-500" : "text-emerald-500";
@@ -188,15 +203,26 @@ function BillingPage() {
             <CardTitle>Current plan</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{ent?.isTrial ? "Free trial" : (ent?.planName ?? "—")}</div>
+            <div className="text-2xl font-bold">
+              {inBeta ? "Free beta" : ent?.isTrial ? "Free trial" : (ent?.planName ?? "—")}
+            </div>
             <div className="text-xs text-muted-foreground capitalize">
               {/* A trial has no price. `plan` is written as 'starter' at
                   provisioning, so showing its price here told every trial
                   user they were already paying $29/month. */}
               {!ent?.isTrial && ent?.monthlyPrice ? `$${ent.monthlyPrice}/month · ` : ""}
-              {ent?.subscriptionStatus ?? ""}
+              {inBeta ? "no charge" : (ent?.subscriptionStatus ?? "")}
             </div>
-            {ent?.isTrial && ent?.trialEndsAt && (
+            {/* A beta tenant's trial date is irrelevant — the grant is what
+                keeps their pages up, so that is the date worth showing. */}
+            {inBeta && (
+              <div className="text-xs mt-1">
+                {beta?.expiresAt
+                  ? `Beta access until ${new Date(beta.expiresAt).toLocaleDateString()}`
+                  : "Beta access with no end date set"}
+              </div>
+            )}
+            {!inBeta && ent?.isTrial && ent?.trialEndsAt && (
               <div className="text-xs mt-1">
                 Trial ends {new Date(ent.trialEndsAt).toLocaleDateString()}
               </div>
@@ -217,11 +243,6 @@ function BillingPage() {
             {ent && ent.pagesServe && !ent.canPublish && (
               <div className="text-xs mt-2 rounded border border-amber-500/40 bg-amber-500/5 p-2">
                 {ent.billingReason}
-              </div>
-            )}
-            {ent?.isTrial && ent?.trialEndsAt && (
-              <div className="text-xs mt-1">
-                Trial ends {new Date(ent.trialEndsAt).toLocaleDateString()}
               </div>
             )}
             <Button
@@ -260,9 +281,7 @@ function BillingPage() {
               {ent && ent.draftPages > 0 && ` · ${ent.draftPages.toLocaleString()} drafts (free)`}
             </div>
             {capacityParts.length > 0 && (
-              <div className="mt-1 text-xs text-muted-foreground">
-                {capacityParts.join(" + ")}
-              </div>
+              <div className="mt-1 text-xs text-muted-foreground">{capacityParts.join(" + ")}</div>
             )}
           </CardContent>
         </Card>
@@ -291,6 +310,59 @@ function BillingPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* The numbers here come from plan-catalog and the live grant, never
+          from prose, so this section cannot drift from what checkout charges. */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">What's free, what costs money</CardTitle>
+          <CardDescription>
+            Plain answers, so nothing about your bill is a surprise.{" "}
+            <Link to="/beta" className="underline underline-offset-2 hover:text-foreground">
+              Full beta terms
+            </Link>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 text-sm md:grid-cols-3">
+          <div>
+            <div className="font-medium">What's free</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {inBeta
+                ? `Your beta grant: ${beta!.pageLimit.toLocaleString()} published page${
+                    beta!.pageLimit === 1 ? "" : "s"
+                  } at no charge, ${
+                    beta!.expiresAt
+                      ? `until ${new Date(beta!.expiresAt).toLocaleDateString()}`
+                      : "with no end date set"
+                  }.`
+                : `The trial: up to ${TRIAL_PAGE_LIMIT} published pages, no card required.`}{" "}
+              Drafts are always free and unlimited. AI generation is included, metered by a monthly
+              allowance rather than billed per use.
+            </p>
+          </div>
+          <div>
+            <div className="font-medium">What costs money</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Only a paid plan, and only if you choose one: ${cheapest.monthlyPrice} to $
+              {dearest.monthlyPrice} per month for {cheapest.includedPages.toLocaleString()} to{" "}
+              {dearest.includedPages.toLocaleString()} published pages, plus optional extra capacity
+              at ${PAGE_ADDON.monthlyPrice}/month per {PAGE_ADDON.pagesPerUnit.toLocaleString()}{" "}
+              pages. Nothing is charged without a checkout you complete yourself.
+            </p>
+          </div>
+          <div>
+            <div className="font-medium">When access ends</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {inBeta
+                ? "If your beta grant ends without a plan, "
+                : "When the trial ends without a plan, "}
+              published pages pause (they stop being served) — nothing is deleted. Drafts and
+              settings are kept, you can export your data at any time, and picking a plan later
+              brings every page back at its original URL.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       <div>
         <h2 className="text-lg font-semibold mb-1">Plans</h2>
@@ -322,13 +394,13 @@ function BillingPage() {
                     size="sm"
                     variant={p.featured ? "default" : "outline"}
                     disabled={loading || isCurrent}
-                    onClick={() =>
-                      hasPlan
-                        ? openPortal()
-                        : checkout("subscription", 1, p.key)
-                    }
+                    onClick={() => (hasPlan ? openPortal() : checkout("subscription", 1, p.key))}
                   >
-                    {isCurrent ? "Current plan" : hasPlan ? "Switch via portal" : `Choose ${p.name}`}
+                    {isCurrent
+                      ? "Current plan"
+                      : hasPlan
+                        ? "Switch via portal"
+                        : `Choose ${p.name}`}
                   </Button>
                 </CardContent>
               </Card>

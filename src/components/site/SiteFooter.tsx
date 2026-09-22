@@ -53,6 +53,11 @@ export function SiteFooter() {
                 {t("nav.help")}
               </Link>
             </li>
+            <li>
+              <Link to="/beta" className="hover:text-foreground">
+                {t("footer.beta")}
+              </Link>
+            </li>
           </ul>
         </div>
 
@@ -96,7 +101,15 @@ export function SiteFooter() {
       <div className="border-t border-border">
         <div className="max-w-6xl mx-auto px-6 py-5 text-xs text-muted-foreground flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <div>
-            © {new Date().getFullYear()} 10000 Solutions LLC. {t("footer.rights")}
+            <div>
+              © {new Date().getFullYear()} 10000 Solutions LLC. {t("footer.rights")}
+            </div>
+            {/* Kept in English on purpose: it is a statement about a third
+                party's trademark, and its wording should not vary by locale. */}
+            <div className="mt-1">
+              founders.click is an independent product and is not affiliated with or endorsed by
+              Sharetribe.
+            </div>
           </div>
           <nav className="flex items-center gap-4">
             <Link to="/terms" className="hover:text-foreground">
