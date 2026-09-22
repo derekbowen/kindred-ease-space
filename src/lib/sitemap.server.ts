@@ -42,30 +42,88 @@ export function isPlatformHost(hostname: string): boolean {
   return PLATFORM_HOSTS.has(normalizeHost(hostname));
 }
 
+/** One candidate answer to "which workspace does this host belong to?". */
+export type HostMatch = {
+  workspaceId: string;
+  /**
+   * Where the match came from. A verified `workspace_domains` row is proof of
+   * ownership of THIS hostname (a DNS/file challenge passed for it).
+   * `marketplace_domain` is the legacy workspace-level field: seeded the moment
+   * a hostname is claimed, gated only by the workspace-level domain_verified_at.
+   */
+  source: "workspace_domains" | "marketplace_domain";
+  /** verified_at (custom domain) or domain_verified_at (legacy). */
+  verifiedAt: string | null;
+};
+
+/**
+ * THE PREFERENCE RULE, shared with current_workspace_id_by_host (migration
+ * 20260923000500). The two sources can name different workspaces for one
+ * hostname — an unverified claim expires after seven days and the hostname
+ * can then be claimed and verified elsewhere, while the first workspace still
+ * carries it in marketplace_domain — and "first match wins" used to mean
+ * whichever the query returned first.
+ *
+ * Order: a verified custom domain outranks the legacy branch; within a
+ * source the most recent verification wins, then the lowest workspace id.
+ * Deterministic, so the sitemap and the page path agree with the database.
+ */
+export function preferredHostMatch(matches: readonly HostMatch[]): HostMatch | null {
+  if (matches.length === 0) return null;
+  const rank = (m: HostMatch) => (m.source === "workspace_domains" ? 0 : 1);
+  // Unknown or unparseable dates sort LAST within a source (SQL: NULLS LAST).
+  const at = (m: HostMatch) => {
+    const t = m.verifiedAt ? Date.parse(m.verifiedAt) : NaN;
+    return Number.isFinite(t) ? t : Number.MIN_SAFE_INTEGER;
+  };
+  const byId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  return [...matches].sort(
+    (a, b) => rank(a) - rank(b) || at(b) - at(a) || byId(a.workspaceId, b.workspaceId),
+  )[0]!;
+}
+
 /**
  * Resolve a public host to a workspace id via a verified custom domain OR a
- * verified marketplace_domain. Mirrors current_workspace_id_by_host's trust
- * boundary (verified only) so unverified/spoofed hosts never expose a sitemap.
+ * verified marketplace_domain. Mirrors current_workspace_id_by_host: the same
+ * trust boundary (verified only, so unverified/spoofed hosts never expose a
+ * sitemap) and the same preference between the two sources.
  */
 export async function workspaceIdForHost(hostname: string): Promise<string | null> {
   const h = normalizeHost(hostname);
   if (!h || !h.includes(".") || isPlatformHost(h)) return null;
 
-  const { data: domain } = await sb()
-    .from("workspace_domains")
-    .select("workspace_id")
-    .eq("hostname", h)
-    .eq("verified", true)
-    .maybeSingle();
-  if (domain?.workspace_id) return domain.workspace_id as string;
+  const [domains, workspaces] = await Promise.all([
+    sb()
+      .from("workspace_domains")
+      .select("workspace_id, verified_at")
+      .eq("hostname", h)
+      .eq("verified", true),
+    sb()
+      .from("workspaces")
+      .select("id, domain_verified_at")
+      .eq("marketplace_domain", h)
+      .not("domain_verified_at", "is", null),
+  ]);
+  if (domains.error) {
+    console.error("[workspaceIdForHost] workspace_domains read failed:", domains.error.message);
+  }
+  if (workspaces.error) {
+    console.error("[workspaceIdForHost] workspaces read failed:", workspaces.error.message);
+  }
 
-  const { data: ws } = await sb()
-    .from("workspaces")
-    .select("id")
-    .eq("marketplace_domain", h)
-    .not("domain_verified_at", "is", null)
-    .maybeSingle();
-  return (ws?.id as string) ?? null;
+  const matches: HostMatch[] = [
+    ...((domains.data ?? []) as any[]).map((d) => ({
+      workspaceId: String(d.workspace_id),
+      source: "workspace_domains" as const,
+      verifiedAt: (d.verified_at as string | null) ?? null,
+    })),
+    ...((workspaces.data ?? []) as any[]).map((w) => ({
+      workspaceId: String(w.id),
+      source: "marketplace_domain" as const,
+      verifiedAt: (w.domain_verified_at as string | null) ?? null,
+    })),
+  ];
+  return preferredHostMatch(matches)?.workspaceId ?? null;
 }
 
 /**

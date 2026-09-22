@@ -253,14 +253,41 @@ export const addWorkspaceDomain = createServerFn({ method: "POST" })
         return { ok: false as const, error: ALREADY_CONNECTED_ERROR };
       }
       // `verified = false` again on the delete: if the claimant verified in
-      // the window between our read and this write, the unique index below
-      // refuses the insert rather than us deleting a live domain.
-      const { error: delErr } = await sb()
+      // the window between our read and this write, nothing is deleted and
+      // their claim stands — we never delete a live domain.
+      const { data: reclaimed, error: delErr } = await sb()
         .from("workspace_domains")
         .delete()
         .eq("id", prior.id)
-        .eq("verified", false);
+        .eq("verified", false)
+        .select("id");
       if (delErr) return { ok: false as const, error: delErr.message };
+      if (!reclaimed || reclaimed.length === 0) {
+        return { ok: false as const, error: ALREADY_CONNECTED_ERROR };
+      }
+      // The claim also seeded workspaces.marketplace_domain on the prior
+      // workspace (see "Seed marketplace_domain" below). Left there, the host
+      // resolver's legacy branch — marketplace_domain plus the workspace-level
+      // domain_verified_at — could still name THAT workspace for this hostname
+      // once it is verified here, and two matches for one host used to be
+      // settled by whatever the planner returned first. The hostname is no
+      // longer theirs, and neither is a verified flag that only meant
+      // something next to it. Best-effort: their row is already gone, so a
+      // failure here must not strand the hostname unclaimed; the resolver
+      // (20260923000500) ranks a verified workspace_domains row above the
+      // legacy branch regardless.
+      const { error: clearErr } = await sb()
+        .from("workspaces")
+        .update({ marketplace_domain: null, domain_verified_at: null })
+        .eq("id", prior.workspace_id)
+        .eq("marketplace_domain", hostname);
+      if (clearErr) {
+        console.error(
+          "[domains] reclaimed hostname but could not clear the prior workspace's marketplace_domain",
+          hostname,
+          clearErr.message,
+        );
+      }
     }
 
     // Capture the customer's CURRENT origin and DNS provider BEFORE any
@@ -492,18 +519,27 @@ export const verifyWorkspaceDomain = createServerFn({ method: "POST" })
 
     // Keep workspaces.marketplace_domain + domain_verified_at in sync so Settings
     // badges and host resolution stay accurate after custom-domain verification.
+    //
+    // domain_verified_at is a workspace-level flag that the host resolver's
+    // legacy branch reads as "marketplace_domain is verified", so it is
+    // stamped only when marketplace_domain IS this hostname (or is empty and
+    // becomes it). Verifying a second domain must not vouch for whatever
+    // unverified hostname happens to sit in marketplace_domain.
     const { data: ws } = await sb()
       .from("workspaces")
       .select("marketplace_domain")
       .eq("id", data.workspaceId)
       .maybeSingle();
-    const wsPatch: { domain_verified_at: string; marketplace_domain?: string } = {
-      domain_verified_at: verifiedAt,
-    };
+    const wsPatch: { domain_verified_at?: string; marketplace_domain?: string } = {};
     if (!ws?.marketplace_domain) {
       wsPatch.marketplace_domain = row.hostname;
+      wsPatch.domain_verified_at = verifiedAt;
+    } else if (String(ws.marketplace_domain).toLowerCase() === row.hostname) {
+      wsPatch.domain_verified_at = verifiedAt;
     }
-    await sb().from("workspaces").update(wsPatch).eq("id", data.workspaceId);
+    if (Object.keys(wsPatch).length > 0) {
+      await sb().from("workspaces").update(wsPatch).eq("id", data.workspaceId);
+    }
 
     return { ok: true as const, method };
   });
@@ -678,7 +714,7 @@ export const deleteWorkspaceDomain = createServerFn({ method: "POST" })
     // them. Teardown is best-effort and never blocks the disconnect.
     const { data: row } = await sb()
       .from("workspace_domains")
-      .select("cloudflare_hostname_id, cloudflare_route_id")
+      .select("hostname, cloudflare_hostname_id, cloudflare_route_id")
       .eq("workspace_id", data.workspaceId)
       .eq("id", data.id)
       .maybeSingle();
@@ -696,5 +732,26 @@ export const deleteWorkspaceDomain = createServerFn({ method: "POST" })
       .eq("workspace_id", data.workspaceId)
       .eq("id", data.id);
     if (error) return { ok: false as const, error: error.message };
+
+    // The proof of ownership went with the row. If this hostname is the
+    // workspace's marketplace_domain, the workspace-level verified flag no
+    // longer holds for it and the resolver's legacy branch must stop
+    // matching. The hostname itself stays: marketplace_domain is also the
+    // marketplace address the owner typed in Settings, which removing a
+    // domain connection does not change.
+    if (row?.hostname) {
+      const { error: unstampErr } = await sb()
+        .from("workspaces")
+        .update({ domain_verified_at: null })
+        .eq("id", data.workspaceId)
+        .eq("marketplace_domain", row.hostname);
+      if (unstampErr) {
+        console.error(
+          "[domains] domain removed but domain_verified_at could not be cleared",
+          row.hostname,
+          unstampErr.message,
+        );
+      }
+    }
     return { ok: true as const };
   });

@@ -10,7 +10,16 @@
  *
  * Run: bun tests/sitemap-host.test.ts
  */
-import { requestHost, normalizeHost, isPlatformHost, escapeXml } from "../src/lib/sitemap.server";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  requestHost,
+  normalizeHost,
+  isPlatformHost,
+  escapeXml,
+  preferredHostMatch,
+  type HostMatch,
+} from "../src/lib/sitemap.server";
 
 let pass = 0, fail = 0;
 const failed: string[] = [];
@@ -61,6 +70,62 @@ console.log("\n=== XML escaping ===");
 t("ampersand escaped", escapeXml("a&b") === "a&amp;b");
 t("angle brackets escaped", escapeXml("<x>") === "&lt;x&gt;");
 t("quotes escaped", escapeXml("\"'") === "&quot;&apos;");
+
+console.log("\n=== host resolution prefers proof of ownership (S2) ===");
+{
+  // The hole: workspace A claimed customer.com (which seeded its
+  // marketplace_domain), never verified, and the claim expired. Workspace B
+  // claimed and VERIFIED customer.com. Two sources now name two workspaces,
+  // and "first match" used to be whichever a query returned first.
+  const A = "11111111-1111-1111-1111-111111111111";
+  const B = "22222222-2222-2222-2222-222222222222";
+  const C = "33333333-3333-3333-3333-333333333333";
+  const custom = (workspaceId: string, verifiedAt: string | null): HostMatch =>
+    ({ workspaceId, source: "workspace_domains", verifiedAt });
+  const legacy = (workspaceId: string, verifiedAt: string | null): HostMatch =>
+    ({ workspaceId, source: "marketplace_domain", verifiedAt });
+
+  t("no candidates resolves to nothing", preferredHostMatch([]) === null);
+  t("a lone legacy match still resolves", preferredHostMatch([legacy(A, "2026-01-01T00:00:00Z")])?.workspaceId === A);
+  t("a lone verified custom domain resolves", preferredHostMatch([custom(B, "2026-09-01T00:00:00Z")])?.workspaceId === B);
+
+  t("the verified custom domain wins over the legacy branch",
+    preferredHostMatch([legacy(A, "2026-09-20T00:00:00Z"), custom(B, "2026-09-01T00:00:00Z")])?.workspaceId === B);
+  t("…regardless of input order",
+    preferredHostMatch([custom(B, "2026-09-01T00:00:00Z"), legacy(A, "2026-09-20T00:00:00Z")])?.workspaceId === B);
+  t("…even when the legacy verification is more recent",
+    preferredHostMatch([legacy(A, "2026-09-22T00:00:00Z"), custom(B, "2025-01-01T00:00:00Z")])?.workspaceId === B);
+  t("…and even when the legacy match has no date at all",
+    preferredHostMatch([legacy(A, null), custom(B, null)])?.workspaceId === B);
+
+  t("within the legacy branch the most recent verification wins",
+    preferredHostMatch([legacy(A, "2026-01-01T00:00:00Z"), legacy(B, "2026-06-01T00:00:00Z")])?.workspaceId === B);
+  t("a dated verification beats an undated one (NULLS LAST)",
+    preferredHostMatch([legacy(A, null), legacy(B, "2020-01-01T00:00:00Z")])?.workspaceId === B);
+  t("an unparseable date counts as undated",
+    preferredHostMatch([legacy(A, "not a date"), legacy(B, "2020-01-01T00:00:00Z")])?.workspaceId === B);
+  t("a full tie is settled by the lowest workspace id, deterministically",
+    preferredHostMatch([legacy(C, null), legacy(A, null), legacy(B, null)])?.workspaceId === A &&
+      preferredHostMatch([legacy(B, null), legacy(A, null), legacy(C, null)])?.workspaceId === A);
+
+  const input = [legacy(A, "2026-09-20T00:00:00Z"), custom(B, "2026-09-01T00:00:00Z")];
+  const before = JSON.stringify(input);
+  preferredHostMatch(input);
+  t("the input is not reordered", JSON.stringify(input) === before);
+
+  // The database applies the same rule; the two must not drift apart.
+  const ROOT = join(import.meta.dir, "..");
+  const mig = readFileSync(join(ROOT, "supabase/migrations/20260923000500_host_resolver_prefers_verified_domain.sql"), "utf8");
+  t("the SQL resolver orders the same way: custom domain first, newest verification, lowest id",
+    mig.includes("ORDER BY priority ASC, verified_at DESC NULLS LAST, id ASC"));
+  t("the SQL gives workspace_domains priority 0 and marketplace_domain priority 1",
+    /0 AS priority[\s\S]*FROM public\.workspace_domains wd[\s\S]*1 AS priority[\s\S]*FROM public\.workspaces w/.test(mig));
+  const sitemapSrc = readFileSync(join(ROOT, "src/lib/sitemap.server.ts"), "utf8");
+  t("workspaceIdForHost resolves through preferredHostMatch",
+    /export async function workspaceIdForHost[\s\S]*preferredHostMatch\(matches\)/.test(sitemapSrc));
+  t("workspaceIdForHost still reads verified rows only",
+    /\.eq\("verified", true\)/.test(sitemapSrc) && /\.not\("domain_verified_at", "is", null\)/.test(sitemapSrc));
+}
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) console.log("FAILED:\n  " + failed.join("\n  ") + "\n");

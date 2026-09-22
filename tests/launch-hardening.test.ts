@@ -308,4 +308,108 @@ t(
   /\.delete\(\)\s*\.eq\("id", prior\.id\)\s*\.eq\("verified", false\)/.test(domainsSrc),
 );
 
+console.log("\n=== h) a reclaimed hostname cannot resolve to its previous claimant (S2) ===");
+// addWorkspaceDomain seeds workspaces.marketplace_domain on claim. After a
+// reclaim that seed pointed the resolver's legacy branch at the OLD workspace
+// while the verified workspace_domains row pointed at the new one, and the
+// resolver picked with LIMIT 1 and no ORDER BY.
+const addBody = domainsSrc.slice(
+  domainsSrc.indexOf("export const addWorkspaceDomain"),
+  domainsSrc.indexOf("async function tryFileVerify"),
+);
+t(
+  "reclaim refuses when the race guard deleted nothing (the claimant verified meanwhile)",
+  /\.eq\("verified", false\)\s*\.select\("id"\);[\s\S]*?if \(!reclaimed \|\| reclaimed\.length === 0\) \{\s*return \{ ok: false as const, error: ALREADY_CONNECTED_ERROR \};/.test(addBody),
+);
+const clearAt = addBody.indexOf(".update({ marketplace_domain: null, domain_verified_at: null })");
+t("reclaim clears the prior workspace's marketplace_domain AND domain_verified_at", clearAt > 0);
+t(
+  "…only on the prior workspace, and only when it still carries this hostname",
+  /\.update\(\{ marketplace_domain: null, domain_verified_at: null \}\)\s*\.eq\("id", prior\.workspace_id\)\s*\.eq\("marketplace_domain", hostname\)/.test(addBody),
+);
+t("…after the row is gone, before this workspace's insert",
+  clearAt > addBody.indexOf('.eq("verified", false)') && clearAt < addBody.indexOf(".insert({"));
+t("…and a failure to clear is logged, not turned into a stranded hostname",
+  /if \(clearErr\) \{\s*console\.error\(/.test(addBody) && !/if \(clearErr\) return/.test(addBody));
+
+const verifyBody = domainsSrc.slice(
+  domainsSrc.indexOf("export const verifyWorkspaceDomain"),
+  domainsSrc.indexOf("export const updateDomainConnection"),
+);
+t(
+  "verifying a domain stamps domain_verified_at only when marketplace_domain is (or becomes) that hostname",
+  /const wsPatch: \{ domain_verified_at\?: string; marketplace_domain\?: string \} = \{\};/.test(verifyBody) &&
+    /if \(!ws\?\.marketplace_domain\) \{\s*wsPatch\.marketplace_domain = row\.hostname;\s*wsPatch\.domain_verified_at = verifiedAt;\s*\} else if \(String\(ws\.marketplace_domain\)\.toLowerCase\(\) === row\.hostname\) \{\s*wsPatch\.domain_verified_at = verifiedAt;\s*\}/.test(verifyBody),
+);
+t("…and never unconditionally", !/domain_verified_at: verifiedAt,\s*\};/.test(verifyBody));
+
+const deleteBody = domainsSrc.slice(domainsSrc.indexOf("export const deleteWorkspaceDomain"));
+t(
+  "deleting a domain clears domain_verified_at when that hostname is the marketplace_domain",
+  /\.update\(\{ domain_verified_at: null \}\)\s*\.eq\("id", data\.workspaceId\)\s*\.eq\("marketplace_domain", row\.hostname\)/.test(deleteBody),
+);
+t("…but leaves the typed marketplace_domain itself", !/marketplace_domain: null/.test(deleteBody));
+
+console.log("\n=== i) the host resolver prefers a verified custom domain (S2, migration 000500) ===");
+const MIG5 = resolve(ROOT, "supabase/migrations/20260923000500_host_resolver_prefers_verified_domain.sql");
+t("migration 000500 exists", existsSync(MIG5), MIG5);
+const raw5 = existsSync(MIG5) ? readFileSync(MIG5, "utf8") : "";
+const sql5 = withoutComments(raw5);
+t("redefines current_workspace_id_by_host with the same signature",
+  sql5.includes("CREATE OR REPLACE FUNCTION public.current_workspace_id_by_host(_host text)"));
+t("stays STABLE SECURITY DEFINER with a pinned search_path", /STABLE SECURITY DEFINER\s+SET search_path = public/.test(sql5));
+t("normalisation is unchanged from 20260825120000",
+  sql5.includes("SELECT lower(regexp_replace(regexp_replace(_host, ':\\d+$', ''), '^www\\.', '')) AS h"));
+t("has an explicit ORDER BY: verified custom domain first, newest verification, lowest id",
+  sql5.includes("ORDER BY priority ASC, verified_at DESC NULLS LAST, id ASC"));
+t("ORDER BY sits before LIMIT 1", sql5.indexOf("ORDER BY priority") < sql5.indexOf("LIMIT 1") && sql5.indexOf("LIMIT 1") > 0);
+t("verified workspace_domains rows are priority 0, the legacy branch priority 1",
+  /0 AS priority[\s\S]*FROM public\.workspace_domains wd[\s\S]*UNION ALL[\s\S]*1 AS priority[\s\S]*FROM public\.workspaces w/.test(sql5));
+t("both branches keep their verification gate",
+  sql5.includes("WHERE wd.verified = true") && sql5.includes("AND w.domain_verified_at IS NOT NULL"));
+t("keeps the service-role-only grants from 000400",
+  sql5.includes("REVOKE EXECUTE ON FUNCTION public.current_workspace_id_by_host(text) FROM PUBLIC, anon, authenticated;") &&
+    sql5.includes("GRANT EXECUTE ON FUNCTION public.current_workspace_id_by_host(text) TO service_role;"));
+t("does not touch workspace_for_host (it delegates)", !/CREATE OR REPLACE FUNCTION public\.workspace_for_host/.test(sql5));
+const verify5At = raw5.indexOf("-- Verification");
+t("verification block is last", verify5At > 0 && !/;\s*\S/.test(withoutComments(raw5.slice(verify5At)).replace(/;\s*$/, "")));
+t("verification proves the ORDER BY is in the stored body",
+  /prosrc LIKE '%ORDER BY priority ASC, verified_at DESC NULLS LAST, id ASC%'/.test(sql5));
+
+const RB5 = resolve(ROOT, "supabase/rollback/20260923000500_host_resolver_prefers_verified_domain_rollback.sql");
+t("rollback for 000500 exists", existsSync(RB5), RB5);
+const rb5 = existsSync(RB5) ? withoutComments(readFileSync(RB5, "utf8")) : "";
+// The function body only: the rollback's VERIFY query names "ORDER BY
+// priority" inside a string literal to prove it is gone.
+const rb5Body = rb5.slice(rb5.indexOf("AS $$"), rb5.indexOf("$$;"));
+t("rollback restores the 20260825120000 body (UNION ALL, LIMIT 1, no ORDER BY)",
+  rb5.includes("CREATE OR REPLACE FUNCTION public.current_workspace_id_by_host(_host text)") &&
+    rb5Body.includes("UNION ALL") && rb5Body.includes("LIMIT 1;") && !/ORDER BY/.test(rb5Body));
+t("rollback VERIFY checks the ORDER BY is gone", /prosrc LIKE '%ORDER BY priority%' AS ordered/.test(rb5));
+t("rollback keeps the resolver service-role only",
+  rb5.includes("GRANT EXECUTE ON FUNCTION public.current_workspace_id_by_host(text) TO service_role;"));
+const rbReadme = readFileSync(resolve(ROOT, "supabase/rollback/README.md"), "utf8");
+t("rollback README lists 000500 in the apply order", /000400 → 000500/.test(rbReadme));
+
+console.log("\n=== j) changing marketplace_domain drops its verified flag (S2) ===");
+// updateWorkspaceProfile let an owner type any hostname into
+// marketplace_domain and keep the domain_verified_at stamped for a different,
+// actually verified hostname — pointing public resolution anywhere with no
+// challenge.
+const wsFnSrc = readFileSync(resolve(ROOT, "src/lib/workspace.functions.ts"), "utf8");
+const profileBody = wsFnSrc.slice(
+  wsFnSrc.indexOf("export const updateWorkspaceProfile"),
+  wsFnSrc.indexOf("export const getWorkspaceOverview"),
+);
+t("the patch can carry domain_verified_at", /domain_verified_at\?: string \| null;/.test(profileBody));
+t("the current value is read before deciding",
+  /\.select\("marketplace_domain"\)\s*\.eq\("id", data\.workspaceId\)\s*\.maybeSingle\(\)/.test(profileBody));
+t("a CHANGED marketplace_domain resets domain_verified_at to null",
+  /if \(\(current\?\.marketplace_domain \?\? null\) !== patch\.marketplace_domain\) \{\s*patch\.domain_verified_at = null;/.test(profileBody));
+t("…unless the new value is this workspace's own verified custom domain, whose verified_at is carried",
+  /\.from\("workspace_domains"\)\s*\.select\("verified_at"\)\s*\.eq\("workspace_id", data\.workspaceId\)\s*\.eq\("hostname", patch\.marketplace_domain\)\s*\.eq\("verified", true\)/.test(profileBody) &&
+    /if \(own\?\.verified_at\) patch\.domain_verified_at = own\.verified_at;/.test(profileBody));
+t("a read failure fails the save rather than guessing", /if \(readErr\) throw new Error\(readErr\.message\);/.test(profileBody));
+t("only an owner reaches any of this", profileBody.indexOf("is_workspace_owner") > 0 && profileBody.indexOf("is_workspace_owner") < profileBody.indexOf("patch.domain_verified_at"));
+
 finish();

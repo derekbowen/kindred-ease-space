@@ -1,9 +1,10 @@
 # Rollback and verification for the 2026-09-23 launch migrations
 
-Apply order: 000100 → 000200 → 000300 → 000400. Roll back in reverse order.
-Each rollback file ends with a VERIFY query and states what it will not restore.
+Apply order: 000100 → 000200 → 000300 → 000400 → 000500. Roll back in reverse
+order. Each rollback file ends with a VERIFY query and states what it will not
+restore.
 
-## Post-migration verification (run after applying all four)
+## Post-migration verification (run after applying all five)
 
 ```sql
 -- 000100: columns + constraints present, secret column nullable
@@ -36,13 +37,23 @@ FROM unnest(ARRAY[
 -- expect anon_exec = false for every row
 SELECT count(*) FROM pg_policies WHERE tablename='support_tickets' AND policyname='Anyone can create tickets';
 -- expect 0
+
+-- 000500: host resolver ranks a verified custom domain above marketplace_domain
+SELECT prosrc LIKE '%ORDER BY priority ASC, verified_at DESC NULLS LAST, id ASC%' AS ordered
+  FROM pg_proc WHERE oid = 'public.current_workspace_id_by_host(text)'::regprocedure;
+-- expect true
 ```
 
 ## Forward repair instead of rollback
 000100 and 000300 are additive; the previous application build ignores the new
 columns and tables, so a code-only rollback (redeploy the previous Worker
-version) needs no database change. 000200 replaces one cron job with an
-equivalent that fans out per workspace; the previous build's hook accepts the
-per-workspace body as well as an empty body. 000400 only removes privileges the
-application never used from `authenticated`/`anon`; a previous build keeps
-working because every affected call goes through the service role.
+version) needs no database change. 000100 also adds a UNIQUE
+(provider, marketplace_id) on tenant_integrations, which the previous build
+tolerates; dropping it re-opens the one-marketplace-many-workspaces hole.
+000200 replaces one cron job with an equivalent that fans out per workspace;
+the previous build's hook accepts the per-workspace body as well as an empty
+body. 000400 only removes privileges the application never used from
+`authenticated`/`anon`; a previous build keeps working because every affected
+call goes through the service role. 000500 changes only which of two matching
+workspaces the resolver returns for one hostname; a previous build calls the
+same function and is unaffected.
