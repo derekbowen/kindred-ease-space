@@ -3,22 +3,40 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
-import { PLATFORM_MODEL_ALLOWLIST, resolvePlatformModel } from "@/lib/ai-pricing";
+import { resolvePlatformModel } from "@/lib/ai-pricing";
 import { getPageBuilderContext } from "@/lib/page-builder.functions";
 import {
+  ATTEMPTS_EXHAUSTED_MESSAGE,
   GENERATION_DEFAULT_MODEL,
+  GENERATION_MODEL_IDS,
   GENERATION_MODEL_OPTIONS,
+  GENERATION_PAUSED_MESSAGE,
+  MAX_ITEM_ATTEMPTS,
+  STALE_RUNNING_MS,
+  TYPICAL_PAGE_TOKENS,
+  UNBILLED_ITEM_MESSAGE,
+  attemptsExhausted,
   buildCityBrief,
   checkStoredPageContract,
   contractFailureMessage,
+  countConsumedLast24h,
+  dailyCapMessage,
   dailyCapRemaining,
+  findExistingCityPage,
   generatePageContent,
+  initialBillingStatus,
   isStaleRunning,
   persistGeneratedPage,
   planJobItems,
+  readPlatformSettings,
+  resolveBillingMode,
+  resolvePlatformSettlementMode,
   selectTargets,
   settleGeneration,
+  type BillingMode,
   type GenerationTarget,
+  type ItemBillingStatus,
+  type ResolvedBilling,
 } from "@/lib/generation.server";
 
 /**
@@ -35,7 +53,6 @@ import {
 const sb = () => supabaseAdmin as any;
 
 export const DEFAULT_MIN_LISTINGS = 3;
-const DEFAULT_DAILY_CAP = 50;
 
 export type GenerationJobRow = {
   id: string;
@@ -62,50 +79,20 @@ export type GenerationItemRow = {
   prompt_tokens: number | null;
   completion_tokens: number | null;
   credits_charged: number;
+  billing_status: ItemBillingStatus;
   created_at: string;
   updated_at: string;
 };
 
 export type TargetListing = GenerationTarget & {
-  /** A finished batch item exists for this city (draft already generated). */
+  /** A finished batch item with a live draft exists for this city. */
   alreadyGenerated: boolean;
-  /** Status of the most recent batch item for this city, if any. */
+  /** Status of the batch item for this city, if any. */
   itemStatus: GenerationItemRow["status"] | null;
   pageId: string | null;
+  /** The item hit MAX_ITEM_ATTEMPTS without producing a page. */
+  attemptsExhausted: boolean;
 };
-
-// ---------------------------------------------------------------------------
-// Platform-wide knobs (service-role only table)
-// ---------------------------------------------------------------------------
-
-async function readPlatformSettings(): Promise<{ paused: boolean; dailyCap: number }> {
-  const { data, error } = await sb()
-    .from("platform_settings")
-    .select("key, value")
-    .in("key", ["generation_paused", "generation_daily_cap"]);
-  if (error) {
-    // Fail closed on the pause switch: if we cannot read it, assume paused —
-    // a broken settings read must never turn into an uncapped spend.
-    console.error("[generation] platform_settings read failed", error.message);
-    return { paused: true, dailyCap: 0 };
-  }
-  const map = new Map<string, unknown>((data ?? []).map((r: any) => [r.key, r.value]));
-  const paused = map.get("generation_paused") === true;
-  const capRaw = Number(map.get("generation_daily_cap") ?? DEFAULT_DAILY_CAP);
-  return { paused, dailyCap: Number.isFinite(capRaw) ? capRaw : DEFAULT_DAILY_CAP };
-}
-
-async function countDoneLast24h(workspaceId: string): Promise<number> {
-  const since = new Date(Date.now() - 24 * 3600_000).toISOString();
-  const { count, error } = await sb()
-    .from("generation_items")
-    .select("id", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .eq("status", "done")
-    .gte("updated_at", since);
-  if (error) throw new Error(error.message);
-  return count ?? 0;
-}
 
 /** City gaps from synced published listings, via the Page Builder's view. */
 async function loadTargets(
@@ -145,7 +132,11 @@ async function loadJob(workspaceId: string, jobId: string) {
   return { job: job as GenerationJobRow, items: (items ?? []) as GenerationItemRow[] };
 }
 
-/** Roll the job status up from its items once nothing is left to do. */
+/**
+ * Roll the job status up from its items once nothing is left to do. A job
+ * the customer cancelled stays cancelled — the item that was mid-flight when
+ * they pressed Stop still finishes, and must not flip the job back to done.
+ */
 async function settleJobStatus(workspaceId: string, jobId: string) {
   const { data: items } = await sb()
     .from("generation_items")
@@ -160,7 +151,72 @@ async function settleJobStatus(workspaceId: string, jobId: string) {
     .from("generation_jobs")
     .update({ status: anyDone ? "done" : "failed", finished_at: new Date().toISOString() })
     .eq("workspace_id", workspaceId)
-    .eq("id", jobId);
+    .eq("id", jobId)
+    .in("status", ["queued", "running"]);
+}
+
+async function freshItem(itemId: string): Promise<GenerationItemRow> {
+  const { data, error } = await sb().from("generation_items").select("*").eq("id", itemId).single();
+  if (error) throw new Error(error.message);
+  return data as GenerationItemRow;
+}
+
+/** An unconditional item write whose failure must not go unnoticed. */
+async function markItem(itemId: string, patch: Record<string, unknown>): Promise<void> {
+  const { error } = await sb().from("generation_items").update(patch).eq("id", itemId);
+  if (error) throw new Error(error.message);
+}
+
+class LostClaimError extends Error {
+  constructor() {
+    super("Another run has taken over this item");
+    this.name = "LostClaimError";
+  }
+}
+
+/**
+ * A write that only lands while THIS run still holds the claim. `attempts`
+ * is the fencing token: a stale-reclaim by another driver increments it, so
+ * every later write from the old driver matches zero rows and stops here
+ * instead of overwriting the new driver's page_id.
+ */
+async function markItemFenced(
+  itemId: string,
+  attempts: number,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  const { data, error } = await sb()
+    .from("generation_items")
+    .update(patch)
+    .eq("id", itemId)
+    .eq("status", "running")
+    .eq("attempts", attempts)
+    .select("id");
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new LostClaimError();
+}
+
+/** Record what settlement did. An unbilled item fails so its retry bills without regenerating. */
+async function recordSettlement(
+  itemId: string,
+  attempts: number,
+  settled: { creditsCharged: number; billing: string; billingStatus: ItemBillingStatus },
+): Promise<void> {
+  if (settled.billing === "unbilled") {
+    await markItemFenced(itemId, attempts, {
+      status: "failed",
+      credits_charged: 0,
+      billing_status: "unbilled",
+      error: UNBILLED_ITEM_MESSAGE,
+    });
+    return;
+  }
+  await markItemFenced(itemId, attempts, {
+    status: "done",
+    credits_charged: settled.creditsCharged,
+    billing_status: settled.billingStatus,
+    error: null,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -180,30 +236,45 @@ export const listGenerationTargets = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
 
-    const [{ targets, syncedListings, dominantCategory }, settings, done24h, { data: items }] =
+    const [{ targets, syncedListings, dominantCategory }, settings, consumed24h] =
       await Promise.all([
         loadTargets(data.workspaceId, data.minListings),
         readPlatformSettings(),
-        countDoneLast24h(data.workspaceId),
-        sb()
-          .from("generation_items")
-          .select("target_key, status, page_id")
-          .eq("workspace_id", data.workspaceId),
+        countConsumedLast24h(data.workspaceId),
       ]);
 
-    const byKey = new Map<string, { status: GenerationItemRow["status"]; page_id: string | null }>(
-      ((items ?? []) as Array<{ target_key: string; status: any; page_id: string | null }>).map(
-        (i) => [i.target_key, { status: i.status, page_id: i.page_id }],
-      ),
-    );
+    // Only the items for the cities on screen (at most a few dozen), and only
+    // the columns the listing needs — never the whole table.
+    const keys = targets.map((t) => t.targetKey);
+    let items: Array<{
+      target_key: string;
+      status: GenerationItemRow["status"];
+      page_id: string | null;
+      attempts: number;
+    }> = [];
+    if (keys.length) {
+      const { data: rows, error } = await sb()
+        .from("generation_items")
+        .select("target_key, status, page_id, attempts")
+        .eq("workspace_id", data.workspaceId)
+        .in("target_key", keys)
+        .limit(keys.length);
+      if (error) throw new Error(error.message);
+      items = rows ?? [];
+    }
+    const byKey = new Map(items.map((i) => [i.target_key, i]));
 
     const list: TargetListing[] = targets.map((t) => {
       const existing = byKey.get(t.targetKey);
       return {
         ...t,
-        alreadyGenerated: existing?.status === "done",
+        // A done item whose draft was deleted (page_id nulled by the FK) is
+        // generatable again — "done" alone is not "has a page".
+        alreadyGenerated: existing?.status === "done" && !!existing.page_id,
         itemStatus: existing?.status ?? null,
         pageId: existing?.page_id ?? null,
+        attemptsExhausted:
+          !!existing && existing.status !== "done" && attemptsExhausted(existing.attempts),
       };
     });
 
@@ -214,7 +285,7 @@ export const listGenerationTargets = createServerFn({ method: "POST" })
       minListings: data.minListings,
       paused: settings.paused,
       dailyCap: settings.dailyCap,
-      remainingToday: dailyCapRemaining(settings.dailyCap, done24h),
+      remainingToday: dailyCapRemaining(settings.dailyCap, consumed24h),
       models: GENERATION_MODEL_OPTIONS,
       defaultModel: GENERATION_DEFAULT_MODEL,
     };
@@ -239,7 +310,7 @@ export const startGenerationJob = createServerFn({ method: "POST" })
     if (settings.paused) {
       throw new Error("Generation is paused platform-wide right now.");
     }
-    if (data.model && !PLATFORM_MODEL_ALLOWLIST.includes(data.model)) {
+    if (data.model && !GENERATION_MODEL_IDS.includes(data.model)) {
       throw new Error("That model is not available. Pick one from the list.");
     }
     const model = resolvePlatformModel(data.model ?? GENERATION_DEFAULT_MODEL);
@@ -255,24 +326,32 @@ export const startGenerationJob = createServerFn({ method: "POST" })
 
     const { data: existing, error: exErr } = await sb()
       .from("generation_items")
-      .select("target_key, status")
+      .select("target_key, status, page_id, updated_at, attempts")
       .eq("workspace_id", data.workspaceId)
       .in("target_key", data.targetKeys);
     if (exErr) throw new Error(exErr.message);
     const plan = planJobItems(data.targetKeys, existing ?? []);
     const newWork = plan.create.length + plan.reattach.length;
     if (newWork === 0) {
+      if (plan.inProgress.length) {
+        throw new Error(
+          "Those cities are being written right now in another session. Give it a few minutes, then refresh.",
+        );
+      }
+      if (plan.exhausted.length) {
+        throw new Error(
+          `Those cities were given up on after ${MAX_ITEM_ATTEMPTS} failed attempts each. Contact support if you need them written.`,
+        );
+      }
       throw new Error("Every city you picked already has a generated draft. Nothing to do.");
     }
 
-    const done24h = await countDoneLast24h(data.workspaceId);
-    const remaining = dailyCapRemaining(settings.dailyCap, done24h);
+    // The cap counts queued and in-flight items too (a reservation), so this
+    // job's own rows count against it the moment they are created.
+    const consumed24h = await countConsumedLast24h(data.workspaceId);
+    const remaining = dailyCapRemaining(settings.dailyCap, consumed24h);
     if (newWork > remaining) {
-      throw new Error(
-        remaining === 0
-          ? `You've hit today's limit of ${settings.dailyCap} generated pages. Try again in 24 hours.`
-          : `You can generate ${remaining} more page${remaining === 1 ? "" : "s"} in the next 24 hours (limit ${settings.dailyCap} per day). Pick ${remaining} or fewer cities.`,
-      );
+      throw new Error(dailyCapMessage(settings.dailyCap, remaining));
     }
 
     const { data: job, error: jobErr } = await sb()
@@ -307,18 +386,62 @@ export const startGenerationJob = createServerFn({ method: "POST" })
         .upsert(rows, { onConflict: "workspace_id,target_key", ignoreDuplicates: true });
       if (insErr) throw new Error(insErr.message);
     }
-    if (plan.reattach.length) {
-      const { error: upErr } = await sb()
+
+    // Re-attaching is guarded by the same state the plan saw, so an item that
+    // moved on between the read and this write (another tab just claimed it)
+    // is left alone. A live `running` row is NEVER reset to pending: that is
+    // precisely how two drivers came to write the same city twice.
+    const reattachPatch = { job_id: job.id, status: "pending", error: null };
+    if (plan.reattachBy.idle.length) {
+      const { error } = await sb()
         .from("generation_items")
-        .update({ job_id: job.id, status: "pending", error: null })
+        .update(reattachPatch)
         .eq("workspace_id", data.workspaceId)
-        .in("target_key", plan.reattach)
-        .neq("status", "done");
-      if (upErr) throw new Error(upErr.message);
+        .in("target_key", plan.reattachBy.idle)
+        .in("status", ["pending", "failed", "skipped"])
+        .lt("attempts", MAX_ITEM_ATTEMPTS);
+      if (error) throw new Error(error.message);
+    }
+    if (plan.reattachBy.staleRunning.length) {
+      const cutoff = new Date(Date.now() - STALE_RUNNING_MS).toISOString();
+      const { error } = await sb()
+        .from("generation_items")
+        .update(reattachPatch)
+        .eq("workspace_id", data.workspaceId)
+        .in("target_key", plan.reattachBy.staleRunning)
+        .eq("status", "running")
+        .lt("updated_at", cutoff);
+      if (error) throw new Error(error.message);
+    }
+    if (plan.reattachBy.pageDeleted.length) {
+      // The draft is gone; this is a fresh life for the item, so its attempt
+      // budget and billing record start over (the credit ledger keeps history).
+      const { error } = await sb()
+        .from("generation_items")
+        .update({
+          ...reattachPatch,
+          attempts: 0,
+          slug: null,
+          page_id: null,
+          prompt_tokens: null,
+          completion_tokens: null,
+          credits_charged: 0,
+          billing_status: "pending",
+        })
+        .eq("workspace_id", data.workspaceId)
+        .in("target_key", plan.reattachBy.pageDeleted)
+        .eq("status", "done")
+        .is("page_id", null);
+      if (error) throw new Error(error.message);
     }
 
     const loaded = await loadJob(data.workspaceId, job.id);
-    return { ...loaded, alreadyDone: plan.alreadyDone };
+    return {
+      ...loaded,
+      alreadyDone: plan.alreadyDone,
+      inProgress: plan.inProgress,
+      exhausted: plan.exhausted,
+    };
   });
 
 export const getGenerationJob = createServerFn({ method: "POST" })
@@ -332,11 +455,49 @@ export const getGenerationJob = createServerFn({ method: "POST" })
   });
 
 /**
+ * "Stop after this one". The job is marked cancelled and every item still
+ * waiting its turn is skipped (releasing its daily-cap slot). The item being
+ * written right now finishes normally — its page is already paid for by the
+ * time this lands — and settleJobStatus leaves a cancelled job alone.
+ */
+export const cancelGenerationJob = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ workspaceId: workspaceIdSchema, jobId: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertWorkspaceMember(data.workspaceId, context.userId);
+    const { error: jobErr } = await sb()
+      .from("generation_jobs")
+      .update({ status: "cancelled", finished_at: new Date().toISOString() })
+      .eq("workspace_id", data.workspaceId)
+      .eq("id", data.jobId)
+      .in("status", ["queued", "running"]);
+    if (jobErr) throw new Error(jobErr.message);
+    const { error: itemErr } = await sb()
+      .from("generation_items")
+      .update({ status: "skipped", error: "Job was cancelled" })
+      .eq("workspace_id", data.workspaceId)
+      .eq("job_id", data.jobId)
+      .eq("status", "pending");
+    if (itemErr) throw new Error(itemErr.message);
+    return loadJob(data.workspaceId, data.jobId);
+  });
+
+/**
  * One unit of work. Safe to call repeatedly for the same item:
  *   done                → returned unchanged, nothing charged
+ *   skipped             → returned unchanged
  *   running (fresh)     → returned unchanged, someone else has it
- *   running (stale 3m+) → treated as abandoned and retried
- *   pending / failed    → claimed, generated, persisted as DRAFT, settled
+ *   running (stale 3m+) → treated as abandoned and taken over
+ *   pending / failed    → claimed, then:
+ *       page already linked → settle if still owed, mark done (no generation)
+ *       page exists for the city → link it, mark done (no generation, no charge)
+ *       otherwise → generate, persist DRAFT, link page, settle
+ *
+ * Policy gates (pause, attempt ceiling, daily cap, funds) run BEFORE the
+ * claim and never consume an attempt: they cost nothing and clear on their
+ * own. The attempt counter is reserved for work that actually ran.
  */
 async function runItem(
   workspaceId: string,
@@ -361,7 +522,54 @@ async function runItem(
     return { item: row, changed: false };
   }
 
-  // Claim with an optimistic guard so two tabs cannot both run the same item.
+  const { data: job } = await sb()
+    .from("generation_jobs")
+    .select("id, status, model")
+    .eq("id", row.job_id)
+    .maybeSingle();
+  if (job?.status === "cancelled") {
+    await markItem(row.id, { status: "skipped", error: "Job was cancelled" });
+    return { item: await freshItem(row.id), changed: true };
+  }
+
+  // ---- Policy gates: no attempt consumed, nothing claimed. ----
+  const refuse = async (message: string) => {
+    await markItem(row.id, { status: "failed", error: message });
+    return { item: await freshItem(row.id), changed: true };
+  };
+
+  const settings = await readPlatformSettings();
+  if (settings.paused) return refuse(GENERATION_PAUSED_MESSAGE);
+  // The ceiling bounds GENERATION spend. An item whose draft already exists
+  // has nothing left to generate — only a charge to record — so it is never
+  // stranded by its attempt count.
+  if (!row.page_id && attemptsExhausted(row.attempts)) return refuse(ATTEMPTS_EXHAUSTED_MESSAGE);
+
+  const model = resolvePlatformModel(job?.model ?? GENERATION_DEFAULT_MODEL);
+  const owesSettlement =
+    !!row.page_id && (row.billing_status === "pending" || row.billing_status === "unbilled");
+
+  let billing: ResolvedBilling | null = null;
+  let settlementMode: BillingMode | null = null;
+  try {
+    if (!row.page_id) {
+      // This item is excluded from the count: if it is pending it already
+      // holds its own slot, and that must not read as "one over the cap".
+      const consumed = await countConsumedLast24h(workspaceId, { excludeItemId: row.id });
+      const remaining = dailyCapRemaining(settings.dailyCap, consumed);
+      if (remaining === 0) return refuse(dailyCapMessage(settings.dailyCap, 0));
+      billing = await resolveBillingMode(workspaceId, model);
+    } else if (owesSettlement) {
+      // A 'pending'/'unbilled' record means the page was written on the
+      // platform key and the charge is still owed. The key in use TODAY is
+      // irrelevant — a BYOK key added since does not retroactively pay.
+      settlementMode = await resolvePlatformSettlementMode(workspaceId, model);
+    }
+  } catch (e) {
+    return refuse((e instanceof Error ? e.message : "Generation is not available").slice(0, 300));
+  }
+
+  // ---- Claim with an optimistic guard so two tabs cannot both run the same item. ----
   const { data: claimed, error: claimErr } = await sb()
     .from("generation_items")
     .update({ status: "running", attempts: row.attempts + 1, error: null })
@@ -371,97 +579,115 @@ async function runItem(
     .select("*")
     .maybeSingle();
   if (claimErr) throw new Error(claimErr.message);
-  if (!claimed) {
-    const { data: fresh } = await sb()
-      .from("generation_items")
-      .select("*")
-      .eq("id", row.id)
-      .single();
-    return { item: (fresh ?? row) as GenerationItemRow, changed: false };
-  }
+  if (!claimed) return { item: await freshItem(row.id), changed: false };
+  const token = (claimed as GenerationItemRow).attempts;
 
-  const { data: job } = await sb()
-    .from("generation_jobs")
-    .select("id, status, model")
-    .eq("id", row.job_id)
-    .maybeSingle();
   if (job?.status === "queued") {
     await sb().from("generation_jobs").update({ status: "running" }).eq("id", row.job_id);
   }
-  if (job?.status === "cancelled") {
-    await sb()
-      .from("generation_items")
-      .update({ status: "skipped", error: "Job was cancelled" })
-      .eq("id", row.id);
-    const { data: fresh } = await sb()
-      .from("generation_items")
-      .select("*")
-      .eq("id", row.id)
-      .single();
-    return { item: fresh as GenerationItemRow, changed: true };
-  }
 
   const target = row.target;
-  const brief = buildCityBrief({
-    city: target.city,
-    state: target.state,
-    categoryPlural: target.categoryPlural,
-  });
-
   try {
-    const gen = await generatePageContent({
-      workspaceId,
-      title: brief.title,
-      description: brief.description,
-      topic: brief.topic,
-      city: target.city,
-      state: target.state,
-      categoryPlural: target.categoryPlural,
-      model: job?.model ?? GENERATION_DEFAULT_MODEL,
-    });
-    const page = await persistGeneratedPage({
-      workspaceId,
-      generated: gen,
-      requestedTitle: brief.title,
-      requestedDescription: brief.description,
-      city: target.city,
-      state: target.state,
-      categoryPlural: target.categoryPlural,
-    });
-    const settled = await settleGeneration({
-      workspaceId,
-      userId,
-      keySource: gen.keySource,
-      model: gen.model,
-      promptTokens: gen.promptTokens,
-      completionTokens: gen.completionTokens,
-      feature: "batch_generation",
-      refId: page.id,
-    });
-    await sb()
-      .from("generation_items")
-      .update({
-        status: "done",
-        page_id: page.id,
-        slug: page.slug,
-        prompt_tokens: gen.promptTokens,
-        completion_tokens: gen.completionTokens,
-        credits_charged: settled.creditsCharged,
-        error: null,
-      })
-      .eq("id", row.id);
+    if (row.page_id) {
+      // The draft exists (a previous run died between persisting and
+      // settling). Never generate again; settle only what is still owed.
+      if (owesSettlement) {
+        const settled = await settleGeneration({
+          workspaceId,
+          userId,
+          keySource: "platform",
+          billingMode: settlementMode ?? "platform",
+          model,
+          promptTokens: row.prompt_tokens ?? TYPICAL_PAGE_TOKENS.prompt,
+          completionTokens: row.completion_tokens ?? TYPICAL_PAGE_TOKENS.completion,
+          feature: "batch_generation",
+          refId: row.page_id,
+        });
+        await recordSettlement(row.id, token, settled);
+      } else {
+        await markItemFenced(row.id, token, { status: "done", error: null });
+      }
+    } else {
+      const existing = await findExistingCityPage(workspaceId, target.city, target.state);
+      if (existing) {
+        // Same predicate the eligibility list uses. Link, do not duplicate
+        // and do not charge: nothing was generated.
+        await markItemFenced(row.id, token, {
+          status: "done",
+          page_id: existing.id,
+          slug: existing.slug,
+          credits_charged: 0,
+          billing_status: "free",
+          error: null,
+        });
+      } else {
+        const brief = buildCityBrief({
+          city: target.city,
+          state: target.state,
+          categoryPlural: target.categoryPlural,
+        });
+        const gen = await generatePageContent({
+          workspaceId,
+          title: brief.title,
+          description: brief.description,
+          topic: brief.topic,
+          city: target.city,
+          state: target.state,
+          categoryPlural: target.categoryPlural,
+          model,
+          billing: billing ?? undefined,
+        });
+        const page = await persistGeneratedPage({
+          workspaceId,
+          generated: gen,
+          requestedTitle: brief.title,
+          requestedDescription: brief.description,
+          city: target.city,
+          state: target.state,
+          categoryPlural: target.categoryPlural,
+        });
+        // Link the page BEFORE settling, and insist the write landed. If the
+        // request dies after this line the item still knows its page, so a
+        // re-claim settles instead of writing a second one.
+        await markItemFenced(row.id, token, {
+          page_id: page.id,
+          slug: page.slug,
+          prompt_tokens: gen.promptTokens,
+          completion_tokens: gen.completionTokens,
+          billing_status: initialBillingStatus(gen.billingMode),
+        });
+        const settled = await settleGeneration({
+          workspaceId,
+          userId,
+          keySource: gen.keySource,
+          billingMode: gen.billingMode,
+          model: gen.model,
+          promptTokens: gen.promptTokens,
+          completionTokens: gen.completionTokens,
+          feature: "batch_generation",
+          refId: page.id,
+        });
+        await recordSettlement(row.id, token, settled);
+      }
+    }
   } catch (e) {
+    if (e instanceof LostClaimError) {
+      // The row belongs to another run now; it will record its own outcome.
+      console.error("[generation] claim lost", row.id);
+      return { item: await freshItem(row.id), changed: false };
+    }
     const msg = e instanceof Error ? e.message : "Generation failed";
     console.error("[generation] item failed", row.id, msg);
     await sb()
       .from("generation_items")
       .update({ status: "failed", error: msg.slice(0, 300) })
-      .eq("id", row.id);
+      .eq("id", row.id)
+      .eq("status", "running")
+      .eq("attempts", token);
   }
 
   await settleJobStatus(workspaceId, row.job_id);
-  const { data: fresh } = await sb().from("generation_items").select("*").eq("id", row.id).single();
-  return { item: fresh as GenerationItemRow, changed: true };
+  return { item: await freshItem(row.id), changed: true };
 }
 
 const itemInput = (d: unknown) =>

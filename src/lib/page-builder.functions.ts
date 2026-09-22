@@ -3,6 +3,11 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
+import {
+  GENERATION_DEFAULT_MODEL,
+  GENERATION_MODEL_OPTIONS,
+  pageCoversCity,
+} from "@/lib/generation.server";
 
 const sb = () => supabaseAdmin as any;
 
@@ -33,6 +38,9 @@ export const getPageBuilderContext = createServerFn({ method: "GET" })
       gaps: BuilderCity[];
       recentSlugs: string[];
       dominantCategory: string | null;
+      /** Model picker for the Quick Page Builder: same list, same cheap default as batch. */
+      models: Array<{ id: string; label: string; hint: string }>;
+      defaultModel: string;
     }> => {
       await assertWorkspaceMember(data.workspaceId, context.userId);
 
@@ -66,11 +74,15 @@ export const getPageBuilderContext = createServerFn({ method: "GET" })
       const pageSlugs = new Set(
         pageRows.map((p) => String(p.slug ?? "").toLowerCase()).filter(Boolean),
       );
-      const pageCities = new Set(
-        pageRows
-          .map((p) => (p.variables?.city as string | undefined)?.toLowerCase())
-          .filter(Boolean) as string[],
-      );
+      // Every place a page already covers. hasPage below matches on city AND
+      // state (when both sides have one) through pageCoversCity, so a page for
+      // Portland, OR no longer hides the gap in Portland, ME.
+      const pagePlaces = pageRows
+        .map((p) => ({
+          city: p.variables?.city as string | undefined,
+          state: p.variables?.state as string | undefined,
+        }))
+        .filter((p) => !!p.city);
 
       const cityMap = new Map<string, BuilderCity>();
       for (const row of (listings ?? []) as ListingRow[]) {
@@ -86,7 +98,7 @@ export const getPageBuilderContext = createServerFn({ method: "GET" })
             city,
             state,
             listingCount: 1,
-            hasPage: pageCities.has(city.toLowerCase()),
+            hasPage: pagePlaces.some((p) => pageCoversCity(p, { city, state })),
           });
         }
       }
@@ -110,8 +122,7 @@ export const getPageBuilderContext = createServerFn({ method: "GET" })
           .toLowerCase();
         if (c) catCounts.set(c, (catCounts.get(c) ?? 0) + 1);
       }
-      const dominantCategory =
-        [...catCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+      const dominantCategory = [...catCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 
       return {
         workspaceName: ws?.name ?? "Your marketplace",
@@ -126,6 +137,8 @@ export const getPageBuilderContext = createServerFn({ method: "GET" })
         gaps,
         recentSlugs,
         dominantCategory,
+        models: GENERATION_MODEL_OPTIONS,
+        defaultModel: GENERATION_DEFAULT_MODEL,
       };
     },
   );

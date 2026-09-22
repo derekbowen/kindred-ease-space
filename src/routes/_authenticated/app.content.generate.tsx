@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import {
+  cancelGenerationJob,
   getGenerationJob,
   listGenerationTargets,
   processGenerationItem,
@@ -46,6 +47,9 @@ export const Route = createFileRoute("/_authenticated/app/content/generate")({
 });
 
 type Overview = Awaited<ReturnType<typeof listGenerationTargets>>;
+
+/** A city the customer may still pick: no live draft yet, and not given up on. */
+const isSelectable = (t: TargetListing) => !t.alreadyGenerated && !t.attemptsExhausted;
 
 /**
  * Batch page generation. The browser is the driver: it creates a job, then
@@ -66,6 +70,7 @@ function GenerateContentPage() {
   const [publishing, setPublishing] = useState(false);
   const [publishResults, setPublishResults] = useState<PublishResult[] | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const stopRef = useRef(false);
 
   const fetchTargets = useServerFn(listGenerationTargets);
@@ -74,6 +79,7 @@ function GenerateContentPage() {
   const retryItem = useServerFn(retryGenerationItem);
   const fetchJob = useServerFn(getGenerationJob);
   const publishAll = useServerFn(publishGeneratedPages);
+  const cancelJob = useServerFn(cancelGenerationJob);
 
   useEffect(() => {
     getMe().then((me) => setWorkspaceId(me.memberships[0]?.workspace_id ?? null));
@@ -89,9 +95,7 @@ function GenerateContentPage() {
       setModel((m) => m || r.defaultModel);
       // Drop selections that are no longer eligible.
       setSelected((prev) => {
-        const eligible = new Set(
-          r.targets.filter((t) => !t.alreadyGenerated).map((t) => t.targetKey),
-        );
+        const eligible = new Set(r.targets.filter(isSelectable).map((t) => t.targetKey));
         return new Set([...prev].filter((k) => eligible.has(k)));
       });
     } catch (e) {
@@ -105,10 +109,7 @@ function GenerateContentPage() {
     if (workspaceId) load();
   }, [workspaceId, load]);
 
-  const eligible = useMemo(
-    () => (overview?.targets ?? []).filter((t) => !t.alreadyGenerated),
-    [overview],
-  );
+  const eligible = useMemo(() => (overview?.targets ?? []).filter(isSelectable), [overview]);
   const selectedCount = selected.size;
   const remaining = overview?.remainingToday ?? 0;
   const paused = overview?.paused ?? false;
@@ -159,6 +160,7 @@ function GenerateContentPage() {
   async function generate() {
     if (!workspaceId || selectedCount === 0) return;
     setRunError(null);
+    setNotice(null);
     setPublishResults(null);
     setPublishError(null);
     try {
@@ -168,7 +170,39 @@ function GenerateContentPage() {
       setJob(created.job);
       setItems(created.items);
       setSelected(new Set());
+      // Cities the server left out of this job, and why.
+      const notes: string[] = [];
+      const live = created.inProgress.length;
+      if (live) {
+        notes.push(
+          `${live} of those cities ${live === 1 ? "is" : "are"} being written in another session right now and ${live === 1 ? "was" : "were"} left alone.`,
+        );
+      }
+      const gaveUp = created.exhausted.length;
+      if (gaveUp) {
+        notes.push(
+          `${gaveUp} ${gaveUp === 1 ? "city was" : "cities were"} skipped after repeated failed attempts. Contact support if you need ${gaveUp === 1 ? "it" : "them"} written.`,
+        );
+      }
+      setNotice(notes.length ? notes.join(" ") : null);
       await drive(created.job.id, created.items);
+    } catch (e) {
+      setRunError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  /**
+   * "Stop after this one". The loop exits after the item in flight, and the
+   * server marks the job cancelled and skips everything still waiting, so a
+   * stopped batch reads as stopped — not as a job that never finished.
+   */
+  async function stop() {
+    stopRef.current = true;
+    if (!workspaceId || !job) return;
+    try {
+      const r = await cancelJob({ data: { workspaceId, jobId: job.id } });
+      setJob(r.job);
+      setItems(r.items);
     } catch (e) {
       setRunError(e instanceof Error ? e.message : String(e));
     }
@@ -329,7 +363,7 @@ function GenerateContentPage() {
                         key={t.targetKey}
                         target={t}
                         checked={selected.has(t.targetKey)}
-                        disabled={running || t.alreadyGenerated}
+                        disabled={running || !isSelectable(t)}
                         onToggle={() => toggle(t.targetKey)}
                       />
                     ))}
@@ -405,6 +439,12 @@ function GenerateContentPage() {
         </p>
       )}
 
+      {notice && (
+        <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
+          {notice}
+        </p>
+      )}
+
       {job && items.length > 0 && (
         <Card>
           <CardHeader>
@@ -413,11 +453,12 @@ function GenerateContentPage() {
                 <CardTitle className="text-base">This batch</CardTitle>
                 <CardDescription>
                   {doneCount} written · {failedCount} failed · {openCount} to go
+                  {job.status === "cancelled" ? " · stopped" : ""}
                 </CardDescription>
               </div>
               <div className="flex gap-2">
                 {running && (
-                  <Button variant="outline" size="sm" onClick={() => (stopRef.current = true)}>
+                  <Button variant="outline" size="sm" onClick={stop}>
                     Stop after this one
                   </Button>
                 )}
@@ -491,6 +532,8 @@ function TargetRow({
             >
               draft ready
             </Link>
+          ) : target.attemptsExhausted ? (
+            <span className="text-amber-600">given up after repeated failures</span>
           ) : target.itemStatus === "failed" ? (
             <span className="text-amber-600">last attempt failed</span>
           ) : null}
