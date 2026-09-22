@@ -1,18 +1,25 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
-import { OPENROUTER_BASE, resolvePlatformModel, creditsForUsage } from "@/lib/ai-pricing";
 import {
-  findUniqueTenantSlug,
-  getActiveTemplateId,
-  slugifyPage,
-} from "@/lib/tenant-page-helpers.server";
+  GENERATION_DEFAULT_MODEL,
+  checkStoredPageContract,
+  contractFailureMessage,
+  generatePageContent,
+  persistGeneratedPage,
+  settleGeneration,
+} from "@/lib/generation.server";
 
 /**
  * Workspace-scoped "quick page" creator. Generates markdown via OpenRouter
- * and publishes directly to tenant_pages so /p/{slug} serves the page.
+ * through the shared generation core (src/lib/generation.server.ts) and,
+ * when asked, publishes to tenant_pages so /p/{slug} serves the page.
+ *
+ * Order of operations is deliberate: generate → write the draft row → settle
+ * credits → (optionally) contract check + entitlement gate. A failed
+ * generation is never charged, BYOK keys are never metered, and nothing goes
+ * live without passing the published-page contract.
  */
 
 const InputSchema = z.object({
@@ -20,7 +27,10 @@ const InputSchema = z.object({
   title: z.string().trim().min(3).max(140),
   description: z.string().trim().max(500).optional().default(""),
   topic: z.string().trim().min(10).max(2000),
-  model: z.string().default("google/gemini-2.5-flash"),
+  // Cheapest allowlisted model. Anything off the allowlist is mapped by
+  // resolvePlatformModel to the platform default, so an unknown id can never
+  // silently upgrade the customer to the Pro tier.
+  model: z.string().default(GENERATION_DEFAULT_MODEL),
   slug: z.string().trim().max(120).optional(),
   city: z.string().trim().max(120).optional(),
   state: z.string().trim().max(80).optional(),
@@ -33,246 +43,84 @@ const InputSchema = z.object({
   autoPublish: z.boolean().default(true),
 });
 
-const SYSTEM = `
-You write SEO-optimised brand content for a marketplace business.
-Voice: confident, friendly, customer-first, never spammy. Short paragraphs.
-Real, useful copy — no filler, no "in this article we will".
-Format: Markdown only. Use ## and ### headings.
-Always end with a short CTA paragraph.
-Return your answer ONLY by calling the write_page tool.
-`.trim();
-
-const TOOL_SCHEMA = {
-  type: "function" as const,
-  function: {
-    name: "write_page",
-    description: "Return the generated page content.",
-    parameters: {
-      type: "object",
-      properties: {
-        title: { type: "string" },
-        seo_title: { type: "string", description: "≤60 chars" },
-        seo_description: { type: "string", description: "≤155 chars" },
-        body_markdown: {
-          type: "string",
-          description: "Full markdown body, 600-1200 words, no frontmatter",
-        },
-      },
-      required: ["title", "seo_title", "seo_description", "body_markdown"],
-      additionalProperties: false,
-    },
-  },
-};
-
 export const createQuickPage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => InputSchema.parse(data))
   .handler(async ({ data, context }) => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
 
-    // BYOK first, platform env-var fallback.
-    const { getWorkspaceSecret } = await import("@/lib/workspace-secrets.server");
-    const apiKey = await getWorkspaceSecret(
-      data.workspaceId,
-      "OPENROUTER_API_KEY",
-      "OPENROUTER_API_KEY",
-    );
-    if (!apiKey)
-      throw new Error("No AI key configured. Add a BYOK OpenRouter key under Settings → API Keys.");
-    const model = resolvePlatformModel(data.model);
-
-    // Bill the platform credit system (same model as ai-proxy): free trial
-    // quota first, then purchased credits. No hard cap — out of credits => top up.
-    let billing: "free_quota" | "credits" = "credits";
-    const { error: qErr } = await supabaseAdmin.rpc("consume_platform_ai_credit", {
-      _workspace_id: data.workspaceId,
-    });
-    if (!qErr) {
-      billing = "free_quota";
-    } else if (
-      typeof qErr.message === "string" &&
-      qErr.message.includes("platform_ai_quota_exhausted")
-    ) {
-      const { data: bal } = await supabaseAdmin
-        .from("credit_balances")
-        .select("balance")
-        .eq("workspace_id", data.workspaceId)
-        .maybeSingle();
-      if (!bal || bal.balance <= 0) {
-        throw new Error("Out of AI credits. Top up in Billing to keep generating.");
-      }
-    } else {
-      throw new Error(qErr.message);
-    }
-
-    const baseSlug = slugifyPage(data.slug || data.title);
-    if (!baseSlug) throw new Error("Could not derive slug from title");
-    const slug = await findUniqueTenantSlug(data.workspaceId, baseSlug);
-    const templateId = await getActiveTemplateId("city_hub");
-
-    // Ground generation in the tenant's real inventory when a city is targeted —
-    // unique, factual per-city content is what separates useful programmatic
-    // pages from the templated filler Google's scaled-content policy demotes.
-    let inventoryFacts = "";
-    if (data.city) {
-      const { data: cityListings } = await supabaseAdmin
-        .from("tenant_listings")
-        .select("title, price_amount, price_currency")
-        .eq("workspace_id", data.workspaceId)
-        .ilike("city", data.city)
-        .eq("state_published", true)
-        .limit(100);
-      const rows = cityListings ?? [];
-      const prices = rows
-        .map((r) => r.price_amount)
-        .filter((n): n is number => typeof n === "number")
-        .sort((a, b) => a - b);
-      const currency = rows.find((r) => r.price_currency)?.price_currency ?? "USD";
-      const sample = rows
-        .slice(0, 5)
-        .map((r) => `- ${r.title}`)
-        .join("\n");
-      inventoryFacts = `
-
-Live inventory facts for ${data.city} — the ONLY numbers you may use; never invent pricing, counts, or listings:
-- ${rows.length} published listings
-- ${
-        prices.length
-          ? `Price range ${(prices[0]! / 100).toFixed(0)}–${(prices[prices.length - 1]! / 100).toFixed(0)} ${currency}`
-          : "No price data — do not state or estimate prices"
-      }
-${sample ? `- Example listings:\n${sample}` : "- No example listings yet."}`;
-    }
-
-    const userPrompt = `Write a brand page.
-
-Title (H1): "${data.title}"
-${data.description ? `One-line summary: "${data.description}"` : ""}
-
-What this page should be about (interpret literally and build the article around this):
-${data.topic}
-${inventoryFacts}
-
-Length: 600-1200 words.
-Use ## for the main sections and ### for sub-points. Lead with a strong opening — no fluff.
-seo_title (≤60 chars) and seo_description (≤155 chars) optimised for the topic.`;
-
-    const resp = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: SYSTEM },
-          { role: "user", content: userPrompt },
-        ],
-        tools: [TOOL_SCHEMA],
-        tool_choice: { type: "function", function: { name: "write_page" } },
-      }),
+    // 1. Generate. Nothing is charged here; a provider error or thin output
+    //    throws and the customer keeps their credits.
+    const gen = await generatePageContent({
+      workspaceId: data.workspaceId,
+      title: data.title,
+      description: data.description,
+      topic: data.topic,
+      city: data.city,
+      state: data.state,
+      categoryPlural: data.categoryPlural,
+      model: data.model,
     });
 
-    if (!resp.ok) {
-      const t = await resp.text();
-      throw new Error(`AI provider ${resp.status}: ${t.slice(0, 300)}`);
-    }
-    const json = await resp.json();
-    const promptTokens = json?.usage?.prompt_tokens ?? 0;
-    const completionTokens = json?.usage?.completion_tokens ?? 0;
-    const tc = json?.choices?.[0]?.message?.tool_calls?.[0];
-    if (!tc?.function?.arguments) throw new Error("AI response missing tool call");
-    const gen = JSON.parse(tc.function.arguments) as {
-      title: string;
-      seo_title: string;
-      seo_description: string;
-      body_markdown: string;
-    };
-    if (!gen.body_markdown || gen.body_markdown.length < 300) {
-      throw new Error(`Generated body too short (${gen.body_markdown?.length ?? 0} chars)`);
-    }
+    // 2. Draft row.
+    const page = await persistGeneratedPage({
+      workspaceId: data.workspaceId,
+      generated: gen,
+      requestedTitle: data.title,
+      requestedDescription: data.description,
+      slug: data.slug,
+      city: data.city,
+      state: data.state,
+      categoryPlural: data.categoryPlural,
+    });
 
-    const url_path = `/a/${slug}`;
-    const pageTitle = gen.title || data.title;
-    const city = data.city?.trim() || "";
-    const state = data.state?.trim() || "";
-    const categoryPlural = data.categoryPlural?.trim() || "listings";
-    const variables: Record<string, string> = {};
-    if (city) variables.city = city;
-    if (state) variables.state = state;
-    if (categoryPlural) variables.category_plural = categoryPlural;
-    const listingFilter: any = { limit: 24, sort: "newest" };
-    if (city) listingFilter.city = city;
-    if (state) listingFilter.state = state;
+    // 3. Settle AFTER the page exists. Platform key only; BYOK is unmetered.
+    const { creditsCharged } = await settleGeneration({
+      workspaceId: data.workspaceId,
+      userId: context.userId,
+      keySource: gen.keySource,
+      model: gen.model,
+      promptTokens: gen.promptTokens,
+      completionTokens: gen.completionTokens,
+      feature: "quick_page",
+      refId: page.id,
+    });
 
-    // Insert as draft, then flip through the atomic page-entitlement gate. If
-    // the plan is out of publishing slots the generated page is KEPT as a
-    // draft (the AI work isn't wasted) and the caller gets a clear limit flag.
-    const { data: inserted, error: insErr } = await supabaseAdmin
-      .from("tenant_pages")
-      .insert({
-        workspace_id: data.workspaceId,
-        template_id: templateId,
-        slug,
-        title: pageTitle,
-        meta_description: (gen.seo_description || data.description || "").slice(0, 320),
-        h1: pageTitle,
-        body_markdown: gen.body_markdown,
-        variables,
-        listing_filter: listingFilter,
-        status: "draft",
-      })
-      .select("id, slug, title")
-      .single();
-    if (insErr) throw new Error(insErr.message);
-
+    // 4. Optional publish: contract first, then the atomic entitlement gate.
+    //    Either failure KEEPS the draft (the AI work isn't wasted) and tells
+    //    the caller why in plain language.
+    let published = false;
     let limitReached = false;
     let limitMessage: string | null = null;
+    let draftReason: string | null = null;
+    let contractViolations: string[] = [];
     if (data.autoPublish) {
-      const { publishPagesAtomically, pageLimitMessage } = await import(
-        "@/lib/entitlements.functions"
-      );
-      const gate = await publishPagesAtomically(data.workspaceId, [inserted.id]);
-      limitReached = gate.published === 0;
-      limitMessage = limitReached
-        ? `${pageLimitMessage(gate.limit)} The generated page was saved as a draft.`
-        : null;
+      const check = await checkStoredPageContract(data.workspaceId, page.id);
+      if (!check.ok) {
+        contractViolations = check.blocking.map((v) => `${v.message} ${v.fix}`.trim());
+        draftReason = contractFailureMessage(check);
+      } else {
+        const { publishPagesAtomically, pageLimitMessage } =
+          await import("@/lib/entitlements.functions");
+        const gate = await publishPagesAtomically(data.workspaceId, [page.id]);
+        published = gate.published > 0;
+        limitReached = !published;
+        if (limitReached) {
+          limitMessage = `${pageLimitMessage(gate.limit)} The generated page was saved as a draft.`;
+          draftReason = limitMessage;
+        }
+      }
     }
-
-    // Settle credits AFTER success (no charge on failure) + log usage.
-    let creditsCharged = 0;
-    if (billing === "credits") {
-      creditsCharged = creditsForUsage(model, promptTokens, completionTokens);
-      await supabaseAdmin.rpc("deduct_credits", {
-        _workspace_id: data.workspaceId,
-        _amount: creditsCharged,
-        _reason: "ai_usage",
-        _ai_model: model,
-        _ref_type: "quick_page",
-        _ref_id: inserted.id,
-        _metadata: { provider: "platform", feature: "quick_page" },
-      });
-    }
-    await supabaseAdmin.from("ai_usage_log").insert({
-      workspace_id: data.workspaceId,
-      user_id: context.userId,
-      provider: "platform",
-      model,
-      feature: "quick_page",
-      prompt_tokens: promptTokens,
-      completion_tokens: completionTokens,
-      total_tokens: promptTokens + completionTokens,
-      used_byok: false,
-      status: "ok",
-    });
 
     return {
       ok: true,
-      page: { ...inserted, url_path },
+      page,
       words: gen.body_markdown.split(/\s+/).length,
       creditsCharged,
+      published,
       limitReached,
       limitMessage,
+      draftReason,
+      contractViolations,
     };
   });

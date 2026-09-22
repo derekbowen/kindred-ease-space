@@ -62,6 +62,8 @@ function QuickPageBuilder() {
     slug: string;
     limitReached?: boolean;
     limitMessage?: string | null;
+    published?: boolean;
+    draftReason?: string | null;
   } | null>(null);
   const [ctx, setCtx] = useState<{
     domain: string | null;
@@ -147,8 +149,10 @@ function QuickPageBuilder() {
         title: res.page.title ?? "(untitled)",
         words: res.words,
         slug: res.page.slug ?? slug,
-        limitReached: (res as { limitReached?: boolean }).limitReached,
-        limitMessage: (res as { limitMessage?: string | null }).limitMessage,
+        limitReached: res.limitReached,
+        limitMessage: res.limitMessage,
+        published: res.published,
+        draftReason: res.draftReason,
       });
       setTitle("");
       setDescription("");
@@ -382,7 +386,7 @@ function QuickPageBuilder() {
                 {result && (
                   <div
                     className={`rounded-xl border p-4 ${
-                      result.limitReached
+                      !result.published
                         ? "border-amber-500/30 bg-amber-500/10"
                         : "border-emerald-500/30 bg-emerald-500/10"
                     }`}
@@ -390,21 +394,26 @@ function QuickPageBuilder() {
                     <div className="flex items-start gap-3">
                       <CheckCircle2
                         className={`mt-0.5 h-5 w-5 shrink-0 ${
-                          result.limitReached ? "text-amber-500" : "text-emerald-500"
+                          !result.published ? "text-amber-500" : "text-emerald-500"
                         }`}
                       />
                       <div className="min-w-0 flex-1 space-y-2">
                         <p className="font-semibold">
-                          {result.limitReached
+                          {!result.published
                             ? `Saved as draft — ${result.words} words`
                             : `Published — ${result.words} words`}
                         </p>
-                        {result.limitMessage && (
+                        {/* A draft is kept for two reasons: the plan is out of
+                            page slots (offer the upgrade) or the page did not
+                            pass the pre-publish checks (say what to fix). */}
+                        {result.draftReason && (
                           <p className="text-sm text-amber-600 dark:text-amber-400">
-                            {result.limitMessage}{" "}
-                            <Link to="/app/billing" className="underline">
-                              Upgrade plan
-                            </Link>
+                            {result.draftReason}{" "}
+                            {result.limitReached && (
+                              <Link to="/app/billing" className="underline">
+                                Upgrade plan
+                              </Link>
+                            )}
                           </p>
                         )}
                         <p className="text-sm text-muted-foreground truncate">{result.title}</p>
