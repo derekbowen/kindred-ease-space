@@ -24,6 +24,12 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import {
+  checkSendingDomain,
+  returnPathFromEnv,
+  sendingDomainFromEnv,
+} from "../src/lib/email-deliverability";
+
 const args = process.argv.slice(2);
 const flag = (name: string): string | undefined => {
   const i = args.indexOf(`--${name}`);
@@ -238,6 +244,53 @@ await check("public generated page renders", async () => {
     problems.push("canonical leaks the platform domain");
   }
   return problems.length ? ["FAIL", problems.join(", ")] : ["PASS", "canonical, schema, h1 all present"];
+});
+
+// ---------------------------------------------------------------------------
+// 5. EMAIL DELIVERABILITY — the auth email path, checked where it actually
+//    breaks. A send API returning 200 is not evidence of delivery: EmailIt
+//    accepted every auth email founders.click ever sent while the domain
+//    published no SPF, and receivers discarded them without bouncing. The DNS
+//    is the part we can assert continuously, so it is asserted here, next to
+//    everything else that must be true for a signup to complete.
+// ---------------------------------------------------------------------------
+await check("auth email can authenticate (SPF/DKIM/DMARC)", async () => {
+  const domain =
+    sendingDomainFromEnv({
+      FROM_EMAIL: process.env.FROM_EMAIL,
+      EMAILIT_SENDER_DOMAIN: process.env.EMAILIT_SENDER_DOMAIN,
+    }) ?? new URL(BASE).hostname.replace(/^www\./, "");
+
+  let report;
+  try {
+    report = await checkSendingDomain(domain, {
+      dkimSelector: process.env.EMAILIT_DKIM_SELECTOR,
+      ...returnPathFromEnv({
+        EMAILIT_RETURN_PATH_DOMAIN: process.env.EMAILIT_RETURN_PATH_DOMAIN,
+        MAIL_FROM: process.env.MAIL_FROM,
+        EMAILIT_ESP_RETURN_PATH_DOMAIN: process.env.EMAILIT_ESP_RETURN_PATH_DOMAIN,
+      }),
+    });
+  } catch (e: any) {
+    return ["SKIP", `DNS lookup unavailable from here: ${e?.message ?? e}`];
+  }
+
+  // An unreachable resolver is not evidence of a problem, so it skips rather
+  // than failing a deploy over this runner's networking.
+  if (report.indeterminate) return ["SKIP", report.findings[0] ?? "DNS lookup failed"];
+
+  const where = ` (envelope ${report.envelope.domain}, ${report.envelope.source})`;
+  const state = `SPF ${report.spf.status}, DKIM ${report.dkim.status}, DMARC ${report.dmarc.status}${where}`;
+  if (report.verdict === "fail") return ["FAIL", `${state} — ${report.findings[0]}`];
+  // A warn means mail DOES authenticate — something is merely set up to
+  // degrade later. Failing a production deploy over, say, a DMARC record with
+  // no rua= is the same mistake as failing it over an apex SPF record that was
+  // never required: a satisfied condition read as a blocker. Surface it in
+  // full, and let --strict be the thing that refuses to ship on it.
+  if (report.verdict === "warn") {
+    return [STRICT ? "FAIL" : "PASS", `${state} — WARN: ${report.findings.join("; ")}`];
+  }
+  return ["PASS", state];
 });
 
 // ---------------------------------------------------------------------------

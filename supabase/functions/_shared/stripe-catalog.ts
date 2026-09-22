@@ -340,6 +340,28 @@ export function pagesForTier(tier: string | null | undefined): number {
   return PAGE_PLANS[tier as PlanTier]?.includedPages ?? LEGACY_TIER_PAGES[tier] ?? 0;
 }
 
+/**
+ * Recover a plan tier from what the customer is actually being charged.
+ *
+ * `plan_tier` metadata on the Stripe price is the intended route, but a price
+ * created by hand in the dashboard can easily be missing it — and when that
+ * happened the webhook silently skipped the entitlement update entirely,
+ * leaving a paying customer on trial capacity with nothing logged. The amount
+ * charged is unambiguous evidence of which plan was bought, so use it rather
+ * than stranding them.
+ *
+ * Deliberately conservative: returns a tier ONLY when exactly one plan carries
+ * that price. An ambiguous amount resolves to null and the caller escalates,
+ * because guessing between two plans is worse than reporting the problem.
+ */
+export function tierByMonthlyPrice(monthlyPriceCents: number | null | undefined): PlanTier | null {
+  if (typeof monthlyPriceCents !== "number" || monthlyPriceCents <= 0) return null;
+  const matches = (Object.keys(PAGE_PLANS) as PlanTier[]).filter(
+    (tier) => PAGE_PLANS[tier].monthlyPriceCents === monthlyPriceCents,
+  );
+  return matches.length === 1 ? matches[0] : null;
+}
+
 export async function resolvePlanTierFromPrice(stripe: Stripe, priceId: string | null) {
   if (!priceId) return "unknown";
   const price = await stripe.prices.retrieve(priceId);

@@ -11,12 +11,20 @@
  *   bun run audit:urls
  *
  * Exit code is 0 when clean, 1 on any violation. Wire into CI when ready.
+ *
+ * The tree is located from this file, not from the working directory. Since
+ * the app moved under apps/ in the monorepo, a cwd-relative scan finds no src/
+ * when run from the repo root, walks nothing, and prints a green "0
+ * violations" — a check that passes because it looked in the wrong place is
+ * worse than no check, and this codebase has already paid for that lesson once
+ * with an SPF preflight that read the apex instead of the return path.
  */
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = process.cwd();
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCAN_DIRS = ["src", "scripts"];
 const SCAN_EXTS = [".ts", ".tsx"];
 
@@ -55,16 +63,24 @@ const HARDCODED_CANONICAL_RE = /(rel:\s*["']canonical["'][^}]*href:\s*["'])([^"'
 const HARDCODED_OGURL_RE = /(property:\s*["']og:url["'][^}]*content:\s*["'])([^"']+)/g;
 const ABSOLUTE_LINK_TO_RE = /<Link\b[^>]*\bto=\{?["']https?:\/\/([^"'`}\s]+)/g;
 
-function audit(): Violation[] {
+function audit(): { violations: Violation[]; scanned: number } {
   const violations: Violation[] = [];
+  let scanned = 0;
 
   for (const dir of SCAN_DIRS) {
     let entries: string[] = [];
     try {
       entries = [...walk(join(ROOT, dir))];
-    } catch {
-      continue;
+    } catch (err) {
+      // Swallowing this is what let the audit report clean after scanning
+      // nothing. A directory it was told to scan and cannot read is a broken
+      // audit, not an empty one.
+      console.error(
+        `Cannot scan ${join(ROOT, dir)}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      process.exit(2);
     }
+    scanned += entries.length;
     for (const file of entries) {
       const rel = relative(ROOT, file).replace(/\\/g, "/");
       if (FILE_ALLOWLIST.has(rel)) continue;
@@ -126,12 +142,20 @@ function audit(): Violation[] {
     }
   }
 
-  return violations;
+  return { violations, scanned };
 }
 
-const violations = audit();
+const { violations, scanned } = audit();
+
+// "0 violations" is only meaningful alongside the number of files it is a
+// statement about. Zero files means the audit did not run.
+if (scanned === 0) {
+  console.error(`Canonical URL audit scanned 0 files under ${ROOT} — nothing was checked.`);
+  process.exit(2);
+}
+
 if (violations.length === 0) {
-  console.log("✅ Canonical URL audit: 0 violations");
+  console.log(`✅ Canonical URL audit: 0 violations across ${scanned} files`);
   process.exit(0);
 }
 
