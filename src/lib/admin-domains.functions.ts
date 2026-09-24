@@ -90,6 +90,39 @@ export function shouldReclaimUnverifiedDomain(
  * step can be exercised against an in-memory fake. */
 export type ReclaimDb = { from: (table: string) => any };
 
+export const DOMAIN_RECLAIMED_ERROR =
+  "This domain was removed or claimed by another workspace while verifying. Add it again to retry.";
+
+/**
+ * Is `row` still this workspace's? verifyWorkspaceDomain spans several
+ * PostgREST calls and two slow network steps (the ownership checks, the edge
+ * build), and in that window the row can be removed by the owner or — while
+ * still unverified — reclaimed for another workspace by
+ * reclaimStaleDomainClaim, which deletes it and inserts a new row under a new
+ * id. The later writes are keyed on `row.id`, so they fall on nothing; what
+ * must not happen is provisioning the edge for a hostname this workspace no
+ * longer holds, or stamping the workspace as verified for it. With
+ * `verified`, the row must also still be verified for the same hostname —
+ * exactly what the workspace-level stamp vouches for.
+ */
+export async function domainRowStillHeld(
+  db: ReclaimDb,
+  row: { id: string; hostname: string },
+  workspaceId: string,
+  opts: { verified: boolean },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  let q = db
+    .from("workspace_domains")
+    .select("id")
+    .eq("id", row.id)
+    .eq("workspace_id", workspaceId);
+  if (opts.verified) q = q.eq("verified", true).eq("hostname", row.hostname);
+  const { data, error } = await q.maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: DOMAIN_RECLAIMED_ERROR };
+  return { ok: true };
+}
+
 /**
  * Take a stale, unverified claim on `hostname` away from the workspace that
  * holds it (`prior`), so the caller's workspace can claim it. The decision
@@ -378,7 +411,12 @@ export const addWorkspaceDomain = createServerFn({ method: "POST" })
       return { ok: false as const, error: error.message };
     }
 
-    // Seed marketplace_domain when unset so /p pages resolve on the tenant host immediately.
+    // Seed marketplace_domain when unset so /p pages resolve on the tenant host
+    // immediately. domain_verified_at goes to null with it: the host
+    // resolver's legacy branch (current_workspace_id_by_host,
+    // workspaceIdForHost) reads that stamp as "marketplace_domain is
+    // verified", so a stamp left over from an earlier hostname would vouch for
+    // this one before any challenge has passed.
     const { data: ws } = await sb()
       .from("workspaces")
       .select("marketplace_domain")
@@ -387,7 +425,7 @@ export const addWorkspaceDomain = createServerFn({ method: "POST" })
     if (!ws?.marketplace_domain) {
       await sb()
         .from("workspaces")
-        .update({ marketplace_domain: hostname })
+        .update({ marketplace_domain: hostname, domain_verified_at: null })
         .eq("id", data.workspaceId);
     }
 
@@ -506,7 +544,10 @@ export const verifyWorkspaceDomain = createServerFn({ method: "POST" })
       if (!method) return { ok: false as const, error: lastErr || "verification failed" };
 
       verifiedAt = new Date().toISOString();
-      const { error: upErr } = await sb()
+      // Keyed on the row AND the workspace, and reported back: zero rows means
+      // the row was removed or reclaimed (see domainRowStillHeld) between the
+      // read above and now, so nothing was proven for this workspace.
+      const { data: proven, error: upErr } = await sb()
         .from("workspace_domains")
         .update({
           verified: true,
@@ -516,8 +557,13 @@ export const verifyWorkspaceDomain = createServerFn({ method: "POST" })
           status: "dns_configuration_required",
           last_error: null,
         })
-        .eq("id", row.id);
+        .eq("id", row.id)
+        .eq("workspace_id", data.workspaceId)
+        .select("id");
       if (upErr) return { ok: false as const, error: upErr.message };
+      if (!Array.isArray(proven) || proven.length === 0) {
+        return { ok: false as const, error: DOMAIN_RECLAIMED_ERROR };
+      }
     }
 
     // Ownership is proven, so provision the edge now: custom hostname + Worker
@@ -552,6 +598,11 @@ export const verifyWorkspaceDomain = createServerFn({ method: "POST" })
       return { ok: false as const, error: blocked };
     }
 
+    // The edge is built for a hostname, not a row id: make sure this row is
+    // still ours before a custom hostname and route are created for it.
+    const held = await domainRowStillHeld(sb(), row, data.workspaceId, { verified: false });
+    if (!held.ok) return { ok: false as const, error: held.error };
+
     try {
       const cf = await provisionDomainAtEdge(row.hostname);
       await sb()
@@ -584,6 +635,15 @@ export const verifyWorkspaceDomain = createServerFn({ method: "POST" })
     // stamped only when marketplace_domain IS this hostname (or is empty and
     // becomes it). Verifying a second domain must not vouch for whatever
     // unverified hostname happens to sit in marketplace_domain.
+    //
+    // And only for a hostname this workspace still holds, verified: the stamp
+    // is what the resolver's legacy branch trusts, so a row removed or
+    // reclaimed during the edge build must not leave the workspace vouching
+    // for a hostname it no longer has.
+    const stillVerified = await domainRowStillHeld(sb(), row, data.workspaceId, {
+      verified: true,
+    });
+    if (!stillVerified.ok) return { ok: false as const, error: stillVerified.error };
     const { data: ws } = await sb()
       .from("workspaces")
       .select("marketplace_domain")

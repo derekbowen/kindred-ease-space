@@ -22,6 +22,8 @@ import { resolve, dirname, join } from "path";
 import { fileURLToPath } from "url";
 import {
   ALREADY_CONNECTED_ERROR,
+  DOMAIN_RECLAIMED_ERROR,
+  domainRowStillHeld,
   reclaimStaleDomainClaim,
   shouldReclaimUnverifiedDomain,
   UNVERIFIED_DOMAIN_CLAIM_TTL_MS,
@@ -589,5 +591,124 @@ t("the gate runs before any page content is read",
   billingAt < pageHandler.indexOf('.from("tenant_pages")') && billingAt < pageHandler.indexOf('.from("content_pages")'));
 const previewRoute = readFileSync(resolve(ROOT, "src/routes/s.$ws.$slug.tsx"), "utf8");
 t("the preview route turns page: null into a 404", /if \(!r\.page\) throw notFound\(\);/.test(previewRoute));
+
+console.log("\n=== l) a claim never inherits a stale verified stamp (B2) ===");
+// addWorkspaceDomain seeds marketplace_domain when it is empty. The resolver's
+// legacy branch treats domain_verified_at as "marketplace_domain is verified",
+// so a stamp left over from an earlier hostname vouched for the new,
+// unverified one the moment it was claimed.
+const seedAt = addBody.indexOf(".update({ marketplace_domain: hostname, domain_verified_at: null })");
+t("the seed writes marketplace_domain WITH domain_verified_at cleared", seedAt > 0);
+t("…and never the hostname alone", !/\.update\(\{ marketplace_domain: hostname \}\)/.test(addBody));
+t("…on this workspace only",
+  /\.update\(\{ marketplace_domain: hostname, domain_verified_at: null \}\)\s*\.eq\("id", data\.workspaceId\)/.test(addBody));
+const seedGuardAt = addBody.indexOf("if (!ws?.marketplace_domain) {");
+t("…still only when marketplace_domain is unset", seedGuardAt > 0 && seedGuardAt < seedAt);
+t("…after the row insert, as before", addBody.indexOf(".insert({") > 0 && addBody.indexOf(".insert({") < seedAt);
+t("…and the comment names the resolver branch that trusts the stamp", /resolver's legacy branch/.test(addBody.slice(0, seedAt)));
+
+console.log("\n=== m) verification notices a row removed or reclaimed mid-flight (B3) ===");
+// verifyWorkspaceDomain runs across several PostgREST calls and two slow
+// network steps. Its unverified row can be deleted by the owner, or reclaimed
+// for another workspace (delete + insert under a new id) by
+// reclaimStaleDomainClaim, at any point in between. The verified UPDATE then
+// matched no row and nobody noticed, the edge was provisioned for a hostname
+// this workspace no longer held, and the workspace was stamped as verified
+// for it.
+t("the message tells the owner what happened and what to do",
+  DOMAIN_RECLAIMED_ERROR === "This domain was removed or claimed by another workspace while verifying. Add it again to retry.");
+t("the verified UPDATE is keyed on the workspace too, and reports the rows it matched",
+  /\.update\(\{\s*verified: true,[\s\S]*?\}\)\s*\.eq\("id", row\.id\)\s*\.eq\("workspace_id", data\.workspaceId\)\s*\.select\("id"\);/.test(verifyBody));
+t("zero rows matched is a refusal with that message",
+  /if \(!Array\.isArray\(proven\) \|\| proven\.length === 0\) \{\s*return \{ ok: false as const, error: DOMAIN_RECLAIMED_ERROR \};/.test(verifyBody));
+t("a failed UPDATE is still its own error", /if \(upErr\) return \{ ok: false as const, error: upErr\.message \};/.test(verifyBody));
+const provisionAt = verifyBody.indexOf("provisionDomainAtEdge(row.hostname)");
+const heldAt = verifyBody.search(/domainRowStillHeld\(sb\(\), row, data\.workspaceId, \{\s*verified: false,?\s*\}\)/);
+t("the row is re-read (id + workspace) before the edge is provisioned", heldAt > 0 && provisionAt > heldAt);
+t("…and a missing row stops the flow with the same message",
+  /const held = await domainRowStillHeld\(sb\(\), row, data\.workspaceId, \{\s*verified: false,?\s*\}\);\s*if \(!held\.ok\) return \{ ok: false as const, error: held\.error \};/.test(verifyBody));
+const unconfiguredAt = verifyBody.indexOf("if (!isEdgeProvisioningConfigured()) {");
+t("the edge-unconfigured block is untouched and still comes first",
+  unconfiguredAt > 0 && unconfiguredAt < heldAt && /BLOCKED: edge provisioning unconfigured; refusing to advance/.test(verifyBody) &&
+    /\.update\(\{ status: "error", last_error: blocked \}\)\s*\.eq\("id", row\.id\);\s*return \{ ok: false as const, error: blocked \};/.test(verifyBody));
+const stampCheckAt = verifyBody.search(/domainRowStillHeld\(sb\(\), row, data\.workspaceId, \{\s*verified: true,?\s*\}\)/);
+const stampReadAt = verifyBody.indexOf('.select("marketplace_domain")');
+const wsPatchAt = verifyBody.indexOf("const wsPatch:");
+t("the row is re-read again — verified, same hostname — after provisioning and before the workspace stamp",
+  stampCheckAt > provisionAt && stampCheckAt < stampReadAt && stampReadAt < wsPatchAt);
+t("…and the stamp is skipped when it no longer holds",
+  /if \(!stillVerified\.ok\) return \{ ok: false as const, error: stillVerified\.error \};/.test(verifyBody));
+t("retry semantics unchanged: verified + provisioned returns early, verified-only skips the ownership checks",
+  /if \(row\.verified && edgeProvisioned\) return \{ ok: true as const, method: "already" as const \};/.test(verifyBody) && /if \(!row\.verified\) \{/.test(verifyBody));
+t("a provisioning failure still parks the row in error with its message",
+  /status: "error", last_error: `Edge provisioning failed: \$\{msg\}`/.test(verifyBody));
+
+// The re-read itself, driven against the in-memory tables.
+{
+  const ROW = { id: "row-mine", hostname: H };
+  const s: Tables = {
+    workspace_domains: [{ id: "row-mine", workspace_id: MINE, hostname: H, verified: true, verified_at: "2026-09-22T00:00:00Z" }],
+    workspaces: [],
+  };
+  const { db, ops } = fakeDb(s);
+  t("a row still held by the workspace passes", (await domainRowStillHeld(db, ROW, MINE, { verified: false })).ok);
+  t("…verified, for the same hostname, it passes the stamp check too", (await domainRowStillHeld(db, ROW, MINE, { verified: true })).ok);
+  t("the check is a read, nothing else", ops.length === 2 && ops.every((o) => o === "workspace_domains.select"), ops.join(" > "));
+  s.workspace_domains[0]!.verified = false;
+  t("an unverified row fails the stamp check…", !(await domainRowStillHeld(db, ROW, MINE, { verified: true })).ok);
+  t("…but still counts as held for provisioning", (await domainRowStillHeld(db, ROW, MINE, { verified: false })).ok);
+  s.workspace_domains[0]!.verified = true;
+  s.workspace_domains[0]!.hostname = "other.example";
+  const renamed = await domainRowStillHeld(db, ROW, MINE, { verified: true });
+  t("a row that now carries a different hostname is not vouched for", !renamed.ok && errorOf(renamed) === DOMAIN_RECLAIMED_ERROR);
+  // Reclaimed: the row is gone and the hostname lives under another workspace with a new id.
+  s.workspace_domains = [{ id: "row-theirs-2", workspace_id: THEIRS, hostname: H, verified: false, verified_at: null }];
+  const gone = await domainRowStillHeld(db, ROW, MINE, { verified: false });
+  t("a reclaimed row (new id, other workspace) is reported gone with the reclaimed message", !gone.ok && errorOf(gone) === DOMAIN_RECLAIMED_ERROR);
+  // The same id under another workspace cannot happen with uuids; the predicate must not rely on that.
+  s.workspace_domains = [{ id: "row-mine", workspace_id: THEIRS, hostname: H, verified: true, verified_at: null }];
+  t("the same id under another workspace is not ours", !(await domainRowStillHeld(db, ROW, MINE, { verified: true })).ok);
+  s.workspace_domains = [];
+  t("a removed row is gone", !(await domainRowStillHeld(db, ROW, MINE, { verified: false })).ok);
+  const { db: failingDb } = fakeDb({ workspace_domains: [], workspaces: [] }, new Set(["workspace_domains.select"]));
+  const failedRead = await domainRowStillHeld(failingDb, ROW, MINE, { verified: false });
+  t("a read error is reported as such, not as a reclaim", !failedRead.ok && errorOf(failedRead) === "boom");
+}
+
+console.log("\n=== n) rollback scripts: refuse rather than destroy, and re-run cleanly (B6) ===");
+const RB1 = resolve(ROOT, "supabase/rollback/20260923000100_marketplace_api_connection_rollback.sql");
+t("rollback for 000100 exists", existsSync(RB1), RB1);
+const rb1raw = existsSync(RB1) ? readFileSync(RB1, "utf8") : "";
+const rb1 = withoutComments(rb1raw);
+// It used to DELETE every auth_mode = 'marketplace' connection inside the
+// transaction so the restored NOT NULL would hold — destroying customer
+// connections to make a rollback go through.
+t("000100 rollback no longer DELETEs anything", !/\bDELETE\b/i.test(rb1));
+t("…it refuses while marketplace-mode connections exist, naming how many",
+  /RAISE EXCEPTION 'rollback refused: % marketplace-mode connections exist; migrate them first', n;/.test(rb1));
+t("…from a DO block that counts them",
+  /DO \$\$[\s\S]*SELECT count\(\*\) INTO n FROM public\.tenant_integrations WHERE auth_mode = 'marketplace';\s*IF n > 0 THEN\s*RAISE EXCEPTION[\s\S]*END \$\$;/.test(rb1));
+t("…before any schema change", rb1.indexOf("RAISE EXCEPTION 'rollback refused") < rb1.indexOf("ALTER TABLE"));
+t("…inside the transaction, so the failure leaves nothing changed",
+  rb1.indexOf("BEGIN;") < rb1.indexOf("DO $$") && rb1.indexOf("DO $$") < rb1.indexOf("COMMIT;"));
+t("the NOT NULL restore and the column drops are kept",
+  rb1.includes("ALTER COLUMN client_secret_vault_id SET NOT NULL") && rb1.includes("DROP COLUMN IF EXISTS auth_mode") && rb1.includes("DROP COLUMN IF EXISTS marketplace_name"));
+t("the VERIFY queries are kept",
+  /information_schema\.columns[\s\S]*column_name IN \('auth_mode','marketplace_name'\)/.test(rb1) &&
+    /pg_constraint WHERE conname = 'tenant_integrations_provider_marketplace_id_key'/.test(rb1));
+const rb1header = rb1raw.slice(0, rb1raw.indexOf("BEGIN;"));
+t("the header says the script refuses, and how to clear the way", /REFUSES/.test(rb1header) && /migrate/i.test(rb1header) && !/\bDELETE\b/.test(rb1header));
+
+const RB4 = resolve(ROOT, "supabase/rollback/20260923000400_launch_hardening_rollback.sql");
+t("rollback for 000400 exists", existsSync(RB4), RB4);
+const rb4 = existsSync(RB4) ? withoutComments(readFileSync(RB4, "utf8")) : "";
+const dropAt = rb4.indexOf('DROP POLICY IF EXISTS "Anyone can create tickets" ON public.support_tickets;');
+const createAt = rb4.indexOf('CREATE POLICY "Anyone can create tickets" ON public.support_tickets FOR INSERT TO public WITH CHECK (true);');
+t("000400 rollback drops the ticket policy before recreating it (re-runnable)", dropAt > 0 && createAt > dropAt);
+t("…inside the transaction", rb4.indexOf("BEGIN;") < dropAt && createAt < rb4.indexOf("COMMIT;"));
+t("…keeping every grant it restores", (rb4.match(/GRANT EXECUTE ON FUNCTION/g) ?? []).length === 9);
+t("…and its VERIFY query",
+  /has_function_privilege\('anon','public\.consume_platform_ai_credit\(uuid\)','EXECUTE'\) AS anon_credit/.test(rb4) &&
+    /pg_policies WHERE tablename='support_tickets' AND policyname='Anyone can create tickets'/.test(rb4));
 
 finish();

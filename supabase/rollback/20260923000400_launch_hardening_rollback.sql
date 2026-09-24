@@ -3,6 +3,7 @@
 -- production state. NOTE: that state is the audited vulnerability (anon could
 -- execute every function below and insert support tickets); roll back only to
 -- unblock a broken application build, then re-apply the hardening.
+-- Re-runnable: the ticket policy is dropped before it is recreated.
 BEGIN;
 -- consume_platform_ai_credit: previous body had no membership guard
 CREATE OR REPLACE FUNCTION public.consume_platform_ai_credit(_workspace_id uuid)
@@ -33,6 +34,7 @@ GRANT EXECUTE ON FUNCTION public.tenant_set_workspace_secret(uuid,text,text) TO 
 GRANT EXECUTE ON FUNCTION public.tenant_delete_workspace_secret(uuid,uuid) TO PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.current_workspace_id_by_host(text) TO PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.workspace_for_host(text) TO PUBLIC, anon, authenticated, service_role;
+DROP POLICY IF EXISTS "Anyone can create tickets" ON public.support_tickets;
 CREATE POLICY "Anyone can create tickets" ON public.support_tickets FOR INSERT TO public WITH CHECK (true);
 COMMIT;
 -- VERIFY (rolled back): all true
