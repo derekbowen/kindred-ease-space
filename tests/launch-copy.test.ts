@@ -12,6 +12,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { NAV_SECTIONS, isNavItemVisible } from "../src/lib/app-nav";
+import { PAGE_PLANS, PAGE_ADDON } from "../src/lib/plan-catalog";
 
 let pass = 0,
   fail = 0;
@@ -282,6 +283,65 @@ const settings = read("src/routes/_authenticated/app.settings.tsx");
 t("settings hides the AI-provider and API-key cards at launch", /showAdvanced &&/.test(settings) && settings.indexOf("const showAdvanced") < settings.indexOf('title="AI providers"'));
 const deployDoc = read("docs/DEPLOYMENT.md");
 t("deploy doc's secret loop skips section headers", /\^\\\[/.test(deployDoc));
+
+// ---------------------------------------------------------------------------
+console.log("\nadversarial review: allowance, add-on, cap and catalog claims");
+
+// C3 — nothing resets monthly: the trial seeds credits once, beta tenants are
+// unmetered, paid plans receive additive grants on invoice.paid. The FAQ
+// answer is also emitted into the FAQPage JSON-LD, so search engines quoted
+// the same claim.
+const faqAt = homeSrc.indexOf('question: "Is AI generation extra?"');
+const faqAnswer = faqAt > 0 ? homeSrc.slice(faqAt, homeSrc.indexOf("},", faqAt)) : "";
+t('homepage FAQ "Is AI generation extra?" exists', faqAt > 0);
+t("FAQ answer claims no monthly allowance", faqAnswer.length > 0 && !/monthly|allowance|this month/i.test(faqAnswer), faqAnswer);
+t("FAQ answer quotes the fair-use cap as the current value", /fair-use cap \(currently \$\{GENERATION_DAILY_CAP\} generated pages per workspace per day\)/.test(faqAnswer));
+t("FAQ answer still says you buy published pages, not generation", /You buy published pages, not generation/.test(faqAnswer));
+t("homepage imports the cap it quotes", /import \{ GENERATION_DAILY_CAP \} from "@\/lib\/generation-limits";/.test(homeSrc));
+
+const aiCardAt = billing.indexOf("<CardTitle>AI generation</CardTitle>");
+const aiCard = aiCardAt > 0 ? billing.slice(aiCardAt, billing.indexOf("</Card>", aiCardAt)) : "";
+t("billing AI generation card exists", aiCardAt > 0);
+t('billing AI card never says "this month", "monthly" or "allowance"', aiCard.length > 0 && !/this month|monthly|allowance/i.test(aiCard), aiCard);
+t('billing AI card shows the balance as "generation credits available"', aiCard.includes("generation credits available"));
+t("billing AI card tells a beta tenant generation is in the grant, not a credit count", /inBeta \? "Included in your beta grant"/.test(aiCard) && /inBeta \? \(/.test(aiCard) && /part of your beta grant/.test(aiCard));
+t("billing AI card quotes the fair-use cap as the current value", /fair-use cap \(currently\{" "\}\s*\{GENERATION_DAILY_CAP\}/.test(aiCard));
+
+// C4 — nothing sends a grant-end notice, so the dashboard must not promise one.
+t("dashboard beta card no longer promises a notice nothing sends", !/tell you (well )?before/i.test(dash) && !/We'll tell you|We will tell you/.test(dash));
+
+// C6 — the feature grid includes an add-on, so nothing above it may claim
+// everything is included, and the pricing intro claims core features only.
+t('features eyebrow no longer says "Everything included"', !/Everything included/.test(homeSrc));
+t("features eyebrow says what is included, not everything", /What(&apos;|')s included/.test(homeSrc));
+t("pricing intro claims every core feature, not every feature", !/Every plan unlocks every feature\b/.test(collapse(homeSrc)) && /Every plan unlocks every core feature/.test(collapse(homeSrc)));
+t("affiliate card is labelled an optional add-on", /Available as an add-on/.test(homeSrc) && /badge: "Optional add-on"/.test(homeSrc) && /\{badge && \(/.test(homeSrc));
+
+// C7 — the enforced cap is a platform_settings knob, so copy says "currently".
+t("/beta quotes the cap as the current value", /fair-use cap \(currently \{GENERATION_DAILY_CAP\} generated pages per workspace per day\)/.test(collapse(betaPage)));
+t("/beta scopes included generation to a beta grant and gives trials a starter allowance", /Included with a beta grant/.test(collapse(betaPage)) && /Trial workspaces get a starter allowance/.test(collapse(betaPage)));
+t("billing quotes the cap as the current value in both branches", (billing.match(/fair-use cap \(currently \$\{GENERATION_DAILY_CAP\} generated pages per workspace per day\)/g) || []).length === 2);
+t("no page quotes the cap flatly", !/fair-use cap of/.test(betaPage) && !/fair-use cap of/.test(billing) && !/fair-use cap of/.test(homeSrc));
+const limits = read("src/lib/generation-limits.ts");
+t("generation-limits says where the live value is shown", /overview\.dailyCap/.test(limits) && /app\.content\.generate\.tsx/.test(limits));
+const generate = read("src/routes/_authenticated/app.content.generate.tsx");
+t("the generate page shows the live cap, not the constant", /overview\.dailyCap/.test(generate) && !generate.includes("GENERATION_DAILY_CAP"));
+
+// C8 — structured-data prices and the add-on block size come from the catalog.
+// The derivation expressions are evaluated against the real catalog, so this
+// checks what the page renders, not just that a literal is gone.
+const evalWithCatalog = (expr: string): unknown =>
+  new Function("PAGE_PLANS", "PAGE_ADDON", `return (${expr});`)(PAGE_PLANS, PAGE_ADDON);
+const lowExpr = homeSrc.match(/const PRICE_LOW = (.+);/)?.[1];
+const highExpr = homeSrc.match(/const PRICE_HIGH = (.+);/)?.[1];
+const catalogLow = Math.min(...PAGE_PLANS.map((p) => p.monthlyPrice));
+const catalogHigh = Math.max(...PAGE_PLANS.map((p) => p.monthlyPrice));
+t("JSON-LD lowPrice renders the catalog's cheapest plan", !!lowExpr && String(evalWithCatalog(lowExpr)) === String(catalogLow) && homeSrc.includes("lowPrice: String(PRICE_LOW)"), lowExpr ?? "no PRICE_LOW");
+t("JSON-LD highPrice renders the catalog's dearest plan", !!highExpr && String(evalWithCatalog(highExpr)) === String(catalogHigh) && homeSrc.includes("highPrice: String(PRICE_HIGH)"), highExpr ?? "no PRICE_HIGH");
+t("no price literal remains in the structured data", !/(lowPrice|highPrice): "\d/.test(homeSrc));
+t("the catalog bounds are the first and last plans, as /beta and billing assume", catalogLow === PAGE_PLANS[0]!.monthlyPrice && catalogHigh === PAGE_PLANS[PAGE_PLANS.length - 1]!.monthlyPrice);
+const blockExpr = homeSrc.match(/blocks of\{" "\}\s*\{(PAGE_ADDON\.pagesPerUnit\.toLocaleString\(\))\}/)?.[1];
+t("add-on block size renders the catalog's pagesPerUnit", !!blockExpr && evalWithCatalog(blockExpr) === PAGE_ADDON.pagesPerUnit.toLocaleString() && !/blocks of 1,000/.test(homeSrc), blockExpr ?? "no PAGE_ADDON expression");
 
 // ---------------------------------------------------------------------------
 console.log(`\n${pass} passed, ${fail} failed`);

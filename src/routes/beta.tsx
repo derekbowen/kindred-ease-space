@@ -71,9 +71,13 @@ function BetaPage() {
               publishing slot.
             </li>
             <li>
-              <strong>AI generation.</strong> Included during the beta, within a fair-use cap of{" "}
-              {GENERATION_DAILY_CAP} generated pages per workspace per day. Generating a draft never
-              uses a publishing slot.
+              {/* "currently": the enforced cap is a platform_settings knob ops can
+                  lower without a deploy (src/lib/generation-limits.ts). Scoped to
+                  the grant: a trial is metered after its starter allowance, so it
+                  must not be promised included generation. */}
+              <strong>AI generation.</strong> Included with a beta grant, within a fair-use cap
+              (currently {GENERATION_DAILY_CAP} generated pages per workspace per day). Trial
+              workspaces get a starter allowance. Generating a draft never uses a publishing slot.
             </li>
           </ul>
 

@@ -292,19 +292,36 @@ function BillingPage() {
         <Card>
           <CardHeader>
             <CardTitle>AI generation</CardTitle>
-            <CardDescription>Included with every plan</CardDescription>
+            <CardDescription>
+              {inBeta ? "Included in your beta grant" : "Included with every plan"}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            <div className="text-2xl font-bold tabular-nums">
-              {ent?.aiBalance.toLocaleString() ?? "—"}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              generation credits remaining this month
-            </div>
+            {/* Nothing resets on a calendar: the trial seeds credits once, a
+                beta grant is unmetered, and paid plans receive an additive
+                grant on each invoice — so this card names no billing period.
+                A beta tenant is bounded by the fair-use cap, not a balance,
+                and the cap is a platform_settings knob, hence "currently". */}
+            {inBeta ? (
+              <>
+                <div className="text-2xl font-bold">Included</div>
+                <div className="text-xs text-muted-foreground">
+                  AI page generation is part of your beta grant, within a fair-use cap (currently{" "}
+                  {GENERATION_DAILY_CAP} generated pages per workspace per day).
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-bold tabular-nums">
+                  {ent?.aiBalance.toLocaleString() ?? "—"}
+                </div>
+                <div className="text-xs text-muted-foreground">generation credits available</div>
+              </>
+            )}
             {/* Credits are INTERNAL metering, not a SKU. Selling them here
                 contradicted the product decision that capacity is what the
                 customer buys (docs/SOURCE_OF_TRUTH.md), and gave the billing
-                page two competing units. The allowance is still worth showing
+                page two competing units. The balance is still worth showing
                 — it is what the plan includes — but it is not for sale.
                 More capacity is bought as pages, below. */}
             <div className="text-xs text-muted-foreground pt-1">
@@ -339,8 +356,10 @@ function BillingPage() {
                       : "with no end date set"
                   }.`
                 : `The trial: up to ${TRIAL_PAGE_LIMIT} published pages, no card required.`}{" "}
-              Drafts are always free and unlimited. AI page generation is included, within a
-              fair-use cap of {GENERATION_DAILY_CAP} generated pages per workspace per day.
+              Drafts are always free and unlimited.{" "}
+              {inBeta
+                ? `AI page generation is included with your beta grant, within a fair-use cap (currently ${GENERATION_DAILY_CAP} generated pages per workspace per day).`
+                : `AI page generation is included with every plan, within a fair-use cap (currently ${GENERATION_DAILY_CAP} generated pages per workspace per day); the trial starts with a starter allowance.`}
             </p>
           </div>
           <div>

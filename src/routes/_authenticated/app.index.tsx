@@ -111,10 +111,11 @@ function DashboardPage() {
                 {beta.pageLimit === 1 ? "" : "s"} included, no charge
               </div>
               <div className="text-xs text-muted-foreground">
+                {/* No sentence promising a notice: nothing sends one when a
+                    grant ends. The end date itself is the honest signal. */}
                 {beta.expiresAt
                   ? `Beta access runs until ${new Date(beta.expiresAt).toLocaleDateString()}.`
-                  : "No end date set."}{" "}
-                We'll tell you well before anything changes.
+                  : "No end date set."}
               </div>
             </div>
             <Button asChild variant="outline">

@@ -17,7 +17,14 @@ import {
 import { canonicalUrl } from "@/lib/canonical";
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { SiteFooter } from "@/components/site/SiteFooter";
-import { PAGE_PLANS, EVERY_PLAN_INCLUDES, TRIAL_PAGE_LIMIT } from "@/lib/plan-catalog";
+import { PAGE_PLANS, PAGE_ADDON, EVERY_PLAN_INCLUDES, TRIAL_PAGE_LIMIT } from "@/lib/plan-catalog";
+import { GENERATION_DAILY_CAP } from "@/lib/generation-limits";
+
+// Derived from the catalog, never typed in. The structured data quoted "29"
+// and "299" as literals beside a pricing grid that reads PAGE_PLANS, so a plan
+// change would have left search engines a price the page no longer showed.
+const PRICE_LOW = Math.min(...PAGE_PLANS.map((p) => p.monthlyPrice));
+const PRICE_HIGH = Math.max(...PAGE_PLANS.map((p) => p.monthlyPrice));
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -61,8 +68,8 @@ export const Route = createFileRoute("/")({
           offers: {
             "@type": "AggregateOffer",
             priceCurrency: "USD",
-            lowPrice: "29",
-            highPrice: "299",
+            lowPrice: String(PRICE_LOW),
+            highPrice: String(PRICE_HIGH),
           },
         }),
       },
@@ -303,7 +310,11 @@ const FEATURES = [
   {
     icon: Share2,
     title: "Affiliate Programs",
-    description: "Run referral programs that pay out on real transactions. Available as an add-on.",
+    description:
+      "Run referral programs that pay out on real transactions. Available as an add-on, priced separately.",
+    // The one card here that is NOT included with a plan. Say so on the card,
+    // and never under a heading that claims everything is.
+    badge: "Optional add-on",
   },
 ];
 
@@ -316,7 +327,7 @@ function Features() {
     >
       <div className="max-w-2xl">
         <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-orange-500">
-          Everything included
+          What&apos;s included
         </p>
         <h2
           id="features-heading"
@@ -327,13 +338,20 @@ function Features() {
       </div>
 
       <ul className="mt-14 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {FEATURES.map(({ icon: Icon, title, description }) => (
+        {FEATURES.map(({ icon: Icon, title, description, badge }) => (
           <li key={title}>
             <div className="group h-full rounded-2xl border border-white/[0.08] bg-white/[0.02] p-7 transition-all duration-300 hover:-translate-y-1 hover:border-orange-500/40 hover:shadow-[0_0_50px_-20px_rgba(249,115,22,0.8)]">
               <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-orange-500/20 bg-orange-500/10">
                 <Icon className="h-5 w-5 text-orange-500" aria-hidden="true" />
               </span>
-              <h3 className="mt-6 text-base font-semibold tracking-tight text-white">{title}</h3>
+              <h3 className="mt-6 flex flex-wrap items-center gap-2 text-base font-semibold tracking-tight text-white">
+                {title}
+                {badge && (
+                  <span className="rounded-full border border-white/[0.12] px-2 py-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-400">
+                    {badge}
+                  </span>
+                )}
+              </h3>
               <p className="mt-2 text-sm leading-relaxed text-zinc-400">{description}</p>
             </div>
           </li>
@@ -405,9 +423,10 @@ function HowItWorks() {
   );
 }
 
-// Tiers differ by published-page capacity — every feature is available on
-// every plan. Capacity is the product; the AI allowance is sized to match it
-// and is not sold separately (docs/SOURCE_OF_TRUTH.md). Page estimates are approximate and depend on page length.
+// Tiers differ by published-page capacity — every core feature is available on
+// every plan; add-ons are priced separately. Capacity is the product; AI
+// generation is included within a fair-use cap and is not sold separately
+// (docs/SOURCE_OF_TRUTH.md). Page estimates are approximate and depend on page length.
 // Single source of truth (§37): the same catalog drives the homepage, the
 // billing dashboard, checkout and Stripe — no scattered pricing constants.
 const PLANS = PAGE_PLANS;
@@ -429,8 +448,8 @@ function Pricing() {
           Less than one agency invoice.
         </h2>
         <p className="mt-5 text-sm text-zinc-400">
-          One monthly price for a number of live, hosted SEO pages. Every plan unlocks every feature
-          — pick one for how many pages you publish.
+          One monthly price for a number of live, hosted SEO pages. Every plan unlocks every core
+          feature — pick one for how many pages you publish. Add-ons are priced separately.
         </p>
       </div>
 
@@ -506,7 +525,8 @@ function Pricing() {
       </div>
 
       <p className="mt-8 text-center text-sm text-zinc-500">
-        Need more pages without changing plans? Add capacity in blocks of 1,000 from your dashboard.
+        Need more pages without changing plans? Add capacity in blocks of{" "}
+        {PAGE_ADDON.pagesPerUnit.toLocaleString()} from your dashboard.
       </p>
     </section>
   );
@@ -530,8 +550,7 @@ const FAQS = [
   },
   {
     question: "Is AI generation extra?",
-    answer:
-      "No. Every plan includes a monthly AI generation allowance sized for its page capacity, covering page generation and rewrites. You buy published pages, not generation — if you need more, you move up a plan or add page capacity.",
+    answer: `No. AI page generation is included with every plan within a fair-use cap (currently ${GENERATION_DAILY_CAP} generated pages per workspace per day). You buy published pages, not generation — if you need more pages, you move up a plan or add page capacity.`,
   },
   {
     question: "What happens if I cancel?",
