@@ -211,8 +211,46 @@ console.log("\n=== the manifest classifies the secrets that actually block a lau
     /PROMOTED FROM \[recommended\]/.test(manifest));
 
   // The other secrets whose absence breaks a customer-visible path outright.
-  for (const name of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "EMAILIT_API_KEY"]) {
+  for (const name of [
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "EMAILIT_API_KEY",
+    "OPENROUTER_API_KEY",
+    "LOVABLE_API_KEY",
+  ]) {
     t(`${name} is required`, required.includes(name), required.join(" "));
+  }
+
+  // LOVABLE_API_KEY is read only through the process.env[name] indirection in
+  // workspace-secrets.server.ts, so the literal grep the manifest's header
+  // describes never found it and it was left out. The preflight then passed a
+  // Worker on which every Daily Briefing "do it" action, the page auditor and
+  // the SEO coach failed. The manifest must keep saying why, and the three
+  // consumers must really read it through that fallback — otherwise the gate
+  // is blocking deploys over a name nothing consumes.
+  t("LOVABLE_API_KEY is not also listed as merely recommended",
+    !recommended.includes("LOVABLE_API_KEY"), recommended.join(" "));
+  const lovStart = manifest.indexOf("\nLOVABLE_API_KEY");
+  const lovableNote = lovStart >= 0
+    ? manifest.slice(lovStart, manifest.indexOf("\n[recommended]", lovStart))
+    : "";
+  t("the manifest explains the indirection that hid LOVABLE_API_KEY",
+    /workspace-secrets\.server\.ts/.test(lovableNote) && /process\.env\[name\]/.test(lovableNote),
+    lovableNote.slice(0, 200));
+  t("the manifest names its three consumers",
+    ["coach-actions.functions.ts", "admin-page-auditor.functions.ts", "admin-seo-coach.functions.ts"]
+      .every((f) => lovableNote.includes(f)),
+    lovableNote.slice(0, 200));
+  t("the manifest says the help-assistant copy lives in Supabase function secrets, not the Worker",
+    /help-assistant/.test(lovableNote) && /function secrets/i.test(lovableNote));
+  for (const f of [
+    "src/lib/coach-actions.functions.ts",
+    "src/lib/admin-page-auditor.functions.ts",
+    "src/lib/admin-seo-coach.functions.ts",
+  ]) {
+    const consumer = readFileSync(join(APP, f), "utf8");
+    t(`${f} reads LOVABLE_API_KEY through the env fallback`,
+      /"LOVABLE_API_KEY",\s*"LOVABLE_API_KEY",?\s*\)/.test(consumer), "no (keyName, envFallback) pair");
   }
 
   // Every name the manifest lists must actually be read by the code, or the

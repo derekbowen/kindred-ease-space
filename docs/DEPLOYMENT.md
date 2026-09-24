@@ -108,6 +108,14 @@ The authoritative list, with the purpose of each, is
 `scripts/required-secrets.txt`. Adding a runtime dependency means adding it
 there, or the preflight will not know to check for it.
 
+Two `[required]` names are read only through the BYOK fallback in
+`workspace-secrets.server.ts` (`process.env[name]`), so a literal grep for
+`process.env.<NAME>` finds neither and both are easy to leave out:
+`OPENROUTER_API_KEY` (page generation) and `LOVABLE_API_KEY` (the Daily
+Briefing actions, the page auditor and the SEO coach). The help-assistant edge
+functions read their own `LOVABLE_API_KEY` from Supabase function secrets
+(`supabase secrets set`), which this Worker preflight does not cover.
+
 ## Cutting over
 
 ### Pre-cutover DNS, captured 2026-09-01 — THE ROLLBACK REFERENCE
