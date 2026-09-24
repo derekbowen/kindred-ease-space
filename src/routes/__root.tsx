@@ -12,7 +12,7 @@ import {
 import appCss from "../styles.css?url";
 import { installServerFnAuthFetch } from "@/integrations/supabase/server-fn-fetch";
 import { supabase } from "@/integrations/supabase/client";
-import { authLandingFromHash } from "@/lib/auth-landing";
+import { authLandingFromHash, shouldNavigateOnSignIn } from "@/lib/auth-landing";
 import { I18nProvider } from "@/lib/i18n";
 import { canonicalUrl } from "@/lib/canonical";
 import { Toaster } from "@/components/ui/sonner";
@@ -166,7 +166,12 @@ function AuthStateBridge() {
     // user. Decided from the URL hash BEFORE supabase-js consumes it: the
     // client strips the fragment as it stores the session, so by the time
     // SIGNED_IN fires the hash is gone.
-    const landing = authLandingFromHash(window.location.hash, window.location.pathname);
+    //
+    // A `let`, CONSUMED EXACTLY ONCE. @supabase/auth-js re-emits SIGNED_IN on
+    // tab visibility recovery and this listener lives for the whole session,
+    // so a landing that stayed armed sent a customer editing a page under
+    // /app back to the dashboard every time they switched tabs and returned.
+    let landing = authLandingFromHash(window.location.hash, window.location.pathname);
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
       router.invalidate();
@@ -174,12 +179,19 @@ function AuthStateBridge() {
       // session — that just produces a 401 storm. Sign-out flows clear the
       // cache themselves.
       if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
-      if (event === "SIGNED_IN" && landing) {
-        // Confirmation and recovery links redirect to the Auth "Site URL",
-        // which is the marketing homepage, with the session in the fragment.
-        // The session is stored fine, but the customer is left on a page that
-        // says "Sign in". Take them where the link was for.
-        router.navigate({ to: landing, replace: true });
+      // The pathname is re-read at event time, not at mount: if the customer
+      // is already inside /app (or on the password form) there is nothing to
+      // correct. Recovery links emit PASSWORD_RECOVERY rather than SIGNED_IN
+      // (reset-password.tsx handles that), so the "/reset-password" landing
+      // is defensive only.
+      if (event === "SIGNED_IN" && shouldNavigateOnSignIn(landing, window.location.pathname)) {
+        // Confirmation and magic links redirect to the Auth "Site URL", which
+        // is the marketing homepage, with the session in the fragment. The
+        // session is stored fine, but the customer is left on a page that
+        // says "Sign in". Take them where the link was for — once.
+        const to = landing;
+        landing = null;
+        router.navigate({ to, replace: true });
       }
     });
     return () => sub.subscription.unsubscribe();

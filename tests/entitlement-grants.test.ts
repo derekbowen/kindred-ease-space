@@ -12,12 +12,20 @@
  * SQL half is checked against this same table by the live parity block at the
  * foot of this file.
  *
- *   paidPages  = stripe_publish ? base + addon + bonus : 0
  *   grantPages = sum(page_limit) over grants active now
+ *   granted    = grantPages > 0 AND (NOT stripe_publish OR stripe_state = trialing)
+ *   paidPages  = stripe_publish AND NOT granted ? base + addon + bonus : 0
  *   effective  = paidPages + grantPages          -- additive, never greater-of
  *   publish    = stripe_publish OR grantPages > 0
  *   serve      = stripe_serve   OR grantPages > 0
+ *
+ * The `granted` line was amended on 2026-09-24 (20260924000700): a grant
+ * supersedes a TRIAL, which is not a paid entitlement, and never an active
+ * paid subscription. Before that a beta tenant read as 'trialing' for its
+ * first fortnight — Trial badge, "pick a plan" countdown, metered generation.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   decideCapacity,
   effectivePageLimit,
@@ -286,7 +294,7 @@ const EXPECTED: Case[] = [
     expect: { state: "active", serve: true, publish: true, limit: 100 },
   },
   {
-    name: "active + grant",
+    name: "active paid + grant stays active",
     status: "active",
     periodEnd: days(10),
     granted: 50,
@@ -302,12 +310,14 @@ const EXPECTED: Case[] = [
     expect: { state: "trialing", serve: true, publish: true, limit: 25 },
   },
   {
+    // A grant supersedes a trial: 'granted', and the grant is the whole
+    // allowance — not the 25-page trial base plus it.
     name: "trialing live + grant",
     status: "trialing",
     trialEndsAt: days(5),
     granted: 50,
     stored: NO_PLAN,
-    expect: { state: "trialing", serve: true, publish: true, limit: 75 },
+    expect: { state: "granted", serve: true, publish: true, limit: 50 },
   },
   {
     name: "trial expired, no grant",
@@ -463,10 +473,164 @@ console.log("\n=== 8. the divergence this change closes ===");
   );
 }
 
+// ---------------------------------------------------------------------------
+console.log("\n=== 9. a grant supersedes a trial, never a paid plan ===");
+// ---------------------------------------------------------------------------
+// Every workspace is provisioned as a 14-day trial, so a beta tenant is
+// 'trialing' AND granted for its first fortnight. Reporting the Stripe state
+// there gave it a Trial badge, a "pick a plan" countdown and — because
+// isGenerationGranted keys on 'granted' — metered generation, for exactly the
+// two weeks /beta promises are free. A trial is not a paid entitlement.
+{
+  const r = resolve(
+    { subscriptionStatus: "trialing", trialEndsAt: days(5), grantedPages: 50 },
+    NO_PLAN,
+  );
+  t("live trial + grant reports 'granted', not 'trialing'", r.state === "granted", r.state);
+  t(
+    "live trial + grant: the grant is the whole allowance (50, not 25 + 50)",
+    r.limit === 50,
+    `got ${r.limit}`,
+  );
+  t("live trial + grant still serves and publishes", r.serve && r.publish);
+  t(
+    "the reason still records the commercial state for ops",
+    /Commercial status: trialing/.test(r.reason),
+    r.reason,
+  );
+
+  const paid = resolve(
+    { subscriptionStatus: "active", currentPeriodEnd: days(10), grantedPages: 50 },
+    STARTER,
+  );
+  t("active paid + grant stays 'active'", paid.state === "active", paid.state);
+  t(
+    "active paid + grant keeps paid capacity and adds the grant",
+    paid.limit === 150,
+    `got ${paid.limit}`,
+  );
+
+  const noEnd = resolve(
+    { subscriptionStatus: "trialing", trialEndsAt: null, grantedPages: 50 },
+    NO_PLAN,
+  );
+  t(
+    "trialing with no end date + grant is rescued to 'granted'",
+    noEnd.state === "granted" && noEnd.publish && noEnd.limit === 50,
+    `state=${noEnd.state} limit=${noEnd.limit}`,
+  );
+
+  const bare = resolve({ subscriptionStatus: "trialing", trialEndsAt: days(5) }, NO_PLAN);
+  t(
+    "a live trial with no grant is still a trial",
+    bare.state === "trialing" && bare.limit === 25,
+    `state=${bare.state} limit=${bare.limit}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+console.log("\n=== 10. the SQL half carries the same amendment (migration text) ===");
+// ---------------------------------------------------------------------------
+{
+  const ROOT = join(import.meta.dir, "..");
+  const read = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
+  const withoutComments = (sql: string) =>
+    sql
+      .split("\n")
+      .filter((l) => !/^\s*--/.test(l))
+      .join("\n");
+  // The workspace_capacity definition only, from CREATE to its closing $$;.
+  const capacityRaw = (sql: string) => {
+    const start = sql.indexOf(
+      "CREATE OR REPLACE FUNCTION public.workspace_capacity(_workspace_id uuid)",
+    );
+    const end = sql.indexOf("$$;", start);
+    return start >= 0 && end > start ? sql.slice(start, end) : "";
+  };
+  const originalRaw = capacityRaw(
+    read("supabase/migrations/20260918000000_entitlement_grants.sql"),
+  );
+  const original = withoutComments(originalRaw);
+  const migration = read("supabase/migrations/20260924000700_grant_supersedes_trial.sql");
+  const rollback = read("supabase/rollback/20260924000700_grant_supersedes_trial_rollback.sql");
+  const NEW_BLOCK =
+    "  IF v_granted > 0 AND (NOT v_stripe_pub OR v_state = 'trialing') THEN\n" +
+    "    v_state := 'granted';\n" +
+    "    v_paid := 0;\n" +
+    "  END IF;";
+  const OLD_BLOCK =
+    "  IF v_granted > 0 AND NOT v_stripe_pub THEN\n    v_state := 'granted';\n  END IF;";
+
+  t(
+    "the 20260918 body is where this test thinks it is",
+    original.includes(OLD_BLOCK) && !original.includes("v_paid := 0;"),
+  );
+  const amended = withoutComments(capacityRaw(migration));
+  t("000700 redefines workspace_capacity", amended.length > 0);
+  t("000700 makes a grant supersede a trial", amended.includes(NEW_BLOCK));
+  t(
+    "000700 zeroes paid capacity in the granted state (mirrors effectivePageLimit)",
+    amended.includes("v_paid := 0;"),
+  );
+  t("000700 changes nothing else in the body", amended.replace(NEW_BLOCK, OLD_BLOCK) === original);
+  t(
+    "000700 keeps the function service-role only",
+    migration.includes(
+      "REVOKE ALL ON FUNCTION public.workspace_capacity(uuid) FROM PUBLIC, anon, authenticated;",
+    ) &&
+      migration.includes(
+        "GRANT EXECUTE ON FUNCTION public.workspace_capacity(uuid) TO service_role;",
+      ),
+  );
+  t(
+    "000700 verifies the predicate landed in the stored body",
+    /prosrc LIKE '%IF v_granted > 0 AND \(NOT v_stripe_pub OR v_state = ''trialing''\) THEN%'/.test(
+      migration,
+    ) && /prosrc LIKE '%v_paid := 0;%'/.test(migration),
+  );
+  t(
+    "000700 verifies anon and authenticated still cannot execute it",
+    /NOT has_function_privilege\('anon', 'public\.workspace_capacity\(uuid\)', 'EXECUTE'\)/.test(
+      migration,
+    ) &&
+      /NOT has_function_privilege\('authenticated', 'public\.workspace_capacity\(uuid\)', 'EXECUTE'\)/.test(
+        migration,
+      ),
+  );
+  t(
+    "000700 verification block is last",
+    migration.trim().endsWith("p.proname = 'publish_tenant_pages');"),
+  );
+
+  t("the rollback restores the 20260918 body verbatim", capacityRaw(rollback) === originalRaw);
+  const restored = withoutComments(capacityRaw(rollback));
+  t(
+    "the rollback body has no trace of the new predicate",
+    restored.length > 0 &&
+      !restored.includes("v_state = 'trialing'") &&
+      !restored.includes("v_paid := 0;"),
+  );
+  t(
+    "the rollback is transactional and keeps the grants",
+    /^BEGIN;/m.test(rollback) &&
+      /^COMMIT;/m.test(rollback) &&
+      rollback.includes(
+        "GRANT EXECUTE ON FUNCTION public.workspace_capacity(uuid) TO service_role;",
+      ),
+  );
+  t(
+    "the rollback ends with a VERIFY query for the old predicate",
+    /-- VERIFY \(rolled back\)/.test(rollback) &&
+      /AS supersedes_trial/.test(rollback) &&
+      /AS zeroes_paid/.test(rollback),
+  );
+}
+
 /*
  * LIVE PARITY — run against the database after applying
- * 20260918000000_entitlement_grants.sql. Every row must report true; each
- * corresponds to a `spec:` case above.
+ * 20260918000000_entitlement_grants.sql and 20260924000700_grant_supersedes_trial.sql.
+ * Every row must report true; each corresponds to a `spec:` case above (the
+ * "trialing live + grant" row reads 'granted' / 50 only once 000700 is in).
  *
  *   SELECT c.state, c.serve, c.publish, c.page_limit
  *     FROM public.workspace_capacity('<workspace-id>') c;
