@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { recordPage404 } from "@/lib/page-data.helpers.server";
 import { decideCapacity } from "@/lib/billing-capacity";
 import { readGrantedPagesOrNull } from "@/lib/entitlement-grants.server";
+import { isPublicPageSlug } from "@/lib/public-page-slug";
 
 const sb = () => supabaseAdmin as any;
 
@@ -90,20 +91,11 @@ function resolveRequestHost(): string | undefined {
   }
 }
 
-/**
- * What a public page slug may look like. Slugs are produced by slugifyPage
- * (lowercase letters, digits, dashes; 80 characters) and arrive here from the
- * URL. Anything else is refused BEFORE the slug touches a query: the redirect
- * lookup below interpolates it into a PostgREST `.or(...)` expression, where a
- * value such as `x,slug.neq.zzz` is not a slug but two extra filter terms that
- * widen the match to other rows. Refusing early also keeps junk out of the
- * 404 log.
- */
-export const PUBLIC_PAGE_SLUG_RE = /^[a-z0-9-]{1,200}$/;
-
-export function isPublicPageSlug(slug: string): boolean {
-  return PUBLIC_PAGE_SLUG_RE.test(slug);
-}
+// What a public page slug may look like lives in src/lib/public-page-slug.ts,
+// a dependency-free module, so the sitemap can apply the very same rule and
+// never advertise a URL the handler below refuses. Re-exported here so
+// existing imports keep working.
+export { PUBLIC_PAGE_SLUG_RE, isPublicPageSlug } from "@/lib/public-page-slug";
 
 export type PublicListing = {
   id: string;
