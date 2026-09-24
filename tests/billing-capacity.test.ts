@@ -188,5 +188,41 @@ console.log("\n=== effective limit ===");
     effectivePageLimit(stored, grace) === 0 && grace.serve);
 }
 
+console.log("\n=== an admin grant supersedes a trial and adds to a paid plan ===");
+{
+  // A beta tenant is also a 14-day trial when provisioned. The Stripe state
+  // used to win whenever it could publish, so the tenant spent its first
+  // fortnight as a "Trial" with metered generation. A trial is not a paid
+  // entitlement; a live paid subscription is, and is never superseded.
+  const trialing = decideCapacity(
+    { subscriptionStatus: "trialing", trialEndsAt: days(3), currentPeriodEnd: null, grantedPages: 50 },
+    NOW,
+  );
+  t("live trial + grant is 'granted'", trialing.state === "granted", trialing.state);
+  t("live trial + grant serves and publishes", trialing.serve && trialing.publish);
+  t("live trial + grant: the 25-page trial base does not add to the grant",
+    effectivePageLimit({ base: 25, addon: 0, bonus: 0, granted: 50 }, trialing) === 50);
+
+  const active = decideCapacity(
+    { subscriptionStatus: "active", trialEndsAt: null, currentPeriodEnd: days(10), grantedPages: 50 },
+    NOW,
+  );
+  t("active paid + grant stays 'active'", active.state === "active", active.state);
+  t("active paid + grant sums paid and granted",
+    effectivePageLimit({ base: 100, addon: 0, bonus: 0, granted: 50 }, active) === 150);
+
+  const expired = decideCapacity(
+    { subscriptionStatus: "trialing", trialEndsAt: days(-1), currentPeriodEnd: null, grantedPages: 50 },
+    NOW,
+  );
+  t("expired trial + grant is rescued to 'granted'", expired.state === "granted" && expired.serve && expired.publish);
+
+  const bare = decideCapacity(
+    { subscriptionStatus: "trialing", trialEndsAt: days(3), currentPeriodEnd: null, grantedPages: 0 },
+    NOW,
+  );
+  t("a live trial with no grant is still 'trialing'", bare.state === "trialing", bare.state);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) { console.log("Failed: " + failed.join(", ")); process.exit(1); }

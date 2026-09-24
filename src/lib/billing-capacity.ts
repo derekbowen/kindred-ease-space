@@ -218,19 +218,32 @@ export function normalizeGrantedPages(value: number | null | undefined): number 
  * makes a free beta account behave like a real entitled customer rather than
  * needing a hidden bypass somewhere in the serving path.
  *
- * It is deliberately NOT a downgrade: a grant never reduces what a paying
- * customer already has, because the paid and granted components are summed
- * rather than compared.
+ * A GRANT SUPERSEDES A TRIAL, and never an active paid subscription. Every
+ * workspace is provisioned as a 14-day trial, so a beta tenant is "trialing"
+ * as well as granted for its first fortnight. Reporting the Stripe state there
+ * gave it a Trial badge, a countdown to "pick a plan", "Free trial" on the
+ * billing page and — because generation is included only for the 'granted'
+ * state (isGenerationGranted) — METERED generation: the opposite of what /beta
+ * promises, for exactly the two weeks that matter most. A trial is not a paid
+ * entitlement, so the grant wins: the state is 'granted' and, through
+ * effectivePageLimit, the grant is the whole allowance rather than the trial's
+ * 25 pages plus it.
  *
- * Mirrored in SQL by public.workspace_capacity(); tests/entitlement-grants.test.ts
- * asserts the two agree for every state.
+ * It is deliberately NOT a downgrade: a grant never reduces what a paying
+ * customer already has, because for a paid subscription the paid and granted
+ * components are summed rather than compared, and the state stays the
+ * commercial one.
+ *
+ * Mirrored in SQL by public.workspace_capacity() (20260918000000, amended by
+ * 20260924000700); tests/entitlement-grants.test.ts asserts the two agree for
+ * every state.
  */
 export function decideCapacity(facts: BillingFacts, now: number = Date.now()): CapacityDecision {
   const stripe = stripeCapacity(facts, now);
   const granted = normalizeGrantedPages(facts.grantedPages);
   if (granted === 0) return stripe;
-  if (stripe.publish) {
-    // Already entitled through Stripe. The grant still adds pages — see
+  if (stripe.publish && stripe.state !== "trialing") {
+    // Entitled through a paid subscription. The grant still adds pages — see
     // effectivePageLimit — but the state stays the commercial one, because
     // "Subscription active" is the true and more useful thing to tell them.
     return stripe;
@@ -256,10 +269,12 @@ export function effectivePageLimit(
 ): number {
   const granted = normalizeGrantedPages(stored.granted);
   // ADDITIVE, never greater-of. Paid capacity counts only while Stripe itself
-  // says the workspace may publish — the `granted` state is produced exactly
-  // when Stripe refused, so paid contributes nothing there and the grant is the
-  // whole allowance. A lapsed plan plus a 50-page grant is 50 pages, not 50
-  // plus whatever page_limit_base happens to still say.
+  // says the workspace may publish AND the state is not `granted` — that state
+  // is produced when Stripe refused, or when the only Stripe entitlement is a
+  // trial the grant supersedes; either way paid contributes nothing and the
+  // grant is the whole allowance. A lapsed plan plus a 50-page grant is 50
+  // pages, not 50 plus whatever page_limit_base happens to still say, and a
+  // live trial plus a 50-page grant is 50, not 75.
   const stripeEntitled = decision.publish && decision.state !== "granted";
   const paid = stripeEntitled ? stored.base + stored.addon + stored.bonus : 0;
   return paid + granted;
