@@ -1,10 +1,10 @@
 # Rollback and verification for the 2026-09-23 launch migrations
 
-Apply order: 000100 → 000200 → 000300 → 000400 → 000500 → 000600. Roll back in reverse
+Apply order: 000100 → 000200 → 000300 → 000400 → 000500 → 000600 → 000700. Roll back in reverse
 order. Each rollback file ends with a VERIFY query and states what it will not
 restore.
 
-## Post-migration verification (run after applying all six)
+## Post-migration verification (run after applying all seven)
 
 ```sql
 -- 000100: columns + constraints present, secret column nullable
@@ -60,6 +60,14 @@ SELECT count(*) FROM public.generation_reservations;   -- 0 before first use
 SELECT column_name FROM information_schema.columns
  WHERE table_schema='public' AND table_name='tenant_pages' AND column_name='generation_billing_mode';
 -- expect one row
+
+-- 20260924000700: a grant supersedes a trial; the granted state zeroes paid capacity
+SELECT prosrc LIKE '%IF v_granted > 0 AND (NOT v_stripe_pub OR v_state = ''trialing'') THEN%' AS supersedes_trial,
+       prosrc LIKE '%v_paid := 0;%' AS zeroes_paid,
+       NOT has_function_privilege('anon', oid, 'EXECUTE')
+         AND has_function_privilege('service_role', oid, 'EXECUTE') AS service_role_only
+  FROM pg_proc WHERE oid = 'public.workspace_capacity(uuid)'::regprocedure;
+-- expect true, true, true (the rollback's VERIFY expects false, false, true)
 ```
 
 ## Forward repair instead of rollback
@@ -75,3 +83,4 @@ body. 000400 only removes privileges the application never used from
 call goes through the service role. 000500 changes only which of two matching
 workspaces the resolver returns for one hostname; a previous build calls the
 same function and is unaffected.
+20260924000700 replaces one function body that is evaluated at read time and stores nothing, so no data changes either way. A code-only rollback (previous Worker) leaves the two halves disagreeing for a trialing workspace with an active grant — the DB says 'granted' / grant-only limit, the old app says 'trialing' / trial base + grant — so roll the SQL back with the app if the app is rolled back. Harmless today: 0 such workspaces (verified 2026-09-24).

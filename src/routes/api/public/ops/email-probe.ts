@@ -34,6 +34,7 @@ import {
   sendingDomainFromEnv,
 } from "@/lib/email-deliverability";
 import { sendEmail } from "@/lib/email.server";
+import { classifyRecipient } from "@/lib/email-recipient-policy";
 import { opsProbeAuthorised } from "@/lib/ops-probe-auth";
 
 function json(body: unknown, status = 200) {
@@ -66,7 +67,20 @@ export const Route = createFileRoute("/api/public/ops/email-probe")({
             /* no body is fine when not sending */
           }
           if (!to || !to.includes("@")) {
-            return json({ error: 'send=1 requires a JSON body: { "to": "you@example.com" }' }, 400);
+            return json({ error: 'send=1 requires a JSON body: { "to": "you@your-domain.com" }' }, 400);
+          }
+          // A probe exists to see the provider's real answer for a mailbox an
+          // operator controls. A reserved or automated-test address can only
+          // bounce (2026-09-24 incident), and sendEmail() would suppress it
+          // anyway — say so up front instead of reporting a phantom "accepted".
+          const verdict = classifyRecipient(to);
+          if (!verdict.deliverable) {
+            return json(
+              {
+                error: `recipient refused by policy: ${verdict.reason}. Probe a mailbox you control, never a reserved or test address.`,
+              },
+              400,
+            );
           }
         }
 
@@ -113,7 +127,7 @@ export const Route = createFileRoute("/api/public/ops/email-probe")({
         if (!shouldSend) {
           return json({
             probe: "config-only",
-            hint: 'POST ?send=1 with {"to":"you@example.com"} to attempt a real send and see EmailIt\'s actual response.',
+            hint: 'POST ?send=1 with {"to":"you@your-domain.com"} to attempt a real send and see EmailIt\'s actual response.',
             config,
             deliverability,
           });

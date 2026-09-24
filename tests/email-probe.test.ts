@@ -152,11 +152,18 @@ console.log("\n=== send mode ===");
   const badAddr = await call({ secret: PROBE, send: true, body: { to: "not-an-email" } });
   t("send=1 with a malformed address is rejected", badAddr.status === 400, String(badAddr.status));
 
-  const sent = await call({ secret: PROBE, send: true, body: { to: "probe@example.com" } });
+  const reserved = await call({ secret: PROBE, send: true, body: { to: "probe@example.com" } });
+  t("send=1 to a reserved/test address is refused before any send", reserved.status === 400, String(reserved.status));
+  const reservedBody = (await reserved.json()) as any;
+  t("the refusal names the recipient policy", /refused by policy/.test(reservedBody.error ?? ""), reservedBody.error);
+  const smoke = await call({ secret: PROBE, send: true, body: { to: "smoke1790285685@founders.click" } });
+  t("send=1 to an automated-test mailbox is refused too", smoke.status === 400, String(smoke.status));
+
+  const sent = await call({ secret: PROBE, send: true, body: { to: "ops-probe@founders.click" } });
   t("send=1 with a recipient returns 200", sent.status === 200, String(sent.status));
   const body = (await sent.json()) as any;
   t("reports send mode", body.probe === "send", body.probe);
-  t("echoes the attempted recipient", body.send?.attemptedTo === "probe@example.com");
+  t("echoes the attempted recipient", body.send?.attemptedTo === "ops-probe@founders.click");
 
   // The whole point: the provider's real answer is surfaced instead of being
   // swallowed the way the auth hook swallows it.
