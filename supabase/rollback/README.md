@@ -1,10 +1,10 @@
 # Rollback and verification for the 2026-09-23 launch migrations
 
-Apply order: 000100 → 000200 → 000300 → 000400 → 000500. Roll back in reverse
+Apply order: 000100 → 000200 → 000300 → 000400 → 000500 → 000600. Roll back in reverse
 order. Each rollback file ends with a VERIFY query and states what it will not
 restore.
 
-## Post-migration verification (run after applying all five)
+## Post-migration verification (run after applying all six)
 
 ```sql
 -- 000100: columns + constraints present, secret column nullable
@@ -42,6 +42,24 @@ SELECT count(*) FROM pg_policies WHERE tablename='support_tickets' AND policynam
 SELECT prosrc LIKE '%ORDER BY priority ASC, verified_at DESC NULLS LAST, id ASC%' AS ordered
   FROM pg_proc WHERE oid = 'public.current_workspace_id_by_host(text)'::regprocedure;
 -- expect true
+
+-- 000600: settlement index, the three generation functions service-role only,
+-- reservations table, billing-mode column
+SELECT indexname FROM pg_indexes
+ WHERE schemaname='public' AND indexname='credit_ledger_generation_settlement_uidx';
+-- expect one row
+SELECT f, has_function_privilege('anon', to_regprocedure(f), 'EXECUTE') AS anon_exec,
+       has_function_privilege('authenticated', to_regprocedure(f), 'EXECUTE') AS auth_exec,
+       has_function_privilege('service_role', to_regprocedure(f), 'EXECUTE') AS service_exec
+FROM unnest(ARRAY[
+ 'public.settle_generation_free_quota(uuid,text,text,text)',
+ 'public.reserve_generation_slot(uuid,uuid,int)',
+ 'public.generation_consumed_last_24h(uuid,uuid)']) AS f;
+-- expect anon_exec = false, auth_exec = false, service_exec = true for every row
+SELECT count(*) FROM public.generation_reservations;   -- 0 before first use
+SELECT column_name FROM information_schema.columns
+ WHERE table_schema='public' AND table_name='tenant_pages' AND column_name='generation_billing_mode';
+-- expect one row
 ```
 
 ## Forward repair instead of rollback
