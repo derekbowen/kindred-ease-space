@@ -17,6 +17,47 @@ import {
 type Admin = ReturnType<typeof createClient>;
 
 /**
+ * The test-mode deployment shares SUPABASE_URL and the service role with the
+ * live one, and every handler below takes its workspace id from Stripe
+ * metadata. Anyone who can create test-mode objects (test-dashboard access, a
+ * leaked sk_test) could therefore have the test deployment set the plan,
+ * capacity, page status or credits of ANY workspace. So in test mode a
+ * workspace must be flagged internal (workspaces.is_internal, set by an
+ * operator in SQL) before the first write for it; anything else is refused
+ * with this error before any write happens. A no-op on the live deployment,
+ * which never reads the flag.
+ */
+export class TestModeWorkspaceRefused extends Error {
+  readonly workspaceId: string;
+  constructor(workspaceId: string) {
+    super(`test mode: workspace ${workspaceId} is not internal; no changes made`);
+    this.name = "TestModeWorkspaceRefused";
+    this.workspaceId = workspaceId;
+  }
+}
+
+/** What the refused event's audit row says. */
+export const TEST_MODE_WORKSPACE_REFUSED_ERROR =
+  "test mode: workspace is not internal; no changes made";
+
+async function assertTestModeWorkspace(
+  admin: Admin,
+  env: { test: boolean },
+  workspace_id: string,
+): Promise<void> {
+  if (!env.test) return;
+  const { data, error } = await admin
+    .from("workspaces")
+    .select("is_internal")
+    .eq("id", workspace_id)
+    .maybeSingle();
+  // A failed read proves nothing either way: fail loud (500, Stripe retries)
+  // rather than record "not internal" for a database blip.
+  if (error) throw error;
+  if (data?.is_internal !== true) throw new TestModeWorkspaceRefused(workspace_id);
+}
+
+/**
  * Which workspace a charge belongs to.
  *
  * Preferred route is charge -> invoice -> subscription, because the
@@ -114,9 +155,20 @@ async function reactivatePages(admin: Admin, workspace_id: string) {
  * deployment name — visible in the request path — is what selects the secrets.
  * A test-mode endpoint can then be exercised end to end against the deployed
  * code without ever touching the live signing secret.
+ *
+ * The deployment name is the FIRST path segment after the platform prefix
+ * (`/functions/v1/<name>[/...]` at Supabase, `/<name>[/...]` served locally).
+ * Matching that segment, not how the path ends, means a sub-path request to
+ * the live function (`/stripe-webhook/stripe-webhook-test`) stays live: the
+ * live deployment cannot be steered onto the test signing secret.
  */
+export function stripeDeploymentName(url: string): string {
+  const path = new URL(url).pathname.replace(/^\/functions\/v1(?=\/|$)/, "");
+  return path.split("/").find((segment) => segment.length > 0) ?? "";
+}
+
 export function stripeEnvFor(url: string) {
-  const test = new URL(url).pathname.endsWith("/stripe-webhook-test");
+  const test = stripeDeploymentName(url) === "stripe-webhook-test";
   const suffix = test ? "_TEST" : "";
   return {
     test,
@@ -201,6 +253,7 @@ Deno.serve(async (req) => {
         const workspace_id = s.metadata?.workspace_id;
         const mode = s.metadata?.mode;
         if (!workspace_id) break;
+        await assertTestModeWorkspace(admin, env, workspace_id);
 
         if (mode === "credits") {
           const lineItems = await stripe.checkout.sessions.listLineItems(s.id);
@@ -248,6 +301,7 @@ Deno.serve(async (req) => {
         }
         const workspace_id = sub.metadata?.workspace_id ?? evSub.metadata?.workspace_id;
         if (!workspace_id) break;
+        await assertTestModeWorkspace(admin, env, workspace_id);
 
         const entitled = ["active", "trialing", "past_due"].includes(sub.status);
 
@@ -453,6 +507,7 @@ Deno.serve(async (req) => {
           plan_tier = stripeSub.metadata?.plan_tier ?? (await resolveTierFromPrice(stripe, priceId));
         }
         if (!workspace_id) break;
+        await assertTestModeWorkspace(admin, env, workspace_id);
 
         // A paid invoice is proof of payment: restore suspended pages.
         const restored = await reactivatePages(admin, workspace_id);
@@ -504,6 +559,7 @@ Deno.serve(async (req) => {
           .eq("stripe_subscription_id", subId)
           .maybeSingle();
         if (!sub?.workspace_id) break;
+        await assertTestModeWorkspace(admin, env, sub.workspace_id);
         // Grace period: no page action on a failed payment — Stripe retries and
         // the subscription.updated (past_due) handler keeps pages online. Pages
         // suspend only when Stripe finally cancels/marks unpaid.
@@ -525,6 +581,7 @@ Deno.serve(async (req) => {
       case "charge.refunded": {
         const charge = event.data.object as Stripe.Charge;
         const workspace_id = await workspaceForCharge(admin, stripe, charge);
+        if (workspace_id) await assertTestModeWorkspace(admin, env, workspace_id);
         const fullyRefunded = charge.amount_refunded >= charge.amount;
         console.warn(
           `[stripe-webhook] charge ${charge.id} refunded ${charge.amount_refunded}/${charge.amount}` +
@@ -556,6 +613,7 @@ Deno.serve(async (req) => {
             console.error(`[stripe-webhook] dispute ${dispute.id}: charge lookup failed`, e);
           }
         }
+        if (workspace_id) await assertTestModeWorkspace(admin, env, workspace_id);
         console.error(
           `[stripe-webhook] DISPUTE opened on charge ${chargeId ?? "?"} ` +
             `(${dispute.amount} ${dispute.currency}, reason "${dispute.reason}") ` +
@@ -577,6 +635,7 @@ Deno.serve(async (req) => {
         const sub = event.data.object as Stripe.Subscription;
         const addonKey = sub.metadata?.addon_key;
         const workspace_id = sub.metadata?.workspace_id;
+        if (workspace_id) await assertTestModeWorkspace(admin, env, workspace_id);
         if (addonKey && isAddonKey(addonKey) && workspace_id) {
           if (addonKey.startsWith("affiliate")) {
             await admin
@@ -620,6 +679,18 @@ Deno.serve(async (req) => {
     await markEvent("processed");
     return new Response(JSON.stringify({ received: true }), { status: 200 });
   } catch (e) {
+    if (e instanceof TestModeWorkspaceRefused) {
+      // Visible (the claimed event row records the refusal) but final: a 4xx
+      // or 5xx would have Stripe redeliver an event that can never succeed.
+      // The guard ran before the handler's first write, so nothing else
+      // changed.
+      console.warn(`[stripe-webhook] ${event.type} ${event.id} refused: ${e.message}`);
+      await markEvent("error", TEST_MODE_WORKSPACE_REFUSED_ERROR);
+      return new Response(
+        JSON.stringify({ received: true, ignored: "workspace_not_internal" }),
+        { status: 200 },
+      );
+    }
     console.error("webhook handler error", e);
     await markEvent("error", describeError(e));
     return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500 });

@@ -7,7 +7,9 @@
  * function verifies) and a recording fake of the service-role client. Pins:
  * signature verification, replay outside the tolerance window, duplicate-event
  * idempotency, reclaim of a crashed attempt, failed-payment grace, suspension
- * on cancel/unpaid, and the fail-loud paths (500 keeps Stripe retrying).
+ * on cancel/unpaid, the fail-loud paths (500 keeps Stripe retrying), and the
+ * test-mode deployment: mode chosen by the function-name path segment, writes
+ * only for a workspace flagged is_internal, nothing else touched otherwise.
  */
 import Stripe from "stripe";
 
@@ -58,7 +60,11 @@ for (const [re, to] of rewrites) {
 mkdirSync(join(ROOT, "tests/_build"), { recursive: true });
 const built = join(ROOT, "tests/_build/stripe-webhook.offline.ts");
 writeFileSync(built, src);
-await import(built);
+const webhook = (await import(built)) as {
+  stripeEnvFor: (url: string) => { test: boolean; apiKey?: string; webhookSecret?: string };
+  stripeDeploymentName: (url: string) => string;
+  TEST_MODE_WORKSPACE_REFUSED_ERROR: string;
+};
 const handler = g.__edgeHandler;
 t("function registered a Deno.serve handler", typeof handler === "function");
 
@@ -250,6 +256,7 @@ reset();
 }
 reset();
 g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "active").data.object;
+g.__sbResponses["workspaces.select"] = [{ data: { is_internal: true } }]; // the proof workspace is internal (B1)
 {
   const ev = { ...subEvent("evt_tm_ok", "active"), livemode: false };
   const r = await deliver(ev, signed(JSON.stringify(ev), { secret: TEST_SECRET }), "/stripe-webhook-test");
@@ -270,6 +277,222 @@ reset();
   const r = await deliver(ev);
   t("a TEST event reaching the live deployment is acknowledged and ignored", r.status === 200 && r.json.ignored === "mode_mismatch", JSON.stringify(r.json));
   t("… with no writes at all", g.__sbCalls.length === 0);
+}
+
+// ---------------------------------------------------------------------------
+console.log("\n=== test-mode deployment: the mode is the function-name segment, never a suffix (B1a) ===");
+{
+  const mode = (path: string) => webhook.stripeEnvFor("https://ref.supabase.co" + path);
+  t("/functions/v1/stripe-webhook-test -> test", mode("/functions/v1/stripe-webhook-test").test === true);
+  t("/stripe-webhook-test -> test", mode("/stripe-webhook-test").test === true);
+  t("/functions/v1/stripe-webhook -> live", mode("/functions/v1/stripe-webhook").test === false);
+  t("/functions/v1/stripe-webhook/stripe-webhook-test -> LIVE (a sub-path cannot steer the live function onto the test secret)",
+    mode("/functions/v1/stripe-webhook/stripe-webhook-test").test === false);
+  t("/stripe-webhook-test/anything -> test", mode("/stripe-webhook-test/anything").test === true);
+  t("/stripe-webhook/stripe-webhook-test -> live", mode("/stripe-webhook/stripe-webhook-test").test === false);
+  t("/functions/v1/stripe-webhook-test/ (trailing slash) -> test", mode("/functions/v1/stripe-webhook-test/").test === true);
+  t("a name that merely starts with the test name is live", mode("/functions/v1/stripe-webhook-tests").test === false);
+  t("the deployment name is the first segment after /functions/v1",
+    webhook.stripeDeploymentName("https://ref.supabase.co/functions/v1/stripe-webhook/x") === "stripe-webhook" &&
+      webhook.stripeDeploymentName("http://edge.invalid/stripe-webhook-test") === "stripe-webhook-test" &&
+      webhook.stripeDeploymentName("https://ref.supabase.co/functions/v1") === "");
+  t("test mode selects the _TEST secrets, live the plain ones",
+    mode("/functions/v1/stripe-webhook-test").webhookSecret === TEST_SECRET && mode("/functions/v1/stripe-webhook").webhookSecret === SECRET);
+  t("stripeEnvFor keeps its shape", Object.keys(mode("/stripe-webhook")).sort().join() === "apiKey,test,webhookSecret");
+}
+
+// ---------------------------------------------------------------------------
+console.log("\n=== test-mode deployment: writes only for a workspace flagged is_internal (B1b/c) ===");
+// The test deployment shares the database and the service role with the live
+// one, and every handler takes its workspace id from metadata that anyone with
+// test-dashboard access can write. So in test mode a workspace must be
+// is_internal = true before the first write for it; otherwise the event is
+// acknowledged (Stripe must not retry), the claimed event row says why, and
+// nothing else is touched.
+const TEST_PATH = "/functions/v1/stripe-webhook-test";
+const testSigned = (ev: Record<string, unknown>) => signed(JSON.stringify(ev), { secret: TEST_SECRET });
+const WRITE_OPS = new Set(["insert", "update", "upsert", "delete", "rpc"]);
+// Every write a handler makes for a workspace; the event log is the only table
+// a refused event may touch.
+const writes = () => g.__sbCalls.filter((c) => WRITE_OPS.has(c.op) && c.table !== "stripe_webhook_events");
+const writeNames = () => JSON.stringify(writes().map((c) => `${c.table}.${c.op}`));
+const isInternalRead = (c: Call) =>
+  c.table === "workspaces" && c.op === "select" && c.filters.some(([f, col, v]) => f === "select" && col === "cols" && v === "is_internal");
+const refusedRow = () => {
+  const m = calls("stripe_webhook_events", "update").at(-1);
+  return m?.payload?.processing_status === "error" && m?.payload?.error === "test mode: workspace is not internal; no changes made";
+};
+t("the refusal text is exported for the audit row", webhook.TEST_MODE_WORKSPACE_REFUSED_ERROR === "test mode: workspace is not internal; no changes made");
+
+reset();
+g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "active").data.object;
+{
+  // Nothing queued for workspaces.select: the fake answers {data:null} — not internal.
+  const ev = { ...subEvent("evt_tm_notint_sub", "active"), livemode: false };
+  const r = await deliver(ev, testSigned(ev), TEST_PATH);
+  t("subscription.updated for a non-internal workspace -> 200 ignored: workspace_not_internal",
+    r.status === 200 && r.json.received === true && r.json.ignored === "workspace_not_internal", JSON.stringify(r.json));
+  t("… the event row was claimed, then marked error with the refusal text",
+    calls("stripe_webhook_events", "insert").length === 1 && refusedRow(), JSON.stringify(calls("stripe_webhook_events", "update").at(-1)?.payload));
+  t("… is_internal was read for that workspace id",
+    g.__sbCalls.some((c) => isInternalRead(c) && c.filters.some(([f, col, v]) => f === "eq" && col === "id" && v === WS)));
+  t("… and NOTHING was written: no workspaces/subscriptions/tenant_pages/billing_events rows, no rpc", writes().length === 0, writeNames());
+}
+reset();
+g.__stripeStubs["checkout.sessions.listLineItems"] = async () => ({ data: [{ quantity: 3 }] });
+g.__sbRpc["grant_credits"] = () => ({ data: null, error: null });
+{
+  const ev = { id: "evt_tm_notint_credits", object: "event", type: "checkout.session.completed", livemode: false, created: Math.floor(Date.now() / 1000),
+    data: { object: { id: "cs_tm_1", object: "checkout.session", metadata: { workspace_id: WS, mode: "credits", credits_per_pack: "1000" }, payment_intent: "pi_tm_1", amount_total: 3000, currency: "usd" } } };
+  const r = await deliver(ev, testSigned(ev), TEST_PATH);
+  t("a credits checkout for a non-internal workspace is refused the same way", r.status === 200 && r.json.ignored === "workspace_not_internal" && refusedRow(), JSON.stringify(r.json));
+  t("… no credit_purchases row, no grant_credits call, no write at all",
+    calls("credit_purchases").length === 0 && calls("rpc:grant_credits").length === 0 && writes().length === 0, writeNames());
+  t("… and Stripe was not even asked for the line items", !g.__stripeCalls.includes("checkout.sessions.listLineItems"));
+}
+reset();
+g.__sbResponses["subscriptions.select"] = [{ data: { workspace_id: WS, plan_tier: "starter" } }];
+g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "active").data.object;
+{
+  const ev = { id: "evt_tm_notint_inv", object: "event", type: "invoice.paid", livemode: false, created: Math.floor(Date.now() / 1000),
+    data: { object: { id: "in_tm_1", object: "invoice", subscription: "sub_1", billing_reason: "subscription_cycle" } } };
+  const r = await deliver(ev, testSigned(ev), TEST_PATH);
+  t("invoice.paid for a non-internal workspace is refused before reactivation and the monthly grant",
+    r.status === 200 && r.json.ignored === "workspace_not_internal" && refusedRow() && calls("tenant_pages").length === 0 && calls("rpc:grant_credits").length === 0 && writes().length === 0,
+    writeNames());
+}
+reset();
+{
+  const ev = { ...subEvent("evt_tm_notint_del", "canceled", {}, "customer.subscription.deleted"), livemode: false };
+  const r = await deliver(ev, testSigned(ev), TEST_PATH);
+  t("subscription.deleted for a non-internal workspace suspends nothing and cancels nothing",
+    r.status === 200 && r.json.ignored === "workspace_not_internal" && refusedRow() && calls("tenant_pages").length === 0 && calls("subscriptions").length === 0 && writes().length === 0,
+    writeNames());
+}
+reset();
+g.__sbResponses["subscriptions.select"] = [{ data: { workspace_id: WS } }];
+{
+  const ev = { id: "evt_tm_notint_pf", object: "event", type: "invoice.payment_failed", livemode: false, created: Math.floor(Date.now() / 1000),
+    data: { object: { id: "in_tm_2", object: "invoice", subscription: "sub_1", attempt_count: 1, next_payment_attempt: 1 } } };
+  const r = await deliver(ev, testSigned(ev), TEST_PATH);
+  t("invoice.payment_failed for a non-internal workspace is not even audited for it",
+    r.status === 200 && r.json.ignored === "workspace_not_internal" && refusedRow() && calls("billing_events").length === 0 && writes().length === 0, writeNames());
+}
+reset();
+g.__stripeStubs["invoices.retrieve"] = async () => ({ subscription: "sub_1" });
+g.__sbResponses["subscriptions.select"] = [{ data: { workspace_id: WS } }];
+{
+  const ev = { id: "evt_tm_notint_ref", object: "event", type: "charge.refunded", livemode: false, created: Math.floor(Date.now() / 1000),
+    data: { object: { id: "ch_tm_1", object: "charge", invoice: "in_tm_3", amount: 2900, amount_refunded: 2900, currency: "usd" } } };
+  const r = await deliver(ev, testSigned(ev), TEST_PATH);
+  t("charge.refunded attributed to a non-internal workspace is refused before its audit row",
+    r.status === 200 && r.json.ignored === "workspace_not_internal" && refusedRow() && calls("billing_events").length === 0 && writes().length === 0, writeNames());
+}
+reset();
+g.__stripeStubs["charges.retrieve"] = async () => ({ id: "ch_tm_2", invoice: null, customer: "cus_tm_1" });
+g.__sbResponses["stripe_customers.select"] = [{ data: { workspace_id: WS } }];
+{
+  const ev = { id: "evt_tm_notint_disp", object: "event", type: "charge.dispute.created", livemode: false, created: Math.floor(Date.now() / 1000),
+    data: { object: { id: "dp_tm_1", object: "dispute", charge: "ch_tm_2", amount: 2900, currency: "usd", reason: "fraudulent", status: "needs_response" } } };
+  const r = await deliver(ev, testSigned(ev), TEST_PATH);
+  t("charge.dispute.created attributed to a non-internal workspace is refused before its audit row",
+    r.status === 200 && r.json.ignored === "workspace_not_internal" && refusedRow() && calls("billing_events").length === 0 && writes().length === 0, writeNames());
+}
+// "Exactly true": nothing else counts.
+for (const { label, row } of [
+  { label: "false", row: { is_internal: false } },
+  { label: "null", row: { is_internal: null } },
+  { label: "the string 'true'", row: { is_internal: "true" } },
+  { label: "a missing workspace row", row: null },
+]) {
+  reset();
+  g.__sbResponses["workspaces.select"] = [{ data: row }];
+  g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "active").data.object;
+  const ev = { ...subEvent(`evt_tm_notint_${label.replace(/\W/g, "")}`, "active"), livemode: false };
+  const r = await deliver(ev, testSigned(ev), TEST_PATH);
+  t(`is_internal = ${label} is refused`, r.status === 200 && r.json.ignored === "workspace_not_internal" && writes().length === 0, JSON.stringify(r.json));
+}
+reset();
+g.__sbResponses["workspaces.select"] = [{ data: null, error: { code: "XX000", message: "db down" } }];
+g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "active").data.object;
+{
+  const ev = { ...subEvent("evt_tm_readerr", "active"), livemode: false };
+  const r = await deliver(ev, testSigned(ev), TEST_PATH);
+  t("a failed is_internal read is a 500 (Stripe retries) with the real error on the row, never a write",
+    r.status === 500 && writes().length === 0 && /db down/.test(String(calls("stripe_webhook_events", "update").at(-1)?.payload?.error)), JSON.stringify(calls("stripe_webhook_events", "update").at(-1)?.payload));
+}
+reset();
+{
+  const ev = { ...subEvent("evt_tm_order", "active"), livemode: true };
+  const r = await deliver(ev, testSigned(ev), TEST_PATH);
+  t("signature and livemode come first: a live event on the test deployment is mode_mismatch before any is_internal read",
+    r.json.ignored === "mode_mismatch" && g.__sbCalls.length === 0);
+}
+reset();
+{
+  const ev = { ...subEvent("evt_tm_unsigned", "active"), livemode: false };
+  const r = await deliver(ev, null, TEST_PATH);
+  t("…and an unsigned event is a 400 before any is_internal read", r.status === 400 && g.__sbCalls.length === 0);
+}
+
+console.log("\n=== test-mode deployment: an internal workspace is processed as normal ===");
+reset();
+g.__sbResponses["workspaces.select"] = [{ data: { is_internal: true } }];
+g.__stripeStubs["checkout.sessions.listLineItems"] = async () => ({ data: [{ quantity: 2 }] });
+let granted: any = null;
+g.__sbRpc["grant_credits"] = (args) => { granted = args; return { data: null, error: null }; };
+{
+  const ev = { id: "evt_tm_int_credits", object: "event", type: "checkout.session.completed", livemode: false, created: Math.floor(Date.now() / 1000),
+    data: { object: { id: "cs_tm_2", object: "checkout.session", metadata: { workspace_id: WS, mode: "credits", credits_per_pack: "1000" }, payment_intent: "pi_tm_2", amount_total: 2000, currency: "usd" } } };
+  const r = await deliver(ev, testSigned(ev), TEST_PATH);
+  t("internal workspace: credits checkout -> 200 received, not ignored", r.status === 200 && r.json.received === true && r.json.ignored === undefined, JSON.stringify(r.json));
+  t("… the purchase is recorded and the credits granted", calls("credit_purchases", "insert").length === 1 && granted?._workspace_id === WS && granted?._amount === 2000, JSON.stringify(granted));
+  const readAt = g.__sbCalls.findIndex(isInternalRead);
+  const firstWrite = g.__sbCalls.findIndex((c) => WRITE_OPS.has(c.op) && c.table !== "stripe_webhook_events");
+  t("… and is_internal was checked BEFORE the first write", readAt >= 0 && firstWrite > readAt, `${readAt} vs ${firstWrite}`);
+  t("… event marked processed", calls("stripe_webhook_events", "update").at(-1)?.payload?.processing_status === "processed");
+}
+reset();
+g.__sbResponses["workspaces.select"] = [{ data: { is_internal: true } }];
+{
+  const ev = { ...subEvent("evt_tm_int_del", "canceled", {}, "customer.subscription.deleted"), livemode: false };
+  const r = await deliver(ev, testSigned(ev), TEST_PATH);
+  t("internal workspace: subscription.deleted suspends its pages as on live",
+    r.status === 200 && r.json.received === true && calls("tenant_pages", "update").some((c) => c.payload?.status === "billing_suspended"));
+}
+reset();
+g.__sbResponses["workspaces.select"] = [{ data: { is_internal: true } }];
+g.__sbResponses["subscriptions.select"] = [{ data: { workspace_id: WS, plan_tier: "starter" } }];
+g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "active").data.object;
+g.__sbRpc["grant_credits"] = () => ({ data: null, error: null });
+{
+  const ev = { id: "evt_tm_int_inv", object: "event", type: "invoice.paid", livemode: false, created: Math.floor(Date.now() / 1000),
+    data: { object: { id: "in_tm_4", object: "invoice", subscription: "sub_1", billing_reason: "subscription_cycle" } } };
+  const r = await deliver(ev, testSigned(ev), TEST_PATH);
+  t("internal workspace: invoice.paid reactivates pages and grants the monthly allowance",
+    r.status === 200 && r.json.received === true && calls("tenant_pages", "update").some((c) => c.payload?.status === "published") && calls("rpc:grant_credits").length === 1);
+}
+
+console.log("\n=== live deployment never consults is_internal ===");
+reset();
+g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "active").data.object;
+{
+  const r = await deliver(subEvent("evt_live_noflag", "active"));
+  t("live subscription.updated -> 200 with the entitlement granted", r.status === 200 && calls("workspaces", "update").some((c) => typeof c.payload?.page_limit_base === "number"));
+  t("… without any is_internal read", !g.__sbCalls.some(isInternalRead));
+}
+reset();
+g.__stripeStubs["checkout.sessions.listLineItems"] = async () => ({ data: [{ quantity: 1 }] });
+{
+  const ev = { id: "evt_live_credits", object: "event", type: "checkout.session.completed", livemode: true, created: Math.floor(Date.now() / 1000),
+    data: { object: { id: "cs_live_1", object: "checkout.session", metadata: { workspace_id: WS, mode: "credits", credits_per_pack: "1000" }, payment_intent: "pi_live_1", amount_total: 1000, currency: "usd" } } };
+  const r = await deliver(ev);
+  t("live credits checkout is granted without any is_internal read", r.status === 200 && calls("rpc:grant_credits").length === 1 && !g.__sbCalls.some(isInternalRead));
+}
+reset();
+{
+  const r = await deliver(subEvent("evt_live_del", "canceled", {}, "customer.subscription.deleted"));
+  t("live subscription.deleted still suspends, with no is_internal read", r.status === 200 && calls("tenant_pages", "update").some((c) => c.payload?.status === "billing_suspended") && !g.__sbCalls.some(isInternalRead));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
