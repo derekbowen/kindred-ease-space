@@ -3,20 +3,25 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
 import {
+  CustomerFacingError,
   GENERATION_DEFAULT_MODEL,
   GENERATION_MODEL_IDS,
+  GENERATION_UNAVAILABLE_MESSAGE,
+  TYPICAL_PAGE_TOKENS,
   checkStoredPageContract,
   contractFailureMessage,
-  countConsumedLast24h,
+  customerMessage,
   dailyCapMessage,
-  dailyCapRemaining,
   findPageByRequestId,
   generatePageContent,
   persistGeneratedPage,
   readPlatformSettings,
+  releaseGenerationSlot,
+  reserveGenerationSlot,
   resolveBillingMode,
   settleGeneration,
   type ExistingPage,
+  type GeneratedContent,
   type ItemBillingStatus,
   type PersistedPage,
 } from "@/lib/generation.server";
@@ -26,15 +31,20 @@ import {
  * through the shared generation core (src/lib/generation.server.ts) and,
  * when asked, publishes to tenant_pages so /a/{slug} serves the page.
  *
- * Order of operations is deliberate: policy gates (pause, daily cap, who
- * pays) → generate → write the draft row → settle credits → (optionally)
- * contract check + entitlement gate. A failed generation is never charged,
- * BYOK keys and beta grants are never metered, and nothing goes live without
- * passing the published-page contract.
+ * Order of operations is deliberate: policy gates (pause, a daily-cap
+ * RESERVATION, who pays) → generate → write the draft row → settle credits →
+ * (optionally) contract check + entitlement gate. A failed generation is never
+ * charged, BYOK keys and beta grants are never metered, and nothing goes live
+ * without passing the published-page contract.
  *
  * Idempotency: the browser sends a generationRequestId it keeps across
  * retries until it gets a response. A replay (lost response + resubmit)
- * returns the page that request already made — no generation, no charge.
+ * returns the page that request already made — no generation, and the charge
+ * it reports is the one on the ledger (or the one still owed, settled then).
+ *
+ * runQuickPage is the pipeline; createQuickPage is its server-function
+ * boundary. Server code that generates a page (the coach's create_city_page,
+ * the Opportunity Engine) calls runQuickPage directly — never the server fn.
  */
 
 export const QuickPageInputSchema = z.object({
@@ -55,11 +65,13 @@ export const QuickPageInputSchema = z.object({
    *  review, and publishing stays a separate deliberate step through the
    *  unchanged entitlement gate. */
   autoPublish: z.boolean().default(true),
-  /** Client-generated, kept across retries until success. Optional so the
-   *  Opportunity Engine (which has its own status machine) can omit it; every
-   *  page still gets one so the daily-cap ledger counts it. */
+  /** Client-generated, kept across retries until success. Optional so a
+   *  caller with its own identity can omit it; every page still gets one so
+   *  the daily-cap ledger counts it. */
   generationRequestId: z.string().uuid().optional(),
 });
+
+export type QuickPageInput = z.infer<typeof QuickPageInputSchema>;
 
 export type QuickPageResult = {
   ok: true;
@@ -76,10 +88,45 @@ export type QuickPageResult = {
   contractViolations: string[];
 };
 
+const UNBILLED_DRAFT_REASON =
+  "Saved as a draft: the page could not be billed — this workspace is out of included AI generation. Contact support, then publish it from All pages.";
+
 const wordCount = (s: string | null | undefined) =>
   (s ?? "").trim() ? (s ?? "").trim().split(/\s+/).length : 0;
 
-function replayResult(existing: ExistingPage): QuickPageResult {
+/**
+ * The page this request already made, returned as-is — with an honest
+ * charge. A page generated on the platform key may still owe its settlement
+ * (the original run can die between the draft row and the charge), so it is
+ * settled here: idempotent through the ledger, that either reports the charge
+ * already recorded or performs the one owed. BYOK and granted pages, and
+ * pages from before the billing mode was recorded, owe nothing.
+ */
+async function replayResult(
+  existing: ExistingPage,
+  ctx: { workspaceId: string; userId: string; model: string },
+): Promise<QuickPageResult> {
+  let creditsCharged = 0;
+  let billing: ItemBillingStatus = "free";
+  let draftReason: string | null = null;
+  if (existing.generation_billing_mode === "platform") {
+    // Token counts are not stored on the page; a typical page is the
+    // estimate. It only matters when the charge is still owed.
+    const settled = await settleGeneration({
+      workspaceId: ctx.workspaceId,
+      userId: ctx.userId,
+      keySource: "platform",
+      billingMode: "platform",
+      model: ctx.model,
+      promptTokens: TYPICAL_PAGE_TOKENS.prompt,
+      completionTokens: TYPICAL_PAGE_TOKENS.completion,
+      feature: "quick_page",
+      refId: existing.id,
+    });
+    creditsCharged = settled.creditsCharged;
+    billing = settled.billingStatus;
+    if (settled.billing === "unbilled") draftReason = UNBILLED_DRAFT_REASON;
+  }
   return {
     ok: true,
     page: {
@@ -90,49 +137,60 @@ function replayResult(existing: ExistingPage): QuickPageResult {
       replayed: true,
     },
     words: wordCount(existing.body_markdown),
-    creditsCharged: 0,
-    billing: "free",
+    creditsCharged,
+    billing,
     replayed: true,
     published: existing.status === "published",
     limitReached: false,
     limitMessage: null,
-    draftReason: null,
+    draftReason,
     contractViolations: [],
   };
 }
 
-export const createQuickPage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) => QuickPageInputSchema.parse(data))
-  .handler(async ({ data, context }): Promise<QuickPageResult> => {
-    await assertWorkspaceMember(data.workspaceId, context.userId);
-
-    // 0. Replay? The page this request already made comes back untouched.
-    if (data.generationRequestId) {
-      const existing = await findPageByRequestId(data.workspaceId, data.generationRequestId);
-      if (existing) return replayResult(existing);
+/**
+ * The quick-page pipeline. The caller has already authorised `userId` for
+ * `data.workspaceId` (the server fn asserts membership; the coach action and
+ * the Opportunity Engine assert it before they get here). Throws
+ * CustomerFacingError for the refusals a customer should read; anything else
+ * is an internal error the boundary replaces (customerMessage).
+ */
+export async function runQuickPage(data: QuickPageInput, userId: string): Promise<QuickPageResult> {
+  // 0. Replay? The page this request already made comes back untouched.
+  if (data.generationRequestId) {
+    const existing = await findPageByRequestId(data.workspaceId, data.generationRequestId);
+    if (existing) {
+      return replayResult(existing, { workspaceId: data.workspaceId, userId, model: data.model });
     }
-    const generationRequestId = data.generationRequestId ?? crypto.randomUUID();
+  }
+  const generationRequestId = data.generationRequestId ?? crypto.randomUUID();
 
-    // 1. The same platform gates the batch generator applies: the pause switch
-    //    (fails closed on a read error) and the per-workspace daily cap, which
-    //    counts batch items AND quick pages — see countConsumedLast24h.
-    const settings = await readPlatformSettings();
-    if (settings.paused) {
-      throw new Error("Generation is paused platform-wide right now.");
-    }
-    const consumed = await countConsumedLast24h(data.workspaceId);
-    if (dailyCapRemaining(settings.dailyCap, consumed) === 0) {
-      throw new Error(dailyCapMessage(settings.dailyCap, 0));
-    }
+  // 1. The same platform gates the batch generator applies: the pause switch
+  //    (fails closed on a read error) and the per-workspace daily cap. The cap
+  //    is a RESERVATION taken atomically for this request (reserve_generation_slot
+  //    counts batch items, quick pages and live reservations under a
+  //    per-workspace lock), so N requests at remaining = 1 admit exactly one.
+  const settings = await readPlatformSettings();
+  if (settings.paused) {
+    throw new CustomerFacingError("Generation is paused platform-wide right now.");
+  }
+  const reserved = await reserveGenerationSlot(
+    data.workspaceId,
+    generationRequestId,
+    settings.dailyCap,
+  );
+  if (!reserved) throw new CustomerFacingError(dailyCapMessage(settings.dailyCap, 0));
 
+  let gen: GeneratedContent;
+  let page: PersistedPage;
+  try {
     // 2. Who pays — BYOK, a beta grant, or a platform key with the funds for
     //    a whole page. Refused here before anything is spent.
     const billing = await resolveBillingMode(data.workspaceId, data.model);
 
     // 3. Generate. Nothing is charged here; a provider error or thin output
     //    throws and the customer keeps their credits.
-    const gen = await generatePageContent({
+    gen = await generatePageContent({
       workspaceId: data.workspaceId,
       title: data.title,
       description: data.description,
@@ -146,7 +204,7 @@ export const createQuickPage = createServerFn({ method: "POST" })
 
     // 4. Draft row, idempotent per request id. If a concurrent duplicate got
     //    there first this returns ITS page and we settle nothing — it does.
-    const page = await persistGeneratedPage({
+    page = await persistGeneratedPage({
       workspaceId: data.workspaceId,
       generated: gen,
       requestedTitle: data.title,
@@ -157,66 +215,89 @@ export const createQuickPage = createServerFn({ method: "POST" })
       categoryPlural: data.categoryPlural,
       generationRequestId,
     });
-    if (page.replayed) {
-      const existing = await findPageByRequestId(data.workspaceId, generationRequestId);
-      if (existing) return replayResult(existing);
+  } catch (e) {
+    // No page came of this reservation: give the slot back so a refused or
+    // failed generation never burns a day's capacity. Once a page row exists
+    // the reservation is neutralised by the row itself, so nothing here can
+    // release a slot a page is holding.
+    await releaseGenerationSlot(data.workspaceId, generationRequestId);
+    throw e;
+  }
+  if (page.replayed) {
+    const existing = await findPageByRequestId(data.workspaceId, generationRequestId);
+    if (existing) {
+      return replayResult(existing, { workspaceId: data.workspaceId, userId, model: data.model });
     }
+  }
 
-    // 5. Settle AFTER the page exists. Platform key only; BYOK and grants are
-    //    unmetered. A deduction that fails is reported as such, never as a
-    //    charge — and the draft is kept, unpublished, so the customer sees why.
-    const settled = await settleGeneration({
-      workspaceId: data.workspaceId,
-      userId: context.userId,
-      keySource: gen.keySource,
-      billingMode: gen.billingMode,
-      model: gen.model,
-      promptTokens: gen.promptTokens,
-      completionTokens: gen.completionTokens,
-      feature: "quick_page",
-      refId: page.id,
-    });
+  // 5. Settle AFTER the page exists. Platform key only; BYOK and grants are
+  //    unmetered. A deduction that fails is reported as such, never as a
+  //    charge — and the draft is kept, unpublished, so the customer sees why.
+  const settled = await settleGeneration({
+    workspaceId: data.workspaceId,
+    userId,
+    keySource: gen.keySource,
+    billingMode: gen.billingMode,
+    model: gen.model,
+    promptTokens: gen.promptTokens,
+    completionTokens: gen.completionTokens,
+    feature: "quick_page",
+    refId: page.id,
+  });
 
-    // 6. Optional publish: contract first, then the atomic entitlement gate.
-    //    Either failure KEEPS the draft (the AI work isn't wasted) and tells
-    //    the caller why in plain language.
-    let published = false;
-    let limitReached = false;
-    let limitMessage: string | null = null;
-    let draftReason: string | null = null;
-    let contractViolations: string[] = [];
-    if (settled.billing === "unbilled") {
-      draftReason =
-        "Saved as a draft: the page could not be billed (out of AI credits). Top up in Billing, then publish it from All pages.";
-    } else if (data.autoPublish) {
-      const check = await checkStoredPageContract(data.workspaceId, page.id);
-      if (!check.ok) {
-        contractViolations = check.blocking.map((v) => `${v.message} ${v.fix}`.trim());
-        draftReason = contractFailureMessage(check);
-      } else {
-        const { publishPagesAtomically, pageLimitMessage } =
-          await import("@/lib/entitlements.functions");
-        const gate = await publishPagesAtomically(data.workspaceId, [page.id]);
-        published = gate.published > 0;
-        limitReached = !published;
-        if (limitReached) {
-          limitMessage = `${pageLimitMessage(gate.limit)} The generated page was saved as a draft.`;
-          draftReason = limitMessage;
-        }
+  // 6. Optional publish: contract first, then the atomic entitlement gate.
+  //    Either failure KEEPS the draft (the AI work isn't wasted) and tells
+  //    the caller why in plain language.
+  let published = false;
+  let limitReached = false;
+  let limitMessage: string | null = null;
+  let draftReason: string | null = null;
+  let contractViolations: string[] = [];
+  if (settled.billing === "unbilled") {
+    draftReason = UNBILLED_DRAFT_REASON;
+  } else if (data.autoPublish) {
+    const check = await checkStoredPageContract(data.workspaceId, page.id);
+    if (!check.ok) {
+      contractViolations = check.blocking.map((v) => `${v.message} ${v.fix}`.trim());
+      draftReason = contractFailureMessage(check);
+    } else {
+      const { publishPagesAtomically, pageLimitMessage } =
+        await import("@/lib/entitlements.functions");
+      const gate = await publishPagesAtomically(data.workspaceId, [page.id]);
+      published = gate.published > 0;
+      limitReached = !published;
+      if (limitReached) {
+        limitMessage = `${pageLimitMessage(gate.limit)} The generated page was saved as a draft.`;
+        draftReason = limitMessage;
       }
     }
+  }
 
-    return {
-      ok: true,
-      page,
-      words: wordCount(gen.body_markdown),
-      creditsCharged: settled.creditsCharged,
-      billing: settled.billingStatus,
-      replayed: false,
-      published,
-      limitReached,
-      limitMessage,
-      draftReason,
-      contractViolations,
-    };
+  return {
+    ok: true,
+    page,
+    words: wordCount(gen.body_markdown),
+    creditsCharged: settled.creditsCharged,
+    billing: settled.billingStatus,
+    replayed: false,
+    published,
+    limitReached,
+    limitMessage,
+    draftReason,
+    contractViolations,
+  };
+}
+
+export const createQuickPage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => QuickPageInputSchema.parse(data))
+  .handler(async ({ data, context }): Promise<QuickPageResult> => {
+    await assertWorkspaceMember(data.workspaceId, context.userId);
+    try {
+      return await runQuickPage(data, context.userId);
+    } catch (e) {
+      // The browser sees customer-written refusals verbatim and nothing else:
+      // a PostgREST message or a constraint name is logged and replaced.
+      throw new Error(customerMessage(e, GENERATION_UNAVAILABLE_MESSAGE));
+    }
   });

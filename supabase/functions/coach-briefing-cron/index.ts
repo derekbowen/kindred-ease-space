@@ -159,7 +159,7 @@ Deno.serve(async (req) => {
           if (thinPages.length > 0)
             insights.push({
               title: `${thinPages.length} thin pages need content`,
-              description: `Pages under 300 words rarely rank. Start with /p/${thinPages[0].slug}.`,
+              description: `Pages under 300 words rarely rank. Start with /a/${thinPages[0].slug}.`,
               priority: "high",
               action_type: "fix_thin_page",
               action_payload: { page_id: thinPages[0].id },

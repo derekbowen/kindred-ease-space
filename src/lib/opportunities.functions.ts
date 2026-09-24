@@ -258,7 +258,11 @@ export const approveOpportunity = createServerFn({ method: "POST" })
     const { buildPageBrief, briefToPrompt } = await import("./opportunity/brief.server");
     const brief = await buildPageBrief(data.workspaceId, data.id);
 
-    await sb()
+    // The 'generating' transition is the lock: it lands only when the
+    // opportunity is not already being generated and has no page yet
+    // (draft_ready / published), so a double-click or two tabs cannot both
+    // start a generation. Zero rows matched means someone else holds it.
+    const { data: moved, error: moveErr } = await sb()
       .from("seo_opportunities")
       .update({
         status: "generating",
@@ -266,15 +270,32 @@ export const approveOpportunity = createServerFn({ method: "POST" })
         customer_action: "approved",
         page_brief: brief as any,
       })
-      .eq("id", data.id);
+      .eq("id", data.id)
+      .eq("workspace_id", data.workspaceId)
+      .not("status", "in", "(generating,draft_ready,published)")
+      .select("id");
+    if (moveErr) {
+      console.error("[opportunities] approve transition failed", data.id, moveErr.message);
+      return { ok: false as const, error: "Could not approve this opportunity right now." };
+    }
+    if (!moved || moved.length === 0) {
+      return {
+        ok: false as const,
+        error: "This opportunity is already being generated or has a page.",
+      };
+    }
 
     try {
-      const { createQuickPage } = await import("./admin-quick-page.functions");
+      const { QuickPageInputSchema, runQuickPage } = await import("./admin-quick-page.functions");
       // `topic` is capped at 2000 chars by the generator's schema; the full
       // brief is persisted on the opportunity regardless.
       const prompt = briefToPrompt(brief).slice(0, 1990);
-      const res: any = await createQuickPage({
-        data: {
+      // The pipeline is called directly (never the server fn from server
+      // code). The opportunity id is the generation request id: a retry after
+      // a lost response replays the page this opportunity already made
+      // instead of generating and charging a second time.
+      const res = await runQuickPage(
+        QuickPageInputSchema.parse({
           workspaceId: data.workspaceId,
           title: brief.proposedTitle.slice(0, 140),
           topic: prompt,
@@ -285,8 +306,10 @@ export const approveOpportunity = createServerFn({ method: "POST" })
           // Approved opportunities produce a DRAFT for review. The existing
           // publish gate is untouched and runs later, as normal.
           autoPublish: false,
-        },
-      });
+          generationRequestId: opp.id,
+        }),
+        context.userId,
+      );
 
       const pageId = res?.page?.id ?? null;
       await sb()
@@ -304,7 +327,11 @@ export const approveOpportunity = createServerFn({ method: "POST" })
 
       return { ok: true as const, pageId, brief };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "generation failed";
+      // Customer-written refusals (paused, cap, out of funds, provider error)
+      // reach the owner verbatim; anything else is logged and replaced.
+      const { customerMessage, GENERATION_UNAVAILABLE_MESSAGE } =
+        await import("./generation.server");
+      const msg = customerMessage(e, GENERATION_UNAVAILABLE_MESSAGE);
       console.error("[opportunities] generation failed", data.id, msg);
       await sb()
         .from("seo_opportunities")

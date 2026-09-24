@@ -3,13 +3,28 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
-import { getActiveTemplateId, slugifyPage } from "@/lib/tenant-page-helpers.server";
+import {
+  CustomerFacingError,
+  GENERATION_UNAVAILABLE_MESSAGE,
+  buildCityBrief,
+  customerMessage,
+  deterministicRequestId,
+  findExistingCityPage,
+} from "@/lib/generation.server";
+import { QuickPageInputSchema, runQuickPage } from "@/lib/admin-quick-page.functions";
 
 /**
  * Confirmed mutation runner for coach insight actions.
  * The UI shows a confirmation dialog, then invokes this fn. We perform the
  * mutation, log success or failure to coach_action_log, and return a
  * user-facing summary.
+ *
+ * create_city_page is a page GENERATION and runs through the shared
+ * generation core (runQuickPage): the pause switch, the daily-cap
+ * reservation, who pays (BYOK / beta grant / platform funds), settlement
+ * after the draft exists, and an idempotent request id all apply to it
+ * exactly as they do to the Quick Page Builder. The Lovable gateway path
+ * below serves only the three page-editing actions.
  */
 
 const ActionInput = z.object({
@@ -140,122 +155,94 @@ async function addMeta(
   };
 }
 
+/**
+ * Draft a city page through the shared generation core. No gateway call, no
+ * key resolution and no metering happen here: runQuickPage decides who pays
+ * and settles after the draft exists, under the platform pause switch and the
+ * daily-cap reservation. Grounding in the tenant's live inventory (the ONLY
+ * numbers the model may use) is the core's own rule.
+ */
 async function createCityPage(
   workspaceId: string,
+  userId: string,
   payload: Record<string, unknown>,
-  ai: AiCtx,
+  origin: { briefingId?: string; insightIndex?: number },
 ): Promise<ActionResult> {
-  const city = String(payload.city ?? "").trim();
-  if (!city) throw new Error("Missing city");
-  const state = String(payload.state ?? "").trim();
-  const baseSlug = slugifyPage(city);
-  if (!baseSlug) throw new Error("Could not derive slug from city");
+  const city = String(payload.city ?? "")
+    .trim()
+    .slice(0, 120);
+  if (!city) throw new CustomerFacingError("Missing city");
+  const state = String(payload.state ?? "")
+    .trim()
+    .slice(0, 80);
 
-  const { data: existing } = await supabaseAdmin
-    .from("tenant_pages")
-    .select("id")
+  // A page that already covers this city is never duplicated — the same
+  // predicate the batch generator and the Page Builder use (pageCoversCity),
+  // instead of a slug lookup that a suffixed slug would slip past.
+  const existing = await findExistingCityPage(workspaceId, city, state || null);
+  if (existing) {
+    throw new CustomerFacingError(
+      `A page for ${city} already exists (/a/${existing.slug}). Review it from Pages.`,
+    );
+  }
+
+  // The vertical comes from the tenant's own listings in that city, never a
+  // hardcoded category — templated same-except-the-city-name pages are what
+  // Google's scaled-content-abuse policy demotes.
+  const { data: cityListings } = await supabaseAdmin
+    .from("tenant_listings")
+    .select("category")
     .eq("workspace_id", workspaceId)
-    .eq("slug", baseSlug)
-    .maybeSingle();
-  if (existing) throw new Error(`A page with slug "${baseSlug}" already exists`);
-
-  const templateId = await getActiveTemplateId("city_hub");
-
-  // Ground the page in THIS marketplace's real inventory — the vertical, price
-  // range, and examples come from the tenant's own listings, never a hardcoded
-  // category. Templated same-except-the-city-name pages with invented pricing
-  // are exactly what Google's scaled-content-abuse policy demotes.
-  const [{ data: ws }, { data: cityListings }] = await Promise.all([
-    supabaseAdmin.from("workspaces").select("name").eq("id", workspaceId).maybeSingle(),
-    supabaseAdmin
-      .from("tenant_listings")
-      .select("title, price_amount, price_currency, category")
-      .eq("workspace_id", workspaceId)
-      .ilike("city", city)
-      .eq("state_published", true)
-      .limit(100),
-  ]);
-  const workspaceName = ws?.name ?? "our marketplace";
-  const listings = cityListings ?? [];
-
+    .ilike("city", city)
+    .eq("state_published", true)
+    .limit(100);
   const catCounts = new Map<string, number>();
-  for (const l of listings) {
+  for (const l of cityListings ?? []) {
     const c = (l.category ?? "").trim().toLowerCase();
     if (c) catCounts.set(c, (catCounts.get(c) ?? 0) + 1);
   }
   const dominantCategory =
     [...catCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   const categoryPlural = dominantCategory || "listings";
-  const label = categoryPlural.charAt(0).toUpperCase() + categoryPlural.slice(1);
-  const title = `${label} in ${city}`;
+  const brief = buildCityBrief({ city, state: state || null, categoryPlural });
 
-  const prices = listings
-    .map((l) => l.price_amount)
-    .filter((n): n is number => typeof n === "number")
-    .sort((a, b) => a - b);
-  const currency = listings.find((l) => l.price_currency)?.price_currency ?? "USD";
-  const priceFact = prices.length
-    ? `Live price range: ${(prices[0]! / 100).toFixed(0)}–${(prices[prices.length - 1]! / 100).toFixed(0)} ${currency} across ${prices.length} priced listings.`
-    : "No price data available — do NOT state or estimate any prices.";
-  const sampleTitles = listings
-    .slice(0, 5)
-    .map((l) => `- ${l.title}`)
-    .join("\n");
+  // Idempotent by insight: the same briefing + insight always maps to the
+  // same request id, so a double-click (or a retry after a lost response)
+  // replays the page that exists instead of drafting a second one. Only an
+  // action with no briefing behind it gets a fresh id.
+  const generationRequestId = origin.briefingId
+    ? await deterministicRequestId(`coach:${origin.briefingId}:${origin.insightIndex ?? 0}`)
+    : crypto.randomUUID();
 
-  const body = await callAI(
-    `You write SEO city pages for "${workspaceName}", a marketplace for ${categoryPlural}. Use ONLY the facts provided below — never invent pricing, listing counts, or listings. Return Markdown only, 700-1100 words, ## and ### headings, friendly tone, end with a CTA paragraph inviting readers to browse the live listings shown below the article.`,
-    `Write the city page for ${city}${state ? `, ${state}` : ""}.
-
-Facts about our live inventory in ${city} (the only numbers you may use):
-- ${listings.length} published listings
-- ${priceFact}
-${sampleTitles ? `- Example listings:\n${sampleTitles}` : "- No example listings yet."}
-
-Cover: who uses ${categoryPlural} in ${city}, popular local use cases, what to look for when choosing, and a closing CTA. If inventory is small, write genuinely useful local guidance instead of padding or inventing listings.`,
-    ai,
-  );
-
-  const seoOut = await callAI(
-    'Return STRICT JSON: {"seo_title":"...","seo_description":"..."}. seo_title ≤60 chars; seo_description ≤155 chars. No prose.',
-    `City page: "${title}". Body excerpt:\n${body.slice(0, 1200)}`,
-    ai,
-  );
-  let seo: { seo_title?: string; seo_description?: string } = {};
-  try {
-    seo = JSON.parse(seoOut.replace(/```json|```/g, "").trim());
-  } catch {
-    /* fall back */
-  }
-
-  const pageTitle = (seo.seo_title ?? title).slice(0, 200);
-  const { data: inserted, error: insErr } = await supabaseAdmin
-    .from("tenant_pages")
-    .insert({
-      workspace_id: workspaceId,
-      template_id: templateId,
-      title: pageTitle,
-      slug: baseSlug,
-      h1: title,
-      meta_description: (seo.seo_description ?? `${label} in ${city} on ${workspaceName}.`).slice(
-        0,
-        320,
-      ),
-      body_markdown: body,
-      variables: { city, ...(state ? { state } : {}), category_plural: categoryPlural },
-      listing_filter: { city, ...(state ? { state } : {}), limit: 24, sort: "newest" },
+  const res = await runQuickPage(
+    QuickPageInputSchema.parse({
+      workspaceId,
+      title: brief.title.slice(0, 140),
+      description: brief.description,
+      topic: brief.topic,
+      city,
+      state: state || undefined,
+      categoryPlural,
       // Draft, not published — the confirmation dialog promises a draft, and
       // AI-generated pages deserve a human look before going live.
-      status: "draft",
-      published_at: null,
-    })
-    .select("id, slug")
-    .single();
-  if (insErr) throw new Error(insErr.message);
+      autoPublish: false,
+      generationRequestId,
+    }),
+    userId,
+  );
 
   return {
     ok: true,
-    summary: `Drafted "${title}" — review and publish it from Pages`,
-    details: { pageId: inserted.id, slug: inserted.slug },
+    summary: res.replayed
+      ? `"${res.page.title}" was already drafted — review and publish it from Pages`
+      : `Drafted "${res.page.title}" — review and publish it from Pages`,
+    details: {
+      pageId: res.page.id,
+      slug: res.page.slug,
+      replayed: res.replayed,
+      creditsCharged: res.creditsCharged,
+      billing: res.billing,
+    },
   };
 }
 
@@ -297,9 +284,10 @@ async function addInternalLinks(
     ai,
   );
 
-  // Count newly added internal links
-  const before = (page.body_markdown.match(/\]\(\/p\//g) ?? []).length;
-  const after = (updated.match(/\]\(\/p\//g) ?? []).length;
+  // Count newly added internal links. Pages live at /a/{slug} — the prompt
+  // asks for /a/ links, so /a/ is what is counted (a /p/ count was always 0).
+  const before = (page.body_markdown.match(/\]\(\/a\//g) ?? []).length;
+  const after = (updated.match(/\]\(\/a\//g) ?? []).length;
   const added = Math.max(0, after - before);
   if (added === 0) throw new Error("Model did not add any new internal links");
 
@@ -324,6 +312,42 @@ export const runCoachAction = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await assertWorkspaceMember(data.workspaceId, userId);
 
+    const logAction = async (errorMessage: string | null, result: ActionResult | null) => {
+      await supabase.from("coach_action_log").insert({
+        workspace_id: data.workspaceId,
+        user_id: userId,
+        action_type: data.actionType,
+        details: {
+          status: errorMessage ? "error" : "success",
+          briefing_id: data.briefingId ?? null,
+          insight_index: data.insightIndex ?? null,
+          payload: JSON.parse(JSON.stringify(data.payload)),
+          result: errorMessage ? null : (result?.details ?? null),
+          summary: errorMessage ?? result?.summary ?? null,
+        },
+      });
+    };
+
+    // Page generation goes through the core, not the gateway: no key is
+    // resolved and nothing is reserved or settled here — runQuickPage does
+    // both, after the draft exists. What is logged and thrown is the
+    // customer-facing message only; database text is withheld.
+    if (data.actionType === "create_city_page") {
+      let result: ActionResult | null = null;
+      let errorMessage: string | null = null;
+      try {
+        result = await createCityPage(data.workspaceId, userId, data.payload, {
+          briefingId: data.briefingId,
+          insightIndex: data.insightIndex,
+        });
+      } catch (e) {
+        errorMessage = customerMessage(e, GENERATION_UNAVAILABLE_MESSAGE);
+      }
+      await logAction(errorMessage, result);
+      if (errorMessage || !result) throw new Error(errorMessage ?? GENERATION_UNAVAILABLE_MESSAGE);
+      return result;
+    }
+
     // BYOK first, platform env-var fallback.
     const { getWorkspaceSecretWithSource } = await import("@/lib/workspace-secrets.server");
     const secret = await getWorkspaceSecretWithSource(
@@ -331,7 +355,7 @@ export const runCoachAction = createServerFn({ method: "POST" })
       "LOVABLE_API_KEY",
       "LOVABLE_API_KEY",
     );
-    if (!secret) throw new Error("No AI key configured. Add a BYOK key under Settings → API Keys.");
+    if (!secret) throw new Error("AI tools are not available right now. Contact support.");
 
     const ai: AiCtx = { key: secret.key, usage: { prompt: 0, completion: 0 } };
 
@@ -344,7 +368,7 @@ export const runCoachAction = createServerFn({ method: "POST" })
       billing = await reservePlatformAi(data.workspaceId);
     }
 
-    let result: ActionResult;
+    let result: ActionResult | null = null;
     let errorMessage: string | null = null;
     try {
       switch (data.actionType) {
@@ -353,9 +377,6 @@ export const runCoachAction = createServerFn({ method: "POST" })
           break;
         case "add_meta":
           result = await addMeta(data.workspaceId, data.payload, ai);
-          break;
-        case "create_city_page":
-          result = await createCityPage(data.workspaceId, data.payload, ai);
           break;
         case "add_internal_links":
           result = await addInternalLinks(data.workspaceId, data.payload, ai);
@@ -386,20 +407,8 @@ export const runCoachAction = createServerFn({ method: "POST" })
       }
     }
 
-    await supabase.from("coach_action_log").insert({
-      workspace_id: data.workspaceId,
-      user_id: userId,
-      action_type: data.actionType,
-      details: {
-        status: errorMessage ? "error" : "success",
-        briefing_id: data.briefingId ?? null,
-        insight_index: data.insightIndex ?? null,
-        payload: JSON.parse(JSON.stringify(data.payload)),
-        result: errorMessage ? null : (result!.details ?? null),
-        summary: errorMessage ?? result!.summary,
-      },
-    });
+    await logAction(errorMessage, result);
 
-    if (errorMessage) throw new Error(errorMessage);
-    return result!;
+    if (errorMessage || !result) throw new Error(errorMessage ?? "Action failed");
+    return result;
   });

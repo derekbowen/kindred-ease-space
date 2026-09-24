@@ -11,6 +11,7 @@ import {
   GENERATION_MODEL_IDS,
   GENERATION_MODEL_OPTIONS,
   GENERATION_PAUSED_MESSAGE,
+  GENERATION_UNAVAILABLE_MESSAGE,
   MAX_ITEM_ATTEMPTS,
   STALE_RUNNING_MS,
   TYPICAL_PAGE_TOKENS,
@@ -20,6 +21,7 @@ import {
   checkStoredPageContract,
   contractFailureMessage,
   countConsumedLast24h,
+  customerMessage,
   dailyCapMessage,
   dailyCapRemaining,
   findExistingCityPage,
@@ -161,10 +163,28 @@ async function freshItem(itemId: string): Promise<GenerationItemRow> {
   return data as GenerationItemRow;
 }
 
-/** An unconditional item write whose failure must not go unnoticed. */
-async function markItem(itemId: string, patch: Record<string, unknown>): Promise<void> {
-  const { error } = await sb().from("generation_items").update(patch).eq("id", itemId);
+/**
+ * A PRE-claim write that lands only while the item is still exactly as the
+ * caller read it (same status, same attempts). A driver that claimed the item
+ * meanwhile bumped `attempts`, so this matches zero rows and its live claim
+ * is left alone: a refusal or a cancel from a second driver must never void
+ * someone else's in-flight work — their fenced page-link write would then
+ * find no row and the page they wrote would be orphaned and unbilled.
+ * Returns whether the write landed.
+ */
+async function markItemIfUnchanged(
+  row: { id: string; status: string; attempts: number },
+  patch: Record<string, unknown>,
+): Promise<boolean> {
+  const { data, error } = await sb()
+    .from("generation_items")
+    .update(patch)
+    .eq("id", row.id)
+    .eq("status", row.status)
+    .eq("attempts", row.attempts)
+    .select("id");
   if (error) throw new Error(error.message);
+  return !!data && data.length > 0;
 }
 
 class LostClaimError extends Error {
@@ -528,14 +548,17 @@ async function runItem(
     .eq("id", row.job_id)
     .maybeSingle();
   if (job?.status === "cancelled") {
-    await markItem(row.id, { status: "skipped", error: "Job was cancelled" });
-    return { item: await freshItem(row.id), changed: true };
+    // Fenced on the state this run read: if another driver claimed the item
+    // meanwhile, nothing is written and its claim stands.
+    const changed = await markItemIfUnchanged(row, { status: "skipped", error: "Job was cancelled" });
+    return { item: await freshItem(row.id), changed };
   }
 
   // ---- Policy gates: no attempt consumed, nothing claimed. ----
+  // Same fence as the cancel above: a refusal lands only on the row as read.
   const refuse = async (message: string) => {
-    await markItem(row.id, { status: "failed", error: message });
-    return { item: await freshItem(row.id), changed: true };
+    const changed = await markItemIfUnchanged(row, { status: "failed", error: message });
+    return { item: await freshItem(row.id), changed };
   };
 
   const settings = await readPlatformSettings();
@@ -553,8 +576,12 @@ async function runItem(
   let settlementMode: BillingMode | null = null;
   try {
     if (!row.page_id) {
-      // This item is excluded from the count: if it is pending it already
-      // holds its own slot, and that must not read as "one over the cap".
+      // The batch path's reservation is this item's own row: it was claimed
+      // as pending (before anything was generated) and counts from the moment
+      // it exists, which is what stops two tabs from each fitting under the
+      // cap. So the re-check here excludes only itself — its slot must not
+      // read as "one over the cap". Quick pages reserve a row in
+      // generation_reservations instead (reserveGenerationSlot).
       const consumed = await countConsumedLast24h(workspaceId, { excludeItemId: row.id });
       const remaining = dailyCapRemaining(settings.dailyCap, consumed);
       if (remaining === 0) return refuse(dailyCapMessage(settings.dailyCap, 0));
@@ -566,7 +593,9 @@ async function runItem(
       settlementMode = await resolvePlatformSettlementMode(workspaceId, model);
     }
   } catch (e) {
-    return refuse((e instanceof Error ? e.message : "Generation is not available").slice(0, 300));
+    // Only a customer-written refusal (no key, out of funds) is stored on the
+    // item; a database error is logged and replaced.
+    return refuse(customerMessage(e, GENERATION_UNAVAILABLE_MESSAGE).slice(0, 300));
   }
 
   // ---- Claim with an optimistic guard so two tabs cannot both run the same item. ----
@@ -676,14 +705,22 @@ async function runItem(
       console.error("[generation] claim lost", row.id);
       return { item: await freshItem(row.id), changed: false };
     }
-    const msg = e instanceof Error ? e.message : "Generation failed";
+    // What the item records is what the customer reads: provider and policy
+    // refusals verbatim, anything else (PostgREST text, constraint names)
+    // replaced by the generic sentence. customerMessage logs the raw error.
+    const msg = customerMessage(e, GENERATION_UNAVAILABLE_MESSAGE);
     console.error("[generation] item failed", row.id, msg);
-    await sb()
+    const { error: failErr } = await sb()
       .from("generation_items")
       .update({ status: "failed", error: msg.slice(0, 300) })
       .eq("id", row.id)
       .eq("status", "running")
       .eq("attempts", token);
+    if (failErr) {
+      // The item stays 'running' until the stale window reclaims it; that is
+      // recoverable, a silent swallow is not.
+      console.error("[generation] could not record item failure", row.id, failErr.message);
+    }
   }
 
   await settleJobStatus(workspaceId, row.job_id);

@@ -49,7 +49,7 @@ export const auditPage = createServerFn({ method: "POST" })
     if (!secret)
       return {
         ok: false as const,
-        error: "No AI key configured. Add a BYOK key under Settings → API Keys.",
+        error: "AI tools are not available right now. Contact support.",
       };
     const lovKey = secret.key;
 

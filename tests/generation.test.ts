@@ -9,45 +9,64 @@
  *     "has a page" matches city AND state (Portland, OR ≠ Portland, ME)
  *   - a live `running` item is never handed to a second driver; only a stale
  *     one is; a done item whose draft was deleted is generatable again
- *   - the daily cap is a reservation (done + running + pending), the attempt
- *     ceiling is 3, the pause switch accepts true and "true"
- *   - the platform key must afford a WHOLE page; a failed deduction is
- *     recorded as unbilled, never as a charge
+ *   - the daily cap is a reservation (done + running + pending) counted in ONE
+ *     place (the database), the quick page RESERVES its slot atomically, the
+ *     attempt ceiling is 3, the pause switch accepts true and "true"
+ *   - the platform key must afford a WHOLE page; settlement is idempotent by
+ *     page through the credit ledger whichever currency paid; a failed
+ *     deduction is recorded as unbilled, never as a charge; a provider that
+ *     omits usage is billed as a typical page, never as a free one
+ *   - pre-claim item writes are fenced on the state the driver read, so a
+ *     refusal from one driver cannot void another's live claim
  *   - the quick page accepts only picker models, defaults to the cheap one,
- *     and carries an idempotency key
- *   - the OpenRouter caller times out, rejects what must be rejected, and
- *     never lets a provider body reach the customer
- *   - the migration carries the idempotency keys, billing_status, the pause
- *     seed and the write REVOKEs; the rollback undoes the tenant_pages column
+ *     carries an idempotency key and settles a replayed platform page
+ *   - the coach's create_city_page runs through the core (pause, cap, who
+ *     pays, settlement, deterministic request id), never the gateway
+ *   - the OpenRouter caller times out (even mid-body), rejects what must be
+ *     rejected, and never lets a provider body reach the customer; no
+ *     database text reaches the customer either (customerMessage)
+ *   - out-of-funds copy sends customers to support, not to a withdrawn purchase
+ *   - the migrations carry the idempotency keys, billing_status, the pause
+ *     seed, the write REVOKEs, the settlement index, the reservation RPCs and
+ *     the billing-mode column; the rollbacks undo them
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   ATTEMPTS_EXHAUSTED_MESSAGE,
+  CustomerFacingError,
   DAILY_CAP_COUNTED_STATUSES,
   GENERATION_DEFAULT_MODEL,
+  GENERATION_LEDGER_REF_TYPES,
   GENERATION_MODEL_IDS,
   GENERATION_MODEL_OPTIONS,
   GENERATION_PAUSED_MESSAGE,
+  GENERATION_UNAVAILABLE_MESSAGE,
   MAX_ITEM_ATTEMPTS,
   MIN_BODY_CHARS,
   OPENROUTER_TIMEOUT_MS,
   PROVIDER_ERROR_MESSAGE,
   PROVIDER_TIMEOUT_MESSAGE,
   STALE_RUNNING_MS,
+  TYPICAL_PAGE_TOKENS,
+  UNBILLED_ITEM_MESSAGE,
   attemptsExhausted,
+  billableUsage,
   billingStatusFor,
   buildCityBrief,
   buildTargetKey,
   callOpenRouterWritePage,
-  countsTowardDailyCap,
+  customerMessage,
   dailyCapRemaining,
+  deterministicRequestId,
   estimatedCreditsPerPage,
   formatInventoryFacts,
   hasPlatformFunds,
   initialBillingStatus,
   isGenerationPaused,
+  isSettlementConflict,
   isStaleRunning,
+  outOfCreditsMessage,
   pageCoversCity,
   planJobItems,
   selectTargets,
@@ -71,6 +90,10 @@ function t(name: string, cond: boolean, extra = "") {
 
 const ROOT = join(import.meta.dir, "..");
 const read = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
+
+const MIGRATION_600 = "supabase/migrations/20260924000600_generation_settlement_and_reservations.sql";
+const ROLLBACK_600 =
+  "supabase/rollback/20260924000600_generation_settlement_and_reservations_rollback.sql";
 
 const NOW = Date.parse("2026-09-22T12:00:00Z");
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -175,34 +198,60 @@ console.log("\n=== daily cap ===");
     "the counted statuses are exactly done, running and pending",
     [...DAILY_CAP_COUNTED_STATUSES].sort().join() === "done,pending,running",
   );
+
+  // The count lives in SQL now (ONE definition, shared with the reservation
+  // RPC). The TypeScript list and the function body must say the same thing.
+  const sql = read(MIGRATION_600);
+  const consumedFn = sql.slice(
+    sql.indexOf("CREATE OR REPLACE FUNCTION public.generation_consumed_last_24h"),
+    sql.indexOf("CREATE OR REPLACE FUNCTION public.reserve_generation_slot"),
+  );
+  const statusList = consumedFn.match(/i\.status IN \(([^)]+)\)/)?.[1] ?? "";
+  const sqlStatuses = statusList
+    .split(",")
+    .map((s) => s.trim().replace(/^'|'$/g, ""))
+    .sort();
   t(
-    "a done item in the window counts",
-    countsTowardDailyCap({ status: "done", updated_at: ago(3600_000) }, NOW),
+    "the SQL count uses exactly DAILY_CAP_COUNTED_STATUSES for batch items",
+    sqlStatuses.join() === [...DAILY_CAP_COUNTED_STATUSES].sort().join(),
+    sqlStatuses.join(),
   );
   t(
-    "a running item counts (reservation)",
-    countsTowardDailyCap({ status: "running", updated_at: ago(60_000) }, NOW),
+    "the SQL count has exactly three sources: items, quick pages, held reservations",
+    (consumedFn.match(/SELECT count\(\*\)/g) ?? []).length === 3 &&
+      consumedFn.includes("FROM public.generation_items i") &&
+      consumedFn.includes("FROM public.tenant_pages p") &&
+      consumedFn.includes("FROM public.generation_reservations r"),
   );
   t(
-    "a pending item counts (reservation)",
-    countsTowardDailyCap({ status: "pending", updated_at: ago(60_000) }, NOW),
+    "quick pages count by their request id, reservations only until their page exists",
+    consumedFn.includes("p.generation_request_id IS NOT NULL") &&
+      /NOT EXISTS \(SELECT 1\s+FROM public\.tenant_pages p\s+WHERE p\.workspace_id = r\.workspace_id\s+AND p\.generation_request_id = r\.request_id\)/.test(
+        consumedFn,
+      ),
   );
   t(
-    "a failed item releases its slot",
-    !countsTowardDailyCap({ status: "failed", updated_at: ago(60_000) }, NOW),
+    "every source is bounded to the 24-hour window",
+    (consumedFn.match(/>= now\(\) - interval '24 hours'/g) ?? []).length === 3,
   );
   t(
-    "a skipped item releases its slot",
-    !countsTowardDailyCap({ status: "skipped", updated_at: ago(60_000) }, NOW),
+    "an item can exclude its own slot from the count",
+    consumedFn.includes("(_exclude_item_id IS NULL OR i.id <> _exclude_item_id)"),
+  );
+  const server = read("src/lib/generation.server.ts");
+  const countFn = server.slice(
+    server.indexOf("export async function countConsumedLast24h"),
+    server.indexOf("export async function reserveGenerationSlot"),
   );
   t(
-    "a done item from 25 hours ago no longer counts",
-    !countsTowardDailyCap({ status: "done", updated_at: ago(25 * 3600_000) }, NOW),
+    "countConsumedLast24h is a thin wrapper over the RPC (no second definition in TypeScript)",
+    countFn.includes('rpc("generation_consumed_last_24h"') &&
+      countFn.includes("_exclude_item_id: opts.excludeItemId ?? null") &&
+      !countFn.includes('.from("generation_items")') &&
+      !countFn.includes('.from("tenant_pages")'),
   );
-  t(
-    "an item of unknown age counts (fail closed)",
-    countsTowardDailyCap({ status: "done", updated_at: null }, NOW),
-  );
+  t("an RPC error throws instead of reading as zero", /if \(error\) throw new Error/.test(countFn));
+  t("the dead countsTowardDailyCap helper is gone", !server.includes("countsTowardDailyCap"));
 }
 
 console.log("\n=== pause switch ===");
@@ -468,7 +517,13 @@ console.log("\n=== settlement → billing_status ===");
   t("before settling, a BYOK page owes nothing", initialBillingStatus("byok") === "free");
   t("before settling, a granted page owes nothing", initialBillingStatus("granted") === "free");
   const server = read("src/lib/generation.server.ts");
-  const settle = server.slice(server.indexOf("export async function settleGeneration"));
+  // settleOnPlatform is the platform branch; settleGeneration wraps it.
+  const settle = server.slice(server.indexOf("async function settleOnPlatform("));
+  const platform = server.slice(
+    server.indexOf("async function settleOnPlatform("),
+    server.indexOf("export async function settleGeneration"),
+  );
+  t("the platform branch was found", platform.length > 0);
   t(
     "settleGeneration zeroes creditsCharged on any failure",
     /billing = "unbilled";\s*creditsCharged = 0;/.test(settle),
@@ -480,34 +535,85 @@ console.log("\n=== settlement → billing_status ===");
       server.includes('ent.billingState === "granted"'),
   );
 
-  // Settlement is idempotent by PAGE against the credit ledger, which
-  // deduct_credits writes in the same transaction as the balance change. A
-  // run that died after deducting but before recording it on the item must
-  // not deduct again on the retry.
-  const ledgerCheck = settle.indexOf("findLedgerCharge(opts.workspaceId, opts.refId)");
-  t("settleGeneration consults the ledger for this page first", ledgerCheck > 0);
+  // Settlement is idempotent by PAGE against the credit ledger: the ledger
+  // row is the settlement record, one per page, whichever currency paid.
+  // A run that died after settling but before recording it on the item must
+  // not settle again on the retry — in either currency.
+  const ledgerCheck = platform.indexOf("findLedgerCharge(p.workspaceId, p.refId)");
+  t("the platform branch consults the ledger for this page first", ledgerCheck > 0);
   t(
-    "the ledger check precedes the free-quota consume",
-    ledgerCheck < settle.indexOf('rpc("consume_platform_ai_credit"'),
+    "the ledger check precedes the free-quota settlement",
+    ledgerCheck < platform.indexOf('rpc("settle_generation_free_quota"'),
   );
   t(
     "the ledger check precedes the deduction",
-    ledgerCheck < settle.indexOf('rpc("deduct_credits"'),
+    ledgerCheck < platform.indexOf('rpc("deduct_credits"'),
   );
   t(
-    "a prior ledger charge is reported as the charge, not re-deducted",
-    /if \(prior !== null\) \{\s*billing = "credits";\s*creditsCharged = prior;/.test(settle),
+    "a prior ledger row is reported as the settlement, whichever currency paid",
+    /if \(prior\) return \{ ok: true, billing: prior\.billing, creditsCharged: prior\.amount \};/.test(
+      platform,
+    ),
   );
+  t(
+    "the free quota is settled through settle_generation_free_quota keyed by feature + page id + model",
+    /rpc\("settle_generation_free_quota", \{\s*_workspace_id: p\.workspaceId,\s*_ref_type: p\.feature,\s*_ref_id: p\.refId,\s*_ai_model: p\.model,\s*\}\)/.test(
+      platform,
+    ),
+  );
+  t(
+    "losing the settlement index re-reads the ledger and adopts the winner (free quota)",
+    /if \(isSettlementConflict\(qErr\)\) return adopt\("settle_generation_free_quota"\);/.test(
+      platform,
+    ),
+  );
+  t(
+    "losing the settlement index re-reads the ledger and adopts the winner (credits)",
+    /if \(p\.refId && isSettlementConflict\(error\)\) return adopt\("deduct_credits"\);/.test(
+      platform,
+    ),
+  );
+  t(
+    "a conflict with no ledger row is a failure (unbilled), never a charge",
+    /settlement conflict but no ledger row for this page/.test(platform),
+  );
+  t(
+    "an exhausted free quota falls through to purchased credits",
+    /if \(quotaExhausted\(qErr\)\) return deduct\(\);/.test(platform),
+  );
+  t(
+    "the deduction carries the page id as the ledger ref",
+    /_ref_type: p\.feature,\s*_ref_id: p\.refId \?\? undefined,/.test(platform),
+  );
+  t(
+    "without a page id the old unkeyed consume path is kept (nothing else regresses)",
+    platform.indexOf('rpc("consume_platform_ai_credit"') > platform.indexOf("if (p.refId) {") &&
+      /both always pass the page\s*\*?\s*id/.test(server),
+  );
+  t(
+    "the invariant is written down: one ledger row per page, whichever currency paid",
+    /one per page, whichever currency paid/.test(server),
+  );
+
   const ledgerFn = server.slice(
     server.indexOf("export async function findLedgerCharge"),
-    server.indexOf("export async function settleGeneration"),
+    server.indexOf("const quotaExhausted"),
   );
   t(
-    "the ledger lookup is keyed by workspace, page id and the ai_usage reason, spends only",
+    "the ledger lookup is keyed by workspace, page id, the ai_usage reason and the two generation ref types",
     ledgerFn.includes('.eq("workspace_id", workspaceId)') &&
       ledgerFn.includes('.eq("ref_id", refId)') &&
       ledgerFn.includes('.eq("reason", "ai_usage")') &&
-      ledgerFn.includes('.lt("delta", 0)'),
+      ledgerFn.includes('.in("ref_type", [...GENERATION_LEDGER_REF_TYPES])') &&
+      [...GENERATION_LEDGER_REF_TYPES].sort().join() === "batch_generation,quick_page",
+  );
+  t(
+    "the ledger lookup sees free-quota rows (delta 0) as well as deductions (delta < 0)",
+    ledgerFn.includes('.lte("delta", 0)') && !ledgerFn.includes('.lt("delta", 0)'),
+  );
+  t(
+    "delta < 0 reads as credits, delta 0 as free_quota, amount is the absolute delta",
+    /billing: delta < 0 \? "credits" : "free_quota", amount: Math\.abs\(delta\)/.test(ledgerFn),
   );
   t(
     "a ledger read failure throws instead of deducting blind",
@@ -522,6 +628,60 @@ console.log("\n=== settlement → billing_status ===");
   t(
     "quick page settlement passes the page id as the ledger key",
     /feature: "quick_page",\s*refId: page\.id,/.test(read("src/lib/admin-quick-page.functions.ts")),
+  );
+
+  // Settlement conflict detection (pure).
+  t("unique_violation code is a conflict", isSettlementConflict({ code: "23505", message: "dup" }));
+  t(
+    "the settlement index named in the message is a conflict even without a code",
+    isSettlementConflict({
+      message:
+        'duplicate key value violates unique constraint "credit_ledger_generation_settlement_uidx"',
+    }),
+  );
+  t(
+    "an exhausted quota is not a conflict",
+    !isSettlementConflict({ code: "P0001", message: "platform_ai_quota_exhausted" }),
+  );
+  t("nothing is not a conflict", !isSettlementConflict(null) && !isSettlementConflict(undefined));
+  t(
+    "a different unique index is not a settlement conflict by name (only by code)",
+    !isSettlementConflict({ message: 'violates unique constraint "tenant_pages_workspace_id_slug_key"' }),
+  );
+
+  // Usage fallback (pure): a provider that omits usage is billed as a
+  // typical page, never as a free one.
+  const assumed = billableUsage(0, 0);
+  t(
+    "zero usage bills a typical page",
+    assumed.promptTokens === TYPICAL_PAGE_TOKENS.prompt &&
+      assumed.completionTokens === TYPICAL_PAGE_TOKENS.completion &&
+      assumed.assumed,
+  );
+  const real = billableUsage(812, 1204);
+  t(
+    "real usage is billed as reported",
+    real.promptTokens === 812 && real.completionTokens === 1204 && !real.assumed,
+  );
+  t(
+    "garbage usage (NaN, negative) is treated as omitted",
+    billableUsage(Number.NaN, -5).assumed && billableUsage(Number.NaN, -5).promptTokens > 0,
+  );
+  const partial = billableUsage(5, 0);
+  t(
+    "partial usage is real usage, not omitted",
+    partial.promptTokens === 5 && partial.completionTokens === 0 && !partial.assumed,
+  );
+  t(
+    "settleGeneration applies the fallback in one place and warns, naming feature and refId",
+    /const usage = billableUsage\(opts\.promptTokens, opts\.completionTokens\);/.test(settle) &&
+      /provider omitted usage; billing a typical page feature=\$\{opts\.feature\} refId=/.test(
+        settle,
+      ),
+  );
+  t(
+    "the deduction is priced on the billable usage",
+    /creditsForUsage\(p\.model, p\.usage\.promptTokens, p\.usage\.completionTokens\)/.test(platform),
   );
 }
 
@@ -592,6 +752,162 @@ console.log("\n=== model policy ===");
     "quick page request id is optional (Opportunity Engine)",
     parsed.success && parsed.data.generationRequestId === undefined,
   );
+}
+
+console.log("\n=== deterministic request id (coach insight → same page on replay) ===");
+{
+  const a = await deterministicRequestId("coach:11111111-1111-4111-8111-111111111111:0");
+  const b = await deterministicRequestId("coach:11111111-1111-4111-8111-111111111111:0");
+  const c = await deterministicRequestId("coach:11111111-1111-4111-8111-111111111111:1");
+  const d = await deterministicRequestId("coach:22222222-2222-4222-8222-222222222222:0");
+  t("same seed → same id", a === b, `${a} vs ${b}`);
+  t("a different insight index → a different id", a !== c);
+  t("a different briefing → a different id", a !== d);
+  t(
+    "the id is a version-4, RFC-variant uuid",
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(a),
+    a,
+  );
+  t(
+    "the id passes the quick page's request-id gate",
+    QuickPageInputSchema.safeParse({
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+      title: "Boats in Austin",
+      topic: "City hub page for boats in Austin, Texas",
+      generationRequestId: a,
+    }).success,
+  );
+  t(
+    "the coach derives the id from briefing + insight and falls back to a random uuid only without a briefing",
+    /deterministicRequestId\(`coach:\$\{origin\.briefingId\}:\$\{origin\.insightIndex \?\? 0\}`\)/.test(
+      read("src/lib/coach-actions.functions.ts"),
+    ) &&
+      /origin\.briefingId\s*\?\s*await deterministicRequestId[\s\S]*?:\s*crypto\.randomUUID\(\)/.test(
+        read("src/lib/coach-actions.functions.ts"),
+      ),
+  );
+}
+
+console.log("\n=== customerMessage: no database text reaches a tenant ===");
+{
+  const origError = console.error;
+  const captured: string[] = [];
+  console.error = (...args: unknown[]) => {
+    captured.push(args.map(String).join(" "));
+  };
+  try {
+    const raw = new Error(
+      'duplicate key value violates unique constraint "tenant_pages_workspace_id_slug_key"',
+    );
+    const out = customerMessage(raw, GENERATION_UNAVAILABLE_MESSAGE);
+    t("an internal error maps to the fallback", out === GENERATION_UNAVAILABLE_MESSAGE, out);
+    t(
+      "the raw error is logged, never returned",
+      captured.some((l) => l.includes("tenant_pages_workspace_id_slug_key")) &&
+        !out.includes("tenant_pages"),
+    );
+    captured.length = 0;
+    const passed = customerMessage(
+      new CustomerFacingError("Out of funds"),
+      GENERATION_UNAVAILABLE_MESSAGE,
+    );
+    t("a CustomerFacingError passes through verbatim", passed === "Out of funds");
+    t("…without a log line", captured.length === 0);
+    t("a non-Error value maps to the fallback", customerMessage("boom", "fb") === "fb");
+    t(
+      "the fallback is generic and actionable",
+      /temporarily unavailable/i.test(GENERATION_UNAVAILABLE_MESSAGE) &&
+        /try again/i.test(GENERATION_UNAVAILABLE_MESSAGE),
+    );
+    t("CustomerFacingError is an Error with its own name", new CustomerFacingError("x") instanceof Error && new CustomerFacingError("x").name === "CustomerFacingError");
+  } finally {
+    console.error = origError;
+  }
+
+  const server = read("src/lib/generation.server.ts");
+  t(
+    "the refusals a customer reads are thrown as CustomerFacingError (key, funds, slug, provider, thin output)",
+    /throw new CustomerFacingError\(\s*"Page generation is not available right now/.test(server) &&
+      server.includes("throw new CustomerFacingError(outOfCreditsMessage(model))") &&
+      server.includes('throw new CustomerFacingError("Could not derive slug from title")') &&
+      (server.match(/throw new CustomerFacingError\(timedOut \? PROVIDER_TIMEOUT_MESSAGE : PROVIDER_ERROR_MESSAGE\)/g) ?? []).length === 2 &&
+      server.includes("throw new CustomerFacingError(PROVIDER_ERROR_MESSAGE)") &&
+      server.includes('throw new CustomerFacingError("AI response missing tool call")') &&
+      server.includes('throw new CustomerFacingError("AI response was not valid JSON")') &&
+      /throw new CustomerFacingError\(\s*`Generated body too short/.test(server),
+  );
+  const fns = read("src/lib/generation.functions.ts");
+  const runItem = fns.slice(fns.indexOf("async function runItem("), fns.indexOf("const itemInput"));
+  t(
+    "runItem's gate refusal stores only a customer message",
+    /return refuse\(customerMessage\(e, GENERATION_UNAVAILABLE_MESSAGE\)/.test(runItem) &&
+      !/refuse\(\(e instanceof Error \? e\.message/.test(runItem),
+  );
+  t(
+    "runItem's catch-all stores only a customer message",
+    /const msg = customerMessage\(e, GENERATION_UNAVAILABLE_MESSAGE\);/.test(runItem) &&
+      !/const msg = e instanceof Error \? e\.message : "Generation failed"/.test(runItem),
+  );
+  t(
+    "the catch-all failure write's error is checked and logged, never swallowed",
+    /const \{ error: failErr \} = await sb\(\)\s*\.from\("generation_items"\)\s*\.update\(\{ status: "failed", error: msg\.slice\(0, 300\) \}\)/.test(
+      runItem,
+    ) && /if \(failErr\) \{[\s\S]*?console\.error\("\[generation\] could not record item failure"/.test(runItem),
+  );
+  const quick = read("src/lib/admin-quick-page.functions.ts");
+  const serverFn = quick.slice(quick.indexOf("export const createQuickPage"));
+  t(
+    "the quick page server fn rethrows only a customer message",
+    /return await runQuickPage\(data, context\.userId\);/.test(serverFn) &&
+      /throw new Error\(customerMessage\(e, GENERATION_UNAVAILABLE_MESSAGE\)\);/.test(serverFn),
+  );
+}
+
+console.log("\n=== out-of-funds copy points at support, not a withdrawn purchase ===");
+{
+  const strings = [
+    outOfCreditsMessage("google/gemini-3.1-pro-preview"),
+    UNBILLED_ITEM_MESSAGE,
+  ];
+  const quick = read("src/lib/admin-quick-page.functions.ts");
+  const draftReason = quick.match(/const UNBILLED_DRAFT_REASON =\s*"([^"]+)"/)?.[1] ?? "";
+  const metering = read("src/lib/ai-metering.server.ts");
+  const meteringMsg = metering.match(/OUT_OF_INCLUDED_AI_MESSAGE =\s*"([^"]+)"/)?.[1] ?? "";
+  t("the quick page draft reason was found", draftReason.length > 0);
+  t("the metering message was found", meteringMsg.length > 0);
+  for (const [label, s] of [
+    ["outOfCreditsMessage", strings[0]!],
+    ["UNBILLED_ITEM_MESSAGE", strings[1]!],
+    ["quick page draft reason", draftReason],
+    ["ai-metering refusal", meteringMsg],
+  ] as const) {
+    t(`${label} names the included allowance and support`, /included AI generation/.test(s) && /contact support/i.test(s), s);
+    t(`${label} has no purchase path`, !/top up/i.test(s) && !/Billing/.test(s) && !/buy|purchase/i.test(s), s);
+  }
+  t(
+    "the metering refusal is customer-facing",
+    metering.includes("throw new CustomerFacingError(OUT_OF_INCLUDED_AI_MESSAGE)"),
+  );
+  t(
+    "no generation module still says Top up in Billing",
+    ![
+      "src/lib/generation.server.ts",
+      "src/lib/admin-quick-page.functions.ts",
+      "src/lib/ai-metering.server.ts",
+      "src/lib/generation.functions.ts",
+    ].some((f) => /Top up in Billing/.test(read(f))),
+  );
+  for (const f of [
+    "src/lib/coach-actions.functions.ts",
+    "src/lib/admin-page-auditor.functions.ts",
+    "src/lib/admin-seo-coach.functions.ts",
+  ]) {
+    t(
+      `${f} no longer sends customers to the hidden API Keys page`,
+      !read(f).includes("Settings → API Keys") &&
+        read(f).includes("AI tools are not available right now. Contact support."),
+    );
+  }
 }
 
 console.log("\n=== brief + inventory grounding ===");
@@ -699,6 +1015,7 @@ console.log("\n=== OpenRouter caller (stubbed fetch) ===");
     ],
   };
   let err = "";
+  let caught: unknown = null;
   try {
     await callOpenRouterWritePage({
       apiKey: "k",
@@ -708,11 +1025,14 @@ console.log("\n=== OpenRouter caller (stubbed fetch) ===");
       fetchImpl: async () => okResponse(short),
     });
   } catch (e) {
+    caught = e;
     err = (e as Error).message;
   }
   t(`rejects a body under ${MIN_BODY_CHARS} chars`, /too short/.test(err), err);
+  t("…as a customer-facing error", caught instanceof CustomerFacingError);
 
   err = "";
+  caught = null;
   try {
     await callOpenRouterWritePage({
       apiKey: "k",
@@ -722,11 +1042,14 @@ console.log("\n=== OpenRouter caller (stubbed fetch) ===");
       fetchImpl: async () => okResponse({ choices: [{ message: { content: "plain text" } }] }),
     });
   } catch (e) {
+    caught = e;
     err = (e as Error).message;
   }
   t("rejects a response without a tool call", /missing tool call/.test(err), err);
+  t("…as a customer-facing error", caught instanceof CustomerFacingError);
 
   err = "";
+  caught = null;
   try {
     await callOpenRouterWritePage({
       apiKey: "k",
@@ -739,12 +1062,15 @@ console.log("\n=== OpenRouter caller (stubbed fetch) ===");
         }),
     });
   } catch (e) {
+    caught = e;
     err = (e as Error).message;
   }
   t("rejects malformed tool arguments", /not valid JSON/.test(err), err);
+  t("…as a customer-facing error", caught instanceof CustomerFacingError);
 
   const logs: string[] = [];
   err = "";
+  caught = null;
   try {
     await callOpenRouterWritePage({
       apiKey: "k",
@@ -755,9 +1081,11 @@ console.log("\n=== OpenRouter caller (stubbed fetch) ===");
       log: (m) => logs.push(m),
     });
   } catch (e) {
+    caught = e;
     err = (e as Error).message;
   }
   t("non-2xx throws the generic customer message", err === PROVIDER_ERROR_MESSAGE, err);
+  t("…as a customer-facing error", caught instanceof CustomerFacingError);
   t(
     "the provider body never reaches the customer",
     !err.includes("rate limited") && !err.includes("429"),
@@ -800,6 +1128,7 @@ console.log("\n=== OpenRouter caller (stubbed fetch) ===");
     });
   logs.length = 0;
   err = "";
+  caught = null;
   try {
     await callOpenRouterWritePage({
       apiKey: "k",
@@ -811,12 +1140,82 @@ console.log("\n=== OpenRouter caller (stubbed fetch) ===");
       log: (m) => logs.push(m),
     });
   } catch (e) {
+    caught = e;
     err = (e as Error).message;
   }
   t("a hung provider is abandoned with the timeout message", err === PROVIDER_TIMEOUT_MESSAGE, err);
+  t("…as a customer-facing error", caught instanceof CustomerFacingError);
   t(
     "the timeout is logged server-side",
     logs.some((l) => /timeout/.test(l)),
+    logs.join(" | "),
+  );
+
+  // A provider that answers 200 and then stalls mid-body: the abort fires
+  // while resp.json() is still reading. That must surface as the timeout
+  // sentence, never the runtime's own "The operation was aborted".
+  logs.length = 0;
+  err = "";
+  caught = null;
+  try {
+    await callOpenRouterWritePage({
+      apiKey: "k",
+      model: "m",
+      systemPrompt: "s",
+      userPrompt: "u",
+      fetchImpl: async () =>
+        ({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.reject(
+              Object.assign(new Error("The operation was aborted due to timeout"), {
+                name: "TimeoutError",
+              }),
+            ),
+          text: async () => "",
+        }) as unknown as Response,
+      log: (m) => logs.push(m),
+    });
+  } catch (e) {
+    caught = e;
+    err = (e as Error).message;
+  }
+  t("a timeout during the body read yields the timeout message", err === PROVIDER_TIMEOUT_MESSAGE, err);
+  t("…as a customer-facing error", caught instanceof CustomerFacingError);
+  t("the raw abort message never reaches the customer", !/aborted/i.test(err));
+  t(
+    "the abort detail stays in the log",
+    logs.some((l) => /timeout/.test(l) && /aborted/.test(l)),
+    logs.join(" | "),
+  );
+
+  // A 200 whose body is not JSON at all (a proxy page, a truncated stream).
+  logs.length = 0;
+  err = "";
+  caught = null;
+  try {
+    await callOpenRouterWritePage({
+      apiKey: "k",
+      model: "m",
+      systemPrompt: "s",
+      userPrompt: "u",
+      fetchImpl: async () =>
+        new Response("<html>bad gateway trace-id=xyz</html>", {
+          status: 200,
+          headers: { "Content-Type": "text/html" },
+        }),
+      log: (m) => logs.push(m),
+    });
+  } catch (e) {
+    caught = e;
+    err = (e as Error).message;
+  }
+  t("an unreadable 200 body yields the generic provider message", err === PROVIDER_ERROR_MESSAGE, err);
+  t("…as a customer-facing error", caught instanceof CustomerFacingError);
+  t(
+    "the parse failure is logged as an unreadable body",
+    logs.some((l) => /unreadable body/.test(l)),
     logs.join(" | "),
   );
 
@@ -859,6 +1258,10 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
     runItem.indexOf("countConsumedLast24h(workspaceId, { excludeItemId: row.id })") < claim,
   );
   t(
+    "the batch reservation is documented as the pending item row itself",
+    /reservation is this item's own row/.test(runItem) && /excludes only itself/.test(runItem),
+  );
+  t(
     "who pays is resolved before the claim (no attempt burned on no-credits)",
     runItem.indexOf("resolveBillingMode(") < claim,
   );
@@ -890,6 +1293,40 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
     "an unbilled settlement fails the item with credits_charged 0",
     /status: "failed",\s*credits_charged: 0,\s*billing_status: "unbilled"/.test(fns),
   );
+
+  // Pre-claim writes (cancel → skipped, refuse → failed) are fenced on the
+  // state the driver read. A second driver refusing after the first claimed
+  // must match zero rows and leave the live claim alone.
+  const fence = fns.slice(
+    fns.indexOf("async function markItemIfUnchanged("),
+    fns.indexOf("class LostClaimError"),
+  );
+  t("markItemIfUnchanged was found", fence.length > 0);
+  t(
+    "pre-claim writes carry the status AND attempts predicates and return the matched rows",
+    fence.includes('.eq("id", row.id)') &&
+      fence.includes('.eq("status", row.status)') &&
+      fence.includes('.eq("attempts", row.attempts)') &&
+      fence.includes('.select("id")') &&
+      /return !!data && data\.length > 0;/.test(fence),
+  );
+  t(
+    "the cancel→skipped write is fenced",
+    /const changed = await markItemIfUnchanged\(row, \{ status: "skipped", error: "Job was cancelled" \}\);\s*return \{ item: await freshItem\(row\.id\), changed \};/.test(
+      runItem,
+    ),
+  );
+  t(
+    "the refuse→failed write is fenced",
+    /const changed = await markItemIfUnchanged\(row, \{ status: "failed", error: message \}\);\s*return \{ item: await freshItem\(row\.id\), changed \};/.test(
+      runItem,
+    ),
+  );
+  t(
+    "zero rows matched → changed: false (nothing else touched)",
+    !/markItem\(/.test(fns) && fns.includes("Returns whether the write landed"),
+  );
+  t("no unconditional pre-claim item write survives", !/async function markItem\(/.test(fns));
 
   const start = fns.slice(
     fns.indexOf("export const startGenerationJob"),
@@ -961,13 +1398,42 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
 console.log("\n=== quick page pipeline (source guards) ===");
 {
   const quick = read("src/lib/admin-quick-page.functions.ts");
-  const handler = quick.slice(quick.indexOf("export const createQuickPage"));
+  const handler = quick.slice(
+    quick.indexOf("export async function runQuickPage"),
+    quick.indexOf("export const createQuickPage"),
+  );
   const gen = handler.indexOf("generatePageContent(");
-  t("createQuickPage was found", handler.length > 0 && gen > 0);
+  t("runQuickPage was found", handler.length > 0 && gen > 0);
   t("replays by request id before generating", handler.indexOf("findPageByRequestId(") < gen);
   t("checks the pause switch before generating", handler.indexOf("readPlatformSettings()") < gen);
-  t("applies the daily cap before generating", handler.indexOf("countConsumedLast24h(") < gen);
+  const reserve = handler.indexOf("reserveGenerationSlot(");
+  t("reserves a daily-cap slot before generating (not a count-and-compare)", reserve > 0 && reserve < gen);
+  t("the quick page no longer counts the cap in TypeScript", !quick.includes("countConsumedLast24h("));
+  t(
+    "the reservation is keyed by the request id and the platform cap",
+    /reserveGenerationSlot\(\s*data\.workspaceId,\s*generationRequestId,\s*settings\.dailyCap,\s*\)/.test(
+      handler,
+    ),
+  );
+  t(
+    "a refused reservation is a customer-facing daily-cap refusal",
+    /if \(!reserved\) throw new CustomerFacingError\(dailyCapMessage\(settings\.dailyCap, 0\)\);/.test(
+      handler,
+    ),
+  );
+  t(
+    "the pause refusal is customer-facing",
+    /throw new CustomerFacingError\("Generation is paused platform-wide right now\."\)/.test(handler),
+  );
   t("resolves who pays before generating", handler.indexOf("resolveBillingMode(") < gen);
+  t("resolves who pays after reserving (a refusal releases the slot)", handler.indexOf("resolveBillingMode(") > reserve);
+  const release = handler.indexOf("releaseGenerationSlot(");
+  t(
+    "a generation or persist failure releases the reservation and rethrows",
+    release > reserve &&
+      release < handler.indexOf("settleGeneration(") &&
+      /await releaseGenerationSlot\(data\.workspaceId, generationRequestId\);\s*throw e;/.test(handler),
+  );
   t(
     "persists with the request id",
     handler.includes("generationRequestId,") && quick.includes("generation_request_id") === false,
@@ -982,6 +1448,142 @@ console.log("\n=== quick page pipeline (source guards) ===");
   );
   t("uses z.enum over the picker ids", quick.includes("z.enum(GENERATION_MODEL_IDS)"));
   t("quick page module says /a/, never /p/", !quick.includes("/p/") && quick.includes("/a/"));
+
+  // Replay settles a platform page (idempotent through the ledger) instead of
+  // reporting a hard-coded free result.
+  const replay = quick.slice(
+    quick.indexOf("async function replayResult("),
+    quick.indexOf("export async function runQuickPage"),
+  );
+  t("replayResult was found", replay.length > 0);
+  t(
+    "a replayed platform page is settled by page id with typical tokens",
+    replay.includes('existing.generation_billing_mode === "platform"') &&
+      /feature: "quick_page",\s*refId: existing\.id,/.test(replay) &&
+      replay.includes("promptTokens: TYPICAL_PAGE_TOKENS.prompt") &&
+      replay.includes("completionTokens: TYPICAL_PAGE_TOKENS.completion") &&
+      replay.includes('keySource: "platform"') &&
+      replay.includes('billingMode: "platform"'),
+  );
+  t(
+    "the replay reports the settled charge, not 0 / free",
+    /creditsCharged = settled\.creditsCharged;\s*billing = settled\.billingStatus;/.test(replay),
+  );
+  t(
+    "a non-platform replay owes nothing",
+    /let creditsCharged = 0;\s*let billing: ItemBillingStatus = "free";/.test(replay),
+  );
+  t(
+    "both replay paths (step 0 and post-persist) go through replayResult",
+    (handler.match(/return replayResult\(existing, \{ workspaceId: data\.workspaceId, userId, model: data\.model \}\);/g) ?? [])
+      .length === 2,
+  );
+  const server = read("src/lib/generation.server.ts");
+  t(
+    "findPageByRequestId selects the billing mode",
+    /\.select\("id, slug, title, status, body_markdown, generation_billing_mode"\)/.test(server),
+  );
+  const persistFn = server.slice(
+    server.indexOf("export async function persistGeneratedPage"),
+    server.indexOf("export type LedgerSettlement"),
+  );
+  t(
+    "persistGeneratedPage records who paid on the page row",
+    persistFn.includes("generation_billing_mode: input.generated.billingMode ?? null"),
+  );
+  t(
+    "on ANY unique violation the request id is checked before the slug is retried",
+    persistFn.indexOf('if (insErr.code === "23505")') > 0 &&
+      persistFn.indexOf("findPageByRequestId(input.workspaceId, input.generationRequestId)") <
+        persistFn.indexOf("/slug/.test(String(insErr.message ?? \"\"))") &&
+      !/\/generation_request\/\.test/.test(persistFn),
+  );
+  t(
+    "a slug collision re-derives the slug once and retries once",
+    /if \(attempt === 0 && \/slug\/\.test\(String\(insErr\.message \?\? ""\)\)\) \{\s*slug = await findUniqueTenantSlug\(input\.workspaceId, baseSlug\);\s*continue;/.test(
+      persistFn,
+    ) && /throw new Error\(insErr\.message\);/.test(persistFn),
+  );
+}
+
+console.log("\n=== coach create_city_page runs through the core ===");
+{
+  const coach = read("src/lib/coach-actions.functions.ts");
+  const create = coach.slice(
+    coach.indexOf("async function createCityPage("),
+    coach.indexOf("async function addInternalLinks("),
+  );
+  t("createCityPage was found", create.length > 0);
+  t("it calls the quick-page pipeline directly (not the server fn)", create.includes("await runQuickPage(") && !coach.includes("createQuickPage"));
+  t("it never calls the gateway", !create.includes("callAI(") && !create.includes("AI_URL") && !create.includes("fetch("));
+  t("it never inserts a page row itself", !create.includes('.from("tenant_pages")'));
+  t(
+    "it builds the brief with buildCityBrief and keeps the dominant-category detection",
+    create.includes("buildCityBrief({ city, state: state || null, categoryPlural })") &&
+      /const categoryPlural = dominantCategory \|\| "listings";/.test(create) &&
+      create.includes('.from("tenant_listings")'),
+  );
+  t(
+    "it drafts, never publishes",
+    /autoPublish: false,/.test(create),
+  );
+  t(
+    "it passes a deterministic request id through the schema",
+    /QuickPageInputSchema\.parse\(\{[\s\S]*?generationRequestId,\s*\}\)/.test(create),
+  );
+  t(
+    "an existing page for the city is a refusal via the core predicate, not a slug lookup",
+    create.includes("findExistingCityPage(workspaceId, city, state || null)") &&
+      !create.includes('.eq("slug"') &&
+      /throw new CustomerFacingError\(\s*`A page for \$\{city\} already exists/.test(create),
+  );
+  const run = coach.slice(coach.indexOf("export const runCoachAction"));
+  const branch = run.indexOf('if (data.actionType === "create_city_page")');
+  t("the core branch comes before any key resolution", branch > 0 && branch < run.indexOf("getWorkspaceSecretWithSource"));
+  t("the core branch comes before any platform metering", branch < run.indexOf("reservePlatformAi"));
+  t(
+    "the core branch neither reserves nor settles platform AI",
+    !run.slice(branch, run.indexOf("getWorkspaceSecretWithSource")).includes("PlatformAi"),
+  );
+  t(
+    "the core branch still writes the coach_action_log row",
+    (run.match(/await logAction\(errorMessage, result\);/g) ?? []).length === 2 &&
+      run.includes('from("coach_action_log")'),
+  );
+  t(
+    "the core branch throws only a customer message",
+    /errorMessage = customerMessage\(e, GENERATION_UNAVAILABLE_MESSAGE\);/.test(run.slice(branch)),
+  );
+  t("the gateway switch no longer has a create_city_page case", !/case "create_city_page"/.test(run));
+  t(
+    "internal-link counting matches the /a/ links the prompt asks for",
+    coach.includes("/\\]\\(\\/a\\//g") && !coach.includes("/\\]\\(\\/p\\//g"),
+  );
+  const cron = read("supabase/functions/coach-briefing-cron/index.ts");
+  t("the briefing cron points at /a/, not /p/", cron.includes("Start with /a/${") && !cron.includes("/p/"));
+}
+
+console.log("\n=== approveOpportunity: idempotent and guarded ===");
+{
+  const opp = read("src/lib/opportunities.functions.ts");
+  const approve = opp.slice(opp.indexOf("export const approveOpportunity"), opp.indexOf("export const skipOpportunity"));
+  t("approveOpportunity was found", approve.length > 0);
+  t("the opportunity id is the generation request id", approve.includes("generationRequestId: opp.id,"));
+  t(
+    "the 'generating' transition is guarded against in-flight and finished states and reports its rows",
+    /status: "generating",[\s\S]*?\.eq\("id", data\.id\)\s*\.eq\("workspace_id", data\.workspaceId\)\s*\.not\("status", "in", "\(generating,draft_ready,published\)"\)\s*\.select\("id"\)/.test(
+      approve,
+    ),
+  );
+  t(
+    "zero rows matched is refused with the exact message",
+    /if \(!moved \|\| moved\.length === 0\) \{\s*return \{\s*ok: false as const,\s*error: "This opportunity is already being generated or has a page\.",/.test(
+      approve,
+    ),
+  );
+  t("the guard precedes generation", approve.indexOf(".not(\"status\", \"in\"") < approve.indexOf("runQuickPage("));
+  t("it calls the pipeline directly, through the schema", approve.includes("QuickPageInputSchema.parse({") && !approve.includes("createQuickPage"));
+  t("a generation failure reports only a customer message", /customerMessage\(e, GENERATION_UNAVAILABLE_MESSAGE\)/.test(approve));
 }
 
 console.log("\n=== UI copy and wiring ===");
@@ -1011,7 +1613,7 @@ console.log("\n=== UI copy and wiring ===");
   t("given-up cities cannot be selected", genUi.includes("!t.attemptsExhausted"));
 }
 
-console.log("\n=== migration text ===");
+console.log("\n=== migration text (000300) ===");
 {
   const sql = read("supabase/migrations/20260923000300_generation_jobs.sql");
   t(
@@ -1103,6 +1705,190 @@ console.log("\n=== migration text ===");
   );
 }
 
+console.log("\n=== migration text (000600: settlement + reservations) ===");
+{
+  const sql = read(MIGRATION_600);
+  t(
+    "the settlement index is partial over the two generation ref types with a non-null ref id",
+    /CREATE UNIQUE INDEX IF NOT EXISTS credit_ledger_generation_settlement_uidx\s+ON public\.credit_ledger \(workspace_id, ref_id\)\s+WHERE reason = 'ai_usage'\s+AND ref_type IN \('batch_generation','quick_page'\)\s+AND ref_id IS NOT NULL;/.test(
+      sql,
+    ),
+  );
+  t(
+    "the index predicate never covers coach-chat (ref_type 'coach') or ai-proxy (ref_id NULL)",
+    !/ref_type IN \([^)]*'coach'/.test(sql) && /ref_id IS NOT NULL/.test(sql),
+  );
+
+  const settleFn = sql.slice(
+    sql.indexOf("CREATE OR REPLACE FUNCTION public.settle_generation_free_quota"),
+    sql.indexOf("REVOKE EXECUTE ON FUNCTION public.settle_generation_free_quota"),
+  );
+  t("settle_generation_free_quota was found", settleFn.length > 0);
+  t(
+    "its signature is (workspace uuid, ref_type text, ref_id text, ai_model text default null) returning int",
+    /public\.settle_generation_free_quota\(\s*_workspace_id uuid,\s*_ref_type text,\s*_ref_id text,\s*_ai_model text DEFAULT NULL\s*\)\s*RETURNS int/.test(
+      settleFn,
+    ),
+  );
+  t(
+    "it is SECURITY DEFINER with a pinned search_path",
+    /LANGUAGE plpgsql\s+SECURITY DEFINER\s+SET search_path = public/.test(settleFn),
+  );
+  t(
+    "it carries the same membership guard as consume_platform_ai_credit",
+    settleFn.includes(
+      "IF auth.uid() IS NOT NULL AND NOT public.is_workspace_member(_workspace_id, auth.uid()) THEN",
+    ) && settleFn.includes("RAISE EXCEPTION 'forbidden' USING ERRCODE = '42501'"),
+  );
+  t(
+    "it refuses a ref_type outside the two generation features and a NULL ref_id (22023)",
+    /_ref_type NOT IN \('batch_generation','quick_page'\)/.test(settleFn) &&
+      /IF _ref_id IS NULL THEN/.test(settleFn) &&
+      (settleFn.match(/USING ERRCODE = '22023'/g) ?? []).length === 2,
+  );
+  const ledgerInsert = settleFn.indexOf("INSERT INTO public.credit_ledger");
+  const quotaUpdate = settleFn.indexOf("UPDATE public.workspace_ai_quota");
+  const quotaSeed = settleFn.indexOf("INSERT INTO public.workspace_ai_quota");
+  t(
+    "the ledger row is inserted BEFORE the quota is seeded or decremented",
+    ledgerInsert > 0 && ledgerInsert < quotaSeed && quotaSeed < quotaUpdate,
+  );
+  t(
+    "the ledger row is delta 0, reason ai_usage, with the model, ref and free-quota metadata",
+    /VALUES \(\s*_workspace_id, 0, 'ai_usage', _ai_model, _ref_type, _ref_id,\s*jsonb_build_object\('provider', 'platform', 'billing', 'free_quota', 'feature', _ref_type\)\s*\)/.test(
+      settleFn,
+    ),
+  );
+  t(
+    "the quota decrement is the consume_platform_ai_credit one",
+    settleFn.includes("SET platform_credits_remaining = platform_credits_remaining - 1,") &&
+      settleFn.includes("lifetime_platform_used = lifetime_platform_used + 1") &&
+      settleFn.includes("AND platform_credits_remaining > 0") &&
+      settleFn.includes("RETURNING platform_credits_remaining INTO v_remaining"),
+  );
+  t(
+    "an exhausted quota raises platform_ai_quota_exhausted (P0001), rolling the ledger row back",
+    /IF v_remaining IS NULL THEN[\s\S]*?RAISE EXCEPTION 'platform_ai_quota_exhausted' USING ERRCODE = 'P0001';/.test(
+      settleFn,
+    ) && settleFn.includes("RETURN v_remaining;"),
+  );
+  t(
+    "settle_generation_free_quota is service-role only",
+    sql.includes(
+      "REVOKE EXECUTE ON FUNCTION public.settle_generation_free_quota(uuid, text, text, text) FROM PUBLIC, anon, authenticated;",
+    ) &&
+      sql.includes(
+        "GRANT EXECUTE ON FUNCTION public.settle_generation_free_quota(uuid, text, text, text) TO service_role;",
+      ),
+  );
+
+  t(
+    "generation_reservations: (workspace_id, request_id) primary key, cascade on workspace delete",
+    /CREATE TABLE IF NOT EXISTS public\.generation_reservations \(\s*workspace_id uuid NOT NULL REFERENCES public\.workspaces\(id\) ON DELETE CASCADE,\s*request_id uuid NOT NULL,\s*created_at timestamptz NOT NULL DEFAULT now\(\),\s*PRIMARY KEY \(workspace_id, request_id\)\s*\);/.test(
+      sql,
+    ),
+  );
+  t(
+    "generation_reservations: indexed by workspace and recency",
+    /CREATE INDEX IF NOT EXISTS generation_reservations_ws_created_idx\s+ON public\.generation_reservations \(workspace_id, created_at DESC\);/.test(
+      sql,
+    ),
+  );
+  t(
+    "generation_reservations: RLS on, no policies, anon and authenticated revoked",
+    sql.includes("ALTER TABLE public.generation_reservations ENABLE ROW LEVEL SECURITY;") &&
+      sql.includes("REVOKE ALL ON public.generation_reservations FROM anon, authenticated;") &&
+      !/CREATE POLICY[^;]*ON public\.generation_reservations/.test(sql),
+  );
+
+  const consumedFn = sql.slice(
+    sql.indexOf("CREATE OR REPLACE FUNCTION public.generation_consumed_last_24h"),
+    sql.indexOf("REVOKE EXECUTE ON FUNCTION public.generation_consumed_last_24h"),
+  );
+  t(
+    "generation_consumed_last_24h is SQL, STABLE, SECURITY DEFINER with a pinned search_path",
+    /\(\s*_workspace_id uuid,\s*_exclude_item_id uuid DEFAULT NULL\s*\)\s*RETURNS int\s+LANGUAGE sql\s+STABLE\s+SECURITY DEFINER\s+SET search_path = public/.test(
+      consumedFn,
+    ),
+  );
+  t(
+    "generation_consumed_last_24h is service-role only",
+    sql.includes(
+      "REVOKE EXECUTE ON FUNCTION public.generation_consumed_last_24h(uuid, uuid) FROM PUBLIC, anon, authenticated;",
+    ) &&
+      sql.includes(
+        "GRANT EXECUTE ON FUNCTION public.generation_consumed_last_24h(uuid, uuid) TO service_role;",
+      ),
+  );
+
+  const reserveFn = sql.slice(
+    sql.indexOf("CREATE OR REPLACE FUNCTION public.reserve_generation_slot"),
+    sql.indexOf("REVOKE EXECUTE ON FUNCTION public.reserve_generation_slot"),
+  );
+  t(
+    "reserve_generation_slot is (workspace uuid, request uuid, cap int) returning boolean, plpgsql SECURITY DEFINER",
+    /\(\s*_workspace_id uuid,\s*_request_id uuid,\s*_cap int\s*\)\s*RETURNS boolean\s+LANGUAGE plpgsql\s+SECURITY DEFINER\s+SET search_path = public/.test(
+      reserveFn,
+    ),
+  );
+  const lockAt = reserveFn.indexOf(
+    "PERFORM pg_advisory_xact_lock(hashtext('generation_cap:' || _workspace_id::text));",
+  );
+  const existsAt = reserveFn.indexOf("IF EXISTS (SELECT 1 FROM public.generation_reservations");
+  const countAt = reserveFn.indexOf("public.generation_consumed_last_24h(_workspace_id, NULL)");
+  const insertAt = reserveFn.indexOf("INSERT INTO public.generation_reservations (workspace_id, request_id)");
+  t(
+    "it takes the per-workspace advisory lock first, then checks for its own reservation, then counts, then inserts",
+    lockAt > 0 && lockAt < existsAt && existsAt < countAt && countAt < insertAt,
+  );
+  t("a replay keeps its slot (returns true before counting)", /IF EXISTS \(SELECT 1 FROM public\.generation_reservations\s+WHERE workspace_id = _workspace_id AND request_id = _request_id\) THEN\s+RETURN true;/.test(reserveFn));
+  t(
+    "the cap comparison never goes negative and refuses at the cap",
+    /IF v_consumed >= GREATEST\(COALESCE\(_cap, 0\), 0\) THEN\s+RETURN false;/.test(reserveFn),
+  );
+  t(
+    "reserve_generation_slot is service-role only",
+    sql.includes(
+      "REVOKE EXECUTE ON FUNCTION public.reserve_generation_slot(uuid, uuid, int) FROM PUBLIC, anon, authenticated;",
+    ) &&
+      sql.includes(
+        "GRANT EXECUTE ON FUNCTION public.reserve_generation_slot(uuid, uuid, int) TO service_role;",
+      ),
+  );
+
+  t(
+    "tenant_pages gains a nullable generation_billing_mode",
+    /ALTER TABLE public\.tenant_pages ADD COLUMN IF NOT EXISTS generation_billing_mode text;/.test(sql),
+  );
+  t(
+    "generation_billing_mode is constrained to byok / granted / platform (guarded, idempotent)",
+    /IF NOT EXISTS \(SELECT 1 FROM pg_constraint\s+WHERE conname = 'tenant_pages_generation_billing_mode_check'\)/.test(sql) &&
+      /CHECK \(generation_billing_mode IN \('byok','granted','platform'\)\)/.test(sql),
+  );
+  t(
+    "verification covers the index, the ordering inside the settle function, the lock, the sources, the grants and the column",
+    [
+      "'settlement index present with the generation predicate'",
+      "'settle_generation_free_quota: service_role only'",
+      "'settle_generation_free_quota: membership guard present'",
+      "'settle_generation_free_quota: ledger row inserted before the quota update'",
+      "'generation_reservations: RLS on, no policies'",
+      "'generation_consumed_last_24h: service_role only'",
+      "'generation_consumed_last_24h: counts items, quick pages and held reservations'",
+      "'reserve_generation_slot: service_role only'",
+      "'reserve_generation_slot: takes the per-workspace advisory lock before counting'",
+      "'tenant_pages.generation_billing_mode present'",
+      "'tenant_pages.generation_billing_mode constrained to byok / granted / platform'",
+    ].every((s) => sql.includes(s)),
+  );
+  t(
+    "ends with the verification block",
+    /SELECT 'settlement index present with the generation predicate' AS check,[\s\S]*UNION ALL SELECT 'tenant_pages\.generation_billing_mode constrained/.test(
+      sql,
+    ) && sql.trimEnd().endsWith(";"),
+  );
+}
+
 console.log("\n=== rollback text ===");
 {
   const sql = read("supabase/rollback/20260923000300_generation_jobs_rollback.sql");
@@ -1121,6 +1907,47 @@ console.log("\n=== rollback text ===");
   );
   t("verifies the column is gone", /column_name='generation_request_id'/.test(sql));
   t("never drops tenant_pages", !/DROP TABLE[^;]*tenant_pages/.test(sql));
+
+  const rb = read(ROLLBACK_600);
+  t(
+    "000600 rollback drops the two RPCs and the count function by full signature",
+    rb.includes("DROP FUNCTION IF EXISTS public.reserve_generation_slot(uuid, uuid, int);") &&
+      rb.includes("DROP FUNCTION IF EXISTS public.generation_consumed_last_24h(uuid, uuid);") &&
+      rb.includes("DROP FUNCTION IF EXISTS public.settle_generation_free_quota(uuid, text, text, text);"),
+  );
+  t(
+    "000600 rollback drops the reservations table, the settlement index and the column",
+    rb.includes("DROP TABLE IF EXISTS public.generation_reservations;") &&
+      rb.includes("DROP INDEX IF EXISTS public.credit_ledger_generation_settlement_uidx;") &&
+      rb.includes("ALTER TABLE public.tenant_pages DROP COLUMN IF EXISTS generation_billing_mode;"),
+  );
+  t("000600 rollback says it must be paired with a code rollback", /PAIR THIS WITH A CODE ROLLBACK/.test(rb));
+  t(
+    "000600 rollback says it forgets free-quota settlement records (a retry could re-settle)",
+    /forgets: free-quota settlement records/.test(rb) && /settle a free-quota page a second time/.test(rb),
+  );
+  t("000600 rollback never drops tenant_pages or credit_ledger", !/DROP TABLE[^;]*(tenant_pages|credit_ledger)/.test(rb));
+  t(
+    "000600 rollback ends with a VERIFY query over functions, table, index and column",
+    /-- VERIFY \(rolled back\): expect 0 rows/.test(rb) &&
+      rb.indexOf("-- VERIFY") > rb.indexOf("COMMIT;") &&
+      /table_name='generation_reservations'/.test(rb) &&
+      /indexname='credit_ledger_generation_settlement_uidx'/.test(rb) &&
+      /column_name='generation_billing_mode'/.test(rb) &&
+      /'settle_generation_free_quota','reserve_generation_slot','generation_consumed_last_24h'/.test(rb),
+  );
+  const readme = read("supabase/rollback/README.md");
+  t("rollback README lists 000600 in the apply order", /000500 → 000600/.test(readme));
+  t(
+    "rollback README verifies 000600 (index, grants, table, column)",
+    readme.includes("-- 000600:") &&
+      readme.includes("credit_ledger_generation_settlement_uidx") &&
+      readme.includes("'public.settle_generation_free_quota(uuid,text,text,text)'") &&
+      readme.includes("'public.reserve_generation_slot(uuid,uuid,int)'") &&
+      readme.includes("'public.generation_consumed_last_24h(uuid,uuid)'") &&
+      readme.includes("public.generation_reservations") &&
+      readme.includes("column_name='generation_billing_mode'"),
+  );
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

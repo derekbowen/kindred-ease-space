@@ -1,16 +1,21 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { creditsForUsage } from "@/lib/ai-pricing";
+import { CustomerFacingError } from "@/lib/generation.server";
 
 /**
  * Server-only metering for AI paths that spend the PLATFORM key (i.e. when a
  * workspace has not configured its own BYOK key). Mirrors the accounting in the
  * ai-proxy edge function so no authenticated tool can burn platform AI budget
  * uncapped: spend the free trial quota first, then purchased credits, and refuse
- * (no hard cap — just "top up") when the balance is empty.
+ * when the balance is empty. Credit packs are not for sale, so the refusal
+ * points at support, not at a purchase.
  *
  * NEVER import from client code.
  */
 export type PlatformBilling = "free_quota" | "credits";
+
+export const OUT_OF_INCLUDED_AI_MESSAGE =
+  "This workspace has used up its included AI generation. Contact support to continue using this tool.";
 
 export async function reservePlatformAi(workspaceId: string): Promise<PlatformBilling> {
   const { error: qErr } = await supabaseAdmin.rpc("consume_platform_ai_credit", {
@@ -24,7 +29,7 @@ export async function reservePlatformAi(workspaceId: string): Promise<PlatformBi
       .eq("workspace_id", workspaceId)
       .maybeSingle();
     if (!bal || (bal.balance ?? 0) <= 0) {
-      throw new Error("Out of AI credits. Top up in Billing to keep using this tool.");
+      throw new CustomerFacingError(OUT_OF_INCLUDED_AI_MESSAGE);
     }
     return "credits";
   }
