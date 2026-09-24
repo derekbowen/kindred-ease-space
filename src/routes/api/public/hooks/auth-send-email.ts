@@ -34,6 +34,7 @@ import {
   type EmailAction,
 } from "@/lib/auth-email-hook";
 import { sendEmail } from "@/lib/email.server";
+import { classifyRecipient } from "@/lib/email-recipient-policy";
 
 export const Route = createFileRoute("/api/public/hooks/auth-send-email")({
   server: {
@@ -79,6 +80,24 @@ export const Route = createFileRoute("/api/public/hooks/auth-send-email")({
             : payload?.user?.email;
         if (!to) {
           return new Response(JSON.stringify({ error: "no recipient" }), { status: 400 });
+        }
+
+        // Reserved / automated-test recipients never get mail. Answer 200 with
+        // an empty body so GoTrue treats the message as sent and the signup
+        // itself completes (smoke tests only need the "check your email"
+        // screen); the address could not receive anything anyway, and each
+        // attempt bounced at Emailit (2026-09-24 incident). sendEmail() has
+        // the same guard — this one keeps the hook from even building copy.
+        const verdict = classifyRecipient(to);
+        if (!verdict.deliverable) {
+          const domain = verdict.address.slice(verdict.address.lastIndexOf("@") + 1);
+          console.warn(
+            `[auth-send-email] suppressed ${action} email to reserved/test recipient @${domain} (${verdict.reason})`,
+          );
+          return new Response(JSON.stringify({}), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
         }
 
         const url = verifyUrl(payload?.email_data ?? {}, process.env.SUPABASE_URL ?? "");

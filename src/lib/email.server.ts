@@ -2,6 +2,7 @@
 // Docs: https://emailit.com/docs/api-reference/
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { describeBlocked, partitionRecipients } from "@/lib/email-recipient-policy";
 
 const EMAILIT_API_URL = "https://api.emailit.com/v2/emails";
 
@@ -78,9 +79,35 @@ export interface SendEmailResult {
   id?: string;
   error?: string;
   status?: number;
+  /**
+   * True when nothing was handed to Emailit because every recipient is a
+   * reserved/test address (see email-recipient-policy.ts). Reported as ok so
+   * callers treat it like a delivered message — the customer-facing flow
+   * (signup, welcome) must not fail over mail nobody could ever receive.
+   */
+  suppressed?: boolean;
 }
 
 export async function sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
+  // RECIPIENT POLICY FIRST — before the API key, before any network. A
+  // reserved or automated-test address (smoke…@example.com and friends) must
+  // never reach Emailit: every such delivery bounces and burns the sending
+  // domain's reputation (2026-09-24 incident). Mixed lists lose only the
+  // blocked entries; an all-blocked list is reported as suppressed, not sent.
+  const { deliverable, blocked } = partitionRecipients(params.to);
+  if (blocked.length > 0) {
+    console.warn(
+      "[email] suppressed reserved/test recipient(s):",
+      blocked.map(describeBlocked).join(", "),
+      "subject:",
+      params.subject,
+    );
+  }
+  if (deliverable.length === 0) {
+    return { ok: true, suppressed: true };
+  }
+  const to: string | string[] = Array.isArray(params.to) ? deliverable : deliverable[0]!;
+
   const apiKey = process.env.EMAILIT_API_KEY;
   if (!apiKey) {
     console.error("[email] EMAILIT_API_KEY not configured");
@@ -91,7 +118,7 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
 
   const body: Record<string, unknown> = {
     from,
-    to: params.to,
+    to,
     subject: params.subject,
   };
   if (params.html) body.html = params.html;

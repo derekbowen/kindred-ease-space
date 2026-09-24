@@ -10,19 +10,15 @@ name: E2E Smoke
 #   SUPABASE_TEST_PASSWORD  — password for that account
 
 
+# SCHEDULE DISABLED 2026-09-24 (Emailit bounce containment).
+# Every scheduled run signed up smoke<ts>@example.com on production and the
+# confirmation email bounced at Emailit — two bounces per six-hour window for
+# weeks. The `schedule` and `push` triggers are gone; this runs by hand only.
+# The app now refuses to email reserved/test addresses at all
+# (src/lib/email-recipient-policy.ts), so a manual run is harmless, but do not
+# re-add a schedule without a non-bouncing recipient strategy.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "17 */6 * * *" # every 6 hours
-  push:
-    branches: [main]
-    paths:
-      - "src/routes/_authenticated/**"
-      - "src/lib/workspace.functions.ts"
-      - "src/routes/signup.tsx"
-      - "src/routes/login.tsx"
-      - "tests/e2e/**"
-      - ".github/workflows/smoke.yml"
 
 jobs:
   smoke:
