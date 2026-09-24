@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { decideCapacity } from "@/lib/billing-capacity";
 import { readGrantedPagesOrNull } from "@/lib/entitlement-grants.server";
 import { buildListingCounter, isThinPage, type ListingLocation } from "@/lib/thin-page";
+import { isPublicPageSlug } from "@/lib/public-page-slug";
 
 const sb = () => supabaseAdmin as any;
 
@@ -128,6 +129,49 @@ export async function workspaceIdForHost(hostname: string): Promise<string | nul
 }
 
 /**
+ * PostgREST caps every response at the project's max-rows — the Supabase
+ * default of 1000 — silently, whatever `.limit()` asked for. One read of a
+ * catalogue larger than that came back short on every fetch, so the listings
+ * never looked complete and the thin-page filter below was skipped for
+ * exactly the workspaces with the most pages. The read is paged instead:
+ * `fetchChunk` is asked for [from, to] (a `.range()`), the `count` it returns
+ * says when everything has been collected, and LISTING_MAX_CHUNKS bounds the
+ * work. A chunk error ends the read and is reported the way the single read's
+ * error was, with the rows collected so far, so the caller's fail-open rule
+ * is unchanged: an error, or fewer rows than the count, means incomplete.
+ */
+export const LISTING_CHUNK_SIZE = 1000;
+export const LISTING_MAX_CHUNKS = 50;
+
+export type ChunkRead<T> = {
+  data: T[] | null;
+  error: { message: string } | null;
+  count: number | null;
+};
+
+export async function readInChunks<T>(
+  fetchChunk: (from: number, to: number) => Promise<ChunkRead<T>>,
+  { chunkSize = LISTING_CHUNK_SIZE, maxChunks = LISTING_MAX_CHUNKS } = {},
+): Promise<ChunkRead<T>> {
+  const rows: T[] = [];
+  let count: number | null = null;
+  for (let chunk = 0; chunk < maxChunks; chunk++) {
+    // From where the rows actually stopped, not where the chunk was meant to
+    // end, so a server capped below chunkSize is still paged completely.
+    const from = rows.length;
+    const res = await fetchChunk(from, from + chunkSize - 1);
+    if (res.count != null) count = res.count;
+    if (res.error) return { data: rows, error: res.error, count };
+    const got = res.data ?? [];
+    rows.push(...got);
+    if (got.length === 0) break;
+    // Done when the count says so; without one, a short chunk is the end.
+    if (count != null ? rows.length >= count : got.length < chunkSize) break;
+  }
+  return { data: rows, error: null, count };
+}
+
+/**
  * Tenant page sitemap XML for a host. Returns null when the host is not a
  * verified tenant host (caller should fall back to the platform sitemap), or an
  * (possibly empty) <urlset> string when it is.
@@ -177,10 +221,11 @@ export async function tenantSitemapXml(hostname: string): Promise<string | null>
   const h = requestHost(hostname);
 
   // body_markdown and listing_filter ride along with each page, and the
-  // workspace's published listings come in one read: together they let the
-  // sitemap apply the page's own thin-page rule (below) without a count query
-  // per page. Bodies are the largest part of the payload; page counts are
-  // bounded by plan capacity, and this response is cached for an hour.
+  // workspace's published listings come in as many 1000-row reads as the
+  // catalogue needs (readInChunks): together they let the sitemap apply the
+  // page's own thin-page rule (below) without a count query per page. Bodies
+  // are the largest part of the payload; page counts are bounded by plan
+  // capacity, and this response is cached for an hour.
   const [{ data: tenantPages }, { data: legacyPages }, listingsRead] = await Promise.all([
     sb()
       .from("tenant_pages")
@@ -197,12 +242,16 @@ export async function tenantSitemapXml(hostname: string): Promise<string | null>
       .eq("in_sitemap", true)
       .order("updated_at", { ascending: false })
       .limit(50_000),
-    sb()
-      .from("tenant_listings")
-      .select("city, state, category", { count: "exact" })
-      .eq("workspace_id", workspaceId)
-      .eq("state_published", true)
-      .limit(50_000),
+    readInChunks<ListingLocation>((from, to) =>
+      sb()
+        .from("tenant_listings")
+        .select("city, state, category", { count: "exact" })
+        .eq("workspace_id", workspaceId)
+        .eq("state_published", true)
+        // Paging is only stable over a fixed order.
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
   ]);
 
   // THE THIN-PAGE RULE, applied here too. a.$slug.tsx renders a page with no
@@ -211,9 +260,10 @@ export async function tenantSitemapXml(hostname: string): Promise<string | null>
   // which Search Console reports as an error against the whole sitemap.
   //
   // Fails OPEN, like everything else on this path: if the listings read
-  // errored, or was cut short by the API row cap so some pages' listings were
-  // never seen, every page would look empty and a paying customer's sitemap
-  // would shrink over a transient. Then the filter is skipped, not guessed.
+  // errored, or stopped short of its count (a chunk failed, or the catalogue
+  // outgrew LISTING_MAX_CHUNKS reads) so some pages' listings were never seen,
+  // every page would look empty and a paying customer's sitemap would shrink
+  // over a transient. Then the filter is skipped, not guessed.
   const listingRows = (listingsRead.data ?? []) as ListingLocation[];
   const listingsComplete =
     !listingsRead.error &&
@@ -234,7 +284,9 @@ export async function tenantSitemapXml(hostname: string): Promise<string | null>
     ...(legacyPages || []).map((p: any) => ({ ...p, legacy: true })),
   ].filter((p: any) => {
     const slug = String(p.slug || "").replace(/^\/+/, "");
-    if (!slug || seen.has(slug)) return false;
+    // A slug the page route refuses (isPublicPageSlug) would only ever 404;
+    // never advertise it.
+    if (!slug || !isPublicPageSlug(slug) || seen.has(slug)) return false;
     // Claimed before the thin test: the page path serves the first match for
     // a slug, so a thin tenant page must not let a legacy twin take its place.
     seen.add(slug);

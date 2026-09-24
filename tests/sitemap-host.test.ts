@@ -10,7 +10,7 @@
  *
  * Run: bun tests/sitemap-host.test.ts
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   requestHost,
@@ -18,9 +18,17 @@ import {
   isPlatformHost,
   escapeXml,
   preferredHostMatch,
+  readInChunks,
+  LISTING_CHUNK_SIZE,
+  LISTING_MAX_CHUNKS,
   type HostMatch,
 } from "../src/lib/sitemap.server";
 import { isThinPage, buildListingCounter, THIN_PAGE_MIN_BODY_CHARS } from "../src/lib/thin-page";
+import { isPublicPageSlug, PUBLIC_PAGE_SLUG_RE } from "../src/lib/public-page-slug";
+import {
+  isPublicPageSlug as pageRouteIsPublicPageSlug,
+  PUBLIC_PAGE_SLUG_RE as PAGE_ROUTE_PUBLIC_PAGE_SLUG_RE,
+} from "../src/lib/public-tenant-page.functions";
 
 let pass = 0, fail = 0;
 const failed: string[] = [];
@@ -182,6 +190,146 @@ console.log("\n=== listing counts per page filter, matched the way the page quer
   t("a fully specified miss is 0", count({ city: "Dallas", state: "TX", category: "pool" }) === 0);
   t("non-string filter values are stringified", count({ city: 42 as unknown }) === 0);
   t("an empty catalogue counts nothing", buildListingCounter([])({}) === 0 && buildListingCounter([])({ city: "x" }) === 0);
+}
+
+console.log("\n=== the listings read is paged past the API row cap (B4) ===");
+{
+  // PostgREST returns at most max-rows (the Supabase default, 1000) per
+  // request, whatever .limit() asked for. A workspace with more published
+  // listings than that got a short read on every fetch, so listingsComplete
+  // was always false: the thin-page filter was skipped and an error logged,
+  // for exactly the workspaces with the most pages.
+  t("chunks are 1000 rows: the PostgREST default max-rows", LISTING_CHUNK_SIZE === 1000);
+  t("at most 50 chunks are read", LISTING_MAX_CHUNKS === 50);
+  type Row = { id: number };
+  const catalogue = (n: number): Row[] => Array.from({ length: n }, (_, i) => ({ id: i }));
+  // Serves a catalogue the way PostgREST does: `count` is the total, a range
+  // returns at most `cap` rows.
+  const serve = (all: Row[], cap = 1000) => {
+    const ranges: Array<[number, number]> = [];
+    const fetchChunk = async (from: number, to: number) => {
+      ranges.push([from, to]);
+      return { data: all.slice(from, Math.min(to + 1, from + cap)), error: null, count: all.length };
+    };
+    return { ranges, fetchChunk };
+  };
+  {
+    const { ranges, fetchChunk } = serve(catalogue(2500));
+    const r = await readInChunks(fetchChunk);
+    t("2500 listings are collected in full, with the count", r.error === null && r.count === 2500 && r.data?.length === 2500, `${r.data?.length} of ${r.count}`);
+    t("…in three ranges of 1000, stopping at the count",
+      JSON.stringify(ranges) === JSON.stringify([[0, 999], [1000, 1999], [2000, 2999]]), JSON.stringify(ranges));
+    t("…every row exactly once", new Set(r.data!.map((x) => x.id)).size === 2500);
+  }
+  {
+    const { ranges, fetchChunk } = serve(catalogue(1000));
+    const r = await readInChunks(fetchChunk);
+    t("exactly 1000 listings need one read, no probing for more", r.data?.length === 1000 && ranges.length === 1, String(ranges.length));
+  }
+  {
+    const { ranges, fetchChunk } = serve(catalogue(999));
+    const r = await readInChunks(fetchChunk);
+    t("999 listings need one read", r.data?.length === 999 && ranges.length === 1);
+  }
+  {
+    const { ranges, fetchChunk } = serve(catalogue(0));
+    const r = await readInChunks(fetchChunk);
+    t("an empty catalogue is one read of nothing", r.data?.length === 0 && r.count === 0 && ranges.length === 1);
+  }
+  {
+    const { ranges, fetchChunk } = serve(catalogue(3000), 500);
+    const r = await readInChunks(fetchChunk);
+    t("a server capped below the chunk size is paged from where each read stopped",
+      r.data?.length === 3000 && ranges.length === 6 && ranges[1]![0] === 500, JSON.stringify(ranges));
+  }
+  {
+    const { ranges, fetchChunk } = serve(catalogue(60_000));
+    const r = await readInChunks(fetchChunk);
+    t("the hard stop: 50 chunks, then the read is reported short of its count",
+      ranges.length === 50 && r.data?.length === 50_000 && r.count === 60_000 && r.error === null, `${ranges.length} chunks, ${r.data?.length} of ${r.count}`);
+    t("…which is exactly the sitemap's fail-open condition (count > rows)", !(r.count == null || r.count <= r.data!.length));
+  }
+  {
+    let n = 0;
+    const all = catalogue(2500);
+    const r = await readInChunks(async (from, to) => {
+      n++;
+      if (n === 2) return { data: null, error: { message: "boom" }, count: 2500 };
+      return { data: all.slice(from, to + 1), error: null, count: 2500 };
+    });
+    t("a failing chunk stops the read and reports the error", n === 2 && r.error?.message === "boom");
+    t("…with the rows collected so far and the count, so the caller fails open", r.data?.length === 1000 && r.count === 2500 && r.error !== null);
+  }
+  {
+    const all = catalogue(1500);
+    const r = await readInChunks(async (from, to) => ({ data: all.slice(from, to + 1), error: null, count: null }));
+    t("without a count, a short chunk ends the read", r.data?.length === 1500 && r.count === null);
+  }
+  {
+    const { ranges, fetchChunk } = serve(catalogue(25), 10);
+    const r = await readInChunks(fetchChunk, { chunkSize: 10, maxChunks: 2 });
+    t("chunk size and hard stop are parameters of the loop", r.data?.length === 20 && ranges.length === 2 && r.count === 25);
+  }
+
+  const ROOT = join(import.meta.dir, "..");
+  const sitemap = readFileSync(join(ROOT, "src/lib/sitemap.server.ts"), "utf8");
+  const chunkedAt = sitemap.indexOf("readInChunks<ListingLocation>((from, to) =>");
+  const listingsAt = sitemap.indexOf('.from("tenant_listings")');
+  const rangeAt = sitemap.indexOf(".range(from, to)");
+  t("the sitemap's listings read goes through readInChunks with a .range() per chunk", chunkedAt > 0 && listingsAt > chunkedAt && rangeAt > listingsAt);
+  const listingQuery = sitemap.slice(listingsAt, rangeAt);
+  t("…over a fixed order, so chunks neither overlap nor skip", /\.order\("id", \{ ascending: true \}\)/.test(listingQuery));
+  t("…keeping the workspace and published filters", /\.eq\("workspace_id", workspaceId\)\s*\.eq\("state_published", true\)/.test(listingQuery));
+  t("…and no longer trusting a .limit() the API would cap anyway", !/\.limit\(/.test(listingQuery));
+  t("the completeness rule is unchanged: an error or fewer rows than the count fails open",
+    /listingsComplete =\s*!listingsRead\.error &&\s*\(listingsRead\.count == null \|\| listingsRead\.count <= listingRows\.length\);/.test(sitemap));
+  t("…and the incomplete case is still logged", /listings read incomplete, skipping the thin-page filter/.test(sitemap));
+}
+
+console.log("\n=== the sitemap never advertises a slug the page route refuses (B5) ===");
+{
+  // getPublicTenantPage refuses anything outside PUBLIC_PAGE_SLUG_RE before it
+  // touches a query. A sitemap that lists such a slug sends Google to a URL
+  // that can only 404.
+  const ROOT = join(import.meta.dir, "..");
+  const PURE = join(ROOT, "src/lib/public-page-slug.ts");
+  t("the rule lives in a pure module", existsSync(PURE));
+  const pure = existsSync(PURE) ? readFileSync(PURE, "utf8") : "";
+  t("…with no imports of its own", !/^\s*import /m.test(pure));
+  t("…defining the regex and the predicate",
+    /export const PUBLIC_PAGE_SLUG_RE = \/\^\[a-z0-9-\]\{1,200\}\$\/;/.test(pure) && /export function isPublicPageSlug\(slug: string\): boolean/.test(pure));
+  t("the page route re-exports the very same rule (existing imports keep working)",
+    pageRouteIsPublicPageSlug === isPublicPageSlug && PAGE_ROUTE_PUBLIC_PAGE_SLUG_RE === PUBLIC_PAGE_SLUG_RE);
+  const pageSrc = readFileSync(join(ROOT, "src/lib/public-tenant-page.functions.ts"), "utf8");
+  t("…and no longer defines a copy",
+    !/export const PUBLIC_PAGE_SLUG_RE = \//.test(pageSrc) && /export \{ PUBLIC_PAGE_SLUG_RE, isPublicPageSlug \} from "@\/lib\/public-page-slug";/.test(pageSrc));
+  const sitemap = readFileSync(join(ROOT, "src/lib/sitemap.server.ts"), "utf8");
+  t("the sitemap imports the predicate from the pure module", /import \{ isPublicPageSlug \} from "@\/lib\/public-page-slug";/.test(sitemap));
+  const stripAt = sitemap.indexOf('const slug = String(p.slug || "").replace(/^\\/+/, "");');
+  const filterAt = sitemap.indexOf("if (!slug || !isPublicPageSlug(slug) || seen.has(slug)) return false;");
+  t("…and filters every row (tenant and legacy) with it, right after the leading-slash strip",
+    stripAt > 0 && filterAt > stripAt && filterAt - stripAt < 250, `${stripAt} / ${filterAt}`);
+  t("…before the slug is claimed, so a refused slug never shadows a legacy twin", filterAt > 0 && filterAt < sitemap.indexOf("seen.add(slug);"));
+
+  // The filter, applied the way the sitemap applies it; yields the slug the
+  // <loc> would carry.
+  const advertised = (slugs: string[]) => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of slugs) {
+      const slug = String(raw || "").replace(/^\/+/, "");
+      if (!slug || !isPublicPageSlug(slug) || seen.has(slug)) continue;
+      seen.add(slug);
+      out.push(slug);
+    }
+    return out;
+  };
+  t("a normal slug is advertised", advertised(["austin-pools"]).length === 1);
+  t("a leading slash is stripped before the rule is applied", JSON.stringify(advertised(["/austin-pools"])) === '["austin-pools"]');
+  t("a filter-widening slug is dropped", advertised(["x,slug.neq.zzz"]).length === 0);
+  t("uppercase, dots, path separators and spaces are dropped", advertised(["Austin", "a.b", "a/b", "a b"]).length === 0);
+  t("a 201-character slug is dropped, 200 passes", advertised(["a".repeat(201)]).length === 0 && advertised(["a".repeat(200)]).length === 1);
+  t("a duplicate is still dropped", advertised(["a", "/a"]).length === 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
