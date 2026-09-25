@@ -2,7 +2,7 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
-import { withSecurityHeaders } from "./lib/security-headers";
+import { platformRedirectFor, withSecurityHeaders } from "./lib/security-headers";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -70,6 +70,15 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     const url = new URL(request.url);
+    // Platform hosts only: http → https and apex → www, one permanent hop.
+    // Customer domains, hooks and non-GET requests are never redirected.
+    const redirectTo = platformRedirectFor(url, request.method, request.headers);
+    if (redirectTo) {
+      return withSecurityHeaders(
+        new Response(null, { status: 301, headers: { Location: redirectTo } }),
+        url,
+      );
+    }
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
