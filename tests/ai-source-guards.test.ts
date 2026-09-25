@@ -167,6 +167,7 @@ const SERVER_FNS: Array<{ file: string; name: string; validator: RegExp; guard: 
   { file: "src/lib/opportunities.functions.ts", name: "approveOpportunity", validator: /ApproveOpportunityInputSchema\.parse/, guard: /await assertWorkspaceOwner\(data\.workspaceId, context\.userId\);/ },
   { file: "src/lib/coach.functions.ts", name: "generateBriefingNow", validator: /GenerateBriefingInputSchema\.parse/, guard: /await assertWorkspaceMember\(data\.workspaceId, context\.userId\);[\s\S]*?return requestBriefing\(data\.workspaceId\);/ },
   { file: "src/lib/ai-byok.functions.ts", name: "testAiCredential", validator: /\.strict\(\)\.parse\(d\)/, guard: /await assertWorkspaceOwner\(data\.workspaceId, context\.userId\);/ },
+  { file: "src/lib/ai-allowance.functions.ts", name: "getAiAllowance", validator: /GetAiAllowanceInputSchema\.parse/, guard: /await assertWorkspaceMember\(data\.workspaceId, context\.userId\);\s*return await readAiAllowance\(/ },
 ];
 for (const f of SERVER_FNS) {
   const block = serverFnBlock(read(f.file), f.name);
