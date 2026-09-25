@@ -83,6 +83,13 @@ const settings = read("src/routes/_authenticated/app.settings.tsx");
 
 t("Domains: the chip is describeDomainStatus(status, verified)", /const s = describeDomainStatus\(status, verified\);/.test(domains) && /<StatusChip status=\{d\.status\} verified=\{d\.verified\} \/>/.test(domains));
 t('Domains: the old one-fact map ("Issuing SSL", "Verified") is gone', !/Issuing SSL/.test(domains) && !/STATUS_LABEL/.test(domains));
+// The DNS record must be on screen while the certificate waits for it: verify
+// provisions the edge and lands the row in ssl_pending in one request, and the
+// certificate (HTTP-validated) cannot issue until DNS points at the edge.
+const dnsBlockGuard = /\{\(d\.status === "dns_configuration_required" \|\| d\.status === "ssl_pending"\) && \(/;
+t("Domains: DNS instructions render for ssl_pending as well as dns_configuration_required", dnsBlockGuard.test(domains));
+t("Domains: no DNS block is gated on dns_configuration_required alone", !/\{d\.status === "dns_configuration_required" && \(/.test(domains));
+t("Domains: ssl_pending explains the certificate follows the DNS change", /Your security certificate is issued automatically once this record is live/.test(domains));
 t("Settings: reads the same domain rows as the Domains page", /listWorkspaceDomains/.test(settings) && /setDomainRows\(r\.rows\)/.test(settings));
 t("Settings: the badge prints domainFacts.label", /\{domainFacts\.label\}/.test(settings) && /describeDomainStatus\(domainRow\.status, domainRow\.verified\)/.test(settings));
 t('Settings: no bare "Verified" badge any more', !/<CheckCircle2 className="h-3 w-3" \/> Verified\b/.test(settings));

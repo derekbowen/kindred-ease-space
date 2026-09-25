@@ -93,7 +93,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         property: "og:description",
         content:
-          "AI-powered SEO, content factory, lead inbox and ops dashboard for Sharetribe marketplace founders.",
+          "SEO landing pages for Sharetribe marketplaces: AI-written pages built from your live listings, hosted with sitemaps and schema.",
       },
       { property: "og:type", content: "website" },
       { property: "og:site_name", content: "founders.click" },
@@ -101,7 +101,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:title", content: "founders.click — Growth engine for Sharetribe" },
       {
         name: "twitter:description",
-        content: "AI SEO + content factory + lead inbox for marketplace founders.",
+        content: "SEO landing pages for Sharetribe marketplaces, built from your live listings.",
       },
       { property: "og:image", content: canonicalUrl("/product-demo-poster.jpg") },
       { name: "twitter:image", content: canonicalUrl("/product-demo-poster.jpg") },

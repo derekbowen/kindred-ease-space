@@ -378,11 +378,25 @@ function DomainsPage() {
                 </div>
               )}
 
-              {d.status === "dns_configuration_required" && (
+              {/* Verify provisions the edge in the same request and lands the
+                  row in ssl_pending, so dns_configuration_required is almost
+                  never what the customer sees. The certificate is validated
+                  over HTTP and cannot issue until DNS points at the edge — so
+                  ssl_pending is exactly when the record must be on screen.
+                  Hiding it there left every new domain stuck on "certificate
+                  issuing" with no instruction (test.poolrentalnearme.com,
+                  2026-09-25). */}
+              {(d.status === "dns_configuration_required" || d.status === "ssl_pending") && (
                 <div className="space-y-3 rounded-md border bg-muted/30 p-3 text-sm">
                   <p className="font-medium">
                     Ownership verified ✓ — now point your DNS at the Founders edge.
                   </p>
+                  {d.status === "ssl_pending" && (
+                    <p className="text-muted-foreground">
+                      Your security certificate is issued automatically once this record is live —
+                      usually a few minutes after your DNS change takes effect.
+                    </p>
+                  )}
                   {d.connection_type === "full_proxy" && (
                     <>
                       <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">
