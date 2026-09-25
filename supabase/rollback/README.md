@@ -99,3 +99,60 @@ call goes through the service role. 000500 changes only which of two matching
 workspaces the resolver returns for one hostname; a previous build calls the
 same function and is unaffected.
 20260924000700 replaces one function body that is evaluated at read time and stores nothing, so no data changes either way. A code-only rollback (previous Worker) leaves the two halves disagreeing for a trialing workspace with an active grant — the DB says 'granted' / grant-only limit, the old app says 'trialing' / trial base + grant — so roll the SQL back with the app if the app is rolled back. Harmless today: 0 such workspaces (verified 2026-09-24).
+
+## 20260925000900 — help center platform fix (data only)
+
+`supabase/migrations/20260925000900_help_center_platform_fix.sql` changes rows,
+not schema, and only rows with `workspace_id IS NULL` (the public
+founders.click help center). Pool Rental Near Me's categories
+`getting-started` and `billing` are read, never written. Independent of the
+migrations above; apply it before or after the app release that un-nests the
+article route (`src/routes/help.$category_.$article.tsx`). With the app first,
+the five articles render under their old `/help/getting-started/...` URLs
+until this runs; with this first, nothing renders any worse than today.
+
+What it changes, row by row:
+
+| table | slug | change |
+| --- | --- | --- |
+| help_categories | `start-here` | **new** platform category "Getting started", published, `sort_order` 0 (or one below the lowest platform category) |
+| help_articles | `welcome-to-founders-click` | `category_slug` getting-started → start-here |
+| help_articles | `connecting-your-sharetribe-marketplace` | category → start-here; `content` rewritten; `excerpt` (only from its seeded text); `reading_time_minutes` 4 → 2 (only from 4) |
+| help_articles | `running-your-first-listing-sync` | category → start-here; `content` rewritten; `reading_time_minutes` 2 → 1 (only from 2) |
+| help_articles | `creating-your-first-seo-page` | `category_slug` getting-started → start-here |
+| help_articles | `publishing-pages-and-getting-indexed` | `category_slug` getting-started → start-here |
+| help_articles | `bring-your-own-ai-key-byok` | `status` published → draft, `is_published` true → false (stays in `billing`) |
+| help_articles | `troubleshooting-failed-syncs` | `content` rewritten; `reading_time_minutes` 4 → 1 (only from 4) |
+| help_articles | `where-to-find-integration-api-credentials` | `title` → "Where to find your Client ID"; `content` rewritten; `excerpt` (only from its seeded text); `reading_time_minutes` 2 → 1 (only from 2). Slug kept, URL unchanged |
+
+`updated_at` moves on the four rewritten articles (content changed). The
+search index (`search_vector`) is recomputed by its trigger. A workspace-owned
+`start-here` category aborts the run before any change. Re-running changes
+nothing.
+
+```sql
+-- 20260925000900: the file ends with this check; expect six rows of true
+-- (start-here first and published; five articles moved; no published platform
+-- article left in a PRNM category; BYOK a draft; the four articles on the
+-- launch flow; PRNM's two categories still PRNM's).
+SELECT slug, category_slug, status, is_published, title, reading_time_minutes
+  FROM public.help_articles
+ WHERE workspace_id IS NULL
+   AND slug IN ('welcome-to-founders-click','connecting-your-sharetribe-marketplace',
+                'running-your-first-listing-sync','creating-your-first-seo-page',
+                'publishing-pages-and-getting-indexed','bring-your-own-ai-key-byok',
+                'troubleshooting-failed-syncs','where-to-find-integration-api-credentials')
+ ORDER BY slug;
+```
+
+Rollback: `supabase/rollback/20260925000900_help_center_platform_fix_rollback.sql`
+restores the previous category, title, content and publish state verbatim
+(production text as of 2026-09-25), puts excerpts and reading times back only
+where the migration's own values are still in place, and deletes
+`start-here` only if nothing else has been filed under it. It does not
+restore `updated_at` and restores the audited defect (six public articles 404),
+so use it only to unblock something else. Verified locally against a
+PostgreSQL 16 copy of the help tables seeded by the repo's own seed
+migrations: first run changes exactly the rows above, a second run changes
+nothing, no PRNM row changes, and the rollback returns every row to its prior
+values except `updated_at`.
