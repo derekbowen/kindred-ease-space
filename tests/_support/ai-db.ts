@@ -148,6 +148,19 @@ export const SUPABASE_STUBS = `
   INSERT INTO public.platform_settings (key, value) VALUES
     ('generation_paused', 'false'::jsonb), ('generation_daily_cap', '50'::jsonb)
   ON CONFLICT (key) DO NOTHING;
+  -- What the daily briefing reads (coach-briefing-cron).
+  ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS subscription_status text DEFAULT 'active';
+  ALTER TABLE public.tenant_pages ADD COLUMN IF NOT EXISTS meta_description text;
+  ALTER TABLE public.tenant_pages ADD COLUMN IF NOT EXISTS body_markdown text;
+  ALTER TABLE public.tenant_pages ADD COLUMN IF NOT EXISTS listing_filter jsonb;
+  CREATE TABLE IF NOT EXISTS public.tenant_listings (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id uuid NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
+    title text,
+    city text,
+    category text,
+    state_published boolean NOT NULL DEFAULT true
+  );
   CREATE TABLE IF NOT EXISTS public.coach_daily_briefings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id uuid NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
@@ -173,4 +186,67 @@ export function rpcSql(name: string, args: Record<string, unknown>): { text: str
   });
   const list = keys.map((k, i) => `${k} => $${i + 1}`).join(", ");
   return { text: `SELECT public.${name}(${list}) AS result`, values };
+}
+
+/**
+ * A service-role supabase-js stand-in backed by PGlite: .from(table)
+ * .select(cols) .eq / .neq .maybeSingle() and .rpc(name, args) — the calls
+ * the daily briefing function makes — run as real SQL, so the claim, the
+ * reservation and the store are the migration's own functions.
+ */
+export function pgliteSupabase(db: { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> }) {
+  const ident = /^[a-z_][a-z0-9_]*$/;
+  class Query implements PromiseLike<{ data: unknown; error: { message: string; code?: string } | null }> {
+    private cols = "*";
+    private filters: Array<[string, string, unknown]> = [];
+    private single = false;
+    constructor(private table: string) {
+      if (!ident.test(table)) throw new Error(`bad table ${table}`);
+    }
+    select(cols = "*") {
+      if (!/^[a-z_*][a-z0-9_, *]*$/.test(cols)) throw new Error(`bad columns ${cols}`);
+      this.cols = cols;
+      return this;
+    }
+    eq(col: string, v: unknown) {
+      this.filters.push(["=", col, v]);
+      return this;
+    }
+    neq(col: string, v: unknown) {
+      this.filters.push(["<>", col, v]);
+      return this;
+    }
+    maybeSingle() {
+      this.single = true;
+      return this;
+    }
+    private async run() {
+      for (const [, c] of this.filters) if (!ident.test(c)) throw new Error(`bad column ${c}`);
+      const where = this.filters.map(([op, c], i) => `${c} ${op} $${i + 1}`).join(" AND ");
+      const sql = `SELECT ${this.cols} FROM public.${this.table}${where ? ` WHERE ${where}` : ""}`;
+      try {
+        const r = await db.query(sql, this.filters.map(([, , v]) => v));
+        return { data: this.single ? (r.rows[0] ?? null) : r.rows, error: null };
+      } catch (e) {
+        const err = e as { message?: string; code?: string };
+        return { data: null, error: { message: String(err.message ?? e), code: err.code } };
+      }
+    }
+    then<A = any, B = never>(res?: (v: any) => A | PromiseLike<A>, rej?: (e: unknown) => B | PromiseLike<B>) {
+      return this.run().then(res, rej);
+    }
+  }
+  return {
+    from: (table: string) => new Query(table),
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      try {
+        const q = rpcSql(name, args);
+        const r = await db.query(q.text, q.values);
+        return { data: r.rows[0]?.result ?? null, error: null };
+      } catch (e) {
+        const err = e as { message?: string; code?: string };
+        return { data: null, error: { message: String(err.message ?? e), code: err.code } };
+      }
+    },
+  };
 }
