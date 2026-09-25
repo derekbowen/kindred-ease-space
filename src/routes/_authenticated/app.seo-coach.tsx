@@ -71,8 +71,7 @@ function SeoCoachPage() {
         <CardHeader>
           <CardTitle>Conversation</CardTitle>
           <CardDescription>
-            Powered by Lovable AI Gateway. Snapshot is rebuilt on each turn from your workspace
-            data.
+            Powered by OpenAI. Snapshot is rebuilt on each turn from your workspace data.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

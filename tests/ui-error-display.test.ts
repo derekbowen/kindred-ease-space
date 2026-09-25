@@ -85,13 +85,6 @@ const ALLOWLIST: Allow[] = [
       "shadcn form primitive: FormMessage renders client-side validation text from the form's own " +
       "resolver schema, never server or database text (and no form in src uses it today)",
   },
-  // --- Owned by the parallel AI-provider workstream, which deletes it.
-  {
-    file: "src/components/help/HelpAssistantWidget.tsx",
-    reason:
-      "the Help chat widget is being deleted by the OpenAI migration branch (which owns " +
-      "src/components/help/**); do not edit it here",
-  },
 ];
 
 // ---------------------------------------------------------------------------

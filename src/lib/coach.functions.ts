@@ -106,29 +106,23 @@ export const getTodayBriefing = createServerFn({ method: "POST" })
     return { briefing: row };
   });
 
+/**
+ * Today's briefing, on demand. Idempotent per workspace and UTC day: the
+ * first request generates it (at most one AI call, reserved and settled like
+ * every other), every later or concurrent one returns the same stored
+ * briefing. Answers a status or a fixed sentence, never upstream text.
+ */
+export const GenerateBriefingInputSchema = z.object({ workspaceId: z.string().uuid() }).strict();
+
 export const generateBriefingNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator(z.object({ workspaceId: z.string().uuid() }).parse)
+  .inputValidator((d: unknown) => GenerateBriefingInputSchema.parse(d))
   .handler(async ({ data, context }) => {
-    // Without this, any authenticated user could force-regenerate (and overwrite)
-    // another workspace's briefing — and drive LLM cost — via an arbitrary id.
+    // Without this, any authenticated user could ask for another workspace's
+    // briefing via an arbitrary id.
     await assertWorkspaceMember(data.workspaceId, context.userId);
-    const url = `${process.env.SUPABASE_URL}/functions/v1/coach-briefing-cron`;
-    const r = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: process.env.SUPABASE_PUBLISHABLE_KEY ?? "",
-        // Forwarded so the cron's optional shared-secret gate accepts this call.
-        "x-cron-secret": process.env.CRON_SECRET ?? "",
-      },
-      body: JSON.stringify({ workspace_id: data.workspaceId }),
-    });
-    if (!r.ok) {
-      const t = await r.text();
-      return { ok: false, error: t.slice(0, 300) };
-    }
-    return { ok: true };
+    const { requestBriefing } = await import("@/lib/coach-briefing.server");
+    return requestBriefing(data.workspaceId);
   });
 
 export const dismissInsight = createServerFn({ method: "POST" })

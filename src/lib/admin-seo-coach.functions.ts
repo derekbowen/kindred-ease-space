@@ -3,6 +3,8 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "./admin-helpers.functions";
+import type { AiDb } from "@/lib/ai/spend.server";
+import type { OpenAiTransport } from "@/lib/ai/openai.server";
 
 const sb = () => supabaseAdmin as any;
 
@@ -137,7 +139,7 @@ async function buildSnapshot(workspaceId: string): Promise<string> {
   ]);
 
   return `LIVE SEO SNAPSHOT (as of ${new Date().toISOString()}):
-- Live pages: ${pages.published} published (${(pages as any).tenantPublished ?? 0} tenant_pages at /p/*), ${pages.pending} drafts/pending, ${pages.publishedLast7d} updated in last 7d
+- Live pages: ${pages.published} published (${(pages as any).tenantPublished ?? 0} tenant_pages at /a/*), ${pages.pending} drafts/pending, ${pages.publishedLast7d} updated in last 7d
 - Unresolved 404s: ${missing}
 - Published quality: ${thin.empty} empty (0 words), ${thin.thin} thin (<500 words), ${noMeta} missing meta description
 - GSC last 7d: ${gsc.clicks} clicks, ${gsc.impr} impressions (last sync: ${gsc.lastCaptured || "never"})
@@ -172,104 +174,96 @@ HARD RULES:
 
 Your first message in a NEW chat: greet briefly, name the single most urgent issue from the snapshot with its number, then ask the first yes/no question.`;
 
+/**
+ * The conversation sent to the model: the most recent turns that fit in
+ * SEO_COACH_MAX_CHARS, oldest dropped first. The schema allows 40 turns of
+ * 8000 characters; the model never needs all of that, and the spend hold is
+ * sized on what is actually sent.
+ */
+export const SEO_COACH_MAX_CHARS = 24_000;
+export function trimConversation<T extends { content: string }>(
+  messages: T[],
+  maxChars = SEO_COACH_MAX_CHARS,
+): T[] {
+  const kept: T[] = [];
+  let total = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    if (kept.length > 0 && total + m.content.length > maxChars) break;
+    kept.unshift(m);
+    total += m.content.length;
+  }
+  return kept;
+}
+
+export const SeoCoachInputSchema = z
+  .object({
+    workspaceId: workspaceIdSchema,
+    messages: z
+      .array(
+        z
+          .object({
+            role: z.enum(["user", "assistant"]),
+            content: z.string().min(1).max(8000),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(40),
+    completedRoutes: z.array(z.string().max(120)).max(40).optional(),
+  })
+  // A body carrying a model, a token count or any other key is refused.
+  .strict();
+
+export type SeoCoachInput = z.infer<typeof SeoCoachInputSchema>;
+export type SeoCoachResult = { ok: true; reply: string } | { ok: false; error: string };
+/** Test seams for the database and the provider transport. Production passes nothing. */
+export type SeoCoachDeps = { db?: AiDb; transport?: OpenAiTransport };
+
+/**
+ * One SEO-coach turn through the one spend flow (route seo_coach: 1200
+ * output tokens, 60 s, gpt-5-nano). Membership is checked first; every
+ * refusal and failure comes back as { ok: false, error } with a fixed
+ * customer sentence; provider and database text only reach the server log.
+ */
+export async function runSeoCoachTurn(
+  data: SeoCoachInput,
+  userId: string,
+  deps: SeoCoachDeps = {},
+): Promise<SeoCoachResult> {
+  try {
+    await assertWorkspaceMember(data.workspaceId, userId);
+    const { resolveAiKey, billingClassFor, runMeteredAiCall } =
+      await import("@/lib/ai/spend.server");
+    const key = await resolveAiKey(data.workspaceId, deps.db);
+
+    const snapshot = await buildSnapshot(data.workspaceId);
+    const completedNote = data.completedRoutes?.length
+      ? `STEPS THE USER HAS ALREADY COMPLETED THIS SESSION (do NOT recommend them again — move to the next priority): ${data.completedRoutes.join(", ")}`
+      : "No steps completed yet this session.";
+
+    const res = await runMeteredAiCall({
+      workspaceId: data.workspaceId,
+      userId,
+      requestId: crypto.randomUUID(),
+      route: "seo_coach",
+      source: "seo_coach",
+      key,
+      billingClass: billingClassFor(key, { route: "seo_coach" }),
+      instructions: [SYSTEM_PROMPT, snapshot, completedNote].join("\n\n"),
+      input: trimConversation(data.messages).map((m) => ({ role: m.role, content: m.content })),
+      deps,
+    });
+    return { ok: true, reply: res.output.text.trim() };
+  } catch (e) {
+    const { customerMessage, AI_MESSAGES } = await import("@/lib/ai/customer-error");
+    return { ok: false, error: customerMessage(e, AI_MESSAGES.unavailable) };
+  }
+}
+
 export const seoCoachChat = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z
-      .object({
-        workspaceId: workspaceIdSchema,
-        messages: z
-          .array(
-            z.object({
-              role: z.enum(["user", "assistant"]),
-              content: z.string().min(1).max(8000),
-            }),
-          )
-          .min(1)
-          .max(40),
-        completedRoutes: z.array(z.string().max(120)).max(40).optional(),
-      })
-      .parse(d),
-  )
+  .inputValidator((d: unknown) => SeoCoachInputSchema.parse(d))
   .handler(
-    async ({
-      data,
-      context,
-    }): Promise<{ ok: true; reply: string } | { ok: false; error: string }> => {
-      await assertWorkspaceMember(data.workspaceId, context.userId);
-      // BYOK first, platform env-var fallback.
-      const { getWorkspaceSecretWithSource } = await import("@/lib/workspace-secrets.server");
-      const secret = await getWorkspaceSecretWithSource(
-        data.workspaceId,
-        "LOVABLE_API_KEY",
-        "LOVABLE_API_KEY",
-      );
-      if (!secret)
-        return {
-          ok: false,
-          error: "AI tools are not available right now. Contact support.",
-        };
-      const apiKey = secret.key;
-
-      // Meter platform-key usage against workspace credits (BYOK is not metered).
-      const { reservePlatformAi, settlePlatformAi, OUT_OF_INCLUDED_AI_MESSAGE } =
-        await import("@/lib/ai-metering.server");
-      let billing: import("@/lib/ai-metering.server").PlatformBilling | null = null;
-      if (secret.source === "platform") {
-        try {
-          billing = await reservePlatformAi(data.workspaceId);
-        } catch (e) {
-          return { ok: false, error: e instanceof Error ? e.message : "Out of AI credits." };
-        }
-      }
-
-      const snapshot = await buildSnapshot(data.workspaceId);
-      const completedNote = data.completedRoutes?.length
-        ? `STEPS THE USER HAS ALREADY COMPLETED THIS SESSION (do NOT recommend them again — move to the next priority): ${data.completedRoutes.join(", ")}`
-        : "No steps completed yet this session.";
-
-      const messages = [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "system", content: snapshot },
-        { role: "system", content: completedNote },
-        ...data.messages.map((m) => ({ role: m.role, content: m.content })),
-      ];
-
-      try {
-        const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: "google/gemini-2.5-flash", messages }),
-        });
-        // Credit packs are not for sale: no purchase path to point at.
-        if (resp.status === 402) return { ok: false, error: OUT_OF_INCLUDED_AI_MESSAGE };
-        if (resp.status === 429)
-          return { ok: false, error: "Rate limited. Try again in a moment." };
-        if (!resp.ok) {
-          const t = await resp.text();
-          return { ok: false, error: `AI gateway ${resp.status}: ${t.slice(0, 200)}` };
-        }
-        const json = await resp.json();
-        if (billing) {
-          try {
-            await settlePlatformAi({
-              workspaceId: data.workspaceId,
-              userId: context.userId,
-              billing,
-              model: "google/gemini-2.5-flash",
-              promptTokens: json?.usage?.prompt_tokens ?? 0,
-              completionTokens: json?.usage?.completion_tokens ?? 0,
-              feature: "seo_coach",
-            });
-          } catch (e) {
-            console.error("[seoCoach] settle failed", e);
-          }
-        }
-        const reply = json?.choices?.[0]?.message?.content?.trim();
-        if (!reply) return { ok: false, error: "AI returned empty reply" };
-        return { ok: true, reply };
-      } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : "Unknown error" };
-      }
-    },
+    async ({ data, context }): Promise<SeoCoachResult> => runSeoCoachTurn(data, context.userId),
   );

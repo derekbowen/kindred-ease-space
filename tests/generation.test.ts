@@ -16,17 +16,19 @@
  *     never released after it; a request that can only fail (an underivable
  *     slug) fails before anything is reserved; the attempt ceiling is 3, the
  *     pause switch accepts true and "true"
- *   - the platform key must afford a WHOLE page; settlement is idempotent by
- *     page through the credit ledger whichever currency paid; a failed
- *     deduction is recorded as unbilled, never as a charge; a provider that
- *     omits usage is billed as a typical page, never as a free one
+ *   - money goes through the ONE spend path (src/lib/ai/spend.server.ts):
+ *     the maximum cost of a whole page is HELD before the call (not a
+ *     balance > 0 check), the call is settled once per request id in the
+ *     database, a provider that omits usage is charged the full hold — never
+ *     a free page — and a settled page can no longer be "unbilled"
  *   - pre-claim item writes are fenced on the state the driver read, so a
  *     refusal from one driver cannot void another's live claim
- *   - the quick page accepts only picker models, defaults to the cheap one,
- *     carries an idempotency key and settles a replayed platform page
+ *   - the quick page accepts a quality TIER only (never a model), defaults to
+ *     standard, carries an idempotency key and replays with the charge the
+ *     database recorded
  *   - the coach's create_city_page runs through the core (pause, cap, who
- *     pays, settlement, deterministic request id), never the gateway
- *   - the OpenRouter caller times out (even mid-body), rejects what must be
+ *     pays, the spend hold, deterministic request id)
+ *   - the OpenAI page writer times out (even mid-body), rejects what must be
  *     rejected, and never lets a provider body reach the customer; no
  *     database text reaches the customer either (customerMessage)
  *   - out-of-funds copy sends customers to support, not to a withdrawn purchase
@@ -34,7 +36,7 @@
  *     seed, the write REVOKEs, the settlement index, the reservation state
  *     machine (reserve / mark / release), the billing-mode column and the
  *     pin trigger; the rollbacks undo them (tests/generation-sql.test.ts runs
- *     the 000600 SQL itself in PGlite)
+ *     the 000600 SQL itself in PGlite; tests/ai-spend-sql.test.ts runs 000800)
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -42,50 +44,49 @@ import {
   ATTEMPTS_EXHAUSTED_MESSAGE,
   CustomerFacingError,
   GENERATION_ALREADY_USED_MESSAGE,
-  GENERATION_DEFAULT_MODEL,
+  GENERATION_DEFAULT_TIER,
   GENERATION_IN_PROGRESS_MESSAGE,
-  GENERATION_LEDGER_REF_TYPES,
-  GENERATION_MODEL_IDS,
-  GENERATION_MODEL_OPTIONS,
   GENERATION_PAUSED_MESSAGE,
+  GENERATION_TIERS,
+  GENERATION_TIER_OPTIONS,
   GENERATION_UNAVAILABLE_MESSAGE,
   MAX_ITEM_ATTEMPTS,
   MIN_BODY_CHARS,
-  OPENROUTER_TIMEOUT_MS,
+  PAGE_GENERATION_TIMEOUT_MS,
   PAGE_SLUG_UNDERIVABLE_MESSAGE,
   PAGE_TITLE_INVALID_MESSAGE,
   PROVIDER_ERROR_MESSAGE,
   PROVIDER_TIMEOUT_MESSAGE,
   STALE_RUNNING_MS,
   TYPICAL_PAGE_TOKENS,
-  UNBILLED_ITEM_MESSAGE,
+  WRITE_PAGE_SCHEMA,
   attemptsExhausted,
   batchAttemptRequestId,
-  billableUsage,
+  billingModeFor,
   billingStatusFor,
   buildCityBrief,
   buildTargetKey,
-  callOpenRouterWritePage,
   customerMessage,
   dailyCapRemaining,
   deterministicRequestId,
   estimatedCreditsPerPage,
   formatInventoryFacts,
+  generatePageContent,
   generatedPageBaseSlug,
-  hasPlatformFunds,
-  initialBillingStatus,
   isGenerationPaused,
-  isSettlementConflict,
   isStaleRunning,
   outOfCreditsMessage,
   pageCoversCity,
   parseGenerationSlot,
   planJobItems,
-  providerUsageOf,
   selectTargets,
   validatePageRequest,
+  type ResolvedBilling,
 } from "../src/lib/generation.server";
-import { PLATFORM_MODEL_ALLOWLIST, resolvePlatformModel } from "../src/lib/ai-pricing";
+import { AI_MODELS, isAllowedModel, modelForTier, tierForModel } from "../src/lib/ai/models";
+import { AI_ROUTE_LIMITS } from "../src/lib/ai/limits";
+import { AI_MESSAGES } from "../src/lib/ai/customer-error";
+import { creditsForCostMicros, creditsForUsage, maxCostMicros } from "../src/lib/ai-pricing";
 import { QuickPageInputSchema } from "../src/lib/admin-quick-page.functions";
 
 let pass = 0,
@@ -561,262 +562,175 @@ console.log("\n=== stale running detection ===");
   t("garbage timestamp is stale", isStaleRunning("not a date", NOW));
   t(
     "the provider timeout is shorter than the stale window (no double drivers)",
-    OPENROUTER_TIMEOUT_MS < STALE_RUNNING_MS,
-    `${OPENROUTER_TIMEOUT_MS} vs ${STALE_RUNNING_MS}`,
+    PAGE_GENERATION_TIMEOUT_MS < STALE_RUNNING_MS,
+    `${PAGE_GENERATION_TIMEOUT_MS} vs ${STALE_RUNNING_MS}`,
   );
-  t("the provider timeout is 120 seconds", OPENROUTER_TIMEOUT_MS === 120_000);
+  t("the provider timeout is 120 seconds", PAGE_GENERATION_TIMEOUT_MS === 120_000);
+  t(
+    "…and it is the page_generation route's own limit (one table, no second constant)",
+    PAGE_GENERATION_TIMEOUT_MS === AI_ROUTE_LIMITS.page_generation.timeoutMs,
+  );
 }
 
-console.log("\n=== platform funds: a page must be affordable, not just balance > 0 ===");
+console.log("\n=== platform funds: a whole page is HELD before the call, not balance > 0 ===");
 {
-  const pro = "google/gemini-3.1-pro-preview";
-  const perPage = estimatedCreditsPerPage(pro);
-  t("a Pro page is estimated at more than one credit", perPage > 1, String(perPage));
+  // The old check compared a balance with an estimate in TypeScript and then
+  // charged after the call. Now ai_reserve holds the MAXIMUM a page can cost
+  // (every input token uncached, every allowed output token) atomically, in
+  // credits for a tenant, before anything is sent: a balance of 1 credit can
+  // no longer start a page that costs more. tests/ai-spend-sql.test.ts runs
+  // the SQL (a balance one credit short of the hold is refused, exactly the
+  // hold is granted); tests/ai-concurrency.pg.ts proves it under 50-way
+  // concurrency on PostgreSQL 16.
+  const premium = estimatedCreditsPerPage("premium");
+  const standard = estimatedCreditsPerPage("standard");
+  t("a premium page is estimated at more than a standard one", premium > standard, `${premium} vs ${standard}`);
+  t("a standard page is estimated at one credit or more", standard >= 1, String(standard));
+  const limits = AI_ROUTE_LIMITS.page_generation;
+  for (const tier of GENERATION_TIERS) {
+    const model = modelForTier(tier);
+    const hold = maxCostMicros(model, TYPICAL_PAGE_TOKENS.prompt, limits.maxOutputTokens);
+    t(
+      `the ${tier} hold covers a typical page with room to spare`,
+      creditsForCostMicros(hold) >= creditsForUsage(model, TYPICAL_PAGE_TOKENS.prompt, TYPICAL_PAGE_TOKENS.completion),
+      `${creditsForCostMicros(hold)} credits held`,
+    );
+  }
+  const spend = read("src/lib/ai/spend.server.ts");
   t(
-    "free quota left → available regardless of balance",
-    hasPlatformFunds({ freeQuotaRemaining: 1, balance: 0, model: pro }),
+    "a tenant hold is at least one credit and covers the maximum cost",
+    /maxCredits: call\.billingClass === "tenant" \? Math\.max\(1, creditsForCostMicros\(holdMicros\)\) : 0,/.test(spend) &&
+      /const holdMicros = maxCostMicros\(model, maxInputTokens, limits\.maxOutputTokens\);/.test(spend),
   );
   t(
-    "no quota row yet → available (the RPC seeds the free allowance)",
-    hasPlatformFunds({ freeQuotaRemaining: null, balance: 0, model: pro }),
+    "the hold is taken before the provider call, and a refusal throws before it",
+    spend.indexOf("await aiReserve(db,") > 0 &&
+      spend.indexOf("await aiReserve(db,") < spend.indexOf("result = await callOpenAI<T>(") &&
+      /if \(reserved\.status !== "reserved"\) \{[\s\S]*?throw new CustomerFacingError\(refusalMessage\(reserved\.status, call\.refusalMessages\), reserved\.status\);/.test(
+        spend,
+      ),
   );
+  const server = read("src/lib/generation.server.ts");
   t(
-    "quota exhausted + balance 1 → NOT available (the old > 0 bug)",
-    !hasPlatformFunds({ freeQuotaRemaining: 0, balance: 1, model: pro }),
-  );
-  t(
-    "quota exhausted + balance one short of a page → not available",
-    !hasPlatformFunds({ freeQuotaRemaining: 0, balance: perPage - 1, model: pro }),
-  );
-  t(
-    "quota exhausted + balance exactly a page → available",
-    hasPlatformFunds({ freeQuotaRemaining: 0, balance: perPage, model: pro }),
-  );
-  t(
-    "the bar depends on the model (cheaper model, lower bar)",
-    estimatedCreditsPerPage(GENERATION_DEFAULT_MODEL) < perPage &&
-      hasPlatformFunds({
-        freeQuotaRemaining: 0,
-        balance: estimatedCreditsPerPage(GENERATION_DEFAULT_MODEL),
-        model: GENERATION_DEFAULT_MODEL,
-      }),
-  );
-  t(
-    "null balance reads as 0",
-    !hasPlatformFunds({ freeQuotaRemaining: 0, balance: null, model: pro }),
+    "nothing in generation reads a balance to decide affordability any more",
+    !/hasPlatformFunds|credit_balances/.test(server),
   );
 }
 
 console.log("\n=== settlement → billing_status ===");
 {
-  t("byok → free", billingStatusFor("byok", 0) === "free");
-  t("beta grant → free", billingStatusFor("granted", 0) === "free");
-  t("free platform quota → free", billingStatusFor("free_quota", 0) === "free");
-  t("credits actually deducted → charged", billingStatusFor("credits", 3) === "charged");
-  t("credits path with nothing owed → free", billingStatusFor("credits", 0) === "free");
-  t("a failed deduction → unbilled, never charged", billingStatusFor("unbilled", 0) === "unbilled");
-  t("before settling, a platform page is pending", initialBillingStatus("platform") === "pending");
-  t("before settling, a BYOK page owes nothing", initialBillingStatus("byok") === "free");
-  t("before settling, a granted page owes nothing", initialBillingStatus("granted") === "free");
+  const s = (settled: boolean, billing: any, creditsCharged: number) => ({ settled, billing, creditsCharged });
+  t("byok → free", billingStatusFor(s(true, "byok", 0)) === "free");
+  t("beta grant → free", billingStatusFor(s(true, "granted", 0)) === "free");
+  t("free platform quota → free", billingStatusFor(s(true, "free_quota", 0)) === "free");
+  t("credits actually charged → charged", billingStatusFor(s(true, "credits", 3)) === "charged");
+  t("credits path with nothing owed → free", billingStatusFor(s(true, "credits", 0)) === "free");
+  t(
+    "a settle that could not be recorded → pending (the hold covers it; the reaper settles it), never charged or free",
+    billingStatusFor(s(false, "credits", 0)) === "pending" && billingStatusFor(s(false, "free_quota", 0)) === "pending",
+  );
+  t(
+    "the page's billing mode follows the hold's billing",
+    billingModeFor("byok") === "byok" &&
+      billingModeFor("granted") === "granted" &&
+      billingModeFor("credits") === "platform" &&
+      billingModeFor("free_quota") === "platform",
+  );
+
+  // Settlement is idempotent by REQUEST ID in the database: ai_settle closes
+  // the one ai_spend_reservations row for (workspace, request id) and a
+  // second settle is answered 'already_settled' without charging again
+  // (tests/ai-spend-sql.test.ts). The app-side ledger lookups, conflict
+  // adoption and "unbilled" branch are gone with the app-side settlement.
   const server = read("src/lib/generation.server.ts");
-  // settleOnPlatform is the platform branch; settleGeneration wraps it.
-  const settle = server.slice(server.indexOf("async function settleOnPlatform("));
-  const platform = server.slice(
-    server.indexOf("async function settleOnPlatform("),
-    server.indexOf("export async function settleGeneration"),
-  );
-  t("the platform branch was found", platform.length > 0);
+  const spend = read("src/lib/ai/spend.server.ts");
   t(
-    "settleGeneration zeroes creditsCharged on any failure",
-    /billing = "unbilled";\s*creditsCharged = 0;/.test(settle),
-  );
-  t("an unbilled settlement is logged loudly", settle.includes("UNBILLED generation"));
-  t(
-    "a beta grant skips platform metering entirely",
-    settle.includes('if (mode === "platform")') &&
-      server.includes('ent.billingState === "granted"'),
-  );
-
-  // Settlement is idempotent by PAGE against the credit ledger: the ledger
-  // row is the settlement record, one per page, whichever currency paid.
-  // A run that died after settling but before recording it on the item must
-  // not settle again on the retry — in either currency.
-  const ledgerCheck = platform.indexOf("findLedgerCharge(p.workspaceId, p.refId)");
-  t("the platform branch consults the ledger for this page first", ledgerCheck > 0);
-  t(
-    "the ledger check precedes the free-quota settlement",
-    ledgerCheck < platform.indexOf('rpc("settle_generation_free_quota"'),
-  );
-  t(
-    "the ledger check precedes the deduction",
-    ledgerCheck < platform.indexOf('rpc("deduct_credits"'),
-  );
-  t(
-    "a prior ledger row is reported as the settlement, whichever currency paid",
-    /if \(prior\) return \{ ok: true, billing: prior\.billing, creditsCharged: prior\.amount \};/.test(
-      platform,
+    "generation has no settlement of its own (no ledger lookups, deductions or free-quota RPCs)",
+    !/settleGeneration|settleOnPlatform|findLedgerCharge|settle_generation_free_quota|deduct_credits|consume_platform_ai_credit|recordFailedGeneration/.test(
+      server,
     ),
   );
   t(
-    "the free quota is settled through settle_generation_free_quota keyed by feature + page id + model",
-    /rpc\("settle_generation_free_quota", \{\s*_workspace_id: p\.workspaceId,\s*_ref_type: p\.feature,\s*_ref_id: p\.refId,\s*_ai_model: p\.model,\s*\}\)/.test(
-      platform,
-    ),
+    "the spend flow settles through ai_settle exactly once per call, and accepts only 'settled' / 'already_settled'",
+    (spend.match(/await settleSafely\(/g) ?? []).length === 2 &&
+      /if \(s\.status !== "settled" && s\.status !== "already_settled"\) \{/.test(spend),
   );
   t(
-    "losing the settlement index re-reads the ledger and adopts the winner (free quota)",
-    /if \(isSettlementConflict\(qErr\)\) return adopt\("settle_generation_free_quota"\);/.test(
-      platform,
-    ),
-  );
-  t(
-    "losing the settlement index re-reads the ledger and adopts the winner (credits)",
-    /if \(p\.refId && isSettlementConflict\(error\)\) return adopt\("deduct_credits"\);/.test(
-      platform,
-    ),
-  );
-  t(
-    "a conflict with no ledger row is a failure (unbilled), never a charge",
-    /settlement conflict but no ledger row for this page/.test(platform),
-  );
-  t(
-    "an exhausted free quota falls through to purchased credits",
-    /if \(quotaExhausted\(qErr\)\) return deduct\(\);/.test(platform),
-  );
-  t(
-    "the deduction carries the page id as the ledger ref",
-    /_ref_type: p\.feature,\s*_ref_id: p\.refId \?\? undefined,/.test(platform),
-  );
-  t(
-    "without a page id the old unkeyed consume path is kept (nothing else regresses)",
-    platform.indexOf('rpc("consume_platform_ai_credit"') > platform.indexOf("if (p.refId) {") &&
-      /both always pass the page\s*\*?\s*id/.test(server),
-  );
-  t(
-    "the invariant is written down: one ledger row per page, whichever currency paid",
-    /one per page, whichever currency paid/.test(server),
-  );
-
-  const ledgerFn = server.slice(
-    server.indexOf("export async function findLedgerCharge"),
-    server.indexOf("const quotaExhausted"),
-  );
-  t(
-    "the ledger lookup is keyed by workspace, page id, the ai_usage reason and the two generation ref types",
-    ledgerFn.includes('.eq("workspace_id", workspaceId)') &&
-      ledgerFn.includes('.eq("ref_id", refId)') &&
-      ledgerFn.includes('.eq("reason", "ai_usage")') &&
-      ledgerFn.includes('.in("ref_type", [...GENERATION_LEDGER_REF_TYPES])') &&
-      [...GENERATION_LEDGER_REF_TYPES].sort().join() === "batch_generation,quick_page",
-  );
-  t(
-    "the ledger lookup sees free-quota rows (delta 0) as well as deductions (delta < 0)",
-    ledgerFn.includes('.lte("delta", 0)') && !ledgerFn.includes('.lt("delta", 0)'),
-  );
-  t(
-    "delta < 0 reads as credits, delta 0 as free_quota, amount is the absolute delta",
-    /billing: delta < 0 \? "credits" : "free_quota", amount: Math\.abs\(delta\)/.test(ledgerFn),
-  );
-  t(
-    "a ledger read failure throws instead of deducting blind",
-    /if \(error\) throw new Error\(`credit ledger read failed/.test(ledgerFn),
+    "a settle that fails is logged loudly and left for the reaper at the full hold",
+    /UNSETTLED call \(the reaper settles it within 35 minutes\)/.test(spend),
   );
   const fns = read("src/lib/generation.functions.ts");
   t(
-    "batch settlement passes the page id as the ledger key",
-    (fns.match(/feature: "batch_generation",\s*refId: (page\.id|row\.page_id),/g) ?? []).length ===
-      2,
+    "the batch item records what the settlement charged",
+    /credits_charged: gen\.settlement\.creditsCharged,\s*billing_status: billingStatusFor\(gen\.settlement\),/.test(fns),
   );
   t(
-    "quick page settlement passes the page id as the ledger key",
-    /feature: "quick_page",\s*refId: page\.id,/.test(read("src/lib/admin-quick-page.functions.ts")),
-  );
-
-  // Settlement conflict detection (pure).
-  t("unique_violation code is a conflict", isSettlementConflict({ code: "23505", message: "dup" }));
-  t(
-    "the settlement index named in the message is a conflict even without a code",
-    isSettlementConflict({
-      message:
-        'duplicate key value violates unique constraint "credit_ledger_generation_settlement_uidx"',
-    }),
-  );
-  t(
-    "an exhausted quota is not a conflict",
-    !isSettlementConflict({ code: "P0001", message: "platform_ai_quota_exhausted" }),
-  );
-  t("nothing is not a conflict", !isSettlementConflict(null) && !isSettlementConflict(undefined));
-  t(
-    "a different unique index is not a settlement conflict by name (only by code)",
-    !isSettlementConflict({ message: 'violates unique constraint "tenant_pages_workspace_id_slug_key"' }),
+    "an item can no longer be failed as 'unbilled' after a settled generation",
+    !/billing_status: "unbilled"/.test(fns),
   );
 
-  // Usage fallback (pure): a provider that omits usage is billed as a
-  // typical page, never as a free one.
-  const assumed = billableUsage(0, 0);
+  // Two books (settleInputFor; the full table is driven in
+  // tests/ai-provider.test.ts and tests/ai-spend-sql.test.ts). A delivered
+  // page whose usage OpenAI omitted is charged the FULL hold — never a free
+  // page; every failure refunds the customer in full while the platform
+  // budget keeps what OpenAI may have been paid.
   t(
-    "zero usage bills a typical page",
-    assumed.promptTokens === TYPICAL_PAGE_TOKENS.prompt &&
-      assumed.completionTokens === TYPICAL_PAGE_TOKENS.completion &&
-      assumed.assumed,
-  );
-  const real = billableUsage(812, 1204);
-  t(
-    "real usage is billed as reported",
-    real.promptTokens === 812 && real.completionTokens === 1204 && !real.assumed,
+    "a delivered page without usage settles at the full hold (cost null) with the reason usage_missing",
+    /if \(!r\.usage\) return \{ usage: null, costMicros: null, credits: null, outcome: "ok", error: "usage_missing" \};/.test(spend),
   );
   t(
-    "garbage usage (NaN, negative) is treated as omitted",
-    billableUsage(Number.NaN, -5).assumed && billableUsage(Number.NaN, -5).promptTokens > 0,
-  );
-  const partial = billableUsage(5, 0);
-  t(
-    "partial usage is real usage, not omitted",
-    partial.promptTokens === 5 && partial.completionTokens === 0 && !partial.assumed,
+    "a failure with reported usage refunds the customer (credits 0) and records the cost on the platform budget",
+    /if \(usage\) return \{ usage, costMicros: cost\(usage\), credits: 0, outcome: "failed", error \};/.test(spend),
   );
   t(
-    "settleGeneration applies the fallback in one place and warns, naming feature and refId",
-    /const usage = billableUsage\(opts\.promptTokens, opts\.completionTokens\);/.test(settle) &&
-      /provider omitted usage; billing a typical page feature=\$\{opts\.feature\} refId=/.test(
-        settle,
-      ),
+    "a failure after the request left, without usage, keeps the full hold on the platform budget only",
+    /return \{ usage: null, costMicros: null, credits: null, outcome: "failed", error \};/.test(spend),
   );
   t(
-    "the deduction is priced on the billable usage",
-    /creditsForUsage\(p\.model, p\.usage\.promptTokens, p\.usage\.completionTokens\)/.test(platform),
+    "the charge is priced on the reported usage (input, cached input, output)",
+    /const cost = \(u: AiUsage\) => costMicrosForUsage\(model, u\);/.test(spend),
   );
 }
 
-console.log("\n=== model policy ===");
+console.log("\n=== model policy (a quality tier, never a model) ===");
 {
+  t("the allowlist is exactly gpt-5-nano and gpt-5-mini", AI_MODELS.join() === "gpt-5-nano,gpt-5-mini");
+  t("the default tier is standard", GENERATION_DEFAULT_TIER === "standard");
   t(
-    "default model is on the allowlist",
-    PLATFORM_MODEL_ALLOWLIST.includes(GENERATION_DEFAULT_MODEL),
+    "standard → gpt-5-nano, premium → gpt-5-mini (server-side mapping)",
+    modelForTier("standard") === "gpt-5-nano" && modelForTier("premium") === "gpt-5-mini",
+  );
+  t("every tier maps to an allowlisted model", GENERATION_TIERS.every((q) => isAllowedModel(modelForTier(q))));
+  t(
+    "an unknown tier throws instead of mapping to some model",
+    (() => {
+      try {
+        modelForTier("ultra" as any);
+        return false;
+      } catch {
+        return true;
+      }
+    })(),
   );
   t(
-    "default model resolves to itself (no silent Pro upgrade)",
-    resolvePlatformModel(GENERATION_DEFAULT_MODEL) === GENERATION_DEFAULT_MODEL,
+    "a stored model outside the allowlist has no tier (a job carrying one is refused, not upgraded)",
+    tierForModel("google/gemini-3.1-pro-preview") === null &&
+      tierForModel("gpt-5") === null &&
+      tierForModel("gpt-5-nano") === "standard" &&
+      tierForModel("gpt-5-mini") === "premium",
+  );
+  t("the old OpenRouter ids are not allowed models", !isAllowedModel("google/gemini-3-flash-preview"));
+  t(
+    "the picker offers exactly the tiers, standard first",
+    GENERATION_TIER_OPTIONS.map((o) => o.tier).join() === GENERATION_TIERS.join() &&
+      GENERATION_TIERS[0] === "standard",
   );
   t(
-    "old default gemini-2.5-flash would have upgraded silently (the bug this guards)",
-    resolvePlatformModel("google/gemini-2.5-flash") !== "google/gemini-2.5-flash",
+    "the picker shows no model names",
+    GENERATION_TIER_OPTIONS.every((o) => !/gpt|nano|mini|gemini|openai/i.test(`${o.label} ${o.hint}`)),
+    JSON.stringify(GENERATION_TIER_OPTIONS),
   );
-  t(
-    "picker only offers allowlisted models",
-    GENERATION_MODEL_OPTIONS.every((m) => PLATFORM_MODEL_ALLOWLIST.includes(m.id)),
-  );
-  t(
-    "picker has a cost hint per model",
-    GENERATION_MODEL_OPTIONS.every((m) => /credit/.test(m.hint)),
-  );
-  t(
-    "GENERATION_MODEL_IDS is exactly the picker",
-    GENERATION_MODEL_IDS.join() === GENERATION_MODEL_OPTIONS.map((m) => m.id).join(),
-  );
-  t(
-    "the default model is offered by the picker",
-    GENERATION_MODEL_IDS.includes(GENERATION_DEFAULT_MODEL),
-  );
+  t("the picker has a cost hint per tier", GENERATION_TIER_OPTIONS.every((o) => /credit/.test(o.hint)));
 
   const base = {
     workspaceId: "11111111-1111-4111-8111-111111111111",
@@ -825,23 +739,23 @@ console.log("\n=== model policy ===");
   };
   const parsed = QuickPageInputSchema.safeParse(base);
   t(
-    "quick page defaults to the cheap batch default model",
-    parsed.success && parsed.data.model === GENERATION_DEFAULT_MODEL,
+    "quick page defaults to the standard tier",
+    parsed.success && parsed.data.quality === "standard",
   );
   t(
-    "quick page rejects an unknown model instead of upgrading it",
-    !QuickPageInputSchema.safeParse({ ...base, model: "openai/gpt-5" }).success,
+    "quick page accepts both tiers",
+    GENERATION_TIERS.every((q) => QuickPageInputSchema.safeParse({ ...base, quality: q }).success),
   );
   t(
-    "quick page rejects an off-picker gemini id",
-    !QuickPageInputSchema.safeParse({ ...base, model: "google/gemini-2.5-flash" }).success,
+    "quick page rejects an unknown tier instead of mapping it",
+    !QuickPageInputSchema.safeParse({ ...base, quality: "ultra" }).success,
   );
-  t(
-    "quick page accepts every picker model",
-    GENERATION_MODEL_IDS.every(
-      (id) => QuickPageInputSchema.safeParse({ ...base, model: id }).success,
-    ),
-  );
+  for (const key of ["model", "max_output_tokens", "maxOutputTokens", "temperature", "provider", "reasoning"]) {
+    t(
+      `quick page rejects a body carrying \`${key}\` (strict schema)`,
+      !QuickPageInputSchema.safeParse({ ...base, [key]: key === "model" ? "gpt-5-mini" : 1 }).success,
+    );
+  }
   t(
     "quick page request id must be a uuid when given",
     !QuickPageInputSchema.safeParse({ ...base, generationRequestId: "abc" }).success &&
@@ -927,16 +841,17 @@ console.log("\n=== customerMessage: no database text reaches a tenant ===");
   }
 
   const server = read("src/lib/generation.server.ts");
+  const spend = read("src/lib/ai/spend.server.ts");
   t(
-    "the refusals a customer reads are thrown as CustomerFacingError (key, funds, slug, provider, thin output)",
-    /throw new CustomerFacingError\(\s*"Page generation is not available right now/.test(server) &&
-      server.includes("throw new CustomerFacingError(outOfCreditsMessage(model))") &&
-      server.includes('throw new CustomerFacingError("Could not derive slug from title")') &&
-      (server.match(/throw new CustomerFacingError\(timedOut \? PROVIDER_TIMEOUT_MESSAGE : PROVIDER_ERROR_MESSAGE\)/g) ?? []).length === 2 &&
-      server.includes("throw new CustomerFacingError(PROVIDER_ERROR_MESSAGE)") &&
-      server.includes('throw new CustomerFacingError("AI response missing tool call")') &&
-      server.includes('throw new CustomerFacingError("AI response was not valid JSON")') &&
-      /throw new CustomerFacingError\(\s*`Generated body too short/.test(server),
+    "the refusals a customer reads are thrown as CustomerFacingError (title, slug, key, funds, provider, thin output)",
+    server.includes("throw new CustomerFacingError(PAGE_TITLE_INVALID_MESSAGE)") &&
+      server.includes("throw new CustomerFacingError(PAGE_SLUG_UNDERIVABLE_MESSAGE)") &&
+      /throw new CustomerFacingError\(AI_MESSAGES\.notConfigured, "no_key"\)/.test(spend) &&
+      /throw new CustomerFacingError\(refusalMessage\(reserved\.status, call\.refusalMessages\), reserved\.status\);/.test(spend) &&
+      /throw new CustomerFacingError\(failureMessage\(result\.kind\), result\.kind\);/.test(spend) &&
+      /if \(checked\) throw new CustomerFacingError\(checked\.message, checked\.code\);/.test(spend) &&
+      /message: `Generated body too short \(\$\{n\} chars\)`/.test(server) &&
+      /insufficient: outOfCreditsMessage\(\),/.test(server),
   );
   const fns = read("src/lib/generation.functions.ts");
   const runItem = fns.slice(fns.indexOf("async function runItem("), fns.indexOf("const itemInput"));
@@ -967,35 +882,26 @@ console.log("\n=== customerMessage: no database text reaches a tenant ===");
 
 console.log("\n=== out-of-funds copy points at support, not a withdrawn purchase ===");
 {
-  const strings = [
-    outOfCreditsMessage("google/gemini-3.1-pro-preview"),
-    UNBILLED_ITEM_MESSAGE,
+  const strings: Array<[string, string]> = [
+    ["outOfCreditsMessage", outOfCreditsMessage()],
+    ["AI_MESSAGES.outOfFunds", AI_MESSAGES.outOfFunds],
   ];
-  const quick = read("src/lib/admin-quick-page.functions.ts");
-  const draftReason = quick.match(/const UNBILLED_DRAFT_REASON =\s*"([^"]+)"/)?.[1] ?? "";
-  const metering = read("src/lib/ai-metering.server.ts");
-  const meteringMsg = metering.match(/OUT_OF_INCLUDED_AI_MESSAGE =\s*"([^"]+)"/)?.[1] ?? "";
-  t("the quick page draft reason was found", draftReason.length > 0);
-  t("the metering message was found", meteringMsg.length > 0);
-  for (const [label, s] of [
-    ["outOfCreditsMessage", strings[0]!],
-    ["UNBILLED_ITEM_MESSAGE", strings[1]!],
-    ["quick page draft reason", draftReason],
-    ["ai-metering refusal", meteringMsg],
-  ] as const) {
+  for (const [label, s] of strings) {
     t(`${label} names the included allowance and support`, /included AI generation/.test(s) && /contact support/i.test(s), s);
     t(`${label} has no purchase path`, !/top up/i.test(s) && !/Billing/.test(s) && !/buy|purchase/i.test(s), s);
   }
   t(
-    "the metering refusal is customer-facing",
-    metering.includes("throw new CustomerFacingError(OUT_OF_INCLUDED_AI_MESSAGE)"),
+    "an out-of-funds hold is refused with the customer sentence (generation: outOfCreditsMessage)",
+    /case "insufficient":\s*return AI_MESSAGES\.outOfFunds;/.test(read("src/lib/ai/spend.server.ts")) &&
+      /insufficient: outOfCreditsMessage\(\),/.test(read("src/lib/generation.server.ts")),
   );
   t(
-    "no generation module still says Top up in Billing",
+    "no generation or AI module still says Top up in Billing",
     ![
       "src/lib/generation.server.ts",
       "src/lib/admin-quick-page.functions.ts",
-      "src/lib/ai-metering.server.ts",
+      "src/lib/ai/spend.server.ts",
+      "src/lib/ai/customer-error.ts",
       "src/lib/generation.functions.ts",
     ].some((f) => /Top up in Billing/.test(read(f))),
   );
@@ -1005,11 +911,14 @@ console.log("\n=== out-of-funds copy points at support, not a withdrawn purchase
     "src/lib/admin-seo-coach.functions.ts",
   ]) {
     t(
-      `${f} no longer sends customers to the hidden API Keys page`,
-      !read(f).includes("Settings → API Keys") &&
-        read(f).includes("AI tools are not available right now. Contact support."),
+      `${f} does not send customers to the hidden API Keys page`,
+      !read(f).includes("Settings → API Keys"),
     );
   }
+  t(
+    "a missing key is the plain 'not available, contact support' sentence for every route",
+    AI_MESSAGES.notConfigured === "AI tools are not available right now. Contact support.",
+  );
 }
 
 console.log("\n=== brief + inventory grounding ===");
@@ -1036,327 +945,251 @@ console.log("\n=== brief + inventory grounding ===");
   t("no listings → says so", none.includes("No example listings yet"));
 }
 
-console.log("\n=== OpenRouter caller (stubbed fetch) ===");
+console.log("\n=== OpenAI page writer (stubbed fetch, through the spend flow) ===");
 {
+  // generatePageContent → runMeteredAiCall → callOpenAI, with the provider
+  // behind an injected fetch and the spend RPCs behind an injected db. No
+  // city is passed, so no inventory read happens. What is asserted is what
+  // would be sent to OpenAI, what reaches the customer, and what is settled.
+  const WS = "11111111-1111-4111-8111-111111111111";
+  const USER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const KEY = "sk-test-byok-0123456789";
   const body = "# Boats in Austin\n\n" + "Real copy about real boats. ".repeat(40);
-  const okResponse = (payload: unknown) =>
-    new Response(JSON.stringify(payload), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  const good = {
-    usage: { prompt_tokens: 812, completion_tokens: 1204 },
-    choices: [
-      {
-        message: {
-          tool_calls: [
-            {
-              function: {
-                name: "write_page",
-                arguments: JSON.stringify({
-                  title: "Boats in Austin",
-                  seo_title: "Boats in Austin, TX",
-                  seo_description: "Rent a boat.",
-                  body_markdown: body,
-                }),
-              },
-            },
-          ],
-        },
-      },
-    ],
+  const page = {
+    title: "Boats in Austin",
+    seo_title: "Boats in Austin, TX",
+    seo_description: "Rent a boat.",
+    body_markdown: body,
   };
-
-  let captured: { url: string; init?: RequestInit } | null = null;
-  const fetchOk = async (url: string, init?: RequestInit) => {
-    captured = { url, init };
-    return okResponse(good);
+  const USAGE = {
+    input_tokens: 812,
+    input_tokens_details: { cached_tokens: 0 },
+    output_tokens: 1204,
+    output_tokens_details: { reasoning_tokens: 0 },
+    total_tokens: 2016,
   };
-
-  const r = await callOpenRouterWritePage({
-    apiKey: "test-key",
-    model: "google/gemini-3-flash-preview",
-    systemPrompt: "sys",
-    userPrompt: "usr",
-    fetchImpl: fetchOk,
+  const responseObject = (content: unknown[], usage: unknown = USAGE, extra: Record<string, unknown> = {}) => ({
+    id: "resp_test",
+    object: "response",
+    created_at: 1,
+    status: "completed",
+    model: "gpt-5-nano-2025-08-07",
+    output: [{ type: "message", id: "msg_test", status: "completed", role: "assistant", content }],
+    usage,
+    ...extra,
   });
-  t("parses the tool call", r.title === "Boats in Austin" && r.body_markdown === body);
-  t("reports token usage", r.promptTokens === 812 && r.completionTokens === 1204);
-  t(
-    "hits the chat completions endpoint",
-    !!captured && captured!.url.endsWith("/chat/completions"),
-  );
-  const sent = JSON.parse(String(captured!.init?.body ?? "{}"));
-  t("forces the write_page tool", sent.tool_choice?.function?.name === "write_page");
-  t("sends the requested model", sent.model === "google/gemini-3-flash-preview");
-  t(
-    "bearer auth header set",
-    String((captured!.init?.headers as any)?.Authorization).startsWith("Bearer "),
-  );
-  t("every call carries an abort signal (timeout)", captured!.init?.signal instanceof AbortSignal);
+  const textPart = (text: string) => ({ type: "output_text", text, annotations: [] });
+  const jsonResponse = (payload: unknown, status = 200) =>
+    new Response(JSON.stringify(payload), {
+      status,
+      headers: { "content-type": "application/json", "x-request-id": "req_test" },
+    });
 
-  const short = {
-    ...good,
-    choices: [
-      {
-        message: {
-          tool_calls: [
-            {
-              function: {
-                arguments: JSON.stringify({
-                  title: "x",
-                  seo_title: "x",
-                  seo_description: "x",
-                  body_markdown: "too short",
-                }),
-              },
-            },
-          ],
-        },
-      },
-    ],
+  type Event = { kind: "rpc" | "fetch"; name: string; args?: any };
+  const makeDb = (events: Event[]) => ({
+    rpc: async (name: string, args: any) => {
+      events.push({ kind: "rpc", name, args });
+      if (name === "ai_reserve") return { data: { status: "reserved", billing: "byok", hold_seq: 1, credits_charged: 0 }, error: null };
+      if (name === "ai_mark_called") return { data: true, error: null };
+      if (name === "ai_release") return { data: true, error: null };
+      if (name === "ai_settle") {
+        return {
+          data: { status: "settled", billing: "byok", credits_charged: 0, cost_micros: args._cost_micros, full_hold: args._cost_micros === null },
+          error: null,
+        };
+      }
+      return { data: null, error: { message: `unexpected rpc ${name}` } };
+    },
+  });
+  const billing: ResolvedBilling = {
+    key: { apiKey: KEY, source: "byok" },
+    keySource: "byok",
+    billingClass: "byok",
+    mode: "byok",
   };
-  let err = "";
-  let caught: unknown = null;
-  try {
-    await callOpenRouterWritePage({
-      apiKey: "k",
-      model: "m",
-      systemPrompt: "s",
-      userPrompt: "u",
-      fetchImpl: async () => okResponse(short),
-    });
-  } catch (e) {
-    caught = e;
-    err = (e as Error).message;
+  type Captured = { url: string; init?: RequestInit };
+  async function write(
+    respond: (req: Captured) => Promise<Response> | Response,
+    opts: { tier?: "standard" | "premium" } = {},
+  ) {
+    const events: Event[] = [];
+    const requests: Captured[] = [];
+    const logs: string[] = [];
+    const origError = console.error;
+    const origWarn = console.warn;
+    console.error = (...a: unknown[]) => logs.push(a.map(String).join(" "));
+    console.warn = (...a: unknown[]) => logs.push(a.map(String).join(" "));
+    let out: Awaited<ReturnType<typeof generatePageContent>> | null = null;
+    let caught: unknown = null;
+    try {
+      out = await generatePageContent({
+        workspaceId: WS,
+        userId: USER,
+        requestId: crypto.randomUUID(),
+        source: "quick_page",
+        tier: opts.tier ?? "standard",
+        title: "Boats in Austin",
+        topic: "City hub page for boats in Austin, Texas",
+        billing,
+        deps: {
+          db: makeDb(events),
+          transport: {
+            fetch: async (input, init) => {
+              const req = { url: String(input instanceof Request ? input.url : input), init };
+              requests.push(req);
+              events.push({ kind: "fetch", name: req.url });
+              return respond(req);
+            },
+          },
+        },
+      });
+    } catch (e) {
+      caught = e;
+    } finally {
+      console.error = origError;
+      console.warn = origWarn;
+    }
+    const settle = events.find((e) => e.name === "ai_settle")?.args ?? null;
+    return { out, caught, err: caught instanceof Error ? caught.message : "", events, requests, logs, settle };
   }
-  t(`rejects a body under ${MIN_BODY_CHARS} chars`, /too short/.test(err), err);
-  t("…as a customer-facing error", caught instanceof CustomerFacingError);
-  // The provider billed the key for that answer: the refusal carries the
-  // usage it reported, so a failure after the call logs real spend.
-  const thinUsage = providerUsageOf(caught);
+
+  const ok = await write(() => jsonResponse(responseObject([textPart(JSON.stringify(page))])));
+  t("parses the structured page", ok.out?.title === "Boats in Austin" && ok.out?.body_markdown === body, ok.err);
   t(
-    "…carrying the usage the provider reported (for the failed-spend log)",
-    thinUsage?.promptTokens === 812 && thinUsage?.completionTokens === 1204,
-    JSON.stringify(thinUsage),
+    "reports token usage",
+    ok.out?.usage?.inputTokens === 812 && ok.out?.usage?.outputTokens === 1204,
+    JSON.stringify(ok.out?.usage),
+  );
+  t("exactly one request, to the Responses API", ok.requests.length === 1 && ok.requests[0]!.url === "https://api.openai.com/v1/responses", ok.requests[0]?.url);
+  const sent = JSON.parse(String(ok.requests[0]?.init?.body ?? "{}"));
+  t(
+    "Structured Outputs with the write_page schema, strict",
+    sent.text?.format?.type === "json_schema" &&
+      sent.text?.format?.name === "write_page" &&
+      sent.text?.format?.strict === true &&
+      JSON.stringify(sent.text?.format?.schema) === JSON.stringify(WRITE_PAGE_SCHEMA),
+    JSON.stringify(sent.text),
+  );
+  t("standard sends gpt-5-nano", sent.model === "gpt-5-nano", sent.model);
+  t(
+    "the route's output limit, store off, minimal reasoning, no sampling parameters",
+    sent.max_output_tokens === AI_ROUTE_LIMITS.page_generation.maxOutputTokens &&
+      sent.store === false &&
+      sent.reasoning?.effort === "minimal" &&
+      !("temperature" in sent) &&
+      !("top_p" in sent),
+    JSON.stringify({ ...sent, instructions: undefined, input: undefined }),
   );
   t(
-    "…without changing what the error looks like (the usage is not enumerable)",
-    !Object.keys(caught as object).some((k) => /usage|token/i.test(k)) &&
-      !JSON.stringify(caught).includes("812") &&
-      (caught as Error).message === `Generated body too short (9 chars)`,
+    "bearer auth with the resolved key",
+    new Headers(ok.requests[0]?.init?.headers).get("authorization") === `Bearer ${KEY}`,
+  );
+  t("every call carries an abort signal (timeout)", ok.requests[0]?.init?.signal instanceof AbortSignal);
+  const order = ok.events.map((e) => (e.kind === "fetch" ? "provider" : e.name)).join(" → ");
+  t("order: ai_reserve → ai_mark_called → provider → ai_settle", order === "ai_reserve → ai_mark_called → provider → ai_settle", order);
+  t(
+    "the hold is for the page route and the standard model",
+    ok.events[0]?.args?._feature === "page_generation" && ok.events[0]?.args?._model === "gpt-5-nano",
+  );
+  t(
+    "settled with the reported usage, outcome ok",
+    ok.settle?._input_tokens === 812 && ok.settle?._output_tokens === 1204 && ok.settle?._outcome === "ok" && ok.settle?._error === null,
+    JSON.stringify(ok.settle),
   );
 
-  err = "";
-  caught = null;
-  try {
-    await callOpenRouterWritePage({
-      apiKey: "k",
-      model: "m",
-      systemPrompt: "s",
-      userPrompt: "u",
-      fetchImpl: async () => okResponse({ choices: [{ message: { content: "plain text" } }] }),
-    });
-  } catch (e) {
-    caught = e;
-    err = (e as Error).message;
-  }
-  t("rejects a response without a tool call", /missing tool call/.test(err), err);
-  t("…as a customer-facing error", caught instanceof CustomerFacingError);
+  const premium = await write(() => jsonResponse(responseObject([textPart(JSON.stringify(page))])), { tier: "premium" });
+  const premiumSent = JSON.parse(String(premium.requests[0]?.init?.body ?? "{}"));
+  t("premium sends gpt-5-mini, and holds for it", premiumSent.model === "gpt-5-mini" && premium.events[0]?.args?._model === "gpt-5-mini");
 
-  err = "";
-  caught = null;
-  try {
-    await callOpenRouterWritePage({
-      apiKey: "k",
-      model: "m",
-      systemPrompt: "s",
-      userPrompt: "u",
-      fetchImpl: async () =>
-        okResponse({
-          choices: [{ message: { tool_calls: [{ function: { arguments: "{not json" } }] } }],
+  const thin = await write(() => jsonResponse(responseObject([textPart(JSON.stringify({ ...page, body_markdown: "too short" }))])));
+  t(`rejects a body under ${MIN_BODY_CHARS} chars`, thin.err === "Generated body too short (9 chars)", thin.err);
+  t("…as a customer-facing error", thin.caught instanceof CustomerFacingError);
+  t(
+    "…settled as 'failed' with the usage the provider reported (the call was paid for)",
+    thin.settle?._outcome === "failed" && thin.settle?._error === "thin_output" && thin.settle?._input_tokens === 812 && thin.settle?._output_tokens === 1204,
+    JSON.stringify(thin.settle),
+  );
+
+  const refused = await write(() => jsonResponse(responseObject([{ type: "refusal", refusal: "I can't help with that." }])));
+  t("a model refusal is a customer sentence, not the model's text", refused.err === AI_MESSAGES.refusal && !/can't help/.test(refused.err), refused.err);
+  t("…as a customer-facing error", refused.caught instanceof CustomerFacingError);
+
+  const notJson = await write(() => jsonResponse(responseObject([textPart("plain text, not the object")])));
+  t("output that is not the JSON object is rejected", notJson.err === AI_MESSAGES.malformed, notJson.err);
+  t("…as a customer-facing error", notJson.caught instanceof CustomerFacingError);
+
+  const wrongShape = await write(() => jsonResponse(responseObject([textPart(JSON.stringify({ title: "x" }))])));
+  t("an object that misses the schema is rejected", wrongShape.err === AI_MESSAGES.malformed, wrongShape.err);
+  t("…and settled with the usage reported", wrongShape.settle?._error === "schema_mismatch" && wrongShape.settle?._input_tokens === 812);
+
+  const busy = await write(() => new Response("rate limited, slow down: req_abc123", { status: 429 }));
+  t("a 429 is the generic 'busy' sentence", busy.err === AI_MESSAGES.providerBusy, busy.err);
+  t("…as a customer-facing error", busy.caught instanceof CustomerFacingError);
+  t("the provider body never reaches the customer", !busy.err.includes("rate limited") && !busy.err.includes("429"));
+  t(
+    "the status and the body go to the server log",
+    busy.logs.some((l) => l.includes("429") && l.includes("rate limited") && l.includes("req_abc123")),
+    busy.logs.join(" | "),
+  );
+  t("exactly one request (no SDK retry)", busy.requests.length === 1);
+  t("…settled at zero: OpenAI rejected it before doing any work", busy.settle?._cost_micros === 0 && busy.settle?._error === "rate_limited", JSON.stringify(busy.settle));
+
+  const boom = await write(() => new Response("x".repeat(1000), { status: 500 }));
+  t("a 500 yields the generic provider message", boom.err === PROVIDER_ERROR_MESSAGE, boom.err);
+  const boomLog = boom.logs.find((l) => l.includes("status=500")) ?? "";
+  t("the logged body is truncated", boomLog.length > 0 && boomLog.length < 600, String(boomLog.length));
+  t("…settled at the full hold (OpenAI may have done the work)", boom.settle?._cost_micros === null && boom.settle?._error === "server_error", JSON.stringify(boom.settle));
+
+  // A provider that never answers: fetch rejects the way the runtime does
+  // when the signal fires (a TimeoutError DOMException). The real abort
+  // timing is exercised in tests/ai-provider.test.ts with a short timeout.
+  const hung = await write(() => Promise.reject(new DOMException("The operation was aborted due to timeout", "TimeoutError")));
+  t("a hung provider is abandoned with the timeout message", hung.err === PROVIDER_TIMEOUT_MESSAGE, hung.err);
+  t("…as a customer-facing error", hung.caught instanceof CustomerFacingError);
+  t("the timeout is logged server-side", hung.logs.some((l) => /timeout/.test(l)), hung.logs.join(" | "));
+  t("…and settled at the full hold", hung.settle?._cost_micros === null && hung.settle?._error === "timeout", JSON.stringify(hung.settle));
+
+  // 200 headers, then the body stalls until the abort fires mid-read.
+  const midBody = await write(
+    () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"id":"resp_test","object":"resp'));
+            controller.error(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+          },
         }),
-    });
-  } catch (e) {
-    caught = e;
-    err = (e as Error).message;
-  }
-  t("rejects malformed tool arguments", /not valid JSON/.test(err), err);
-  t("…as a customer-facing error", caught instanceof CustomerFacingError);
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+  );
+  t("a timeout during the body read yields the timeout message", midBody.err === PROVIDER_TIMEOUT_MESSAGE, midBody.err);
+  t("the raw abort message never reaches the customer", !/aborted/i.test(midBody.err));
+  t("…settled at the full hold", midBody.settle?._cost_micros === null, JSON.stringify(midBody.settle));
 
-  const logs: string[] = [];
-  err = "";
-  caught = null;
-  try {
-    await callOpenRouterWritePage({
-      apiKey: "k",
-      model: "m",
-      systemPrompt: "s",
-      userPrompt: "u",
-      fetchImpl: async () => new Response("rate limited, slow down: req_abc123", { status: 429 }),
-      log: (m) => logs.push(m),
-    });
-  } catch (e) {
-    caught = e;
-    err = (e as Error).message;
-  }
-  t("non-2xx throws the generic customer message", err === PROVIDER_ERROR_MESSAGE, err);
-  t("…as a customer-facing error", caught instanceof CustomerFacingError);
-  t("…with no usage attached (none was reported: a typical page is logged)", providerUsageOf(caught) === null);
-  t(
-    "the provider body never reaches the customer",
-    !err.includes("rate limited") && !err.includes("429"),
+  const html = await write(
+    () =>
+      new Response("<html>bad gateway trace-id=xyz</html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
   );
   t(
-    "the status and raw body go to the server log",
-    logs.some((l) => l.includes("429") && l.includes("rate limited") && l.includes("req_abc123")),
-    logs.join(" | "),
+    "an unreadable 200 body is a fixed customer sentence, never the body",
+    html.caught instanceof CustomerFacingError && !/html|trace-id|gateway/i.test(html.err) && [AI_MESSAGES.malformed, PROVIDER_ERROR_MESSAGE].includes(html.err as any),
+    html.err,
   );
+  t("…logged as a malformed body", html.logs.some((l) => /malformed/.test(l)), html.logs.join(" | "));
 
-  logs.length = 0;
-  err = "";
-  try {
-    await callOpenRouterWritePage({
-      apiKey: "k",
-      model: "m",
-      systemPrompt: "s",
-      userPrompt: "u",
-      fetchImpl: async () => new Response("x".repeat(1000), { status: 500 }),
-      log: (m) => logs.push(m),
-    });
-  } catch (e) {
-    err = (e as Error).message;
-  }
-  t("a 500 also yields the generic message", err === PROVIDER_ERROR_MESSAGE, err);
-  t(
-    "the logged body is truncated",
-    logs.length === 1 && logs[0]!.length < 600,
-    String(logs[0]?.length),
-  );
+  const reset = await write(() => {
+    throw new TypeError("fetch failed: ECONNRESET 10.0.0.1");
+  });
+  t("a network failure yields the generic message", reset.err === PROVIDER_ERROR_MESSAGE, reset.err);
+  t("the network failure detail stays in the log", reset.logs.some((l) => l.includes("ECONNRESET")), reset.logs.join(" | "));
 
-  // A provider that never answers: the signal fires and fetch rejects the way
-  // the real one does (DOMException TimeoutError as the abort reason).
-  const fetchHonouringAbort = (_url: string, init?: RequestInit) =>
-    new Promise<Response>((_, reject) => {
-      const sig = init?.signal;
-      if (!sig) return reject(new Error("no signal"));
-      if (sig.aborted) return reject(sig.reason);
-      sig.addEventListener("abort", () => reject(sig.reason), { once: true });
-    });
-  logs.length = 0;
-  err = "";
-  caught = null;
-  try {
-    await callOpenRouterWritePage({
-      apiKey: "k",
-      model: "m",
-      systemPrompt: "s",
-      userPrompt: "u",
-      fetchImpl: fetchHonouringAbort,
-      timeoutMs: 5,
-      log: (m) => logs.push(m),
-    });
-  } catch (e) {
-    caught = e;
-    err = (e as Error).message;
-  }
-  t("a hung provider is abandoned with the timeout message", err === PROVIDER_TIMEOUT_MESSAGE, err);
-  t("…as a customer-facing error", caught instanceof CustomerFacingError);
-  t(
-    "the timeout is logged server-side",
-    logs.some((l) => /timeout/.test(l)),
-    logs.join(" | "),
-  );
-
-  // A provider that answers 200 and then stalls mid-body: the abort fires
-  // while resp.json() is still reading. That must surface as the timeout
-  // sentence, never the runtime's own "The operation was aborted".
-  logs.length = 0;
-  err = "";
-  caught = null;
-  try {
-    await callOpenRouterWritePage({
-      apiKey: "k",
-      model: "m",
-      systemPrompt: "s",
-      userPrompt: "u",
-      fetchImpl: async () =>
-        ({
-          ok: true,
-          status: 200,
-          json: () =>
-            Promise.reject(
-              Object.assign(new Error("The operation was aborted due to timeout"), {
-                name: "TimeoutError",
-              }),
-            ),
-          text: async () => "",
-        }) as unknown as Response,
-      log: (m) => logs.push(m),
-    });
-  } catch (e) {
-    caught = e;
-    err = (e as Error).message;
-  }
-  t("a timeout during the body read yields the timeout message", err === PROVIDER_TIMEOUT_MESSAGE, err);
-  t("…as a customer-facing error", caught instanceof CustomerFacingError);
-  t("the raw abort message never reaches the customer", !/aborted/i.test(err));
-  t(
-    "the abort detail stays in the log",
-    logs.some((l) => /timeout/.test(l) && /aborted/.test(l)),
-    logs.join(" | "),
-  );
-
-  // A 200 whose body is not JSON at all (a proxy page, a truncated stream).
-  logs.length = 0;
-  err = "";
-  caught = null;
-  try {
-    await callOpenRouterWritePage({
-      apiKey: "k",
-      model: "m",
-      systemPrompt: "s",
-      userPrompt: "u",
-      fetchImpl: async () =>
-        new Response("<html>bad gateway trace-id=xyz</html>", {
-          status: 200,
-          headers: { "Content-Type": "text/html" },
-        }),
-      log: (m) => logs.push(m),
-    });
-  } catch (e) {
-    caught = e;
-    err = (e as Error).message;
-  }
-  t("an unreadable 200 body yields the generic provider message", err === PROVIDER_ERROR_MESSAGE, err);
-  t("…as a customer-facing error", caught instanceof CustomerFacingError);
-  t(
-    "the parse failure is logged as an unreadable body",
-    logs.some((l) => /unreadable body/.test(l)),
-    logs.join(" | "),
-  );
-
-  logs.length = 0;
-  err = "";
-  try {
-    await callOpenRouterWritePage({
-      apiKey: "k",
-      model: "m",
-      systemPrompt: "s",
-      userPrompt: "u",
-      fetchImpl: async () => {
-        throw new TypeError("fetch failed: ECONNRESET 10.0.0.1");
-      },
-      log: (m) => logs.push(m),
-    });
-  } catch (e) {
-    err = (e as Error).message;
-  }
-  t("a network failure yields the generic message", err === PROVIDER_ERROR_MESSAGE, err);
-  t(
-    "the network failure detail stays in the log",
-    logs.some((l) => l.includes("ECONNRESET")),
-  );
+  const leaky = await write(() => new Response(JSON.stringify({ error: { message: `Incorrect API key provided: ${KEY}`, type: "invalid_request_error", code: "invalid_api_key" } }), { status: 401, headers: { "content-type": "application/json" } }));
+  t("a rejected key is the 'not available' sentence", leaky.err === AI_MESSAGES.notConfigured, leaky.err);
+  t("the key never reaches a log line", !leaky.logs.some((l) => l.includes(KEY)), leaky.logs.join(" | "));
+  t("…settled at zero (rejected before any work)", leaky.settle?._cost_micros === 0 && leaky.settle?._error === "auth", JSON.stringify(leaky.settle));
 }
 
 console.log("\n=== batch pipeline ordering (source guards) ===");
@@ -1370,9 +1203,16 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
     "the attempt ceiling is checked before the claim",
     runItem.indexOf("attemptsExhausted(row.attempts)") < claim,
   );
-  // The daily cap is a reservation PER ATTEMPT now (one row per provider
-  // call), not the pending item row: an item row can be re-armed, a
-  // reservation cannot be taken back once its provider call is marked.
+  // The job's stored model is re-validated: anything outside the allowlist
+  // is refused, never mapped to another model.
+  t(
+    "the job's model must map back to a tier, before the claim",
+    /const tier = job\?\.model \? tierForModel\(job\.model\) : GENERATION_DEFAULT_TIER;\s*if \(!tier\) \{[\s\S]*?return refuse\(GENERATION_UNAVAILABLE_MESSAGE\);/.test(runItem) &&
+      runItem.indexOf("tierForModel(job.model)") < claim,
+  );
+  // The daily cap is a reservation PER ATTEMPT (one row per provider call),
+  // not the pending item row: an item row can be re-armed, a reservation
+  // cannot be taken back once its provider call is marked.
   const attemptIdAt = runItem.indexOf("const attemptId = await batchAttemptRequestId(row);");
   const reserveAt = runItem.indexOf(
     "slot = await reserveGenerationSlot(workspaceId, attemptId, settings.dailyCap);",
@@ -1387,8 +1227,8 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
     !runItem.includes("countConsumedLast24h(") && !runItem.includes("excludeItemId"),
   );
   t(
-    "a settlement-only retry (the draft exists) takes no slot",
-    /let slotId: string \| null = null;\s*if \(!row\.page_id\) \{\s*const attemptId = await batchAttemptRequestId\(row\);/.test(
+    "an item whose draft exists takes no slot (nothing is generated again)",
+    /let slotId: string \| null = null;\s*if \(!row\.page_id\) \{[\s\S]*?const attemptId = await batchAttemptRequestId\(row\);/.test(
       runItem,
     ),
   );
@@ -1408,17 +1248,21 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
     ),
   );
   t(
-    "the batch reservation is documented as one slot per attempt",
+    "the batch reservation is documented as one slot per attempt, shared with the spend hold",
     /daily cap is a RESERVATION per attempt/.test(fns) &&
-      /The daily-cap reservation for THIS attempt, before the claim/.test(runItem),
+      /the SAME id its spend hold\s*\* is taken under/.test(fns) &&
+      /the daily-cap slot for THIS attempt, before the claim/.test(runItem),
+  );
+  // Who pays is decided before the slot: a billing refusal takes no slot at all.
+  t(
+    "who pays is resolved before the slot and the claim (a billing refusal reserves nothing)",
+    runItem.indexOf("billing = await resolveBillingMode(workspaceId);") > 0 &&
+      runItem.indexOf("billing = await resolveBillingMode(workspaceId);") < reserveAt &&
+      /billing = await resolveBillingMode\(workspaceId\);\s*\} catch \(e\) \{[\s\S]{0,300}?return refuse\(customerMessage\(e, GENERATION_UNAVAILABLE_MESSAGE\)\.slice\(0, 300\)\);/.test(
+        runItem,
+      ),
   );
   // The slot goes back ONLY on a way out that never reached the provider.
-  t(
-    "a billing refusal releases the attempt's slot before refusing",
-    /\} catch \(e\) \{[\s\S]{0,200}?await releaseSlot\(\);\s*return refuse\(customerMessage\(e, GENERATION_UNAVAILABLE_MESSAGE\)/.test(
-      runItem,
-    ),
-  );
   t(
     "a claim error or a lost claim releases the slot",
     /if \(claimErr\) \{\s*await releaseSlot\(\);\s*throw new Error\(claimErr\.message\);/.test(runItem) &&
@@ -1428,32 +1272,24 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
     "linking an existing page instead of generating releases the slot",
     /billing_status: "free",\s*error: null,\s*\}\);[\s\S]{0,120}?await releaseSlot\(\);/.test(runItem),
   );
-  const markAt = runItem.indexOf("await markGenerationProviderCalled(workspaceId, slotId);");
   t(
-    "the attempt's reservation is marked spent in beforeProviderCall, then providerCalled is set",
-    markAt > 0 &&
-      /beforeProviderCall: async \(\) => \{[\s\S]*?await markGenerationProviderCalled\(workspaceId, slotId\);\s*providerCalled = true;/.test(
-        runItem,
-      ),
-  );
-  t(
-    "after the provider call the slot is never released; a failure with no page logs the spend",
-    /\} catch \(e\) \{\s*if \(!providerCalled\) \{[\s\S]*?await releaseSlot\(\);\s*\} else if \(!pageLinked\) \{[\s\S]*?await recordFailedGeneration\(\{[\s\S]*?feature: "batch_generation",/.test(
+    "the attempt's slot is marked spent in beforeProviderCall, under the attempt id, then slotMarked is set",
+    /beforeProviderCall: async \(\) => \{\s*await markGenerationProviderCalled\(workspaceId, attemptSlot\);\s*slotMarked = true;\s*\}/.test(
       runItem,
-    ),
+    ) && /const attemptSlot = slotId;/.test(runItem),
   );
   t(
-    "pageLinked is set only once the item knows its page",
-    runItem.indexOf("pageLinked = true;") > runItem.indexOf("page_id: page.id") &&
-      runItem.indexOf("pageLinked = true;") < runItem.indexOf("const settled = await settleGeneration({\n          workspaceId,\n          userId,\n          keySource: gen.keySource"),
+    "the spend hold is taken under the SAME attempt id as the slot",
+    /gen = await generatePageContent\(\{\s*workspaceId,\s*userId,\s*requestId: attemptSlot,\s*source: "batch_generation",\s*tier,/.test(runItem),
+  );
+  t(
+    "after the provider call the slot is never released (the spend flow settled the call)",
+    /\} catch \(e\) \{\s*if \(!slotMarked\) \{[\s\S]*?await releaseSlot\(\);\s*\}/.test(runItem) &&
+      !/recordFailedGeneration|settleGeneration/.test(runItem),
   );
   t(
     "releaseSlot touches only this run's own reservation",
     /const releaseSlot = async \(\) => \{\s*if \(slotId\) await releaseGenerationSlot\(workspaceId, slotId\);\s*\};/.test(runItem),
-  );
-  t(
-    "who pays is resolved before the claim (no attempt burned on no-credits)",
-    runItem.indexOf("resolveBillingMode(") < claim,
   );
   t(
     "an item that already has a page never generates again",
@@ -1464,24 +1300,26 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
     "an existing page for the city is linked instead of generated",
     runItem.indexOf("findExistingCityPage(") < runItem.indexOf("generatePageContent("),
   );
-  const persist = runItem.indexOf("const page = await persistGeneratedPage(");
+  const genAt = runItem.indexOf("gen = await generatePageContent(");
+  const persist = runItem.indexOf("saved = await persistGeneratedPage(");
   const link = runItem.indexOf("page_id: page.id", persist);
-  const settle = runItem.indexOf("settleGeneration(", persist);
   t(
-    "page_id is written to the item BEFORE settlement",
-    persist > 0 && link > persist && settle > link,
+    "the draft is written inside the spend flow's deliver step (before the settlement), and linked to the item after",
+    genAt > 0 &&
+      persist > genAt &&
+      /deliver: async \(draft\) => \{\s*saved = await persistGeneratedPage\(\{\s*workspaceId,\s*generated: draft,/.test(runItem) &&
+      /const page = saved as PersistedPage \| null;\s*if \(!page\) throw new Error/.test(runItem) &&
+      link > persist,
   );
   t(
-    "the page_id write is fenced and error-checked",
-    /await markItemFenced\(row\.id, token, \{\s*page_id: page\.id/.test(runItem),
+    "the page link and what the settlement charged land in ONE fenced write",
+    /await markItemFenced\(row\.id, token, \{\s*status: "done",\s*page_id: page\.id,\s*slug: page\.slug,\s*prompt_tokens: gen\.usage\?\.inputTokens \?\? null,\s*completion_tokens: gen\.usage\?\.outputTokens \?\? null,\s*credits_charged: gen\.settlement\.creditsCharged,/.test(
+      runItem,
+    ),
   );
   t(
     "the fenced write throws when it lands on no row",
     /if \(!data \|\| data\.length === 0\) throw new LostClaimError\(\)/.test(fns),
-  );
-  t(
-    "an unbilled settlement fails the item with credits_charged 0",
-    /status: "failed",\s*credits_charged: 0,\s*billing_status: "unbilled"/.test(fns),
   );
 
   // Pre-claim writes (cancel → skipped, refuse → failed) are fenced on the
@@ -1521,6 +1359,15 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
   const start = fns.slice(
     fns.indexOf("export const startGenerationJob"),
     fns.indexOf("export const getGenerationJob"),
+  );
+  t(
+    "the job stores the model the SERVER resolved from the tier",
+    /const model = modelForTier\(data\.quality\);/.test(start) && /status: "queued",\s*model,/.test(start),
+  );
+  t(
+    "the job input takes a tier, is strict, and never a model",
+    /quality: z\.enum\(GENERATION_TIERS\)\.default\(GENERATION_DEFAULT_TIER\),/.test(fns) &&
+      /export const StartGenerationJobInputSchema = z\s*\.object\(\{[\s\S]*?\}\)\s*\.strict\(\);/.test(fns),
   );
   t(
     "idle re-attach is guarded by status",
@@ -1583,6 +1430,10 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
     "alreadyGenerated requires a live page",
     list.includes('existing?.status === "done" && !!existing.page_id'),
   );
+  t(
+    "listGenerationTargets offers tiers, never model names",
+    list.includes("tiers: GENERATION_TIER_OPTIONS") && list.includes("defaultTier: GENERATION_DEFAULT_TIER") && !/models:/.test(list),
+  );
 }
 
 console.log("\n=== quick page pipeline (source guards) ===");
@@ -1601,7 +1452,7 @@ console.log("\n=== quick page pipeline (source guards) ===");
   t("the quick page no longer counts the cap in TypeScript", !quick.includes("countConsumedLast24h("));
   t(
     "the reservation is keyed by the request id and the platform cap",
-    /reserveGenerationSlot\(\s*data\.workspaceId,\s*generationRequestId,\s*settings\.dailyCap,\s*\)/.test(
+    /reserveGenerationSlot\(\s*data\.workspaceId,\s*generationRequestId,\s*settings\.dailyCap,?\s*\)/.test(
       handler,
     ),
   );
@@ -1631,74 +1482,85 @@ console.log("\n=== quick page pipeline (source guards) ===");
   );
   t(
     "the pause refusal is customer-facing",
-    /throw new CustomerFacingError\("Generation is paused platform-wide right now\."\)/.test(handler),
+    /if \(settings\.paused\) \{\s*throw new CustomerFacingError\(GENERATION_PAUSED_MESSAGE\);/.test(handler),
   );
-  t("resolves who pays before generating", handler.indexOf("resolveBillingMode(") < gen);
-  t("resolves who pays after reserving (a refusal releases the slot)", handler.indexOf("resolveBillingMode(") > reserve);
+  const payer = handler.indexOf("resolveBillingMode(");
+  t("resolves who pays before generating", payer > 0 && payer < gen);
+  t("resolves who pays before reserving (a no-key refusal takes no slot)", payer < reserve);
   const release = handler.indexOf("releaseGenerationSlot(");
   t(
-    "a failure BEFORE the provider call releases the reservation; one after it never does — it logs the spend — and both rethrow",
+    "a failure BEFORE the provider call releases the slot; one after it never does — and both rethrow",
     release > reserve &&
-      release < handler.indexOf("settleGeneration(") &&
-      /\} catch \(e\) \{\s*if \(!providerCalled\) \{[\s\S]*?await releaseGenerationSlot\(data\.workspaceId, generationRequestId\);\s*\} else \{[\s\S]*?await recordFailedGeneration\(\{[\s\S]*?feature: "quick_page",[\s\S]*?\}\);\s*\}\s*throw e;/.test(
+      /\} catch \(e\) \{\s*if \(!slotMarked\) \{[\s\S]*?await releaseGenerationSlot\(data\.workspaceId, generationRequestId\);\s*\}\s*throw e;/.test(
         handler,
       ) &&
       (handler.match(/releaseGenerationSlot\(/g) ?? []).length === 1,
   );
   t(
-    "the reservation is marked spent immediately before the provider request, then providerCalled is set",
-    /beforeProviderCall: async \(\) => \{\s*await markGenerationProviderCalled\(data\.workspaceId, generationRequestId\);\s*providerCalled = true;\s*\}/.test(
+    "the slot is marked spent immediately before the provider request, then slotMarked is set",
+    /beforeProviderCall: async \(\) => \{\s*await markGenerationProviderCalled\(data\.workspaceId, generationRequestId\);\s*slotMarked = true;\s*\}/.test(
       handler,
     ),
   );
   t(
-    "the failed-spend row uses the provider's usage when known (gen, or the refusal's), a typical page otherwise",
-    /usage: gen\s*\?\s*\{ promptTokens: gen\.promptTokens, completionTokens: gen\.completionTokens \}\s*:\s*providerUsageOf\(e\),/.test(
-      handler,
-    ),
+    "the spend hold is taken under the SAME request id, at the requested tier",
+    /generatePageContent\(\{\s*workspaceId: data\.workspaceId,\s*userId,\s*requestId: generationRequestId,[\s\S]*?tier: data\.quality,/.test(handler),
   );
   t(
-    "persists with the request id",
-    handler.includes("generationRequestId,") && quick.includes("generation_request_id") === false,
+    "failed spend is recorded by the spend flow, not here",
+    !/recordFailedGeneration|providerUsageOf|settleGeneration/.test(quick),
   );
   t(
-    "a replayed persist does not settle",
-    handler.indexOf("if (page.replayed)") < handler.indexOf("settleGeneration("),
+    "persists with the request id, inside the spend flow's deliver step (the customer pays only for a saved page)",
+    handler.includes("generationRequestId,") &&
+      quick.includes("generation_request_id") === false &&
+      /deliver: async \(draft\) => \{\s*saved = await persistGeneratedPage\(\{\s*workspaceId: data\.workspaceId,\s*generated: draft,/.test(handler),
   );
   t(
-    "an unbilled quick page is kept as a draft, not published",
-    handler.includes('settled.billing === "unbilled"'),
+    "a replayed persist returns the stored page (the charge the database recorded)",
+    /if \(page\.replayed\) \{\s*const existing = await findPageByRequestId\(data\.workspaceId, generationRequestId\);\s*if \(existing\) \{\s*return replayResult\(/.test(handler),
   );
-  t("uses z.enum over the picker ids", quick.includes("z.enum(GENERATION_MODEL_IDS)"));
+  t(
+    "funds are held before the call, so there is no 'unbilled draft' path left",
+    !quick.includes("UNBILLED_DRAFT_REASON") && !/"unbilled"/.test(quick),
+  );
+  t(
+    "the input takes a tier through z.enum and nothing else about the model",
+    quick.includes("quality: z.enum(GENERATION_TIERS).default(GENERATION_DEFAULT_TIER),") &&
+      !/\bmodel:\s*z\./.test(quick),
+  );
   t("quick page module says /a/, never /p/", !quick.includes("/p/") && quick.includes("/a/"));
 
-  // Replay settles a platform page (idempotent through the ledger) instead of
-  // reporting a hard-coded free result.
-  const replay = quick.slice(
-    quick.indexOf("async function replayResult("),
-    quick.indexOf("export async function runQuickPage"),
-  );
+  // Replay reports what the database settled for the request id; nothing is
+  // settled or charged again.
+  const replayAt = quick.indexOf("async function replayResult(");
+  const replay = quick.slice(replayAt, quick.indexOf("\n}\n", replayAt) + 2);
   t("replayResult was found", replay.length > 0);
   t(
-    "a replayed platform page is settled by page id with typical tokens",
-    replay.includes('existing.generation_billing_mode === "platform"') &&
-      /feature: "quick_page",\s*refId: existing\.id,/.test(replay) &&
-      replay.includes("promptTokens: TYPICAL_PAGE_TOKENS.prompt") &&
-      replay.includes("completionTokens: TYPICAL_PAGE_TOKENS.completion") &&
-      replay.includes('keySource: "platform"') &&
-      replay.includes('billingMode: "platform"'),
+    "a replay reads the settlement recorded for its request id",
+    /const spend = await readSpendSettlement\(ctx\.workspaceId, ctx\.requestId\);/.test(replay),
   );
   t(
-    "the replay reports the settled charge, not 0 / free",
-    /creditsCharged = settled\.creditsCharged;\s*billing = settled\.billingStatus;/.test(replay),
+    "a settled replay reports the settled charge, not 0 / free",
+    /if \(spend\.status === "settled"\) \{\s*creditsCharged = spend\.creditsCharged;\s*billing = billingStatusFor\(\{ settled: true, billing: spend\.billing, creditsCharged \}\);/.test(
+      replay,
+    ),
   );
   t(
-    "a non-platform replay owes nothing",
+    "a replay whose call is still held or unsettled is 'pending', never 'free'",
+    /else if \(spend\.status === "held" \|\| spend\.status === "called"\) \{\s*billing = "pending";/.test(replay),
+  );
+  t(
+    "a page without a spend record owes nothing",
     /let creditsCharged = 0;\s*let billing: ItemBillingStatus = "free";/.test(replay),
   );
   t(
+    "a replay settles nothing and calls nothing",
+    !/runMeteredAiCall|generatePageContent|ai_settle|ai_reserve/.test(replay),
+  );
+  t(
     "all three replay paths (step 0, a spent id with its page, post-persist) go through replayResult",
-    (handler.match(/return replayResult\(existing, \{ workspaceId: data\.workspaceId, userId, model: data\.model \}\);/g) ?? [])
+    (handler.match(/return replayResult\(existing, \{ workspaceId: data\.workspaceId, requestId: (data\.)?generationRequestId \}\);/g) ?? [])
       .length === 3,
   );
   const server = read("src/lib/generation.server.ts");
@@ -1706,9 +1568,13 @@ console.log("\n=== quick page pipeline (source guards) ===");
     "findPageByRequestId selects the billing mode",
     /\.select\("id, slug, title, status, body_markdown, generation_billing_mode"\)/.test(server),
   );
+  t(
+    "readSpendSettlement reads the one spend row for (workspace, request id)",
+    /\.from\("ai_spend_reservations"\)\s*\.select\("status, billing, credits_charged"\)\s*\.eq\("workspace_id", workspaceId\)\s*\.eq\("request_id", requestId\)/.test(server),
+  );
   const persistFn = server.slice(
     server.indexOf("export async function persistGeneratedPage"),
-    server.indexOf("export type LedgerSettlement"),
+    server.indexOf("export const DEFAULT_DAILY_CAP"),
   );
   t(
     "persistGeneratedPage records who paid on the page row",
@@ -1738,7 +1604,10 @@ console.log("\n=== coach create_city_page runs through the core ===");
   );
   t("createCityPage was found", create.length > 0);
   t("it calls the quick-page pipeline directly (not the server fn)", create.includes("await runQuickPage(") && !coach.includes("createQuickPage"));
-  t("it never calls the gateway", !create.includes("callAI(") && !create.includes("AI_URL") && !create.includes("fetch("));
+  t(
+    "it never calls a provider or the spend flow itself",
+    !/callAI\(|AI_URL|fetch\(|runMeteredAiCall|callOpenAI/.test(create),
+  );
   t("it never inserts a page row itself", !create.includes('.from("tenant_pages")'));
   t(
     "it builds the brief with buildCityBrief and keeps the dominant-category detection",
@@ -1755,42 +1624,49 @@ console.log("\n=== coach create_city_page runs through the core ===");
     /QuickPageInputSchema\.parse\(\{[\s\S]*?generationRequestId,\s*\}\)/.test(create),
   );
   t(
+    "it never passes a model or a tier of its own (standard, the schema default)",
+    !/\bmodel:|quality:/.test(create),
+  );
+  t(
     "an existing page for the city is a refusal via the core predicate, not a slug lookup",
     create.includes("findExistingCityPage(workspaceId, city, state || null)") &&
       !create.includes('.eq("slug"') &&
       /throw new CustomerFacingError\(\s*`A page for \$\{city\} already exists/.test(create),
   );
-  const run = coach.slice(coach.indexOf("export const runCoachAction"));
-  const branch = run.indexOf('if (data.actionType === "create_city_page")');
-  t("the core branch comes before any key resolution", branch > 0 && branch < run.indexOf("getWorkspaceSecretWithSource"));
-  t("the core branch comes before any platform metering", branch < run.indexOf("reservePlatformAi"));
-  t(
-    "the core branch neither reserves nor settles platform AI",
-    !run.slice(branch, run.indexOf("getWorkspaceSecretWithSource")).includes("PlatformAi"),
+  const pipeline = coach.slice(
+    coach.indexOf("export async function runCoachActionPipeline("),
+    coach.indexOf("export const runCoachAction"),
   );
+  const branch = pipeline.indexOf('if (data.actionType === "create_city_page")');
+  t("the core branch comes before any key resolution", branch > 0 && branch < pipeline.indexOf("resolveAiKey("));
   t(
-    "the core branch still writes the coach_action_log row",
-    (run.match(/await logAction\(errorMessage, result\);/g) ?? []).length === 2 &&
+    "the core branch neither resolves a key nor meters by itself",
+    !pipeline.slice(branch, pipeline.indexOf("resolveAiKey(")).includes("runMeteredAiCall"),
+  );
+  const run = coach.slice(coach.indexOf("export const runCoachAction"));
+  t(
+    "the server fn still writes the coach_action_log row, for success and failure alike",
+    (run.match(/await logAction\(errorMessage, result\);/g) ?? []).length === 1 &&
       run.includes('from("coach_action_log")'),
   );
   t(
-    "the core branch throws only a customer message",
-    /errorMessage = customerMessage\(e, GENERATION_UNAVAILABLE_MESSAGE\);/.test(run.slice(branch)),
+    "the server fn logs and throws only a customer message",
+    /errorMessage = customerMessage\(e, AI_MESSAGES\.unavailable\);/.test(run) &&
+      /if \(errorMessage \|\| !result\) throw new Error\(errorMessage \?\? AI_MESSAGES\.unavailable\);/.test(run),
   );
-  t("the gateway switch no longer has a create_city_page case", !/case "create_city_page"/.test(run));
   t(
     "internal-link counting matches the /a/ links the prompt asks for",
     coach.includes("/\\]\\(\\/a\\//g") && !coach.includes("/\\]\\(\\/p\\//g"),
   );
   const cron = read("supabase/functions/coach-briefing-cron/index.ts");
-  t("the briefing cron points at /a/, not /p/", cron.includes("Start with /a/${") && !cron.includes("/p/"));
+  t("the briefing cron points at /a/, not /p/", cron.includes("/a/") && !cron.includes("/p/"));
 }
 
 console.log("\n=== approveOpportunity: idempotent and guarded ===");
 {
   const opp = read("src/lib/opportunities.functions.ts");
-  const approve = opp.slice(opp.indexOf("export const approveOpportunity"), opp.indexOf("export const skipOpportunity"));
-  t("approveOpportunity was found", approve.length > 0);
+  const approve = opp.slice(opp.indexOf("export async function runApproveOpportunity("), opp.indexOf("export const skipOpportunity"));
+  t("approveOpportunity (its pipeline, runApproveOpportunity) was found", approve.length > 0 && /\.handler\(async \(\{ data, context \}\) => runApproveOpportunity\(data, context\.userId\)\)/.test(approve));
   t("the opportunity id is the generation request id", approve.includes("generationRequestId: opp.id,"));
   t(
     "the 'generating' transition is guarded against in-flight and finished states and reports its rows",
@@ -1806,6 +1682,7 @@ console.log("\n=== approveOpportunity: idempotent and guarded ===");
   );
   t("the guard precedes generation", approve.indexOf(".not(\"status\", \"in\"") < approve.indexOf("runQuickPage("));
   t("it calls the pipeline directly, through the schema", approve.includes("QuickPageInputSchema.parse({") && !approve.includes("createQuickPage"));
+  t("it never passes a model or a tier of its own", !/\bmodel:|quality:/.test(approve));
   t("a generation failure reports only a customer message", /customerMessage\(e, GENERATION_UNAVAILABLE_MESSAGE\)/.test(approve));
 }
 
@@ -1815,8 +1692,8 @@ console.log("\n=== UI copy and wiring ===");
   t("Quick Page Builder never shows /p/", !qpb.includes("/p/"));
   t("Quick Page Builder shows the /a/ live prefix", qpb.includes("/a/"));
   t(
-    "Quick Page Builder takes its default model from the server, not a hardcoded Pro id",
-    qpb.includes("defaultModel") && !/useState\("google\/gemini/.test(qpb),
+    "Quick Page Builder takes its default tier from the server and sends a tier, never a model id",
+    qpb.includes("defaultTier") && /quality[,:]/.test(qpb) && !/useState\("google\/gemini/.test(qpb) && !/\bmodel:\s/.test(qpb) && !/gpt-5/.test(qpb),
   );
   t(
     "Quick Page Builder sends an idempotency key",
@@ -1843,6 +1720,10 @@ console.log("\n=== UI copy and wiring ===");
   );
   t("Generate Content copy has no /p/", !genUi.includes("/p/"));
   t("given-up cities cannot be selected", genUi.includes("!t.attemptsExhausted"));
+  t(
+    "Generate Content sends a tier, never a model id",
+    /quality[,:]/.test(genUi) && !/\bmodel:\s/.test(genUi) && !/gpt-5|gemini/.test(genUi),
+  );
 }
 
 console.log("\n=== migration text (000300) ===");

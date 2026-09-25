@@ -3,6 +3,8 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "./admin-helpers.functions";
+import type { AiDb } from "@/lib/ai/spend.server";
+import type { OpenAiTransport } from "@/lib/ai/openai.server";
 
 const sb = () => supabaseAdmin as any;
 
@@ -25,48 +27,80 @@ function normalizeAuditPath(input: string): string {
   return p;
 }
 
-export const auditPage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z
-      .object({
-        workspaceId: workspaceIdSchema,
-        url_path: z.string().min(1).max(300),
-      })
-      .parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    await assertWorkspaceMember(data.workspaceId, context.userId);
-    // BYOK first, platform env-var fallback. Hard-failing on a missing
-    // LOVABLE_API_KEY env var meant any platform-key rotation broke audits
-    // for every workspace with no way out.
-    const { getWorkspaceSecretWithSource } = await import("@/lib/workspace-secrets.server");
-    const secret = await getWorkspaceSecretWithSource(
-      data.workspaceId,
-      "LOVABLE_API_KEY",
-      "LOVABLE_API_KEY",
-    );
-    if (!secret)
-      return {
-        ok: false as const,
-        error: "AI tools are not available right now. Contact support.",
-      };
-    const lovKey = secret.key;
+const AuditResultSchema = z
+  .object({
+    score: z.number(),
+    summary: z.string(),
+    strengths: z.array(z.string()),
+    weaknesses: z.array(z.string()),
+    recommendations: z.array(z.string()),
+  })
+  .strict();
+export type AuditResult = z.infer<typeof AuditResultSchema>;
 
-    // Meter platform-key usage against workspace credits (no metering on BYOK).
-    const { reservePlatformAi, settlePlatformAi } = await import("@/lib/ai-metering.server");
-    let billing: import("@/lib/ai-metering.server").PlatformBilling | null = null;
-    if (secret.source === "platform") {
-      try {
-        billing = await reservePlatformAi(data.workspaceId);
-      } catch (e) {
-        return { ok: false as const, error: e instanceof Error ? e.message : "Out of AI credits." };
-      }
-    }
+/** The auditor's output, as Structured Outputs: the result shape page_audits stores. */
+export const AUDIT_FORMAT = {
+  name: "page_audit",
+  schema: {
+    type: "object",
+    properties: {
+      score: { type: "integer", description: "0-100, this page against top-ranking competitors" },
+      summary: { type: "string", description: "One sentence" },
+      strengths: { type: "array", items: { type: "string" } },
+      weaknesses: { type: "array", items: { type: "string" } },
+      recommendations: { type: "array", items: { type: "string" } },
+    },
+    required: ["score", "summary", "strengths", "weaknesses", "recommendations"],
+    additionalProperties: false,
+  },
+  parse: (v: unknown): AuditResult | null => {
+    const r = AuditResultSchema.safeParse(v);
+    return r.success ? r.data : null;
+  },
+};
+
+export const AuditPageInputSchema = z
+  .object({
+    workspaceId: workspaceIdSchema,
+    url_path: z.string().min(1).max(300),
+  })
+  // A body carrying a model, a token count or any other key is refused.
+  .strict();
+
+export type AuditPageInput = z.infer<typeof AuditPageInputSchema>;
+export type AuditPageResult =
+  | { ok: true; audit: PageAuditRow }
+  | {
+      ok: false;
+      error: string;
+      suggestions?: Array<{ url_path: string; title: string | null; status: string }>;
+    };
+/** Test seams for the database and the provider transport. Production passes nothing. */
+export type AuditPageDeps = { db?: AiDb; transport?: OpenAiTransport };
+
+export const PAGE_NOT_FOUND_MESSAGE =
+  "That page was not found in this workspace. Check the address or pick one of the suggestions.";
+
+/**
+ * Audit one page through the one spend flow (route page_audit: 1500 output
+ * tokens, 60 s, gpt-5-nano, Structured Outputs). Membership first, then the
+ * page is found BEFORE anything is reserved, so an unknown URL costs
+ * nothing. Every refusal and failure is { ok: false, error } with a fixed
+ * customer sentence.
+ */
+export async function runPageAudit(
+  data: AuditPageInput,
+  userId: string,
+  deps: AuditPageDeps = {},
+): Promise<AuditPageResult> {
+  const { customerMessage, AI_MESSAGES } = await import("@/lib/ai/customer-error");
+  try {
+    await assertWorkspaceMember(data.workspaceId, userId);
 
     const path = normalizeAuditPath(data.url_path);
 
-    const slug = path.replace(/^\/p\//, "").replace(/^\//, "");
+    // Pages live at /a/{slug}; /p/{slug} is the legacy prefix.
+    const slug = path.replace(/^\/(a|p)\//, "").replace(/^\//, "");
     let page: {
       url_path: string;
       title: string;
@@ -125,7 +159,7 @@ export const auditPage = createServerFn({ method: "POST" })
       ].slice(0, 8);
       return {
         ok: false as const,
-        error: `Page not found for "${path}".`,
+        error: PAGE_NOT_FOUND_MESSAGE,
         suggestions,
       };
     }
@@ -149,80 +183,68 @@ export const auditPage = createServerFn({ method: "POST" })
         )
         .join("\n") || "No competitor data scraped yet.";
 
-    const prompt = `You are an SEO auditor. Score this page 0-100 vs top-ranking competitors and return STRICT JSON:
-{"score": <0-100>, "summary": "<one sentence>", "strengths": ["..."], "weaknesses": ["..."], "recommendations": ["..."]}
-
-Page URL: ${page.url_path}
+    const prompt = `Page URL: ${page.url_path}
 Title: ${page.title || "(none)"}
 Description: ${page.seo_description || "(none)"}
 Body (truncated):
 ${ourBody}
 
 Competitor pages on similar topics:
-${compSummary}
+${compSummary}`;
 
-Return ONLY JSON, no markdown fences.`;
-
-    const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${lovKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [{ role: "user", content: prompt }],
-      }),
+    const { resolveAiKey, billingClassFor, runMeteredAiCall } =
+      await import("@/lib/ai/spend.server");
+    const auditedPage = page;
+    let stored: PageAuditRow | null = null;
+    const key = await resolveAiKey(data.workspaceId, deps.db);
+    const res = await runMeteredAiCall({
+      workspaceId: data.workspaceId,
+      userId,
+      requestId: crypto.randomUUID(),
+      route: "page_audit",
+      source: "page_audit",
+      key,
+      billingClass: billingClassFor(key, { route: "page_audit" }),
+      instructions:
+        "You are an SEO auditor. Score the page 0-100 against the top-ranking competitors, summarise in one sentence, and list concrete strengths, weaknesses and recommendations.",
+      input: prompt,
+      format: AUDIT_FORMAT,
+      // Stored before the call is settled: the customer pays only for an
+      // audit that was saved.
+      deliver: async (out) => {
+        const audit = out.data!;
+        const { data: row, error } = await sb()
+          .from("page_audits")
+          .insert({
+            workspace_id: data.workspaceId,
+            url_path: auditedPage.url_path || path,
+            score: Math.max(0, Math.min(100, Math.round(Number(audit.score) || 0))),
+            summary: String(audit.summary || "").slice(0, 1000),
+            strengths: audit.strengths.slice(0, 20),
+            weaknesses: audit.weaknesses.slice(0, 20),
+            recommendations: audit.recommendations.slice(0, 20),
+          })
+          .select("*")
+          .maybeSingle();
+        if (error || !row) throw new Error(`page_audits insert failed: ${error?.message ?? "no row"}`);
+        stored = row as PageAuditRow;
+      },
+      deps,
     });
-    if (aiResp.status === 402) return { ok: false as const, error: "AI credits exhausted." };
-    if (!aiResp.ok)
-      return {
-        ok: false as const,
-        error: `AI ${aiResp.status}: ${(await aiResp.text()).slice(0, 200)}`,
-      };
-    const aiJson = await aiResp.json();
-    if (billing) {
-      try {
-        await settlePlatformAi({
-          workspaceId: data.workspaceId,
-          userId: context.userId,
-          billing,
-          model: "google/gemini-2.5-flash",
-          promptTokens: aiJson?.usage?.prompt_tokens ?? 0,
-          completionTokens: aiJson?.usage?.completion_tokens ?? 0,
-          feature: "page_audit",
-        });
-      } catch (e) {
-        console.error("[auditPage] settle failed", e);
-      }
-    }
-    const content: string = aiJson?.choices?.[0]?.message?.content || "";
-    const cleaned = content
-      .replace(/```json\s*/i, "")
-      .replace(/```\s*$/i, "")
-      .trim();
-    let parsed: any;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch {
-      return { ok: false as const, error: "AI returned non-JSON", raw: content.slice(0, 300) };
-    }
+    const audit = stored as PageAuditRow | null;
+    if (!audit || !res) throw new Error("page audit: generation returned without a stored audit");
+    return { ok: true as const, audit };
+  } catch (e) {
+    return { ok: false as const, error: customerMessage(e, AI_MESSAGES.unavailable) };
+  }
+}
 
-    const { data: row, error } = await sb()
-      .from("page_audits")
-      .insert({
-        workspace_id: data.workspaceId,
-        url_path: page.url_path || path,
-        score: Math.max(0, Math.min(100, Number(parsed.score) || 0)),
-        summary: String(parsed.summary || "").slice(0, 1000),
-        strengths: Array.isArray(parsed.strengths) ? parsed.strengths.slice(0, 20) : [],
-        weaknesses: Array.isArray(parsed.weaknesses) ? parsed.weaknesses.slice(0, 20) : [],
-        recommendations: Array.isArray(parsed.recommendations)
-          ? parsed.recommendations.slice(0, 20)
-          : [],
-      })
-      .select("*")
-      .maybeSingle();
-    if (error) return { ok: false as const, error: error.message };
-    return { ok: true as const, audit: row as PageAuditRow };
-  });
+export const auditPage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => AuditPageInputSchema.parse(d))
+  .handler(
+    async ({ data, context }): Promise<AuditPageResult> => runPageAudit(data, context.userId),
+  );
 
 export const listRecentAudits = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

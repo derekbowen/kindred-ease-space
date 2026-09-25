@@ -49,7 +49,15 @@ class Query implements PromiseLike<Resp> {
   }
 }
 
-export function createClient() {
+export function createClient(...args: unknown[]) {
+  // A suite that needs real SQL behind the client installs its own factory
+  // (tests/_support/ai-db.ts pgliteSupabase); the recording fake otherwise.
+  const custom = (globalThis as { __sbCreateClient?: (...a: unknown[]) => unknown }).__sbCreateClient;
+  if (custom) return custom(...args) as ReturnType<typeof recordingClient>;
+  return recordingClient();
+}
+
+function recordingClient() {
   return {
     from: (table: string) => new Query(table, "from"),
     rpc: async (name: string, args: unknown) => {

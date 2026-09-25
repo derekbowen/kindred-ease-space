@@ -23,7 +23,7 @@ Replace your agency. Move at AI speed.
 - Supabase (Postgres, Auth, RLS, Edge Functions)
 - Cloudflare (Workers/Pages via wrangler + @cloudflare/vite-plugin)
 - Stripe for billing + addons
-- OpenRouter / BYOK for AI
+- OpenAI (official SDK, Responses API) for AI; a workspace may bring its own OpenAI key
 
 ## Local development
 
@@ -48,7 +48,7 @@ The app uses Vite dev server + Supabase (remote or local via supabase CLI).
 ### Required env vars (see .env.example)
 
 - Supabase connection (client + server)
-- OPENROUTER_API_KEY (or configure BYOK per workspace)
+- OPENAI_API_KEY (or a workspace's own key under Settings → API Keys)
 - Stripe keys + webhook secret (for billing flows)
 - CRON_SECRET (for scheduled edge functions like briefings)
 

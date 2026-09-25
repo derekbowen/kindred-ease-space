@@ -54,19 +54,38 @@ tomorrow, the pinned version keeps building.
 *Post-launch:* inline the plugin list and drop the wrapper, verifying the
 built output is byte-identical first.
 
-### `ai.gateway.lovable.dev` — runtime, still live
+### `ai.gateway.lovable.dev` and OpenRouter — removed from the product (2026-09-25)
 
-**This one is not build tooling and is not removed by any of the above.**
-`LOVABLE_API_KEY` against `https://ai.gateway.lovable.dev` is the default AI
-provider for the SEO coach, the page auditor, and the help assistant
-(`coach-actions.functions.ts`, `admin-seo-coach.functions.ts`,
-`admin-page-auditor.functions.ts`, `supabase/functions/help-assistant-*`).
+Every AI feature founders.click runs — page generation (Quick Page Builder,
+Generate Content, the Daily Briefing's city page, the Opportunity Engine), the
+Daily Briefing actions, the SEO coach, the page auditor and the daily briefing
+itself — now calls OpenAI through the official SDK (`src/lib/ai/openai.server.ts`)
+and ONE metered path (`src/lib/ai/spend.server.ts`): an atomic reservation of the
+maximum cost before every call, settlement after it (migration
+`20260925000800_ai_spend_reservations.sql`). The Lovable AI gateway, OpenRouter,
+the `ai-proxy` / `coach-chat` / `help-assistant-*` functions and
+`LOVABLE_API_KEY` / `OPENROUTER_API_KEY` in the Worker are gone
+(`tests/ai-source-guards.test.ts`).
 
-Removing Lovable from the *deployment* chain does not remove it from the
-*product*. There is a BYOK abstraction (`ai-byok.functions.ts`, Settings → API
-Keys) so a workspace can supply its own provider key, but the platform default
-still routes through Lovable. Treat that as a live vendor dependency on the AI
-path and price it accordingly.
+Two deployed-only PRNM functions on the same Supabase project
+(`generate-content-batch`, `drive-content-generation`) still use
+`OPENROUTER_API_KEY` from Supabase function secrets. They are not part of this
+repo and not reachable through founders.click (`tests/prnm-isolation.test.ts`;
+operator probe: `scripts/probe-prnm-isolation.ts`). Leave that secret in place.
+
+### AI spend controls (ops)
+
+- **Kill switch** — stops every AI call that would spend the platform key,
+  including background jobs and the daily briefing; in-flight calls settle
+  normally. Supabase SQL editor, as `postgres`:
+  `UPDATE public.ai_platform_settings SET platform_ai_enabled = false, updated_at = now();`
+  (`true` to resume). Workspaces on their own key are not affected.
+- **Daily ceiling** — `UPDATE public.ai_platform_settings SET daily_budget_micros = 10000000, updated_at = now();`
+  ($10.00 per UTC day across all workspaces; the default).
+- **Reaper** — pg_cron job `ai-reap-stale-reservations`, every 5 minutes, pure
+  SQL: an abandoned hold is released within 15 minutes, an unsettled call
+  settled within 35.
+- **Page generation pause** — unchanged: `platform_settings.generation_paused`.
 
 ## First-time setup
 
@@ -108,13 +127,13 @@ The authoritative list, with the purpose of each, is
 `scripts/required-secrets.txt`. Adding a runtime dependency means adding it
 there, or the preflight will not know to check for it.
 
-Two `[required]` names are read only through the BYOK fallback in
+One `[required]` name is read only through the BYOK fallback in
 `workspace-secrets.server.ts` (`process.env[name]`), so a literal grep for
-`process.env.<NAME>` finds neither and both are easy to leave out:
-`OPENROUTER_API_KEY` (page generation) and `LOVABLE_API_KEY` (the Daily
-Briefing actions, the page auditor and the SEO coach). The help-assistant edge
-functions read their own `LOVABLE_API_KEY` from Supabase function secrets
-(`supabase secrets set`), which this Worker preflight does not cover.
+`process.env.OPENAI_API_KEY` finds nothing and it is easy to leave out:
+`OPENAI_API_KEY`, the platform key for every AI feature the Worker runs. The
+daily briefing (`coach-briefing-cron`) reads its own `OPENAI_API_KEY` from
+Supabase function secrets (`supabase secrets set`), which this Worker preflight
+does not cover.
 
 ## Cutting over
 

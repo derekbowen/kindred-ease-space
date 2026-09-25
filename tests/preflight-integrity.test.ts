@@ -215,42 +215,58 @@ console.log("\n=== the manifest classifies the secrets that actually block a lau
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
     "EMAILIT_API_KEY",
-    "OPENROUTER_API_KEY",
-    "LOVABLE_API_KEY",
+    "OPENAI_API_KEY",
   ]) {
     t(`${name} is required`, required.includes(name), required.join(" "));
   }
 
-  // LOVABLE_API_KEY is read only through the process.env[name] indirection in
-  // workspace-secrets.server.ts, so the literal grep the manifest's header
-  // describes never found it and it was left out. The preflight then passed a
-  // Worker on which every Daily Briefing "do it" action, the page auditor and
-  // the SEO coach failed. The manifest must keep saying why, and the three
-  // consumers must really read it through that fallback — otherwise the gate
-  // is blocking deploys over a name nothing consumes.
-  t("LOVABLE_API_KEY is not also listed as merely recommended",
-    !recommended.includes("LOVABLE_API_KEY"), recommended.join(" "));
-  const lovStart = manifest.indexOf("\nLOVABLE_API_KEY");
-  const lovableNote = lovStart >= 0
-    ? manifest.slice(lovStart, manifest.indexOf("\n[recommended]", lovStart))
+  // The platform AI key is read only through the process.env[name]
+  // indirection in workspace-secrets.server.ts, so the literal grep the
+  // manifest's header describes never finds it. That is how LOVABLE_API_KEY
+  // was once left out of this file while three launch dashboard surfaces
+  // failed without it. Since the OpenAI switch there is ONE platform key,
+  // OPENAI_API_KEY, and ONE function that reads it (resolveAiKey in
+  // src/lib/ai/spend.server.ts). The manifest must keep saying why it is
+  // required, the reader must really use that fallback, and every Worker AI
+  // consumer must go through the reader — otherwise the gate is blocking
+  // deploys over a name nothing consumes, or passing a Worker whose AI fails.
+  t("OPENAI_API_KEY is not also listed as merely recommended",
+    !recommended.includes("OPENAI_API_KEY"), recommended.join(" "));
+  const keyStart = manifest.indexOf("\nOPENAI_API_KEY");
+  const keyNote = keyStart >= 0
+    ? manifest.slice(keyStart, manifest.indexOf("\n[recommended]", keyStart))
     : "";
-  t("the manifest explains the indirection that hid LOVABLE_API_KEY",
-    /workspace-secrets\.server\.ts/.test(lovableNote) && /process\.env\[name\]/.test(lovableNote),
-    lovableNote.slice(0, 200));
-  t("the manifest names its three consumers",
-    ["coach-actions.functions.ts", "admin-page-auditor.functions.ts", "admin-seo-coach.functions.ts"]
-      .every((f) => lovableNote.includes(f)),
-    lovableNote.slice(0, 200));
-  t("the manifest says the help-assistant copy lives in Supabase function secrets, not the Worker",
-    /help-assistant/.test(lovableNote) && /function secrets/i.test(lovableNote));
+  t("the manifest explains the indirection that hides OPENAI_API_KEY from a grep",
+    /workspace-secrets\.server\.ts/.test(keyNote) && /process\.env\[name\]/.test(keyNote),
+    keyNote.slice(0, 200));
+  t("the manifest names the one reader and its consumers",
+    ["spend.server.ts", "generation.server.ts", "coach-actions.functions.ts",
+      "admin-page-auditor.functions.ts", "admin-seo-coach.functions.ts"]
+      .every((f) => keyNote.includes(f)),
+    keyNote.slice(0, 200));
+  t("the manifest says the briefing's copy lives in Supabase function secrets, not the Worker",
+    /coach-briefing-cron/.test(keyNote) && /function secrets/i.test(keyNote));
+  const spend = readFileSync(join(APP, "src/lib/ai/spend.server.ts"), "utf8");
+  t("src/lib/ai/spend.server.ts reads OPENAI_API_KEY through the env fallback",
+    /getWorkspaceSecretWithSource\(\s*workspaceId,\s*"OPENAI_API_KEY",\s*"OPENAI_API_KEY"/.test(spend),
+    "no (keyName, envFallback) pair");
   for (const f of [
+    "src/lib/generation.server.ts",
     "src/lib/coach-actions.functions.ts",
     "src/lib/admin-page-auditor.functions.ts",
     "src/lib/admin-seo-coach.functions.ts",
   ]) {
     const consumer = readFileSync(join(APP, f), "utf8");
-    t(`${f} reads LOVABLE_API_KEY through the env fallback`,
-      /"LOVABLE_API_KEY",\s*"LOVABLE_API_KEY",?\s*\)/.test(consumer), "no (keyName, envFallback) pair");
+    t(`${f} resolves its key through the one reader`,
+      /\bresolveAiKey\(|\bresolveBillingMode\(/.test(consumer), "no resolveAiKey / resolveBillingMode call");
+  }
+  // The replaced platform keys: nothing in the Worker reads them and the
+  // manifest no longer blocks a deploy on them.
+  for (const gone of ["OPENROUTER_API_KEY", "LOVABLE_API_KEY", "PLATFORM_AI_MODEL"]) {
+    t(`${gone} is no longer a Worker requirement`,
+      !required.includes(gone) && !recommended.includes(gone), required.concat(recommended).join(" "));
+    const readers = spawnSync("grep", ["-rlF", gone, "src"], { cwd: APP, encoding: "utf8" }).stdout ?? "";
+    t(`nothing under src/ mentions ${gone}`, readers.trim() === "", readers.trim());
   }
 
   // Every name the manifest lists must actually be read by the code, or the

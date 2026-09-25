@@ -111,20 +111,69 @@ t(
 
 // The service-role-only grant is only safe because no app path calls the RPC
 // with a user-scoped client. Guard that assumption at the call sites.
-const callers = walk(resolve(ROOT, "src"))
-  .concat(walk(resolve(ROOT, "supabase/functions")))
-  .flatMap((f) =>
-    readFileSync(f, "utf8")
-      .split("\n")
-      .filter((l) => /rpc\(\s*["']consume_platform_ai_credit["']/.test(l))
-      .map((l) => ({ f, l })),
-  );
-t("consume_platform_ai_credit has app callers", callers.length > 0);
+//
+// Since the OpenAI switch (migration 20260925000800) nothing calls
+// consume_platform_ai_credit at all: its callers (ai-proxy, coach-chat,
+// ai-metering.server.ts) are deleted, and ai_reserve consumes the
+// workspace_ai_quota row itself inside the reservation transaction. So the
+// assumption is now "no caller", and the same service-role-only rule moves to
+// the spend RPCs that replaced it.
+const rpcCallers = (re: RegExp) =>
+  walk(resolve(ROOT, "src"))
+    .concat(walk(resolve(ROOT, "supabase/functions")))
+    .flatMap((f) =>
+      readFileSync(f, "utf8")
+        .split("\n")
+        .filter((l) => re.test(l))
+        .map((l) => ({ f, l })),
+    );
+const callers = rpcCallers(/rpc\(\s*["']consume_platform_ai_credit["']/);
+t(
+  "consume_platform_ai_credit has no app callers left (ai_reserve consumes the quota)",
+  callers.length === 0,
+  callers.map((c) => c.f.slice(ROOT.length + 1)).join(", "),
+);
 for (const { f, l } of callers) {
   t(
     `service-role caller: ${f.slice(ROOT.length + 1)}`,
     /\b(supabaseAdmin|admin)\s*\.rpc\(/.test(l),
     l.trim(),
+  );
+}
+{
+  const SPEND_RPCS = [
+    "ai_reserve",
+    "ai_mark_called",
+    "ai_settle",
+    "ai_release",
+    "coach_briefing_claim",
+    "coach_briefing_store",
+  ];
+  for (const name of SPEND_RPCS) {
+    const found = rpcCallers(new RegExp(`rpc\\(\\s*["']${name}["']`));
+    t(`${name} has app callers`, found.length > 0);
+    for (const { f, l } of found) {
+      // `db` is spend.server.ts's injected client, which defaults to the
+      // service-role client (asserted below); `admin` is the briefing
+      // function's service-role client.
+      t(
+        `service-role caller of ${name}: ${f.slice(ROOT.length + 1)}`,
+        /\b(supabaseAdmin|admin|db)\s*\.rpc\(/.test(l),
+        l.trim(),
+      );
+    }
+  }
+  const spend = readFileSync(resolve(ROOT, "src/lib/ai/spend.server.ts"), "utf8");
+  t(
+    "spend.server.ts's db defaults to the service-role client",
+    /const serviceDb = \(\): AiDb => supabaseAdmin as unknown as AiDb;/.test(spend) &&
+      /const db = call\.deps\?\.db \?\? serviceDb\(\);/.test(spend),
+  );
+  const briefing = readFileSync(resolve(ROOT, "supabase/functions/coach-briefing-cron/index.ts"), "utf8");
+  t(
+    "the briefing function's admin client is the service-role client",
+    /const SERVICE_KEY = Deno\.env\.get\("SUPABASE_SERVICE_ROLE_KEY"\)/.test(briefing) &&
+      /const admin = createClient\(SUPABASE_URL, SERVICE_KEY\)/.test(briefing),
   );
 }
 

@@ -3,21 +3,21 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
-import { resolvePlatformModel } from "@/lib/ai-pricing";
+import { modelForTier, tierForModel } from "@/lib/ai/models";
 import { getPageBuilderContext } from "@/lib/page-builder.functions";
 import {
   ATTEMPTS_EXHAUSTED_MESSAGE,
-  GENERATION_DEFAULT_MODEL,
-  GENERATION_MODEL_IDS,
-  GENERATION_MODEL_OPTIONS,
+  CustomerFacingError,
+  GENERATION_DEFAULT_TIER,
   GENERATION_PAUSED_MESSAGE,
+  GENERATION_TIERS,
+  GENERATION_TIER_OPTIONS,
   GENERATION_UNAVAILABLE_MESSAGE,
   MAX_ITEM_ATTEMPTS,
   STALE_RUNNING_MS,
-  TYPICAL_PAGE_TOKENS,
-  UNBILLED_ITEM_MESSAGE,
   attemptsExhausted,
   batchAttemptRequestId,
+  billingStatusFor,
   buildCityBrief,
   checkStoredPageContract,
   contractFailureMessage,
@@ -27,25 +27,20 @@ import {
   dailyCapRemaining,
   findExistingCityPage,
   generatePageContent,
-  initialBillingStatus,
   isStaleRunning,
   markGenerationProviderCalled,
   persistGeneratedPage,
   planJobItems,
-  providerUsageOf,
   readPlatformSettings,
-  recordFailedGeneration,
   releaseGenerationSlot,
   reserveGenerationSlot,
   resolveBillingMode,
-  resolvePlatformSettlementMode,
   selectTargets,
-  settleGeneration,
-  type BillingMode,
   type GeneratedContent,
   type GenerationSlot,
   type GenerationTarget,
   type ItemBillingStatus,
+  type PersistedPage,
   type ResolvedBilling,
 } from "@/lib/generation.server";
 
@@ -58,11 +53,25 @@ import {
  *
  * Batch items are ALWAYS drafts. Publishing is a separate button that runs
  * every draft through the page contract and the atomic entitlement gate.
+ *
+ * Every handler answers with customer-written sentences only: a thrown
+ * database or provider error is logged and replaced (customerMessage) at the
+ * boundary, and every input schema is strict (a body carrying a model or any
+ * provider parameter is a validation error).
  */
 
 const sb = () => supabaseAdmin as any;
 
 export const DEFAULT_MIN_LISTINGS = 3;
+
+/** Run a handler body; anything but a CustomerFacingError reaches the browser as the generic sentence. */
+async function customerSafe<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    throw new Error(customerMessage(e, GENERATION_UNAVAILABLE_MESSAGE));
+  }
+}
 
 export type GenerationJobRow = {
   id: string;
@@ -138,7 +147,7 @@ async function loadJob(workspaceId: string, jobId: string) {
   ]);
   if (jErr) throw new Error(jErr.message);
   if (iErr) throw new Error(iErr.message);
-  if (!job) throw new Error("Generation job not found");
+  if (!job) throw new CustomerFacingError("That generation job was not found.");
   return { job: job as GenerationJobRow, items: (items ?? []) as GenerationItemRow[] };
 }
 
@@ -224,44 +233,21 @@ async function markItemFenced(
   if (!data || data.length === 0) throw new LostClaimError();
 }
 
-/** Record what settlement did. An unbilled item fails so its retry bills without regenerating. */
-async function recordSettlement(
-  itemId: string,
-  attempts: number,
-  settled: { creditsCharged: number; billing: string; billingStatus: ItemBillingStatus },
-): Promise<void> {
-  if (settled.billing === "unbilled") {
-    await markItemFenced(itemId, attempts, {
-      status: "failed",
-      credits_charged: 0,
-      billing_status: "unbilled",
-      error: UNBILLED_ITEM_MESSAGE,
-    });
-    return;
-  }
-  await markItemFenced(itemId, attempts, {
-    status: "done",
-    credits_charged: settled.creditsCharged,
-    billing_status: settled.billingStatus,
-    error: null,
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Server functions
 // ---------------------------------------------------------------------------
 
+export const ListGenerationTargetsInputSchema = z
+  .object({
+    workspaceId: workspaceIdSchema,
+    minListings: z.number().int().min(1).max(100).default(DEFAULT_MIN_LISTINGS),
+  })
+  .strict();
+
 export const listGenerationTargets = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z
-      .object({
-        workspaceId: workspaceIdSchema,
-        minListings: z.number().int().min(1).max(100).default(DEFAULT_MIN_LISTINGS),
-      })
-      .parse(d),
-  )
-  .handler(async ({ data, context }) => {
+  .inputValidator((d: unknown) => ListGenerationTargetsInputSchema.parse(d))
+  .handler(async ({ data, context }) => customerSafe(async () => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
 
     const [{ targets, syncedListings, dominantCategory }, settings, consumed24h] =
@@ -314,40 +300,40 @@ export const listGenerationTargets = createServerFn({ method: "POST" })
       paused: settings.paused,
       dailyCap: settings.dailyCap,
       remainingToday: dailyCapRemaining(settings.dailyCap, consumed24h),
-      models: GENERATION_MODEL_OPTIONS,
-      defaultModel: GENERATION_DEFAULT_MODEL,
+      // Quality tiers, never model names: the server maps a tier to a model.
+      tiers: GENERATION_TIER_OPTIONS,
+      defaultTier: GENERATION_DEFAULT_TIER,
     };
-  });
+  }));
+
+export const StartGenerationJobInputSchema = z
+  .object({
+    workspaceId: workspaceIdSchema,
+    targetKeys: z.array(z.string().min(1).max(300)).min(1).max(200),
+    // A quality tier, never a model. The job stores the model the SERVER
+    // resolved from it; runItem accepts nothing outside the allowlist.
+    quality: z.enum(GENERATION_TIERS).default(GENERATION_DEFAULT_TIER),
+    minListings: z.number().int().min(1).max(100).default(DEFAULT_MIN_LISTINGS),
+  })
+  .strict();
 
 export const startGenerationJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z
-      .object({
-        workspaceId: workspaceIdSchema,
-        targetKeys: z.array(z.string().min(1).max(300)).min(1).max(200),
-        model: z.string().max(120).optional(),
-        minListings: z.number().int().min(1).max(100).default(DEFAULT_MIN_LISTINGS),
-      })
-      .parse(d),
-  )
-  .handler(async ({ data, context }) => {
+  .inputValidator((d: unknown) => StartGenerationJobInputSchema.parse(d))
+  .handler(async ({ data, context }) => customerSafe(async () => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
 
     const settings = await readPlatformSettings();
     if (settings.paused) {
-      throw new Error("Generation is paused platform-wide right now.");
+      throw new CustomerFacingError("Generation is paused platform-wide right now.");
     }
-    if (data.model && !GENERATION_MODEL_IDS.includes(data.model)) {
-      throw new Error("That model is not available. Pick one from the list.");
-    }
-    const model = resolvePlatformModel(data.model ?? GENERATION_DEFAULT_MODEL);
+    const model = modelForTier(data.quality);
 
     const { targets, dominantCategory } = await loadTargets(data.workspaceId, data.minListings);
     const targetByKey = new Map(targets.map((t) => [t.targetKey, t]));
     const unknown = data.targetKeys.filter((k) => !targetByKey.has(k));
     if (unknown.length) {
-      throw new Error(
+      throw new CustomerFacingError(
         "Some of those cities are no longer eligible (a page may have been created since). Refresh the list and try again.",
       );
     }
@@ -362,16 +348,16 @@ export const startGenerationJob = createServerFn({ method: "POST" })
     const newWork = plan.create.length + plan.reattach.length;
     if (newWork === 0) {
       if (plan.inProgress.length) {
-        throw new Error(
+        throw new CustomerFacingError(
           "Those cities are being written right now in another session. Give it a few minutes, then refresh.",
         );
       }
       if (plan.exhausted.length) {
-        throw new Error(
+        throw new CustomerFacingError(
           `Those cities were given up on after ${MAX_ITEM_ATTEMPTS} failed attempts each. Contact support if you need them written.`,
         );
       }
-      throw new Error("Every city you picked already has a generated draft. Nothing to do.");
+      throw new CustomerFacingError("Every city you picked already has a generated draft. Nothing to do.");
     }
 
     // Sizing only: the job may not ask for more pages than today's cap has
@@ -382,7 +368,7 @@ export const startGenerationJob = createServerFn({ method: "POST" })
     const consumed24h = await countConsumedLast24h(data.workspaceId);
     const remaining = dailyCapRemaining(settings.dailyCap, consumed24h);
     if (newWork > remaining) {
-      throw new Error(dailyCapMessage(settings.dailyCap, remaining));
+      throw new CustomerFacingError(dailyCapMessage(settings.dailyCap, remaining));
     }
 
     const { data: job, error: jobErr } = await sb()
@@ -473,17 +459,18 @@ export const startGenerationJob = createServerFn({ method: "POST" })
       inProgress: plan.inProgress,
       exhausted: plan.exhausted,
     };
-  });
+  }));
+
+const jobInput = (d: unknown) =>
+  z.object({ workspaceId: workspaceIdSchema, jobId: z.string().uuid() }).strict().parse(d);
 
 export const getGenerationJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z.object({ workspaceId: workspaceIdSchema, jobId: z.string().uuid() }).parse(d),
-  )
-  .handler(async ({ data, context }) => {
+  .inputValidator(jobInput)
+  .handler(async ({ data, context }) => customerSafe(async () => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
     return loadJob(data.workspaceId, data.jobId);
-  });
+  }));
 
 /**
  * "Stop after this one". The job is marked cancelled and every item still
@@ -494,10 +481,8 @@ export const getGenerationJob = createServerFn({ method: "POST" })
  */
 export const cancelGenerationJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z.object({ workspaceId: workspaceIdSchema, jobId: z.string().uuid() }).parse(d),
-  )
-  .handler(async ({ data, context }) => {
+  .inputValidator(jobInput)
+  .handler(async ({ data, context }) => customerSafe(async () => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const { error: jobErr } = await sb()
       .from("generation_jobs")
@@ -514,7 +499,7 @@ export const cancelGenerationJob = createServerFn({ method: "POST" })
       .eq("status", "pending");
     if (itemErr) throw new Error(itemErr.message);
     return loadJob(data.workspaceId, data.jobId);
-  });
+  }));
 
 /**
  * One unit of work. Safe to call repeatedly for the same item:
@@ -523,21 +508,23 @@ export const cancelGenerationJob = createServerFn({ method: "POST" })
  *   running (fresh)     → returned unchanged, someone else has it
  *   running (stale 3m+) → treated as abandoned and taken over
  *   pending / failed    → claimed, then:
- *       page already linked → settle if still owed, mark done (no generation)
+ *       page already linked → marked done (no generation; the attempt that
+ *                             wrote it was settled when it ran)
  *       page exists for the city → link it, mark done (no generation, no charge)
- *       otherwise → generate, persist DRAFT, link page, settle
+ *       otherwise → reserve, generate, settle, persist DRAFT, link page
  *
- * Policy gates (pause, attempt ceiling, daily cap, funds) run BEFORE the
- * claim and never consume an attempt: they cost nothing and clear on their
- * own. The attempt counter is reserved for work that actually ran.
+ * Policy gates (pause, attempt ceiling, the job's model, who pays, the daily
+ * cap) run BEFORE the claim and never consume an attempt: they cost nothing
+ * and clear on their own. The attempt counter is reserved for work that
+ * actually ran.
  *
  * The daily cap is a RESERVATION per attempt: an attempt that can reach the
  * provider first takes a slot through reserve_generation_slot under an id
- * unique to that attempt (batchAttemptRequestId), so the slot is counted for
- * 24 hours no matter what later happens to the item or its page. The slot
- * is given back only when this run ends without calling the provider (a
- * refusal, a lost claim, an existing page linked instead, a failure before
- * the call); a settlement-only retry generates nothing and takes no slot.
+ * unique to that attempt (batchAttemptRequestId) — the SAME id its spend hold
+ * is taken under — so the slot is counted for 24 hours no matter what later
+ * happens to the item or its page. The slot is given back only when this run
+ * ends without marking it (a refusal, a lost claim, an existing page linked
+ * instead, a failure before the call).
  */
 async function runItem(
   workspaceId: string,
@@ -552,7 +539,7 @@ async function runItem(
     .eq("id", itemId)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  if (!item) throw new Error("Generation item not found");
+  if (!item) throw new CustomerFacingError("That generation item was not found.");
   const row = item as GenerationItemRow;
 
   if (row.status === "done") return { item: row, changed: false };
@@ -584,21 +571,31 @@ async function runItem(
   const settings = await readPlatformSettings();
   if (settings.paused) return refuse(GENERATION_PAUSED_MESSAGE);
   // The ceiling bounds GENERATION spend. An item whose draft already exists
-  // has nothing left to generate — only a charge to record — so it is never
-  // stranded by its attempt count.
+  // has nothing left to generate, so it is never stranded by its count.
   if (!row.page_id && attemptsExhausted(row.attempts)) return refuse(ATTEMPTS_EXHAUSTED_MESSAGE);
 
-  const model = resolvePlatformModel(job?.model ?? GENERATION_DEFAULT_MODEL);
-  const owesSettlement =
-    !!row.page_id && (row.billing_status === "pending" || row.billing_status === "unbilled");
+  // The job records the model the server resolved when it started; anything
+  // outside the allowlist is refused, never mapped to some other model.
+  const tier = job?.model ? tierForModel(job.model) : GENERATION_DEFAULT_TIER;
+  if (!tier) {
+    console.error("[generation] job model outside the allowlist", row.job_id, job?.model);
+    return refuse(GENERATION_UNAVAILABLE_MESSAGE);
+  }
 
-  // ---- The daily-cap reservation for THIS attempt, before the claim. ----
-  // One slot per provider call, under an id unique to the attempt the claim
-  // below will make: two drivers racing for the same attempt compute the same
-  // id and only one is granted it. A settlement-only retry (the draft exists)
-  // generates nothing and takes no slot.
+  // ---- Who pays, then the daily-cap slot for THIS attempt, before the claim. ----
+  let billing: ResolvedBilling | null = null;
   let slotId: string | null = null;
   if (!row.page_id) {
+    try {
+      billing = await resolveBillingMode(workspaceId);
+    } catch (e) {
+      // Only a customer-written refusal (no key) is stored on the item; a
+      // database error is logged and replaced. Nothing was reserved.
+      return refuse(customerMessage(e, GENERATION_UNAVAILABLE_MESSAGE).slice(0, 300));
+    }
+    // One slot per provider call, under an id unique to the attempt the claim
+    // below will make: two drivers racing for the same attempt compute the
+    // same id and only one is granted it.
     const attemptId = await batchAttemptRequestId(row);
     let slot: GenerationSlot;
     try {
@@ -615,29 +612,11 @@ async function runItem(
     slotId = attemptId;
   }
   // Only this run was granted the slot, and it gives it back only on a way
-  // out that never reached the provider. release_generation_slot frees an
-  // unmarked row only, so a spent slot cannot come back even by mistake.
+  // out that never marked it. release_generation_slot frees an unmarked row
+  // only, so a spent slot cannot come back even by mistake.
   const releaseSlot = async () => {
     if (slotId) await releaseGenerationSlot(workspaceId, slotId);
   };
-
-  let billing: ResolvedBilling | null = null;
-  let settlementMode: BillingMode | null = null;
-  try {
-    if (!row.page_id) {
-      billing = await resolveBillingMode(workspaceId, model);
-    } else if (owesSettlement) {
-      // A 'pending'/'unbilled' record means the page was written on the
-      // platform key and the charge is still owed. The key in use TODAY is
-      // irrelevant — a BYOK key added since does not retroactively pay.
-      settlementMode = await resolvePlatformSettlementMode(workspaceId, model);
-    }
-  } catch (e) {
-    // Only a customer-written refusal (no key, out of funds) is stored on the
-    // item; a database error is logged and replaced. Nothing was spent.
-    await releaseSlot();
-    return refuse(customerMessage(e, GENERATION_UNAVAILABLE_MESSAGE).slice(0, 300));
-  }
 
   // ---- Claim with an optimistic guard so two tabs cannot both run the same item. ----
   const { data: claimed, error: claimErr } = await sb()
@@ -665,29 +644,15 @@ async function runItem(
   }
 
   const target = row.target;
-  let providerCalled = false;
-  let pageLinked = false;
+  let slotMarked = false;
   let gen: GeneratedContent | null = null;
+  let saved: PersistedPage | null = null;
   try {
     if (row.page_id) {
-      // The draft exists (a previous run died between persisting and
-      // settling). Never generate again; settle only what is still owed.
-      if (owesSettlement) {
-        const settled = await settleGeneration({
-          workspaceId,
-          userId,
-          keySource: "platform",
-          billingMode: settlementMode ?? "platform",
-          model,
-          promptTokens: row.prompt_tokens ?? TYPICAL_PAGE_TOKENS.prompt,
-          completionTokens: row.completion_tokens ?? TYPICAL_PAGE_TOKENS.completion,
-          feature: "batch_generation",
-          refId: row.page_id,
-        });
-        await recordSettlement(row.id, token, settled);
-      } else {
-        await markItemFenced(row.id, token, { status: "done", error: null });
-      }
+      // The draft exists (a previous run died between linking and finishing).
+      // Its attempt was settled when it called the provider: nothing is owed
+      // and nothing is generated again.
+      await markItemFenced(row.id, token, { status: "done", error: null });
     } else {
       const existing = await findExistingCityPage(workspaceId, target.city, target.state);
       if (existing) {
@@ -709,78 +674,65 @@ async function runItem(
           state: target.state,
           categoryPlural: target.categoryPlural,
         });
+        if (!slotId || !billing) throw new Error("batch attempt reached generation without a slot");
+        const attemptSlot = slotId;
+        // The spend hold is taken under the attempt's id; the slot is marked
+        // immediately before the provider call, then the hold. From there the
+        // attempt is settled whatever happens, never released.
         gen = await generatePageContent({
           workspaceId,
+          userId,
+          requestId: attemptSlot,
+          source: "batch_generation",
+          tier,
           title: brief.title,
           description: brief.description,
           topic: brief.topic,
           city: target.city,
           state: target.state,
           categoryPlural: target.categoryPlural,
-          model,
-          billing: billing ?? undefined,
-          // Marked immediately before the provider request: from here this
-          // attempt's slot is spent and stays counted whatever happens next.
+          billing,
           beforeProviderCall: async () => {
-            if (!slotId) throw new Error("batch attempt reached the provider without a slot");
-            await markGenerationProviderCalled(workspaceId, slotId);
-            providerCalled = true;
+            await markGenerationProviderCalled(workspaceId, attemptSlot);
+            slotMarked = true;
+          },
+          // The draft is saved before the call is settled: the customer is
+          // charged only for a page that exists.
+          deliver: async (draft) => {
+            saved = await persistGeneratedPage({
+              workspaceId,
+              generated: draft,
+              requestedTitle: brief.title,
+              requestedDescription: brief.description,
+              city: target.city,
+              state: target.state,
+              categoryPlural: target.categoryPlural,
+            });
           },
         });
-        const page = await persistGeneratedPage({
-          workspaceId,
-          generated: gen,
-          requestedTitle: brief.title,
-          requestedDescription: brief.description,
-          city: target.city,
-          state: target.state,
-          categoryPlural: target.categoryPlural,
-        });
-        // Link the page BEFORE settling, and insist the write landed. If the
-        // request dies after this line the item still knows its page, so a
-        // re-claim settles instead of writing a second one.
+        const page = saved as PersistedPage | null;
+        if (!page) throw new Error("batch item: generation returned without a saved page");
+        // Link the page with what the settlement charged, and insist the
+        // write landed. If the request dies after this line the item still
+        // knows its page, so a re-claim finishes it instead of writing a
+        // second one.
         await markItemFenced(row.id, token, {
+          status: "done",
           page_id: page.id,
           slug: page.slug,
-          prompt_tokens: gen.promptTokens,
-          completion_tokens: gen.completionTokens,
-          billing_status: initialBillingStatus(gen.billingMode),
+          prompt_tokens: gen.usage?.inputTokens ?? null,
+          completion_tokens: gen.usage?.outputTokens ?? null,
+          credits_charged: gen.settlement.creditsCharged,
+          billing_status: billingStatusFor(gen.settlement),
+          error: null,
         });
-        // The item knows its page: from here a failure is a settlement to
-        // retry (without generating), not spend with nothing to show.
-        pageLinked = true;
-        const settled = await settleGeneration({
-          workspaceId,
-          userId,
-          keySource: gen.keySource,
-          billingMode: gen.billingMode,
-          model: gen.model,
-          promptTokens: gen.promptTokens,
-          completionTokens: gen.completionTokens,
-          feature: "batch_generation",
-          refId: page.id,
-        });
-        await recordSettlement(row.id, token, settled);
       }
     }
   } catch (e) {
-    if (!providerCalled) {
-      // Failed before the provider was called: nothing was spent.
+    if (!slotMarked) {
+      // Failed before the provider could be called: nothing was spent (the
+      // spend hold, if any, was released by the spend flow).
       await releaseSlot();
-    } else if (!pageLinked) {
-      // The provider was paid and this item got no page out of it. The slot
-      // stays counted; the customer is charged nothing; ops see the spend.
-      await recordFailedGeneration({
-        workspaceId,
-        userId,
-        keySource: billing?.source ?? "platform",
-        model: gen?.model ?? model,
-        feature: "batch_generation",
-        usage: gen
-          ? { promptTokens: gen.promptTokens, completionTokens: gen.completionTokens }
-          : providerUsageOf(e),
-        error: e,
-      });
     }
     if (e instanceof LostClaimError) {
       // The row belongs to another run now; it will record its own outcome.
@@ -809,24 +761,26 @@ async function runItem(
   return { item: await freshItem(row.id), changed: true };
 }
 
-const itemInput = (d: unknown) =>
-  z.object({ workspaceId: workspaceIdSchema, itemId: z.string().uuid() }).parse(d);
+export const GenerationItemInputSchema = z
+  .object({ workspaceId: workspaceIdSchema, itemId: z.string().uuid() })
+  .strict();
+const itemInput = (d: unknown) => GenerationItemInputSchema.parse(d);
 
 export const processGenerationItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(itemInput)
-  .handler(async ({ data, context }) => {
+  .handler(async ({ data, context }) => customerSafe(async () => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
     return runItem(data.workspaceId, context.userId, data.itemId);
-  });
+  }));
 
 export const retryGenerationItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(itemInput)
-  .handler(async ({ data, context }) => {
+  .handler(async ({ data, context }) => customerSafe(async () => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
     return runItem(data.workspaceId, context.userId, data.itemId, { onlyIfFailed: true });
-  });
+  }));
 
 export type PublishOutcome = "published" | "already_published" | "draft" | "limit" | "error";
 
@@ -847,10 +801,8 @@ export type PublishResult = {
  */
 export const publishGeneratedPages = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z.object({ workspaceId: workspaceIdSchema, jobId: z.string().uuid() }).parse(d),
-  )
-  .handler(async ({ data, context }) => {
+  .inputValidator(jobInput)
+  .handler(async ({ data, context }) => customerSafe(async () => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const { items } = await loadJob(data.workspaceId, data.jobId);
     const { publishPagesAtomically, pageLimitMessage } =
@@ -886,7 +838,8 @@ export const publishGeneratedPages = createServerFn({ method: "POST" })
           results.push({ ...withTitle, outcome: "published", message: "Published." });
         }
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Could not publish";
+        // Never the database's text: the customer reads one plain sentence.
+        const msg = customerMessage(e, "Could not publish this page right now. Try again in a minute.");
         results.push({ ...base, outcome: "error", message: msg.slice(0, 300) });
       }
     }
@@ -897,4 +850,4 @@ export const publishGeneratedPages = createServerFn({ method: "POST" })
       keptAsDraft: results.filter((r) => r.outcome === "draft").length,
       limitReached: limitHit,
     };
-  });
+  }));

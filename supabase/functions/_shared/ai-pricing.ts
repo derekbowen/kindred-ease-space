@@ -1,90 +1,49 @@
-// Central AI pricing + credit model for the platform (resold) AI path.
+// Deno mirror of src/lib/ai-pricing.ts, for the one Supabase function that
+// makes OpenAI requests (coach-briefing-cron). OpenAI list prices, Standard
+// tier, verified 2026-09-25 at https://developers.openai.com/api/docs/pricing.
+// USD micros (1 USD = 1_000_000) per 1M tokens. tests/ai-provider.test.ts
+// checks these rows are identical to the Worker's table.
 //
-// Business model: clients buy credits; the platform holds one OpenRouter key and
-// resells inference at a markup. There is NO hard cap — when credits run out the
-// client tops up (ideally via auto-recharge). The only "limit" is the client's
-// own balance, which they can refill at any time.
-//
-// Tunable via env so pricing can change without a code edit:
-//   AI_CREDIT_MARKUP       multiple applied to raw provider cost (default 5)
-//   AI_CREDIT_VALUE_MICROS USD-micros that one credit represents at retail
-//                          (default 10_000 => 1 credit = $0.01, i.e. 100 credits = $1)
-//   PLATFORM_AI_MODEL      default OpenRouter model id for the platform path
+// The briefing is billed 'system' (the platform's own feature: the global
+// ceiling only, never a customer's credits), so no credit math lives here.
 
-export const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
+export type ModelPrice = { input: number; cachedInput: number; output: number };
 
-export const AI_CREDIT_MARKUP = Number(Deno.env.get("AI_CREDIT_MARKUP") ?? "5");
-export const AI_CREDIT_VALUE_MICROS = Number(Deno.env.get("AI_CREDIT_VALUE_MICROS") ?? "10000");
-
-// Provider token prices in USD-micros per 1K tokens (1 USD = 1_000_000 micros).
-// Source: OpenRouter / Google Gemini API pricing, June 2026.
-// A price of $P per 1M tokens == P * 1000 micros per 1K tokens.
-export const MODEL_COST_PER_1K_MICROS: Record<string, { in: number; out: number }> = {
-  // --- Gemini 3.x (OpenRouter ids) ---
-  "google/gemini-3.1-pro-preview": { in: 2000, out: 12000 },
-  "google/gemini-3.5-flash": { in: 1500, out: 9000 },
-  "google/gemini-3-flash-preview": { in: 500, out: 3000 },
-  "google/gemini-3.1-flash-lite-preview": { in: 250, out: 1500 },
-  // --- legacy / BYOK estimates (kept for cost logging on other providers) ---
-  "gpt-5-mini": { in: 250, out: 2000 },
-  "gpt-4o-mini": { in: 150, out: 600 },
-  "claude-haiku-4-5": { in: 1000, out: 5000 },
-  "gemini-2.5-flash": { in: 300, out: 2500 },
-  "google/gemini-2.5-flash": { in: 300, out: 2500 },
-  default: { in: 2000, out: 12000 }, // assume Pro-tier so we never under-bill
+export const MODEL_PRICES_MICROS_PER_1M: Record<string, ModelPrice> = {
+  "gpt-5-nano": { input: 50_000, cachedInput: 5_000, output: 400_000 },
+  "gpt-5-mini": { input: 250_000, cachedInput: 25_000, output: 2_000_000 },
+  // Unknown model: priced as the most expensive allowlisted one.
+  default: { input: 250_000, cachedInput: 25_000, output: 2_000_000 },
 };
 
-// Platform models a caller may select. Anything else falls back to the default —
-// this prevents a client from forcing an exotic/expensive model we don't price.
-export const PLATFORM_MODEL_ALLOWLIST = [
-  "google/gemini-3.1-pro-preview",
-  "google/gemini-3.5-flash",
-  "google/gemini-3-flash-preview",
-  "google/gemini-3.1-flash-lite-preview",
-];
-
-// Default per the product decision: Gemini 3.1 Pro for everything (highest quality).
-// Override per-deployment with PLATFORM_AI_MODEL, or per-call within the allowlist.
-export const PLATFORM_DEFAULT_MODEL =
-  Deno.env.get("PLATFORM_AI_MODEL") ?? "google/gemini-3.1-pro-preview";
-
-export function resolvePlatformModel(requested?: string): string {
-  if (requested && PLATFORM_MODEL_ALLOWLIST.includes(requested)) return requested;
-  return PLATFORM_DEFAULT_MODEL;
+export function priceFor(model: string): ModelPrice {
+  return MODEL_PRICES_MICROS_PER_1M[model] ?? MODEL_PRICES_MICROS_PER_1M.default;
 }
 
-/** Raw provider cost (no markup) in USD-micros for a given model + token usage. */
-export function estimateCostMicros(
+const tokens = (n: unknown): number => {
+  const v = Number(n);
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 0;
+};
+
+export function costMicrosForUsage(
   model: string,
-  promptTokens: number,
-  completionTokens: number,
+  usage: { inputTokens: number; cachedInputTokens?: number; outputTokens: number },
 ): number {
-  const c = MODEL_COST_PER_1K_MICROS[model] ?? MODEL_COST_PER_1K_MICROS.default;
-  return Math.round((promptTokens * c.in + completionTokens * c.out) / 1000);
+  const p = priceFor(model);
+  const input = tokens(usage.inputTokens);
+  const cached = Math.min(tokens(usage.cachedInputTokens), input);
+  const output = tokens(usage.outputTokens);
+  return Math.ceil(((input - cached) * p.input + cached * p.cachedInput + output * p.output) / 1_000_000);
 }
 
-/** Credits to charge the client for a given raw provider cost (cost × markup ÷ credit value). */
-export function creditsForCostMicros(costMicros: number): number {
-  if (costMicros <= 0) return 0;
-  return Math.max(1, Math.ceil((costMicros * AI_CREDIT_MARKUP) / AI_CREDIT_VALUE_MICROS));
+export function maxCostMicros(model: string, maxInputTokens: number, maxOutputTokens: number): number {
+  return costMicrosForUsage(model, { inputTokens: maxInputTokens, cachedInputTokens: 0, outputTokens: maxOutputTokens });
 }
 
-/** Convenience: credits for a model + token usage. */
-export function creditsForUsage(
-  model: string,
-  promptTokens: number,
-  completionTokens: number,
-): number {
-  return creditsForCostMicros(estimateCostMicros(model, promptTokens, completionTokens));
-}
-
-/** Rough pre-call credit estimate (no tokenizer): ~4 chars/token + assumed completion. */
-export function estimateCreditsBeforeCall(
-  model: string,
-  promptChars: number,
-  maxTokens?: number,
-): number {
-  const promptTokens = Math.ceil(promptChars / 4);
-  const completionTokens = maxTokens ?? 1024;
-  return creditsForUsage(model, promptTokens, completionTokens);
+/** Same bound as the Worker's estimateMaxInputTokens: tokens never exceed UTF-8 bytes. */
+export function estimateMaxInputTokens(instructions: string, input: string, schema?: Record<string, unknown>): number {
+  const bytes = (s: string) => new TextEncoder().encode(String(s ?? "")).length;
+  let total = bytes(instructions) + bytes(input) + 16;
+  if (schema) total += bytes(JSON.stringify(schema)) + 64;
+  return total + 1024;
 }

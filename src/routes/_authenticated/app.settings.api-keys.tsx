@@ -23,15 +23,9 @@ export const Route = createFileRoute("/_authenticated/app/settings/api-keys")({
   component: ApiKeysPage,
 });
 
+// A workspace's own OpenAI key is managed on Settings → AI Providers, which
+// stores it under the right secret name server-side.
 const KNOWN_KEYS: Array<{ name: string; help: string }> = [
-  {
-    name: "OPENROUTER_API_KEY",
-    help: "Powers Quick Page Builder and AI content. Get one at openrouter.ai/keys.",
-  },
-  {
-    name: "LOVABLE_API_KEY",
-    help: "Powers Coach actions (expand pages, meta, city drafts). Your Lovable project API key.",
-  },
   {
     name: "FIRECRAWL_API_KEY",
     help: "Used by competitor scraper, content migration. Get one at firecrawl.dev.",

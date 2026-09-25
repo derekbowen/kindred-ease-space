@@ -4,10 +4,11 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
 import {
-  GENERATION_DEFAULT_MODEL,
-  GENERATION_MODEL_OPTIONS,
+  GENERATION_DEFAULT_TIER,
+  GENERATION_TIER_OPTIONS,
   pageCoversCity,
 } from "@/lib/generation.server";
+import type { AiQualityTier } from "@/lib/ai/models";
 
 const sb = () => supabaseAdmin as any;
 
@@ -38,9 +39,9 @@ export const getPageBuilderContext = createServerFn({ method: "GET" })
       gaps: BuilderCity[];
       recentSlugs: string[];
       dominantCategory: string | null;
-      /** Model picker for the Quick Page Builder: same list, same cheap default as batch. */
-      models: Array<{ id: string; label: string; hint: string }>;
-      defaultModel: string;
+      /** Quality picker for the Quick Page Builder: same tiers, same default as batch. No model names. */
+      tiers: Array<{ tier: AiQualityTier; label: string; hint: string }>;
+      defaultTier: AiQualityTier;
     }> => {
       await assertWorkspaceMember(data.workspaceId, context.userId);
 
@@ -137,8 +138,8 @@ export const getPageBuilderContext = createServerFn({ method: "GET" })
         gaps,
         recentSlugs,
         dominantCategory,
-        models: GENERATION_MODEL_OPTIONS,
-        defaultModel: GENERATION_DEFAULT_MODEL,
+        tiers: GENERATION_TIER_OPTIONS,
+        defaultTier: GENERATION_DEFAULT_TIER,
       };
     },
   );

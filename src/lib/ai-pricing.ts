@@ -1,68 +1,97 @@
+import { AI_MODELS, type AiModelId } from "@/lib/ai/models";
+
 /**
- * App-side (Node/Workers) mirror of supabase/functions/_shared/ai-pricing.ts.
+ * The pricing table for every AI call founders.click makes: OpenAI list prices
+ * for the two allowlisted models, and the credit math customers are charged
+ * in. Pure (env reads only) so it runs in the Worker and in tests alike.
  *
- * TanStack server functions run in the app runtime and cannot import the Deno
- * edge-function module (it reads `Deno.env` at load). Keep the two in sync — they
- * are the single conceptual source of truth for the platform credit model:
- * clients buy credits; the platform resells OpenRouter inference at a markup.
+ * Source: https://developers.openai.com/api/docs/pricing — Standard tier,
+ * verified 2026-09-25:
+ *   gpt-5-nano  input $0.05 / cached input $0.005 / output $0.40  per 1M tokens
+ *   gpt-5-mini  input $0.25 / cached input $0.025 / output $2.00  per 1M tokens
+ * Reasoning tokens are billed as output tokens. The Deno mirror used by the
+ * daily briefing (supabase/functions/_shared/ai-pricing.ts) carries the same
+ * numbers; tests/ai-provider.test.ts keeps the two identical.
  *
- * Tunable via env (same names as the edge module):
- *   AI_CREDIT_MARKUP, AI_CREDIT_VALUE_MICROS, PLATFORM_AI_MODEL
+ * Credit model (unchanged): credits = ceil(cost_micros × AI_CREDIT_MARKUP ÷
+ * AI_CREDIT_VALUE_MICROS), at least 1 for any non-zero cost. Tunable through
+ * the two env vars; anything that is not a positive number falls back to the
+ * default rather than turning every price into NaN.
  */
 
-export const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
+export const AI_PRICE_SOURCE =
+  "https://developers.openai.com/api/docs/pricing (Standard tier, verified 2026-09-25)";
 
-export const AI_CREDIT_MARKUP = Number(process.env.AI_CREDIT_MARKUP ?? "5");
-export const AI_CREDIT_VALUE_MICROS = Number(process.env.AI_CREDIT_VALUE_MICROS ?? "10000");
+/** USD micros (1 USD = 1_000_000) per 1M tokens. */
+export type ModelPrice = { input: number; cachedInput: number; output: number };
 
-// USD-micros per 1K tokens (a price of $P per 1M tokens == P * 1000 micros / 1K).
-// Source: OpenRouter / Google Gemini pricing, June 2026.
-export const MODEL_COST_PER_1K_MICROS: Record<string, { in: number; out: number }> = {
-  "google/gemini-3.1-pro-preview": { in: 2000, out: 12000 },
-  "google/gemini-3.5-flash": { in: 1500, out: 9000 },
-  "google/gemini-3-flash-preview": { in: 500, out: 3000 },
-  "google/gemini-3.1-flash-lite-preview": { in: 250, out: 1500 },
-  // Lovable-gateway tools (coach actions, seo-coach, page auditor) run on
-  // gemini-2.5-flash. Without an entry it fell through to the Pro-tier default
-  // and billed customers ~6.7x the real cost.
-  "google/gemini-2.5-flash": { in: 300, out: 2500 },
-  "gemini-2.5-flash": { in: 300, out: 2500 },
-  default: { in: 2000, out: 12000 },
-};
+export const MODEL_PRICES_MICROS_PER_1M: Readonly<Record<AiModelId | "default", ModelPrice>> =
+  Object.freeze({
+    "gpt-5-nano": Object.freeze({ input: 50_000, cachedInput: 5_000, output: 400_000 }),
+    "gpt-5-mini": Object.freeze({ input: 250_000, cachedInput: 25_000, output: 2_000_000 }),
+    // An unknown model is priced as the most expensive allowlisted one, so a
+    // mistake can only ever over-reserve, never under-reserve.
+    default: Object.freeze({ input: 250_000, cachedInput: 25_000, output: 2_000_000 }),
+  });
 
-export const PLATFORM_MODEL_ALLOWLIST = [
-  "google/gemini-3.1-pro-preview",
-  "google/gemini-3.5-flash",
-  "google/gemini-3-flash-preview",
-  "google/gemini-3.1-flash-lite-preview",
-];
-
-export const PLATFORM_DEFAULT_MODEL =
-  process.env.PLATFORM_AI_MODEL ?? "google/gemini-3.1-pro-preview";
-
-export function resolvePlatformModel(requested?: string): string {
-  if (requested && PLATFORM_MODEL_ALLOWLIST.includes(requested)) return requested;
-  return PLATFORM_DEFAULT_MODEL;
+function positiveFromEnv(name: string, fallback: number): number {
+  const raw = typeof process !== "undefined" ? process.env?.[name] : undefined;
+  const n = Number(raw);
+  return raw !== undefined && raw !== "" && Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-export function estimateCostMicros(
-  model: string,
-  promptTokens: number,
-  completionTokens: number,
-): number {
-  const c = MODEL_COST_PER_1K_MICROS[model] ?? MODEL_COST_PER_1K_MICROS.default;
-  return Math.round((promptTokens * c.in + completionTokens * c.out) / 1000);
+export const AI_CREDIT_MARKUP = positiveFromEnv("AI_CREDIT_MARKUP", 5);
+export const AI_CREDIT_VALUE_MICROS = positiveFromEnv("AI_CREDIT_VALUE_MICROS", 10_000);
+
+export function priceFor(model: string): ModelPrice {
+  return (AI_MODELS as readonly string[]).includes(model)
+    ? MODEL_PRICES_MICROS_PER_1M[model as AiModelId]
+    : MODEL_PRICES_MICROS_PER_1M.default;
+}
+
+const tokens = (n: unknown): number => {
+  const v = Number(n);
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 0;
+};
+
+export type TokenUsage = {
+  inputTokens: number;
+  /** Part of inputTokens served from the prompt cache (billed at the cached rate). */
+  cachedInputTokens?: number;
+  /** Includes reasoning tokens. */
+  outputTokens: number;
+};
+
+/** What a call actually cost, in USD micros, rounded up. */
+export function costMicrosForUsage(model: string, usage: TokenUsage): number {
+  const p = priceFor(model);
+  const input = tokens(usage.inputTokens);
+  const cached = Math.min(tokens(usage.cachedInputTokens), input);
+  const output = tokens(usage.outputTokens);
+  const scaled = (input - cached) * p.input + cached * p.cachedInput + output * p.output;
+  return Math.ceil(scaled / 1_000_000);
+}
+
+/**
+ * The most a call can cost: every input token uncached, every allowed output
+ * token used. This is what a spend hold reserves before the provider is
+ * called.
+ */
+export function maxCostMicros(model: string, maxInputTokens: number, maxOutputTokens: number): number {
+  return costMicrosForUsage(model, {
+    inputTokens: maxInputTokens,
+    cachedInputTokens: 0,
+    outputTokens: maxOutputTokens,
+  });
 }
 
 export function creditsForCostMicros(costMicros: number): number {
-  if (costMicros <= 0) return 0;
-  return Math.max(1, Math.ceil((costMicros * AI_CREDIT_MARKUP) / AI_CREDIT_VALUE_MICROS));
+  const c = Number(costMicros);
+  if (!Number.isFinite(c) || c <= 0) return 0;
+  return Math.max(1, Math.ceil((c * AI_CREDIT_MARKUP) / AI_CREDIT_VALUE_MICROS));
 }
 
-export function creditsForUsage(
-  model: string,
-  promptTokens: number,
-  completionTokens: number,
-): number {
-  return creditsForCostMicros(estimateCostMicros(model, promptTokens, completionTokens));
+/** Credits for a model and token usage (cost hints, estimates). */
+export function creditsForUsage(model: string, inputTokens: number, outputTokens: number): number {
+  return creditsForCostMicros(costMicrosForUsage(model, { inputTokens, outputTokens }));
 }
