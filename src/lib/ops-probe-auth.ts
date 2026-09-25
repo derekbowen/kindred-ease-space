@@ -20,7 +20,7 @@
  * probes with the same 401 body as a wrong one, so the endpoint cannot be used
  * to learn whether it is configured.
  */
-import { createHash, timingSafeEqual } from "node:crypto";
+import { secretsMatch } from "@/lib/secret-compare";
 
 /** The header a caller puts the probe secret in. `Authorization: Bearer …` works too. */
 export const OPS_PROBE_SECRET_HEADER = "x-founders-probe-secret";
@@ -35,12 +35,7 @@ export function opsProbeSecretMatches(
   presented: string | null | undefined,
   configured: string | null | undefined,
 ): boolean {
-  const want = (configured ?? "").trim();
-  const got = (presented ?? "").trim();
-  if (!want || !got) return false;
-  const a = createHash("sha256").update(got, "utf8").digest();
-  const b = createHash("sha256").update(want, "utf8").digest();
-  return timingSafeEqual(a, b);
+  return secretsMatch((presented ?? "").trim(), (configured ?? "").trim());
 }
 
 /** The secret a request presents, or null when it presents none. */

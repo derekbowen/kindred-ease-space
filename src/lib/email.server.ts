@@ -94,14 +94,14 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
   // never reach Emailit: every such delivery bounces and burns the sending
   // domain's reputation (2026-09-24 incident). Mixed lists lose only the
   // blocked entries; an all-blocked list is reported as suppressed, not sent.
+  // Only NORMALISED single addresses come back as deliverable (a list, a
+  // malformed string or a test address is dropped), and only those are
+  // forwarded — never the caller's raw string. The log names the domain and
+  // the reason, never the mailbox or the subject (support-ticket subjects
+  // are customer text).
   const { deliverable, blocked } = partitionRecipients(params.to);
   if (blocked.length > 0) {
-    console.warn(
-      "[email] suppressed reserved/test recipient(s):",
-      blocked.map(describeBlocked).join(", "),
-      "subject:",
-      params.subject,
-    );
+    console.warn("[email] suppressed recipient(s):", blocked.map(describeBlocked).join(", "));
   }
   if (deliverable.length === 0) {
     return { ok: true, suppressed: true };

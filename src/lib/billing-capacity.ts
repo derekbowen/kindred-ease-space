@@ -41,6 +41,41 @@ export const PAST_DUE_GRACE_DAYS = 7;
  */
 export const STALE_PERIOD_DAYS = 45;
 
+/**
+ * "No limit" for a workspace holding the founder / internal unlimited
+ * entitlement, wherever a count limit is a number (pages, domains, the daily
+ * generation cap): int4's maximum — the page_limit SQL workspace_capacity()
+ * returns for it too (20260924000700).
+ */
+export const INTERNAL_UNLIMITED_COUNT = 2_147_483_647;
+export const INTERNAL_UNLIMITED_PAGE_LIMIT = INTERNAL_UNLIMITED_COUNT;
+
+/** What the product calls the founder / internal unlimited entitlement. */
+export const INTERNAL_UNLIMITED_PLAN_LABEL = "Founder / Internal Unlimited";
+
+/**
+ * The server-computed, read-only fields every entitlement read the UI uses
+ * carries (getPageEntitlement, getBetaStatus, getSettingsContext,
+ * getAiAllowance). Computed on the server from the workspace's grants on
+ * every request; the client never supplies or caches them.
+ */
+export type InternalAccessFields = {
+  /** True only while the workspace holds an ACTIVE grant_type 'internal' grant. */
+  internalUnlimited: boolean;
+  /** "Founder / Internal Unlimited" when internalUnlimited, otherwise null (use the normal plan wording). */
+  planLabel: string | null;
+  /** True only when internalUnlimited: the UI may show launch:false (non-stub) features. */
+  revealLaunchHiddenFeatures: boolean;
+};
+
+export function internalAccessFields(internalUnlimited: boolean): InternalAccessFields {
+  return {
+    internalUnlimited,
+    planLabel: internalUnlimited ? INTERNAL_UNLIMITED_PLAN_LABEL : null,
+    revealLaunchHiddenFeatures: internalUnlimited,
+  };
+}
+
 export type BillingFacts = {
   subscriptionStatus: string | null | undefined;
   trialEndsAt: string | null | undefined;
@@ -53,9 +88,16 @@ export type BillingFacts = {
    * refused publishing no matter how large the grant.
    */
   grantedPages?: number | null;
+  /**
+   * The workspace holds an ACTIVE founder / internal unlimited grant
+   * (workspace_is_internal_unlimited). Decides everything on its own: state
+   * 'internal', serve, publish, no page limit — whatever the Stripe facts say.
+   */
+  internalUnlimited?: boolean | null;
 };
 
 export type BillingState =
+  | "internal" // founder / internal unlimited grant: no limits at all
   | "active" // paying, in good standing
   | "trialing" // trial running, not yet expired
   | "trial_expired" // trial ended, never converted
@@ -234,11 +276,25 @@ export function normalizeGrantedPages(value: number | null | undefined): number 
  * components are summed rather than compared, and the state stays the
  * commercial one.
  *
+ * THE FOUNDER / INTERNAL UNLIMITED ENTITLEMENT (facts.internalUnlimited, an
+ * active grant_type 'internal' grant) decides first and alone: state
+ * 'internal', serve, publish, no page limit.
+ *
  * Mirrored in SQL by public.workspace_capacity() (20260918000000, amended by
  * 20260924000700); tests/entitlement-grants.test.ts asserts the two agree for
- * every state.
+ * every state, running both against the same table.
  */
 export function decideCapacity(facts: BillingFacts, now: number = Date.now()): CapacityDecision {
+  // The founder / internal unlimited entitlement: first and alone, so no
+  // Stripe state can narrow it. Mirrors workspace_capacity()'s first branch.
+  if (facts.internalUnlimited === true) {
+    return {
+      state: "internal",
+      serve: true,
+      publish: true,
+      reason: `${INTERNAL_UNLIMITED_PLAN_LABEL}: no page, publishing or AI usage limits (internal account).`,
+    };
+  }
   const stripe = stripeCapacity(facts, now);
   const granted = normalizeGrantedPages(facts.grantedPages);
   if (granted === 0) return stripe;
@@ -267,6 +323,7 @@ export function effectivePageLimit(
   stored: { base: number; addon: number; bonus: number; granted?: number | null },
   decision: CapacityDecision,
 ): number {
+  if (decision.state === "internal") return INTERNAL_UNLIMITED_PAGE_LIMIT;
   const granted = normalizeGrantedPages(stored.granted);
   // ADDITIVE, never greater-of. Paid capacity counts only while Stripe itself
   // says the workspace may publish AND the state is not `granted` — that state

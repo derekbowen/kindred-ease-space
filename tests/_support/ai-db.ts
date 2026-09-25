@@ -8,23 +8,42 @@
  *     the migrations must REVOKE);
  *   - auth.uid() / auth.role() read from request.jwt.claims exactly as
  *     Supabase's own definitions do, so a caller emulating PostgREST sets the
- *     claims per transaction;
+ *     claims per transaction; auth.users (the grants' granted_by foreign
+ *     key);
  *   - public.is_workspace_member over workspace_members;
- *   - the columns of workspaces, tenant_pages, credit_balances, credit_ledger,
- *     workspace_ai_quota, ai_usage_log, platform_settings and
- *     coach_daily_briefings the functions read and write (definitions follow
- *     the production migrations that created them);
+ *   - the columns of workspaces (the billing facts too), tenant_pages,
+ *     credit_balances, credit_ledger, workspace_ai_quota, ai_usage_log,
+ *     platform_settings and coach_daily_briefings the functions read and write
+ *     (definitions follow the production migrations that created them);
+ *   - PRODUCTION'S INDEXES on those tables, so a migration that collides with
+ *     one fails here as it would in production (round-4 H1 got through
+ *     because the stubs had none): credit_ledger_grant_ref_unique (GLOBAL,
+ *     20260827010000), credit_balances_pkey, workspace_ai_quota_pkey,
+ *     workspace_members_one_owner_per_user (20260628065831) and
+ *     tenant_pages_workspace_id_slug_key;
  *   - a pg_cron stand-in (cron.job, cron.schedule, cron.unschedule) with the
  *     same signatures, so the migration's schedule call is real SQL.
+ *
+ * AI_CHAIN is the migration chain the spend SQL runs on, in apply order:
+ * the entitlement grants (20260918000000, production), 000600, 000700 (the
+ * internal-unlimited predicate ai_reserve reads) and 000800.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const ROOT = join(import.meta.dir, "..", "..");
 
+export const MIGRATION_GRANTS = "supabase/migrations/20260918000000_entitlement_grants.sql";
 export const MIGRATION_600 = "supabase/migrations/20260924000600_generation_settlement_and_reservations.sql";
+export const MIGRATION_700 = "supabase/migrations/20260924000700_grant_supersedes_trial.sql";
 export const MIGRATION_800 = "supabase/migrations/20260925000800_ai_spend_reservations.sql";
+export const MIGRATION_930 = "supabase/migrations/20260925000930_founder_internal_unlimited.sql";
+export const ROLLBACK_700 = "supabase/rollback/20260924000700_grant_supersedes_trial_rollback.sql";
 export const ROLLBACK_800 = "supabase/rollback/20260925000800_ai_spend_reservations_rollback.sql";
+export const ROLLBACK_930 = "supabase/rollback/20260925000930_founder_internal_unlimited_rollback.sql";
+
+/** The chain the AI spend SQL runs on, in apply order (after SUPABASE_STUBS). */
+export const AI_CHAIN = [MIGRATION_GRANTS, MIGRATION_600, MIGRATION_700, MIGRATION_800] as const;
 
 export const readRepo = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
 
@@ -48,6 +67,7 @@ export const SUPABASE_STUBS = `
                            nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role'), '')::text
   $$;
   GRANT EXECUTE ON FUNCTION auth.uid(), auth.role() TO anon, authenticated, service_role;
+  CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text);
 
   CREATE SCHEMA IF NOT EXISTS cron;
   CREATE TABLE IF NOT EXISTS cron.job (
@@ -72,12 +92,25 @@ export const SUPABASE_STUBS = `
   END $$;
 
   CREATE TABLE IF NOT EXISTS public.workspaces (id uuid PRIMARY KEY, name text);
+  -- The billing facts workspace_capacity reads (20260511094509, 20260827030000).
+  ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS plan text;
+  ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS trial_ends_at timestamptz;
+  ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS current_period_end timestamptz;
+  ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS is_internal boolean NOT NULL DEFAULT false;
+  ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS page_limit_base int NOT NULL DEFAULT 25;
+  ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS page_limit_addon int NOT NULL DEFAULT 0;
+  ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS page_limit_bonus int NOT NULL DEFAULT 0;
+  ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS page_bonus_expires_at timestamptz;
   CREATE TABLE IF NOT EXISTS public.workspace_members (
     workspace_id uuid NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
     user_id uuid NOT NULL,
     role text NOT NULL DEFAULT 'member',
     PRIMARY KEY (workspace_id, user_id)
   );
+  -- Production: one owner row per user (20260628065831).
+  CREATE UNIQUE INDEX IF NOT EXISTS workspace_members_one_owner_per_user
+    ON public.workspace_members (user_id)
+    WHERE role = 'owner';
   CREATE OR REPLACE FUNCTION public.is_workspace_member(_workspace_id uuid, _user_id uuid)
     RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
     AS $$ SELECT EXISTS (SELECT 1 FROM public.workspace_members
@@ -91,15 +124,16 @@ export const SUPABASE_STUBS = `
     status text NOT NULL DEFAULT 'draft',
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
+    published_at timestamptz,
     generation_request_id uuid,
-    UNIQUE (workspace_id, slug)
+    CONSTRAINT tenant_pages_workspace_id_slug_key UNIQUE (workspace_id, slug)
   );
   CREATE UNIQUE INDEX IF NOT EXISTS tenant_pages_generation_request_uidx
     ON public.tenant_pages (workspace_id, generation_request_id)
     WHERE generation_request_id IS NOT NULL;
 
   CREATE TABLE IF NOT EXISTS public.credit_balances (
-    workspace_id uuid PRIMARY KEY REFERENCES public.workspaces(id) ON DELETE CASCADE,
+    workspace_id uuid CONSTRAINT credit_balances_pkey PRIMARY KEY REFERENCES public.workspaces(id) ON DELETE CASCADE,
     balance integer NOT NULL DEFAULT 0,
     monthly_allowance integer NOT NULL DEFAULT 0,
     lifetime_granted integer NOT NULL DEFAULT 0,
@@ -118,8 +152,12 @@ export const SUPABASE_STUBS = `
     metadata jsonb DEFAULT '{}'::jsonb,
     created_at timestamptz NOT NULL DEFAULT now()
   );
+  -- Production (20260827010000): GLOBAL across workspaces — no workspace_id.
+  CREATE UNIQUE INDEX IF NOT EXISTS credit_ledger_grant_ref_unique
+    ON public.credit_ledger (reason, ref_type, ref_id)
+    WHERE delta > 0 AND ref_type IS NOT NULL AND ref_id IS NOT NULL;
   CREATE TABLE IF NOT EXISTS public.workspace_ai_quota (
-    workspace_id uuid PRIMARY KEY REFERENCES public.workspaces(id) ON DELETE CASCADE,
+    workspace_id uuid CONSTRAINT workspace_ai_quota_pkey PRIMARY KEY REFERENCES public.workspaces(id) ON DELETE CASCADE,
     platform_credits_remaining int NOT NULL DEFAULT 20,
     lifetime_platform_used int NOT NULL DEFAULT 0,
     updated_at timestamptz NOT NULL DEFAULT now()
@@ -171,6 +209,15 @@ export const SUPABASE_STUBS = `
     UNIQUE (workspace_id, briefing_date)
   );
 `;
+
+/** Production's indexes the stubs must carry (asserted by the SQL suites). */
+export const PRODUCTION_INDEXES = [
+  "credit_ledger_grant_ref_unique",
+  "credit_balances_pkey",
+  "workspace_ai_quota_pkey",
+  "workspace_members_one_owner_per_user",
+  "tenant_pages_workspace_id_slug_key",
+] as const;
 
 /** The last result set of a script (the migrations end with their verification block). */
 export type CheckRow = { check: string; ok: boolean | null };

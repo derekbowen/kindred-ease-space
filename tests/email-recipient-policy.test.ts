@@ -122,6 +122,56 @@ console.log("\n=== 2. every rule the incident brief requires ===");
 }
 
 // ---------------------------------------------------------------------------
+console.log("\n=== 2b. one recipient per string (round-3 F6 / round-4 security L7) ===");
+// ---------------------------------------------------------------------------
+{
+  const notOne: Array<[string, string]> = [
+    ["comma list", "jane@gmail.com,derek@founders.click"],
+    ["comma list with a space", "jane@gmail.com, derek@founders.click"],
+    ["semicolon list", "jane@gmail.com;derek@founders.click"],
+    ["a list hiding a test address", "jane@gmail.com,smoke1@example.com"],
+    ["a trailing comma", "jane@gmail.com,"],
+    ["whitespace inside", "jane doe@gmail.com"],
+    ["whitespace around the @", "jane @gmail.com"],
+    ["two addresses separated by a space", "jane@gmail.com derek@founders.click"],
+    ["a tab", "jane@gmail.com\tderek@founders.click"],
+    ["a newline (header injection)", "jane@gmail.com\nBcc: victim@gmail.com"],
+    ["a carriage return", "jane@gmail.com\r\nBcc: victim@gmail.com"],
+    ["two @", "jane@x@gmail.com"],
+    ["a quote", '"jane"@gmail.com'],
+    ["angle brackets inside the address", "jane<x>@gmail.com"],
+    ["a display name carrying another address", "derek@founders.click <jane@gmail.com>"],
+    ["a list inside the angle brackets", "Jane <jane@gmail.com,derek@founders.click>"],
+    ["an unbalanced bracket", "Jane <jane@gmail.com"],
+    ["nothing before the @", "@gmail.com"],
+    ["nothing after the @", "jane@"],
+  ];
+  for (const [why, raw] of notOne) {
+    const v = classifyRecipient(raw);
+    t(`refused — ${why}`, normalizeRecipient(raw) === null && !v.deliverable && v.reason === "not a single email address", v);
+    t(`…and the refusal never echoes the raw string — ${why}`, v.address === "", v);
+  }
+  const stillOne: Array<[string, string, string]> = [
+    ["a plain address", "jane.doe@gmail.com", "jane.doe@gmail.com"],
+    ["surrounding whitespace is trimmed", "  jane.doe@gmail.com  ", "jane.doe@gmail.com"],
+    ["a display name", "Jane Doe <Jane.Doe@Gmail.com>", "jane.doe@gmail.com"],
+    ["an apostrophe (a real mailbox)", "o'brien@gmail.com", "o'brien@gmail.com"],
+    ["a plus-tag", "jane+news@gmail.com", "jane+news@gmail.com"],
+  ];
+  for (const [why, raw, want] of stillOne) {
+    t(`one address — ${why}`, normalizeRecipient(raw) === want && classifyRecipient(raw).address === want, classifyRecipient(raw));
+  }
+  const p = partitionRecipients(["Jane Doe <Jane.Doe@Gmail.com>", "a@gmail.com,b@gmail.com", "derek@founders.click"]);
+  t(
+    "partition hands on the NORMALISED addresses only, and drops the list string whole",
+    JSON.stringify(p.deliverable) === JSON.stringify(["jane.doe@gmail.com", "derek@founders.click"]) &&
+      p.blocked.length === 1 && p.blocked[0]!.address === "" && p.blocked[0]!.reason === "not a single email address",
+    p,
+  );
+  t("describeBlocked of a refused string names no address at all", describeBlocked(p.blocked[0]!) === "@(no domain) (not a single email address)", describeBlocked(p.blocked[0]!));
+}
+
+// ---------------------------------------------------------------------------
 console.log("\n=== 3. sendEmail() never calls Emailit for a blocked recipient (stubbed fetch) ===");
 // ---------------------------------------------------------------------------
 {
@@ -172,6 +222,24 @@ console.log("\n=== 3. sendEmail() never calls Emailit for a blocked recipient (s
     // (e) An all-blocked list is suppressed as a whole.
     const r5 = await sendEmail({ to: ["smoke1@example.com", "playwright@example.org"], subject: "x", text: "x" });
     t("all-blocked list → suppressed, no call", r5.suppressed === true && calls.length === 2, r5);
+
+    // (f) Round-4 security L7: a string carrying a list is never forwarded.
+    const r6 = await sendEmail({ to: "jane.doe@gmail.com,victim@gmail.com", subject: "x", text: "x" });
+    t("a comma list in one string → suppressed, no provider call", r6.ok === true && r6.suppressed === true && calls.length === 2, r6);
+    const r7 = await sendEmail({ to: "jane.doe@gmail.com\nBcc: victim@gmail.com", subject: "x", text: "x" });
+    t("a header-injection string → suppressed, no provider call", r7.suppressed === true && calls.length === 2, r7);
+    const r8 = await sendEmail({ to: ["jane.doe@gmail.com; victim@gmail.com", "derek@founders.click"], subject: "x", text: "x" });
+    t(
+      "a list string inside a list is dropped, the single address still goes out",
+      r8.ok === true && !r8.suppressed && calls.length === 3 && JSON.stringify(calls[2]!.body.to) === JSON.stringify(["derek@founders.click"]),
+      calls[2]?.body,
+    );
+    const r9 = await sendEmail({ to: "Jane Doe <Jane.Doe@Gmail.com>", subject: "x", text: "x" });
+    t(
+      "what reaches the provider is the NORMALISED bare address, never the caller's raw string",
+      r9.ok === true && calls.length === 4 && calls[3]!.body.to === "jane.doe@gmail.com",
+      calls[3]?.body,
+    );
   } finally {
     globalThis.fetch = realFetch;
     if (originalKey === undefined) delete process.env.EMAILIT_API_KEY;

@@ -9,10 +9,11 @@
 --
 --   ai_reserve      reserve the MAXIMUM the call can cost, atomically:
 --                   idempotency by request id, the per-workspace rate limit,
---                   the platform kill switch, the global daily ceiling, and
---                   the tenant charge (a free-quota unit, else purchased
---                   credits) — all under one per-workspace lock, one
---                   transaction. Refused → nothing moved, no provider call.
+--                   the platform kill switch, the per-workspace DAILY
+--                   PLATFORM-COST CAP, the tenant charge (a free-quota unit,
+--                   else purchased credits) and the global daily ceiling —
+--                   all under one per-workspace lock, one transaction.
+--                   Refused → nothing moved, no provider call.
 --   ai_mark_called  held → called, immediately before the provider request.
 --                   The caller must not call the provider unless this says
 --                   true. It re-checks the kill switch, so flipping it stops
@@ -57,10 +58,35 @@
 -- unchanged. BYOK calls (the customer's own key) take neither the ceiling nor
 -- tenant funds but still take a row and the rate limit.
 --
+-- ONE WORKSPACE CANNOT TAKE THE CEILING FROM EVERY OTHER (round-4 correctness
+-- H2 / security M1): workspace_daily_budget_micros (default 1000000 = $1.00)
+-- caps what ONE workspace's platform-key calls may hold or cost per UTC day —
+-- the sum of its rows' budget_micros for the day, which keeps the cost of
+-- every failed or refunded call, plus the new hold. Refused as
+-- 'workspace_budget_exhausted'. Every non-BYOK reservation takes it except a
+-- workspace holding the founder / internal unlimited entitlement
+-- (workspace_is_internal_unlimited, 20260924000700), which reserves with
+-- billing 'internal' on every route — no free-quota unit, no credits, no
+-- per-workspace cap — and stays under the kill switch, the platform ceiling
+-- and the rate limit like everyone else.
+--
+-- THE LEDGER KEYS ARE THE TENANT'S (round-4 correctness H1): a credits hold
+-- and its refund are credit_ledger rows whose ref_id is
+-- '<workspace_id>:<request_id>#<hold_seq>' (_ai_ledger_ref). A request id can
+-- be client-supplied, and production's GLOBAL unique index
+-- credit_ledger_grant_ref_unique (reason, ref_type, ref_id) WHERE delta > 0
+-- (20260827010000) would otherwise make a second workspace's refund under the
+-- same id fail. And one row that cannot be closed never stops anything: the
+-- lazy expiry, the reaper and the rollback close each row in its own
+-- subtransaction (a failure is a WARNING naming the row; the row stays open
+-- for the next pass).
+--
 --   Flip the kill switch (Supabase SQL editor, as postgres):
 --     UPDATE public.ai_platform_settings SET platform_ai_enabled = false, updated_at = now();
 --   Change the ceiling ($10.00/day = 10000000 micros):
 --     UPDATE public.ai_platform_settings SET daily_budget_micros = 10000000, updated_at = now();
+--   Change the per-workspace daily cap ($1.00/day = 1000000 micros):
+--     UPDATE public.ai_platform_settings SET workspace_daily_budget_micros = 1000000, updated_at = now();
 --
 -- The page-generation pause (platform_settings.generation_paused, 000300)
 -- is enforced here too, atomically, for page generation on every key type
@@ -68,7 +94,9 @@
 --
 -- Also here: the daily briefing's per-(workspace, UTC date) claim, so the
 -- cron and any number of concurrent "Refresh" clicks produce ONE stored
--- briefing and at most one AI call (coach_briefing_claim / _store).
+-- briefing and at most one AI call (coach_briefing_claim / _store), and the
+-- on-demand refresh throttle (coach_briefing_refresh_allowed: one refresh per
+-- workspace per interval, round-4 security L9).
 --
 -- Supersedes settle_generation_free_quota and its settlement index (000600,
 -- never applied in production): generation is settled here now, once per
@@ -92,8 +120,14 @@ CREATE TABLE IF NOT EXISTS public.ai_platform_settings (
   daily_budget_micros bigint NOT NULL DEFAULT 10000000 CHECK (daily_budget_micros >= 0),
   workspace_reservations_per_minute int NOT NULL DEFAULT 30
     CHECK (workspace_reservations_per_minute > 0),
+  -- What ONE workspace's platform-key calls may hold or cost per UTC day.
+  workspace_daily_budget_micros bigint NOT NULL DEFAULT 1000000
+    CHECK (workspace_daily_budget_micros >= 0),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE public.ai_platform_settings
+  ADD COLUMN IF NOT EXISTS workspace_daily_budget_micros bigint NOT NULL DEFAULT 1000000
+    CHECK (workspace_daily_budget_micros >= 0);
 INSERT INTO public.ai_platform_settings (id) VALUES (true) ON CONFLICT (id) DO NOTHING;
 ALTER TABLE public.ai_platform_settings ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.ai_platform_settings FROM anon, authenticated;
@@ -148,7 +182,7 @@ CREATE TABLE IF NOT EXISTS public.ai_spend_reservations (
     'page_generation','add_meta','fix_thin_page','add_internal_links',
     'seo_coach','page_audit','daily_briefing')),
   CONSTRAINT ai_spend_model_check CHECK (model IN ('gpt-5-nano','gpt-5-mini')),
-  CONSTRAINT ai_spend_billing_check CHECK (billing IN ('free_quota','credits','granted','byok','system')),
+  CONSTRAINT ai_spend_billing_check CHECK (billing IN ('free_quota','credits','granted','internal','byok','system')),
   CONSTRAINT ai_spend_status_check CHECK (status IN ('held','called','settled','released')),
   CONSTRAINT ai_spend_tokens_check CHECK (
     max_output_tokens BETWEEN 1 AND 6000 AND max_input_tokens BETWEEN 1 AND 272000),
@@ -178,12 +212,25 @@ CREATE INDEX IF NOT EXISTS ai_spend_reservations_ws_reserved_idx
 CREATE INDEX IF NOT EXISTS ai_spend_reservations_open_idx
   ON public.ai_spend_reservations (status, reserved_at)
   WHERE status IN ('held','called');
+-- The per-workspace daily cap sums one workspace's day.
+CREATE INDEX IF NOT EXISTS ai_spend_reservations_ws_day_idx
+  ON public.ai_spend_reservations (workspace_id, budget_day) INCLUDE (budget_micros)
+  WHERE budget_day IS NOT NULL;
+-- Restated so a table left by an earlier draft of this file takes the
+-- 'internal' billing too.
+ALTER TABLE public.ai_spend_reservations DROP CONSTRAINT IF EXISTS ai_spend_billing_check;
+ALTER TABLE public.ai_spend_reservations ADD CONSTRAINT ai_spend_billing_check
+  CHECK (billing IN ('free_quota','credits','granted','internal','byok','system'));
 ALTER TABLE public.ai_spend_reservations ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.ai_spend_reservations FROM anon, authenticated;
 
--- A credits hold and its refund are ledger rows keyed by request + hold
--- sequence: one hold and at most one refund, ever. A double hold or a double
--- refund fails here before a single credit moves.
+-- A credits hold and its refund are ledger rows keyed by the TENANT'S
+-- request + hold sequence ('<workspace>:<request>#<seq>', _ai_ledger_ref):
+-- one hold and at most one refund, ever. A double hold or a double refund
+-- fails here before a single credit moves. The workspace is part of the key
+-- because production's credit_ledger_grant_ref_unique (reason, ref_type,
+-- ref_id) WHERE delta > 0 is GLOBAL: with the bare request id, a second
+-- workspace's refund under a reused id failed on it (round-4 H1).
 CREATE UNIQUE INDEX IF NOT EXISTS credit_ledger_ai_spend_uidx
   ON public.credit_ledger (workspace_id, ref_id, reason)
   WHERE ref_type = 'ai_spend' AND reason IN ('ai_hold','ai_refund');
@@ -198,6 +245,15 @@ CREATE TABLE IF NOT EXISTS public.coach_briefing_claims (
 );
 ALTER TABLE public.coach_briefing_claims ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.coach_briefing_claims FROM anon, authenticated;
+
+-- When each workspace last asked for an on-demand briefing refresh (the
+-- throttle behind generateBriefingNow; coach_briefing_refresh_allowed).
+CREATE TABLE IF NOT EXISTS public.coach_briefing_refreshes (
+  workspace_id uuid PRIMARY KEY REFERENCES public.workspaces(id) ON DELETE CASCADE,
+  last_requested_at timestamptz NOT NULL
+);
+ALTER TABLE public.coach_briefing_refreshes ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.coach_briefing_refreshes FROM anon, authenticated;
 
 -- 5) Internal helpers (service role only; callers hold the workspace lock) -------
 
@@ -218,6 +274,35 @@ AS $$
            END
       FROM public.platform_settings s
      WHERE s.key = 'generation_paused'), false);
+$$;
+
+-- THE ledger key of an AI spend hold and its refund: the tenant, the request
+-- and the hold sequence. Never the bare request id (see the header, H1).
+CREATE OR REPLACE FUNCTION public._ai_ledger_ref(_workspace_id uuid, _request_id uuid, _hold_seq int)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT _workspace_id::text || ':' || _request_id::text || '#' || _hold_seq::text;
+$$;
+
+-- What ONE workspace's platform-key calls hold or cost on a UTC day: the sum
+-- of its rows' budget_micros for the day (an open hold at its maximum, a
+-- settled call at what it cost the platform — delivered or not, refunded or
+-- not; a released hold at zero). THE definition behind the per-workspace
+-- daily cap (ai_reserve) and the allowance the app shows (getAiAllowance).
+CREATE OR REPLACE FUNCTION public.ai_workspace_spent_micros(_workspace_id uuid, _day date)
+RETURNS bigint
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COALESCE(sum(budget_micros), 0)::bigint
+    FROM public.ai_spend_reservations
+   WHERE workspace_id = _workspace_id AND budget_day = _day;
 $$;
 
 -- held → released: the provider was never called, so everything goes back.
@@ -247,7 +332,7 @@ BEGIN
   IF r.billing = 'credits' AND r.max_credits > 0 THEN
     INSERT INTO public.credit_ledger (workspace_id, delta, reason, ai_model, ref_type, ref_id, metadata)
     VALUES (_workspace_id, r.max_credits, 'ai_refund', r.model, 'ai_spend',
-            _request_id::text || '#' || r.hold_seq,
+            public._ai_ledger_ref(_workspace_id, _request_id, r.hold_seq),
             jsonb_build_object('kind', 'release', 'reason', _reason, 'feature', r.feature));
     UPDATE public.credit_balances
        SET balance = balance + r.max_credits,
@@ -339,7 +424,7 @@ BEGIN
   IF v_refund > 0 THEN
     INSERT INTO public.credit_ledger (workspace_id, delta, reason, ai_model, ref_type, ref_id, metadata)
     VALUES (_workspace_id, v_refund, 'ai_refund', r.model, 'ai_spend',
-            _request_id::text || '#' || r.hold_seq,
+            public._ai_ledger_ref(_workspace_id, _request_id, r.hold_seq),
             jsonb_build_object('kind', 'settle', 'reason', _reason, 'feature', r.feature,
                                'charged', v_charge));
     UPDATE public.credit_balances
@@ -382,7 +467,11 @@ END;
 $$;
 
 -- Ends this workspace's abandoned holds. The caller holds the workspace lock.
--- Returns {released, settled}.
+-- Each row is closed in its own subtransaction: a row that cannot be closed
+-- (whatever the error) is rolled back to where it was, reported as a
+-- WARNING naming it, and left for the next pass — it never stops the other
+-- rows, the caller's reservation (ai_reserve runs this first) or the reaper.
+-- Returns {released, settled, failed}.
 CREATE OR REPLACE FUNCTION public._ai_expire_workspace(_workspace_id uuid)
 RETURNS int[]
 LANGUAGE plpgsql
@@ -393,6 +482,7 @@ DECLARE
   r record;
   v_released int := 0;
   v_settled int := 0;
+  v_failed int := 0;
 BEGIN
   FOR r IN
     SELECT request_id, status FROM public.ai_spend_reservations
@@ -401,18 +491,24 @@ BEGIN
          OR (status = 'called' AND provider_called_at < now() - interval '30 minutes'))
      ORDER BY request_id
   LOOP
-    IF r.status = 'held' THEN
-      IF public._ai_release_row(_workspace_id, r.request_id, 'expired_unused') THEN
-        v_released := v_released + 1;
+    BEGIN
+      IF r.status = 'held' THEN
+        IF public._ai_release_row(_workspace_id, r.request_id, 'expired_unused') THEN
+          v_released := v_released + 1;
+        END IF;
+      ELSE
+        IF (public._ai_settle_row(_workspace_id, r.request_id, NULL, NULL, NULL, NULL, NULL, NULL,
+                                  'failed', 'expired', 'expired_full_hold') ->> 'status') = 'settled' THEN
+          v_settled := v_settled + 1;
+        END IF;
       END IF;
-    ELSE
-      IF (public._ai_settle_row(_workspace_id, r.request_id, NULL, NULL, NULL, NULL, NULL, NULL,
-                                'failed', 'expired', 'expired_full_hold') ->> 'status') = 'settled' THEN
-        v_settled := v_settled + 1;
-      END IF;
-    END IF;
+    EXCEPTION WHEN OTHERS THEN
+      v_failed := v_failed + 1;
+      RAISE WARNING '[ai-spend] could not close % reservation % of workspace %: % (SQLSTATE %)',
+        r.status, r.request_id, _workspace_id, SQLERRM, SQLSTATE;
+    END;
   END LOOP;
-  RETURN ARRAY[v_released, v_settled];
+  RETURN ARRAY[v_released, v_settled, v_failed];
 END;
 $$;
 
@@ -426,13 +522,19 @@ $$;
 --   rate_limited     the workspace made too many reservations this minute
 --   platform_paused  the kill switch is off (non-BYOK)
 --   generation_paused  page generation is paused (every key type)
+--   workspace_budget_exhausted  this workspace's platform-key calls would
+--                    exceed its daily cap (non-BYOK, not internal)
 --   budget_exhausted the platform's daily ceiling would be exceeded (non-BYOK)
 --   insufficient     no free-quota unit and not enough credits for the hold
 -- _billing_class: 'tenant' (free quota, else credits), 'granted' (page
 -- generation for a beta-granted workspace: no tenant funds), 'byok' (the
 -- workspace's own key: no platform funds at all), 'system' (the daily
--- briefing: the ceiling only). Lock order everywhere: the workspace advisory
--- lock, then reservation rows, then quota/credit rows, then the budget row.
+-- briefing: the ceiling only). A workspace holding the internal unlimited
+-- entitlement (checked here, under the lock, never taken from the caller)
+-- reserves 'tenant' and 'granted' calls as billing 'internal': no tenant
+-- funds on any route and no per-workspace cap. Lock order everywhere: the
+-- workspace advisory lock, then reservation rows, then quota/credit rows,
+-- then the budget row.
 CREATE OR REPLACE FUNCTION public.ai_reserve(
   _workspace_id uuid,
   _request_id uuid,
@@ -457,6 +559,8 @@ DECLARE
   v_settings public.ai_platform_settings%ROWTYPE;
   v_have_settings boolean;
   v_recent int;
+  v_internal boolean;
+  v_ws_spent bigint;
   v_billing text;
   v_seq int := 1;
   v_quota int := 0;
@@ -542,9 +646,27 @@ BEGIN
     RETURN jsonb_build_object('status', 'generation_paused');
   END IF;
 
+  -- The founder / internal unlimited entitlement (20260924000700), read
+  -- fresh under the lock. Only platform-key calls care: a workspace's own
+  -- key never touches platform or tenant funds either way.
+  v_internal := _billing_class <> 'byok' AND public.workspace_is_internal_unlimited(_workspace_id);
+
+  -- The per-workspace daily platform-cost cap: what this workspace's
+  -- platform-key calls hold or cost today — budget_micros keeps the cost of
+  -- every failed or refunded call — plus this hold. Under the workspace lock,
+  -- so concurrent calls of one workspace cannot overrun it together.
+  IF _billing_class <> 'byok' AND NOT v_internal THEN
+    v_ws_spent := public.ai_workspace_spent_micros(_workspace_id, v_day);
+    IF v_ws_spent + _max_cost_micros > v_settings.workspace_daily_budget_micros THEN
+      RETURN jsonb_build_object('status', 'workspace_budget_exhausted');
+    END IF;
+  END IF;
+
   -- The tenant charge: a conditional decrement, undone below if the ceiling
-  -- refuses (same transaction, same lock).
-  IF _billing_class = 'tenant' THEN
+  -- refuses (same transaction, same lock). Internal: none, on every route.
+  IF v_internal AND _billing_class IN ('tenant','granted') THEN
+    v_billing := 'internal';
+  ELSIF _billing_class = 'tenant' THEN
     INSERT INTO public.workspace_ai_quota (workspace_id) VALUES (_workspace_id)
     ON CONFLICT (workspace_id) DO NOTHING;
     UPDATE public.workspace_ai_quota
@@ -626,7 +748,7 @@ BEGIN
   IF v_credits > 0 THEN
     INSERT INTO public.credit_ledger (workspace_id, delta, reason, ai_model, ref_type, ref_id, metadata)
     VALUES (_workspace_id, -v_credits, 'ai_hold', _model, 'ai_spend',
-            _request_id::text || '#' || v_seq,
+            public._ai_ledger_ref(_workspace_id, _request_id, v_seq),
             jsonb_build_object('feature', _feature, 'source', _source, 'max_cost_micros', _max_cost_micros));
   END IF;
 
@@ -742,7 +864,9 @@ $$;
 -- call that was never settled within 35 minutes (the full hold on the
 -- platform budget, the customer refunded: nothing was recorded as delivered). It takes every
 -- affected workspace's lock (sorted, before touching any row), so it cannot
--- deadlock with ai_reserve / ai_settle; one reaper at a time.
+-- deadlock with ai_reserve / ai_settle; one reaper at a time. A row (or a
+-- whole workspace) that cannot be closed is a WARNING and a 'failed' count,
+-- never an error: every other workspace is still reaped.
 CREATE OR REPLACE FUNCTION public.ai_reap_stale_reservations()
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -755,9 +879,10 @@ DECLARE
   v_counts int[];
   v_released int := 0;
   v_settled int := 0;
+  v_failed int := 0;
 BEGIN
   IF NOT pg_try_advisory_xact_lock(hashtext('ai_spend:reaper')) THEN
-    RETURN jsonb_build_object('skipped', true, 'released', 0, 'settled', 0);
+    RETURN jsonb_build_object('skipped', true, 'released', 0, 'settled', 0, 'failed', 0);
   END IF;
   SELECT COALESCE(array_agg(DISTINCT workspace_id ORDER BY workspace_id), ARRAY[]::uuid[])
     INTO v_workspaces
@@ -768,11 +893,19 @@ BEGIN
     PERFORM pg_advisory_xact_lock(hashtext('ai_spend:' || v_ws::text));
   END LOOP;
   FOREACH v_ws IN ARRAY v_workspaces LOOP
-    v_counts := public._ai_expire_workspace(v_ws);
-    v_released := v_released + v_counts[1];
-    v_settled := v_settled + v_counts[2];
+    BEGIN
+      v_counts := public._ai_expire_workspace(v_ws);
+      v_released := v_released + v_counts[1];
+      v_settled := v_settled + v_counts[2];
+      v_failed := v_failed + COALESCE(v_counts[3], 0);
+    EXCEPTION WHEN OTHERS THEN
+      v_failed := v_failed + 1;
+      RAISE WARNING '[ai-spend] the reaper could not process workspace %: % (SQLSTATE %)',
+        v_ws, SQLERRM, SQLSTATE;
+    END;
   END LOOP;
-  RETURN jsonb_build_object('skipped', false, 'released', v_released, 'settled', v_settled);
+  RETURN jsonb_build_object('skipped', false, 'released', v_released, 'settled', v_settled,
+                            'failed', v_failed);
 END;
 $$;
 
@@ -864,12 +997,43 @@ BEGIN
 END;
 $$;
 
+-- The on-demand refresh throttle: true for at most ONE caller per workspace
+-- per _min_interval_seconds (a sliding interval from the last refresh that
+-- was let through). Atomic: the row lock of the upsert serialises racing
+-- refreshes, and the conditional update lets exactly one of them through.
+CREATE OR REPLACE FUNCTION public.coach_briefing_refresh_allowed(
+  _workspace_id uuid,
+  _min_interval_seconds int
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF auth.uid() IS NOT NULL AND NOT public.is_workspace_member(_workspace_id, auth.uid()) THEN
+    RAISE EXCEPTION 'forbidden' USING ERRCODE = '42501';
+  END IF;
+  IF _workspace_id IS NULL OR _min_interval_seconds IS NULL OR _min_interval_seconds < 1 THEN
+    RAISE EXCEPTION 'coach_briefing_refresh_allowed: missing or invalid argument' USING ERRCODE = '22023';
+  END IF;
+  INSERT INTO public.coach_briefing_refreshes AS r (workspace_id, last_requested_at)
+  VALUES (_workspace_id, now())
+  ON CONFLICT (workspace_id) DO UPDATE
+     SET last_requested_at = EXCLUDED.last_requested_at
+   WHERE r.last_requested_at <= now() - make_interval(secs => _min_interval_seconds);
+  RETURN FOUND;
+END;
+$$;
+
 -- 8) Service role only, every one of them -------------------------------------------
 DO $$
 DECLARE sig text;
 BEGIN
   FOREACH sig IN ARRAY ARRAY[
     'public._ai_generation_paused()',
+    'public._ai_ledger_ref(uuid,uuid,int)',
+    'public.ai_workspace_spent_micros(uuid,date)',
     'public._ai_release_row(uuid,uuid,text)',
     'public._ai_settle_row(uuid,uuid,int,int,int,int,bigint,int,text,text,text)',
     'public._ai_expire_workspace(uuid)',
@@ -879,7 +1043,8 @@ BEGIN
     'public.ai_release(uuid,uuid)',
     'public.ai_reap_stale_reservations()',
     'public.coach_briefing_claim(uuid,date,uuid)',
-    'public.coach_briefing_store(uuid,date,uuid,jsonb)'
+    'public.coach_briefing_store(uuid,date,uuid,jsonb)',
+    'public.coach_briefing_refresh_allowed(uuid,int)'
   ] LOOP
     EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC, anon, authenticated', sig);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', sig);
@@ -910,12 +1075,19 @@ SELECT cron.schedule(
 SELECT 'ai_platform_settings: one row, kill switch on, $10.00/day ceiling by default' AS check,
        (SELECT count(*) = 1 FROM public.ai_platform_settings)
        AND EXISTS (SELECT 1 FROM public.ai_platform_settings WHERE id AND daily_budget_micros >= 0) AS ok
+UNION ALL SELECT 'ai_platform_settings: a per-workspace daily cap, $1.00/day by default',
+       EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'ai_platform_settings'
+                  AND column_name = 'workspace_daily_budget_micros' AND column_default = '1000000')
+       AND EXISTS (SELECT 1 FROM public.ai_platform_settings WHERE id AND workspace_daily_budget_micros >= 0)
 UNION ALL SELECT 'ai tables: RLS on, no policies',
-       (SELECT bool_and(c.relrowsecurity) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+       (SELECT bool_and(c.relrowsecurity) AND count(*) = 5 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
          WHERE n.nspname = 'public'
-           AND c.relname IN ('ai_platform_settings','ai_budget_days','ai_spend_reservations','coach_briefing_claims'))
+           AND c.relname IN ('ai_platform_settings','ai_budget_days','ai_spend_reservations','coach_briefing_claims',
+                             'coach_briefing_refreshes'))
        AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public'
-                        AND tablename IN ('ai_platform_settings','ai_budget_days','ai_spend_reservations','coach_briefing_claims'))
+                        AND tablename IN ('ai_platform_settings','ai_budget_days','ai_spend_reservations','coach_briefing_claims',
+                                          'coach_briefing_refreshes'))
 UNION ALL SELECT 'ai tables: not readable or writable by anon or authenticated',
        NOT has_table_privilege('anon', 'public.ai_spend_reservations', 'SELECT')
        AND NOT has_table_privilege('authenticated', 'public.ai_spend_reservations', 'SELECT')
@@ -925,23 +1097,27 @@ UNION ALL SELECT 'ai tables: not readable or writable by anon or authenticated',
        AND NOT has_table_privilege('anon', 'public.ai_platform_settings', 'UPDATE')
        AND NOT has_table_privilege('authenticated', 'public.ai_budget_days', 'SELECT')
        AND NOT has_table_privilege('authenticated', 'public.coach_briefing_claims', 'SELECT')
+       AND NOT has_table_privilege('authenticated', 'public.coach_briefing_refreshes', 'SELECT')
+       AND NOT has_table_privilege('anon', 'public.coach_briefing_refreshes', 'SELECT')
 UNION ALL SELECT 'ai functions: service_role only',
        (SELECT bool_and(has_function_privilege('service_role', p.oid, 'EXECUTE')
                     AND NOT has_function_privilege('anon', p.oid, 'EXECUTE')
                     AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE'))
           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = 'public'
-           AND p.proname IN ('_ai_generation_paused','_ai_release_row','_ai_settle_row','_ai_expire_workspace',
-                             'ai_reserve','ai_mark_called','ai_settle','ai_release','ai_reap_stale_reservations',
-                             'coach_briefing_claim','coach_briefing_store'))
-UNION ALL SELECT 'ai functions: all eleven present, SECURITY DEFINER with a pinned search_path',
-       (SELECT count(*) = 11 AND bool_and(p.prosecdef)
+           AND p.proname IN ('_ai_generation_paused','_ai_ledger_ref','ai_workspace_spent_micros','_ai_release_row',
+                             '_ai_settle_row','_ai_expire_workspace','ai_reserve','ai_mark_called','ai_settle',
+                             'ai_release','ai_reap_stale_reservations','coach_briefing_claim','coach_briefing_store',
+                             'coach_briefing_refresh_allowed'))
+UNION ALL SELECT 'ai functions: all fourteen present, SECURITY DEFINER with a pinned search_path',
+       (SELECT count(*) = 14 AND bool_and(p.prosecdef)
                AND bool_and(array_to_string(p.proconfig, ',') LIKE '%search_path=public%')
           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = 'public'
-           AND p.proname IN ('_ai_generation_paused','_ai_release_row','_ai_settle_row','_ai_expire_workspace',
-                             'ai_reserve','ai_mark_called','ai_settle','ai_release','ai_reap_stale_reservations',
-                             'coach_briefing_claim','coach_briefing_store'))
+           AND p.proname IN ('_ai_generation_paused','_ai_ledger_ref','ai_workspace_spent_micros','_ai_release_row',
+                             '_ai_settle_row','_ai_expire_workspace','ai_reserve','ai_mark_called','ai_settle',
+                             'ai_release','ai_reap_stale_reservations','coach_briefing_claim','coach_briefing_store',
+                             'coach_briefing_refresh_allowed'))
 UNION ALL SELECT 'ai_reserve: the workspace lock is taken before anything is counted or charged',
        (SELECT position('pg_advisory_xact_lock' IN prosrc) > 0
            AND position('pg_advisory_xact_lock' IN prosrc) < position('count(*)' IN prosrc)
@@ -953,6 +1129,32 @@ UNION ALL SELECT 'ai_reserve: the ceiling is a conditional increment',
 UNION ALL SELECT 'ai_reserve: credits are a conditional decrement',
        (SELECT prosrc LIKE '%balance >= _max_credits%'
           FROM pg_proc WHERE oid = 'public.ai_reserve(uuid,uuid,uuid,text,text,text,int,int,bigint,int,text)'::regprocedure)
+UNION ALL SELECT 'ai_reserve: the per-workspace daily cap counts the day''s budget, failed calls included, before any charge',
+       (SELECT prosrc LIKE '%v_ws_spent + _max_cost_micros > v_settings.workspace_daily_budget_micros%'
+               AND prosrc LIKE '%v_ws_spent := public.ai_workspace_spent_micros(_workspace_id, v_day);%'
+               AND position('workspace_budget_exhausted' IN prosrc) < position('UPDATE public.credit_balances' IN prosrc)
+               AND position('pg_advisory_xact_lock' IN prosrc) < position('ai_workspace_spent_micros' IN prosrc)
+          FROM pg_proc WHERE oid = 'public.ai_reserve(uuid,uuid,uuid,text,text,text,int,int,bigint,int,text)'::regprocedure)
+       AND (SELECT prosrc LIKE '%sum(budget_micros)%' AND prosrc LIKE '%budget_day = _day%'
+              FROM pg_proc WHERE oid = 'public.ai_workspace_spent_micros(uuid,date)'::regprocedure)
+UNION ALL SELECT 'ai_reserve: internal workspaces are decided in SQL (000700 predicate), never by the caller',
+       to_regprocedure('public.workspace_is_internal_unlimited(uuid)') IS NOT NULL
+       AND (SELECT prosrc LIKE '%public.workspace_is_internal_unlimited(_workspace_id)%'
+               AND prosrc LIKE '%v_billing := ''internal'';%'
+               AND prosrc NOT LIKE '%_billing_class = ''internal''%'
+          FROM pg_proc WHERE oid = 'public.ai_reserve(uuid,uuid,uuid,text,text,text,int,int,bigint,int,text)'::regprocedure)
+UNION ALL SELECT 'the ledger keys are the tenant''s: <workspace>:<request>#<seq>, in every writer',
+       public._ai_ledger_ref('00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002', 3)
+         = '00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000002#3'
+       AND (SELECT bool_and(prosrc LIKE '%public._ai_ledger_ref(_workspace_id, _request_id, %'
+                            AND prosrc NOT LIKE '%_request_id::text || ''#''%')
+              FROM pg_proc WHERE oid IN ('public.ai_reserve(uuid,uuid,uuid,text,text,text,int,int,bigint,int,text)'::regprocedure,
+                                         'public._ai_release_row(uuid,uuid,text)'::regprocedure,
+                                         'public._ai_settle_row(uuid,uuid,int,int,int,int,bigint,int,text,text,text)'::regprocedure))
+UNION ALL SELECT 'one row that cannot be closed never stops the lazy expiry or the reaper',
+       (SELECT bool_and(prosrc LIKE '%EXCEPTION WHEN OTHERS THEN%' AND prosrc LIKE '%RAISE WARNING%')
+          FROM pg_proc WHERE oid IN ('public._ai_expire_workspace(uuid)'::regprocedure,
+                                     'public.ai_reap_stale_reservations()'::regprocedure))
 UNION ALL SELECT 'the ledger makes a double hold or refund impossible',
        EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public'
                  AND indexname = 'credit_ledger_ai_spend_uidx'

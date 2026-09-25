@@ -266,8 +266,14 @@ async function detectDomainDns(hostname: string): Promise<{
 }
 
 /** How many custom domains this workspace's plan allows. Server-side authority
- * — the client never supplies a limit. */
+ * — the client never supplies a limit. The founder / internal unlimited
+ * entitlement (read fresh; a failed read keeps the plan's limit) has none. */
 async function domainAllowance(workspaceId: string): Promise<number> {
+  const { isInternalUnlimitedOrFalse } = await import("@/lib/entitlement-grants.server");
+  if (await isInternalUnlimitedOrFalse(workspaceId)) {
+    const { INTERNAL_UNLIMITED_COUNT } = await import("@/lib/billing-capacity");
+    return INTERNAL_UNLIMITED_COUNT;
+  }
   const { data: ws } = await sb()
     .from("workspaces")
     .select("plan, subscription_status")

@@ -23,7 +23,20 @@
  *     are honoured, and a spent id is never regenerated;
  *   - every batch attempt reserves under its own id before its claim, and
  *     holds its spend under the SAME id; a cap refusal consumes no attempt;
- *     an item whose draft exists takes no slot and no hold.
+ *     an item whose draft exists takes no slot and no hold;
+ *   - round-4 M1: a spend refusal before the provider call (no funds, the
+ *     workspace's or the platform's daily AI cap, the kill switch, the rate
+ *     limit, a refused mark) never consumes a batch attempt — driven through
+ *     the real runItem against a stateful item, five refusals in a row;
+ *   - round-4 L7: the hold is marked BEFORE the daily-cap slot, so a refused
+ *     hold mark never spends a slot;
+ *   - round-4 L2: a publish-step error after a saved, charged page returns
+ *     the draft with a reason — never a generation failure;
+ *   - the founder / internal unlimited entitlement lifts the daily cap (the
+ *     slot is still taken);
+ *   - the model choice end to end: the tier in the request body → the strict
+ *     schema → the server's model → the job row (batch) → the hold → the
+ *     Responses API request the fake OpenAI received.
  */
 process.env.SUPABASE_URL = "http://supabase.test";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test";
@@ -41,19 +54,33 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const FUNCTIONS_SRC = readFileSync(join(import.meta.dir, "../src/lib/generation.functions.ts"), "utf8");
 const RUN_ITEM_DECL = /\nasync function runItem\(/;
+const START_JOB_DECL = /\nasync function startJob\(/;
+// startJob reads the Page Builder's context through a server function (it
+// needs a request to authenticate); the copy reads a stub the test controls.
+const PAGE_BUILDER_IMPORT = /from "@\/lib\/page-builder\.functions";/;
 const functionsImportsAreAliases = !/from "\.{1,2}\//.test(FUNCTIONS_SRC);
 mkdirSync(join(import.meta.dir, "_build"), { recursive: true });
 const functionsCopy = join(import.meta.dir, "_build/generation.functions.offline.ts");
-writeFileSync(functionsCopy, FUNCTIONS_SRC.replace(RUN_ITEM_DECL, "\nexport async function runItem("));
-const { runItem } = (await import(functionsCopy)) as {
+writeFileSync(
+  functionsCopy,
+  FUNCTIONS_SRC.replace(RUN_ITEM_DECL, "\nexport async function runItem(")
+    .replace(START_JOB_DECL, "\nexport async function startJob(")
+    .replace(PAGE_BUILDER_IMPORT, `from "${join(import.meta.dir, "_support/page-builder-stub.ts")}";`),
+);
+const { runItem, startJob, StartGenerationJobInputSchema } = (await import(functionsCopy)) as {
   runItem: (
     workspaceId: string,
     userId: string,
     itemId: string,
     opts?: { onlyIfFailed?: boolean },
   ) => Promise<{ item: { attempts: number } & Record<string, unknown>; changed: boolean }>;
+  startJob: (data: Record<string, unknown>, userId: string) => Promise<{ job: Record<string, unknown> } & Record<string, unknown>>;
+  StartGenerationJobInputSchema: { parse: (d: unknown) => Record<string, unknown>; safeParse: (d: unknown) => { success: boolean } };
 };
+const { pageBuilderStub } = await import("./_support/page-builder-stub");
+const { PUBLISH_STEP_FAILED_MESSAGE } = await import("../src/lib/admin-quick-page.functions");
 const {
+  ATTEMPTS_EXHAUSTED_MESSAGE,
   CustomerFacingError,
   GENERATION_ALREADY_USED_MESSAGE,
   GENERATION_IN_PROGRESS_MESSAGE,
@@ -82,6 +109,8 @@ function t(name: string, cond: boolean, extra = "") {
 }
 
 t("runItem's declaration was found and rewritten for the offline copy", RUN_ITEM_DECL.test(FUNCTIONS_SRC) && typeof runItem === "function");
+t("startJob's declaration and the Page Builder import were found and rewritten", START_JOB_DECL.test(FUNCTIONS_SRC) && PAGE_BUILDER_IMPORT.test(FUNCTIONS_SRC) && typeof startJob === "function");
+t("startJob stays module-private in the source", !/export async function startJob\(/.test(FUNCTIONS_SRC));
 t("generation.functions.ts imports only through aliases (the copy links the same modules)", functionsImportsAreAliases);
 t("runItem stays module-private in the source", !/export async function runItem\(/.test(FUNCTIONS_SRC));
 
@@ -203,6 +232,8 @@ function reset() {
     reserve_generation_slot: () => "reserved",
     mark_generation_provider_called: () => true,
     release_generation_slot: () => true,
+    // An ordinary workspace: no founder / internal unlimited grant.
+    workspace_is_internal_unlimited: () => false,
     tenant_get_workspace_secret: () => "sk-byok-test",
     ai_reserve: () => ({ status: "reserved", billing: "byok", hold_seq: 1, credits_charged: 0 }),
     ai_mark_called: () => true,
@@ -298,9 +329,9 @@ try {
     const settleAt = rpcAt("ai_settle");
     const insertAt = indexOf((h) => h.kind === "rest" && h.method === "POST" && h.name === "tenant_pages");
     t(
-      "order: slot → hold → slot mark → hold mark → provider → draft row → settle (the customer pays only for a saved page)",
-      slotAt >= 0 && slotAt < holdAt && holdAt < slotMarkAt && slotMarkAt < holdMarkAt && holdMarkAt < providerAt && providerAt < insertAt && insertAt < settleAt,
-      `${slotAt} ${holdAt} ${slotMarkAt} ${holdMarkAt} ${providerAt} ${insertAt} ${settleAt}`,
+      "order: slot → hold → hold mark → slot mark → provider → draft row → settle (a refused hold mark never spends a slot; the customer pays only for a saved page)",
+      slotAt >= 0 && slotAt < holdAt && holdAt < holdMarkAt && holdMarkAt < slotMarkAt && slotMarkAt < providerAt && providerAt < insertAt && insertAt < settleAt,
+      `${slotAt} ${holdAt} ${holdMarkAt} ${slotMarkAt} ${providerAt} ${insertAt} ${settleAt}`,
     );
     t(
       "the slot, the hold, both marks and the settlement all carry the request id",
@@ -454,7 +485,14 @@ try {
   {
     const r = await quick();
     t("a refused slot mark stops before the provider", providerHits().length === 0 && errMsg(r.err) === GENERATION_IN_PROGRESS_MESSAGE, errMsg(r.err));
-    t("…the hold is released in full, never marked", rpcHits("ai_release").length === 1 && rpcHits("ai_mark_called").length === 0 && rpcHits("ai_settle").length === 0);
+    const s = settles()[0];
+    t(
+      "…the hold was already marked, so it is settled — never released — at ZERO: not_sent, the customer refunded in full",
+      rpcHits("ai_mark_called").length === 1 && rpcHits("ai_release").length === 0 && settles().length === 1 &&
+        s?._outcome === "failed" && s?._error === "not_sent" && s?._cost_micros === 0 && s?._credits === 0,
+      JSON.stringify(s),
+    );
+    t("…and the unmarked slot goes back", rpcHits("release_generation_slot").length === 1);
   }
   reset();
   rpc.mark_generation_provider_called = () => ({ status: 500, body: { message: "mark exploded" } });
@@ -462,8 +500,10 @@ try {
     const r = await quick();
     t("a failed slot-mark RPC never reaches the provider", providerHits().length === 0 && r.err !== null);
     t(
-      "…and releases both (the database frees the slot only if it is unmarked)",
-      rpcHits("release_generation_slot").length === 1 && rpcHits("ai_release").length === 1,
+      "…the slot is released (the database frees it only if it is unmarked) and the marked hold settled at zero",
+      rpcHits("release_generation_slot").length === 1 && rpcHits("ai_release").length === 0 &&
+        settles()[0]?._error === "not_sent" && settles()[0]?._cost_micros === 0,
+      JSON.stringify(settles()),
     );
   }
   reset();
@@ -473,8 +513,9 @@ try {
     t("a refused hold mark stops before the provider", providerHits().length === 0 && r.err instanceof CustomerFacingError, errMsg(r.err));
     t("…the hold is released in full", rpcHits("ai_release").length === 1 && rpcHits("ai_settle").length === 0);
     t(
-      "…the already-marked slot stays counted (the cap errs toward counting; no money moves)",
-      rpcHits("mark_generation_provider_called").length === 1 && rpcHits("release_generation_slot").length === 0,
+      "…and the daily-cap slot was NEVER marked, so it goes back (round-4 L7: a refused mark spends no slot)",
+      rpcHits("mark_generation_provider_called").length === 0 && rpcHits("release_generation_slot").length === 1 &&
+        rpcHits("release_generation_slot")[0]?.body?._request_id === REQ,
     );
   }
 
@@ -589,10 +630,11 @@ try {
       rpcHits("ai_reserve")[0]?.body?._request_id === expectedId && rpcHits("ai_reserve")[0]?.body?._source === "batch_generation",
     );
     t(
-      "…marked both before the provider, settled after it, and released nothing",
+      "…marked both before the provider (the hold first, then the slot), settled after it, and released nothing",
       rpcHits("mark_generation_provider_called")[0]?.body?._request_id === expectedId &&
         rpcHits("ai_mark_called")[0]?.body?._request_id === expectedId &&
-        rpcAt("ai_mark_called") < indexOf((h) => h.kind === "openai") &&
+        rpcAt("ai_mark_called") < rpcAt("mark_generation_provider_called") &&
+        rpcAt("mark_generation_provider_called") < indexOf((h) => h.kind === "openai") &&
         rpcAt("ai_settle") > indexOf((h) => h.kind === "openai") &&
         rpcHits("release_generation_slot").length === 0 &&
         rpcHits("ai_release").length === 0,
@@ -712,6 +754,212 @@ try {
     t(
       "an item whose draft exists (a run died after linking) takes no slot, no hold and calls no provider",
       rpcHits("reserve_generation_slot").length === 0 && rpcHits("release_generation_slot").length === 0 && noSpend(),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  console.log("\n=== batch: a spend refusal before the provider call never consumes an attempt (round-4 M1) ===");
+  {
+    /** A stateful item: every PATCH honours the fence the code sends (status, attempts). */
+    function statefulItem(start: Record<string, unknown> = {}) {
+      const box = { row: { ...baseItem, attempts: 0, status: "pending", ...start } as Record<string, any> };
+      rest["GET generation_items"] = (h) => (h.query.get("select") === "status" ? [{ status: box.row.status }] : [box.row]);
+      rest["GET generation_jobs"] = () => [{ id: JOB, status: "running", model: null }];
+      rest["PATCH generation_items"] = (h) => {
+        const st = h.query.get("status");
+        const at = h.query.get("attempts");
+        if (st && st !== `eq.${box.row.status}`) return [];
+        if (at && at !== `eq.${box.row.attempts}`) return [];
+        box.row = { ...box.row, ...h.body };
+        return [box.row];
+      };
+      return box;
+    }
+    const refusals: Array<[string, string, () => void]> = [
+      ["insufficient", outOfCreditsMessage(), () => void (rpc.ai_reserve = () => ({ status: "insufficient" }))],
+      ["budget_exhausted", AI_MESSAGES.budgetExhausted, () => void (rpc.ai_reserve = () => ({ status: "budget_exhausted" }))],
+      ["workspace_budget_exhausted", AI_MESSAGES.workspaceBudgetExhausted, () => void (rpc.ai_reserve = () => ({ status: "workspace_budget_exhausted" }))],
+      ["platform_paused", AI_MESSAGES.platformPaused, () => void (rpc.ai_reserve = () => ({ status: "platform_paused" }))],
+      ["rate_limited", AI_MESSAGES.rateLimited, () => void (rpc.ai_reserve = () => ({ status: "rate_limited" }))],
+      ["a refused mark", GENERATION_UNAVAILABLE_MESSAGE, () => void (rpc.ai_mark_called = () => false)],
+    ];
+    for (const [label, message, refuse] of refusals) {
+      reset();
+      const item = statefulItem();
+      refuse();
+      const ids = new Set<string>();
+      for (let run = 1; run <= 5; run++) {
+        await runItem(WS, USER, ITEM);
+        ids.add(String(rpcHits("reserve_generation_slot").at(-1)?.body?._request_id));
+      }
+      t(
+        `${label} ×5 through the real runItem: attempts still 0 — the item never reaches "gave up after 3"`,
+        item.row.attempts === 0 && item.row.status === "failed" && item.row.error === message && item.row.error !== ATTEMPTS_EXHAUSTED_MESSAGE,
+        JSON.stringify(item.row),
+      );
+      t(`${label}: no provider request, and each run's slot went back`, providerHits().length === 0 && rpcHits("release_generation_slot").length === 5);
+      t(`${label}: every run asked under the SAME attempt id (nothing was spent under it)`, ids.size === 1, [...ids].join(","));
+      reset();
+      rest["GET generation_items"] = (h) => (h.query.get("select") === "status" ? [{ status: item.row.status }] : [item.row]);
+      rest["GET generation_jobs"] = () => [{ id: JOB, status: "running", model: null }];
+      rest["PATCH generation_items"] = (h) => {
+        const st = h.query.get("status");
+        const at = h.query.get("attempts");
+        if (st && st !== `eq.${item.row.status}`) return [];
+        if (at && at !== `eq.${item.row.attempts}`) return [];
+        item.row = { ...item.row, ...h.body };
+        return [item.row];
+      };
+      await runItem(WS, USER, ITEM);
+      t(`${label}: once it clears, the item generates on its first real attempt`, item.row.status === "done" && item.row.attempts === 1 && providerHits().length === 1, JSON.stringify(item.row));
+    }
+    // The counter still bounds PROVIDER calls: three failures after the call give up.
+    reset();
+    const failing = statefulItem();
+    openai = () => new Response("nope", { status: 503 });
+    for (let run = 1; run <= 4; run++) await runItem(WS, USER, ITEM);
+    t(
+      "a provider failure (after the call) still consumes its attempt: three calls, then \"gave up\"",
+      failing.row.attempts === 3 && failing.row.error === ATTEMPTS_EXHAUSTED_MESSAGE && providerHits().length === 3,
+      JSON.stringify({ row: failing.row, calls: providerHits().length }),
+    );
+    // A refused SLOT mark after the hold was marked: the attempt's id is spent
+    // (its hold settled at zero), so the attempt is consumed and the next run
+    // gets a fresh id instead of 'done' forever.
+    reset();
+    const slotRefused = statefulItem();
+    rpc.mark_generation_provider_called = () => false;
+    await runItem(WS, USER, ITEM);
+    t(
+      "a refused slot mark (after the hold mark) consumes the attempt: its request id is settled, never reused",
+      slotRefused.row.attempts === 1 && providerHits().length === 0 && settles()[0]?._error === "not_sent",
+      JSON.stringify(slotRefused.row),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  console.log("\n=== the founder / internal unlimited entitlement lifts the daily cap, never the slot ===");
+  for (const [label, answer, cap] of [
+    ["an ordinary workspace", () => false, 50],
+    ["an internal-unlimited workspace", () => true, 2_147_483_647],
+    ["a failed internal read (fails closed: the cap stays)", () => ({ status: 500, body: { message: "read exploded" } }), 50],
+  ] as const) {
+    reset();
+    rpc.workspace_is_internal_unlimited = answer as () => unknown;
+    const r = await quick();
+    t(
+      `quick page, ${label}: the slot is still reserved, with cap ${cap}`,
+      r.ok !== null && rpcHits("reserve_generation_slot").length === 1 && rpcHits("reserve_generation_slot")[0]?.body?._cap === cap,
+      JSON.stringify(rpcHits("reserve_generation_slot")[0]?.body) + errMsg(r.err),
+    );
+    batchReset();
+    rpc.workspace_is_internal_unlimited = answer as () => unknown;
+    await runItem(WS, USER, ITEM);
+    t(`batch item, ${label}: cap ${cap}`, rpcHits("reserve_generation_slot")[0]?.body?._cap === cap, JSON.stringify(rpcHits("reserve_generation_slot")[0]?.body));
+  }
+
+  // -------------------------------------------------------------------------
+  console.log("\n=== quick page: a publish-step error after a saved, charged page (round-4 L2) ===");
+  for (const [label, breakIt] of [
+    ["the contract read fails", () => void (rest["GET tenant_pages"] = (h) => (h.query.get("id") === "eq.page-1" ? { status: 500, body: { message: "contract read exploded" } } : []))],
+    ["the entitlement gate fails", () => void (rpc.publish_tenant_pages = () => ({ status: 500, body: { message: "gate exploded" } }))],
+  ] as const) {
+    reset();
+    rest["GET page_templates"] = () => [{ id: "tpl-1" }];
+    rest["GET tenant_listings"] = () => [];
+    breakIt();
+    if (label === "the entitlement gate fails") {
+      rest["GET tenant_pages"] = (h) =>
+        h.query.get("id") === "eq.page-1"
+          ? [{ id: "page-1", slug: "boats-in-austin", title: "Boats in Austin", meta_description: "Rent a boat in Austin with local owners and real listings.", h1: "Boats in Austin", body_markdown: BODY, listing_filter: { city: "Austin" }, variables: { city: "Austin" }, status: "draft" }]
+          : [];
+    }
+    const r = await quick({ autoPublish: true });
+    t(
+      `${label}: the saved draft comes back (ok, not published) with the plain reason — never a generation failure`,
+      r.err === null && r.ok?.page.id === "page-1" && r.ok?.published === false && r.ok?.draftReason === PUBLISH_STEP_FAILED_MESSAGE,
+      errMsg(r.err) + JSON.stringify(r.ok),
+    );
+    t(`${label}: exactly one provider call and one settlement (delivered, so charged once)`, providerHits().length === 1 && settles().length === 1 && settles()[0]?._outcome === "ok");
+    t(
+      `${label}: the failure really was in that step`,
+      label === "the entitlement gate fails" ? rpcHits("publish_tenant_pages").length === 1 : rpcHits("publish_tenant_pages").length === 0,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  console.log("\n=== the model choice, end to end (the tier in the body → the model OpenAI receives) ===");
+  {
+    const base = { workspaceId: WS, title: "Boats in Austin", topic: "City hub page for boat rentals in Austin, Texas" };
+    t(
+      "createQuickPage's strict schema: a tier only — a model, a provider or an unknown tier is refused",
+      QuickPageInputSchema.safeParse({ ...base, quality: "premium" }).success &&
+        !QuickPageInputSchema.safeParse({ ...base, quality: "gpt-5-mini" }).success &&
+        !QuickPageInputSchema.safeParse({ ...base, model: "gpt-5-mini" }).success &&
+        !QuickPageInputSchema.safeParse({ ...base, provider: "openai" }).success &&
+        !QuickPageInputSchema.safeParse({ ...base, quality: "gemini-3.1-pro" }).success,
+    );
+    for (const [quality, model] of [["standard", "gpt-5-nano"], ["premium", "gpt-5-mini"], [undefined, "gpt-5-nano"]] as const) {
+      reset();
+      const r = await quick(quality ? { quality } : {});
+      const hold = rpcHits("ai_reserve")[0]?.body;
+      t(
+        `quick page, quality ${quality ?? "(omitted → standard)"}: the hold and the request OpenAI received are both ${model}`,
+        r.ok !== null && hold?._model === model && providerHits()[0]?.body?.model === model && providerHits().length === 1,
+        JSON.stringify({ hold: hold?._model, sent: providerHits()[0]?.body?.model }) + errMsg(r.err),
+      );
+    }
+    // Batch: the request body → the strict schema → startJob stores the
+    // server's model on the job → runItem → the hold and the request.
+    t(
+      "startGenerationJob's strict schema: a tier only",
+      !!StartGenerationJobInputSchema.parse({ workspaceId: WS, targetKeys: ["city:austin|tx"], quality: "premium" }) &&
+        !StartGenerationJobInputSchema.safeParse({ workspaceId: WS, targetKeys: ["city:austin|tx"], model: "gpt-5-mini" }).success &&
+        !StartGenerationJobInputSchema.safeParse({ workspaceId: WS, targetKeys: ["city:austin|tx"], quality: "gpt-5-mini" }).success,
+    );
+    reset();
+    pageBuilderStub.cities = [{ city: "Austin", state: "TX", listingCount: 5, hasPage: false }];
+    pageBuilderStub.syncedListings = 5;
+    pageBuilderStub.dominantCategory = "boat rentals";
+    let jobRow: Record<string, any> | null = null;
+    let itemRow: Record<string, any> | null = null;
+    rest["POST generation_jobs"] = (h) => {
+      jobRow = { id: JOB, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), finished_at: null, ...h.body };
+      return [jobRow];
+    };
+    rest["GET generation_jobs"] = () => (jobRow ? [jobRow] : []);
+    rest["POST generation_items"] = (h) => {
+      const body = Array.isArray(h.body) ? h.body[0] : h.body;
+      itemRow = { ...baseItem, ...body, id: ITEM, attempts: 0 };
+      return [itemRow];
+    };
+    rest["GET generation_items"] = (h) => {
+      if (h.query.get("target_key")) return []; // the plan's read of existing items
+      if (h.query.get("select") === "status") return itemRow ? [{ status: itemRow.status }] : [];
+      return itemRow ? [itemRow] : [];
+    };
+    rest["PATCH generation_items"] = (h) => {
+      if (!itemRow) return [];
+      const st = h.query.get("status");
+      const at = h.query.get("attempts");
+      if (st && st !== `eq.${itemRow.status}`) return [];
+      if (at && at !== `eq.${itemRow.attempts}`) return [];
+      itemRow = { ...itemRow, ...h.body };
+      return [itemRow];
+    };
+    const data = StartGenerationJobInputSchema.parse({ workspaceId: WS, targetKeys: ["city:austin|tx"], quality: "premium" });
+    const started = await startJob(data, USER);
+    t(
+      "batch start: the job row stores the model the SERVER resolved from 'premium' (gpt-5-mini), requested by this user",
+      (jobRow as any)?.model === "gpt-5-mini" && (jobRow as any)?.requested_by === USER && (started.job as any)?.model === "gpt-5-mini",
+      JSON.stringify(jobRow),
+    );
+    await runItem(WS, USER, ITEM);
+    const hold = rpcHits("ai_reserve")[0]?.body;
+    t(
+      "…the item runs on the job's model: the hold and the request OpenAI received are gpt-5-mini",
+      hold?._model === "gpt-5-mini" && providerHits().length === 1 && providerHits()[0]?.body?.model === "gpt-5-mini" && (itemRow as any)?.status === "done",
+      JSON.stringify({ hold: hold?._model, sent: providerHits()[0]?.body?.model, item: (itemRow as any)?.status }),
     );
   }
 } finally {

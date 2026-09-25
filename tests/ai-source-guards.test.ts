@@ -165,9 +165,12 @@ const SERVER_FNS: Array<{ file: string; name: string; validator: RegExp; guard: 
   { file: "src/lib/admin-seo-coach.functions.ts", name: "seoCoachChat", validator: /SeoCoachInputSchema\.parse/, guard: /runSeoCoachTurn\(data, context\.userId\)/ },
   { file: "src/lib/admin-page-auditor.functions.ts", name: "auditPage", validator: /AuditPageInputSchema\.parse/, guard: /runPageAudit\(data, context\.userId\)/ },
   { file: "src/lib/opportunities.functions.ts", name: "approveOpportunity", validator: /ApproveOpportunityInputSchema\.parse/, guard: /runApproveOpportunity\(data, context\.userId\)/ },
-  { file: "src/lib/coach.functions.ts", name: "generateBriefingNow", validator: /GenerateBriefingInputSchema\.parse/, guard: /await assertWorkspaceMember\(data\.workspaceId, context\.userId\);[\s\S]*?return requestBriefing\(data\.workspaceId\);/ },
+  // Round 5 (security L9): the on-demand briefing goes through the per-workspace refresh throttle.
+  { file: "src/lib/coach.functions.ts", name: "generateBriefingNow", validator: /GenerateBriefingInputSchema\.parse/, guard: /await assertWorkspaceMember\(data\.workspaceId, context\.userId\);[\s\S]*?return refreshBriefing\(data\.workspaceId\);/ },
   { file: "src/lib/ai-byok.functions.ts", name: "testAiCredential", validator: /\.strict\(\)\.parse\(d\)/, guard: /await assertWorkspaceOwner\(data\.workspaceId, context\.userId\);/ },
   { file: "src/lib/ai-allowance.functions.ts", name: "getAiAllowance", validator: /GetAiAllowanceInputSchema\.parse/, guard: /await assertWorkspaceMember\(data\.workspaceId, context\.userId\);\s*return await readAiAllowance\(/ },
+  // Round 5 (Part 3): the model picker's contract.
+  { file: "src/lib/ai-models.functions.ts", name: "getAvailableAiModels", validator: /GetAvailableAiModelsInputSchema\.parse/, guard: /await assertWorkspaceMember\(data\.workspaceId, context\.userId\);\s*return await readAvailableAiModels\(data\.workspaceId\);/ },
 ];
 for (const f of SERVER_FNS) {
   const block = serverFnBlock(read(f.file), f.name);

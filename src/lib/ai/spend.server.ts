@@ -3,6 +3,7 @@ import { AI_MAX_INPUT_TOKENS, AI_ROUTE_LIMITS, routeModel, type AiRoute } from "
 import { AI_DEFAULT_TIER, type AiModelId, type AiQualityTier } from "@/lib/ai/models";
 import { costMicrosForUsage, creditsForCostMicros, maxCostMicros } from "@/lib/ai-pricing";
 import {
+  OpenAiPreSendError,
   callOpenAI,
   type AiInput,
   type AiUsage,
@@ -29,10 +30,17 @@ import { getWorkspaceSecretWithSource } from "@/lib/workspace-secrets.server";
  *                       from the request body can change either;
  *   4. reserve        — ai_reserve holds the MAXIMUM cost (every input token
  *                       uncached, every allowed output token) atomically:
- *                       rate limit, kill switch, global ceiling, tenant funds.
- *                       Refused → a fixed customer sentence, nothing called;
- *   5. mark           — ai_mark_called immediately before the request; the
- *                       provider is called only on a definite true;
+ *                       rate limit, kill switch, the workspace's daily cost
+ *                       cap, tenant funds, global ceiling. Refused → a fixed
+ *                       customer sentence, nothing called;
+ *   5. mark           — ai_mark_called, then the caller's beforeCall (page
+ *                       generation marks its daily-cap slot there), then the
+ *                       request: the provider is called only on a definite
+ *                       true from both. The hold is marked FIRST so a refused
+ *                       mark (kill switch, pause, expiry) never spends a
+ *                       daily-cap slot (round-4 L7); a beforeCall that fails
+ *                       after the hold was marked settles it at zero
+ *                       (not_sent: nothing left, the customer refunded);
  *   6. call           — callOpenAI (openai.server.ts), typed result;
  *   7. deliver        — the route writes its result (page, audit, edit);
  *                       cost from the usage OpenAI reported;
@@ -68,8 +76,14 @@ export type AiDb = { rpc: (fn: string, args: Record<string, unknown>) => Promise
 const serviceDb = (): AiDb => supabaseAdmin as unknown as AiDb;
 
 export type AiKey = { apiKey: string; source: "byok" | "platform" };
+/**
+ * What the caller asks for. 'internal' is never asked for: ai_reserve itself
+ * reserves a 'tenant' or 'granted' call of a workspace holding the founder /
+ * internal unlimited entitlement as billing 'internal' (000800, reading the
+ * 000700 predicate under its lock) — no caller can claim it.
+ */
 export type AiBillingClass = "tenant" | "granted" | "byok" | "system";
-export type SpendBilling = "free_quota" | "credits" | "granted" | "byok" | "system";
+export type SpendBilling = "free_quota" | "credits" | "granted" | "internal" | "byok" | "system";
 
 export const RESERVE_STATUSES = [
   "reserved",
@@ -79,13 +93,17 @@ export const RESERVE_STATUSES = [
   "rate_limited",
   "platform_paused",
   "generation_paused",
+  "workspace_budget_exhausted",
   "budget_exhausted",
   "insufficient",
 ] as const;
 export type ReserveStatus = (typeof RESERVE_STATUSES)[number];
 export type ReserveRefusal = Exclude<ReserveStatus, "reserved">;
 
-const SPEND_BILLINGS: readonly SpendBilling[] = ["free_quota", "credits", "granted", "byok", "system"];
+/** Refusals that leave the request id unspent (see spend-refusals.ts, round-4 M1). */
+export { SPEND_REFUSAL_CODES } from "@/lib/ai/spend-refusals";
+
+const SPEND_BILLINGS: readonly SpendBilling[] = ["free_quota", "credits", "granted", "internal", "byok", "system"];
 
 export type ReserveResult = {
   status: ReserveStatus;
@@ -287,6 +305,8 @@ export function refusalMessage(status: ReserveRefusal | "mark_refused", override
       return AI_MESSAGES.platformPaused;
     case "generation_paused":
       return AI_MESSAGES.generationPaused;
+    case "workspace_budget_exhausted":
+      return AI_MESSAGES.workspaceBudgetExhausted;
     case "budget_exhausted":
       return AI_MESSAGES.budgetExhausted;
     case "insufficient":
@@ -384,9 +404,11 @@ export type MeteredAiCall<T> = {
    */
   deliver?: (output: OpenAiSuccess<T>, ctx: { billing: SpendBilling; model: AiModelId }) => Promise<void>;
   /**
-   * Awaited after the hold is granted and immediately before the mark and the
-   * provider call (page generation marks its daily-cap slot here). A throw
-   * releases the hold and aborts.
+   * Awaited after the hold is granted AND marked, immediately before the
+   * provider call (page generation marks its daily-cap slot here, so a
+   * refused hold mark never spends a slot). A throw aborts without calling
+   * the provider: the marked hold is settled at zero (not_sent — nothing
+   * left, the customer refunded in full) and the error is rethrown.
    */
   beforeCall?: () => Promise<void>;
   refusalMessages?: RefusalMessages;
@@ -480,13 +502,10 @@ export async function runMeteredAiCall<T = unknown>(call: MeteredAiCall<T>): Pro
   }
   const billing = reserved.billing!;
 
-  // 5. Last step before the call. Anything that fails here releases in full.
-  try {
-    if (call.beforeCall) await call.beforeCall();
-  } catch (e) {
-    await aiRelease(db, call.workspaceId, call.requestId);
-    throw e;
-  }
+  // 5. The mark, then the caller's last step, then the call. The hold is
+  //    marked FIRST: a refused mark (the kill switch, the pause, an expired
+  //    hold) releases the hold before beforeCall runs, so page generation's
+  //    daily-cap slot — marked in beforeCall — is never spent without a call.
   let marked: boolean;
   try {
     marked = await aiMarkCalled(db, call.workspaceId, call.requestId);
@@ -500,6 +519,23 @@ export async function runMeteredAiCall<T = unknown>(call: MeteredAiCall<T>): Pro
     await aiRelease(db, call.workspaceId, call.requestId);
     console.warn("[ai-spend] mark refused; provider not called", JSON.stringify(ctx));
     throw new CustomerFacingError(refusalMessage("mark_refused", call.refusalMessages), "mark_refused");
+  }
+  try {
+    if (call.beforeCall) await call.beforeCall();
+  } catch (e) {
+    // The hold is marked, so it is settled, never released: at zero — the
+    // request provably never left — refunding the customer in full.
+    const notSent: OpenAiResult<T> = {
+      ok: false,
+      kind: "unknown",
+      detail: null,
+      sent: false,
+      usage: null,
+      httpStatus: null,
+      requestId: null,
+    };
+    await settleSafely(db, call, model, billing, settleInputFor(model, notSent, null));
+    throw e;
   }
 
   // 6. The call. From here on the request is settled, never released.
@@ -516,8 +552,13 @@ export async function runMeteredAiCall<T = unknown>(call: MeteredAiCall<T>): Pro
       transport: call.deps?.transport,
     });
   } catch (e) {
-    // A programming error refused before anything was sent.
-    result = { ok: false, kind: "unknown", detail: null, sent: false, usage: null, httpStatus: null, requestId: null };
+    // callOpenAI throws on purpose only for its pre-send checks
+    // (OpenAiPreSendError): nothing left, so the platform budget records
+    // zero. Anything else escaped at an unknown point, possibly after the
+    // request left: the platform budget keeps the full hold (round-4 L6).
+    // The customer is refunded either way.
+    const preSend = e instanceof OpenAiPreSendError;
+    result = { ok: false, kind: "unknown", detail: null, sent: !preSend, usage: null, httpStatus: null, requestId: null };
     await settleSafely(db, call, model, billing, settleInputFor(model, result, null));
     throw e;
   }

@@ -509,7 +509,8 @@ export async function runSharetribeSyncForWorkspace(workspaceId: string): Promis
           .select("addon_status")
           .eq("workspace_id", workspaceId)
           .maybeSingle();
-        if (affSettings?.addon_status === "active" || affSettings?.addon_status === "trialing") {
+        const { affiliateAddonUsable } = await import("@/lib/entitlement-grants.server");
+        if (await affiliateAddonUsable(workspaceId, affSettings?.addon_status)) {
           const { runAffiliateReferralSync } = await import("@/lib/affiliate-sync.server");
           await runAffiliateReferralSync(workspaceId);
         }

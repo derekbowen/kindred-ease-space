@@ -15,8 +15,10 @@ import {
   contractFailureMessage,
   customerMessage,
   dailyCapMessage,
+  effectiveDailyCap,
   findPageByRequestId,
   generatePageContent,
+  isInternalWorkspace,
   markGenerationProviderCalled,
   persistGeneratedPage,
   readPlatformSettings,
@@ -111,6 +113,16 @@ export type QuickPageResult = {
 /** Test seam for the database and the provider transport. Production passes nothing. */
 export type QuickPageDeps = { db?: AiDb; transport?: OpenAiTransport; source?: GenerationSource };
 
+/**
+ * The draft reason when the page was generated, saved and settled but the
+ * optional publish step itself failed (a contract read or the entitlement
+ * gate erroring). The result is still the saved draft — never a generation
+ * failure, which would make the builder rotate its request key and a retry
+ * generate (and charge) a second page (round-4 correctness L2).
+ */
+export const PUBLISH_STEP_FAILED_MESSAGE =
+  "Your page was saved as a draft, but it could not be published just now. Publish it from Pages.";
+
 const wordCount = (s: string | null | undefined) =>
   (s ?? "").trim() ? (s ?? "").trim().split(/\s+/).length : 0;
 
@@ -195,8 +207,12 @@ export async function runQuickPage(
   // 4. The daily cap: a RESERVATION taken atomically for this request id
   //    (reserve_generation_slot counts every provider call of the last 24
   //    hours under a per-workspace lock), so N requests at remaining = 1 admit
-  //    exactly one, and N requests with the same id admit exactly one.
-  const slot = await reserveGenerationSlot(data.workspaceId, generationRequestId, settings.dailyCap);
+  //    exactly one, and N requests with the same id admit exactly one. A
+  //    workspace holding the founder / internal unlimited entitlement (read
+  //    fresh; a failed read keeps the cap) has no cap — the slot is still
+  //    taken, so the id buys one provider call either way.
+  const cap = effectiveDailyCap(settings.dailyCap, await isInternalWorkspace(data.workspaceId, deps.db));
+  const slot = await reserveGenerationSlot(data.workspaceId, generationRequestId, cap);
   if (slot === "cap_reached") {
     throw new CustomerFacingError(dailyCapMessage(settings.dailyCap, 0));
   }
@@ -275,28 +291,46 @@ export async function runQuickPage(
   }
 
   // 11. Optional publish: contract first, then the atomic entitlement gate.
-  //     Either failure KEEPS the draft (the AI work isn't wasted) and tells
-  //     the caller why in plain language.
+  //     Either refusal KEEPS the draft (the AI work isn't wasted) and tells
+  //     the caller why in plain language — and so does an ERROR in either
+  //     step: the page is saved and the call settled, so what comes back is
+  //     the saved draft with a reason, never a generation failure.
   let published = false;
   let limitReached = false;
   let limitMessage: string | null = null;
   let draftReason: string | null = null;
   let contractViolations: string[] = [];
   if (data.autoPublish) {
-    const check = await checkStoredPageContract(data.workspaceId, page.id);
-    if (!check.ok) {
-      contractViolations = check.blocking.map((v) => `${v.message} ${v.fix}`.trim());
-      draftReason = contractFailureMessage(check);
-    } else {
-      const { publishPagesAtomically, pageLimitMessage } =
-        await import("@/lib/entitlements.functions");
-      const gate = await publishPagesAtomically(data.workspaceId, [page.id]);
-      published = gate.published > 0;
-      limitReached = !published;
-      if (limitReached) {
-        limitMessage = `${pageLimitMessage(gate.limit)} The generated page was saved as a draft.`;
-        draftReason = limitMessage;
+    try {
+      const check = await checkStoredPageContract(data.workspaceId, page.id);
+      if (!check.ok) {
+        contractViolations = check.blocking.map((v) => `${v.message} ${v.fix}`.trim());
+        draftReason = contractFailureMessage(check);
+      } else {
+        const { publishPagesAtomically, pageLimitMessage } =
+          await import("@/lib/entitlements.functions");
+        const gate = await publishPagesAtomically(data.workspaceId, [page.id]);
+        published = gate.published > 0;
+        limitReached = !published;
+        if (limitReached) {
+          limitMessage = `${pageLimitMessage(gate.limit)} The generated page was saved as a draft.`;
+          draftReason = limitMessage;
+        }
       }
+    } catch (e) {
+      console.error(
+        "[quick-page] publish step failed; the saved draft stands",
+        JSON.stringify({
+          workspaceId: data.workspaceId,
+          pageId: page.id,
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      );
+      published = false;
+      limitReached = false;
+      limitMessage = null;
+      contractViolations = [];
+      draftReason = PUBLISH_STEP_FAILED_MESSAGE;
     }
   }
 

@@ -7,18 +7,9 @@
  * client bundle — anyone could trigger up to 200 outbound fetches per call.
  */
 import { createFileRoute } from "@tanstack/react-router";
-import { timingSafeEqual } from "crypto";
 import { runFullAudit } from "@/lib/admin-canonical-audit.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-
-function safeEqual(a: string, b: string) {
-  const len = Math.max(a.length, b.length);
-  const ab = Buffer.alloc(len);
-  const bb = Buffer.alloc(len);
-  ab.write(a);
-  bb.write(b);
-  return a.length === b.length && timingSafeEqual(ab, bb);
-}
+import { secretsMatch } from "@/lib/secret-compare";
 
 export const Route = createFileRoute("/api/public/hooks/canonical-audit")({
   server: {
@@ -31,7 +22,8 @@ export const Route = createFileRoute("/api/public/hooks/canonical-audit")({
           : "";
         const provided =
           bearer || request.headers.get("x-cron-secret") || request.headers.get("apikey") || "";
-        if (!expected || !provided || !safeEqual(provided, expected)) {
+        // Constant time, digest-based (src/lib/secret-compare.ts).
+        if (!secretsMatch(provided, expected)) {
           return new Response(JSON.stringify({ error: "Unauthorized" }), {
             status: 401,
             headers: { "Content-Type": "application/json" },

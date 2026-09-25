@@ -42,6 +42,8 @@ export const AI_MESSAGES = Object.freeze({
   platformPaused: "AI features are paused platform-wide right now. Try again later.",
   generationPaused: "Paused: page generation is paused platform-wide right now. Try again later.",
   budgetExhausted: "AI features have reached today's platform limit. Try again tomorrow.",
+  workspaceBudgetExhausted:
+    "This workspace has reached today's AI limit. Try again tomorrow, or contact support if you need more today.",
   outOfFunds:
     "This workspace has used up its included AI generation. Contact support to continue using this tool.",
   inProgress: "This AI request is already running. Refresh in a minute.",

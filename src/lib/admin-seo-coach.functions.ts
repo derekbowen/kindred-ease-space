@@ -221,10 +221,20 @@ export type SeoCoachResult = { ok: true; reply: string } | { ok: false; error: s
 export type SeoCoachDeps = { db?: AiDb; transport?: OpenAiTransport };
 
 /**
+ * The SEO Coach is not part of launch (`launch: false` in app-nav, no launch
+ * UI), so the server serves it only to a workspace holding the founder /
+ * internal unlimited entitlement — hiding the link is not a gate (round-4
+ * correctness M2 / security L1).
+ */
+export const SEO_COACH_UNAVAILABLE_MESSAGE = "The SEO Coach is not available for this workspace yet.";
+
+/**
  * One SEO-coach turn through the one spend flow (route seo_coach: 1200
- * output tokens, 60 s, gpt-5-nano). Membership is checked first; every
- * refusal and failure comes back as { ok: false, error } with a fixed
- * customer sentence; provider and database text only reach the server log.
+ * output tokens, 60 s, gpt-5-nano). Membership is checked first, then the
+ * availability gate (internal workspaces only), both before the key is read
+ * or anything is reserved; every refusal and failure comes back as
+ * { ok: false, error } with a fixed customer sentence; provider and database
+ * text only reach the server log.
  */
 export async function runSeoCoachTurn(
   data: SeoCoachInput,
@@ -233,6 +243,10 @@ export async function runSeoCoachTurn(
 ): Promise<SeoCoachResult> {
   try {
     await assertWorkspaceMember(data.workspaceId, userId);
+    const { isInternalUnlimitedOrFalse } = await import("@/lib/entitlement-grants.server");
+    if (!(await isInternalUnlimitedOrFalse(data.workspaceId, deps.db))) {
+      return { ok: false, error: SEO_COACH_UNAVAILABLE_MESSAGE };
+    }
     const { resolveAiKey, billingClassFor, runMeteredAiCall } =
       await import("@/lib/ai/spend.server");
     const key = await resolveAiKey(data.workspaceId, deps.db);

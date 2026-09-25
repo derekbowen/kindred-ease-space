@@ -30,6 +30,14 @@ const { PAGE_NOT_FOUND_MESSAGE } = await import("../src/lib/admin-page-auditor.f
 const { AI_ALLOWANCE_MESSAGES, AI_ALLOWANCE_UNAVAILABLE_MESSAGE, generationSentence } = await import(
   "../src/lib/ai-allowance.functions"
 );
+// Round 5.
+const { SEO_COACH_UNAVAILABLE_MESSAGE } = await import("../src/lib/admin-seo-coach.functions");
+const { PAGE_AUDITOR_UNAVAILABLE_MESSAGE } = await import("../src/lib/admin-page-auditor.functions");
+const { PUBLISH_STEP_FAILED_MESSAGE } = await import("../src/lib/admin-quick-page.functions");
+const { BRIEFING_THROTTLED_MESSAGE } = await import("../src/lib/coach-briefing.server");
+const { KEY_TEST_THROTTLED_MESSAGE } = await import("../src/lib/ai-byok.functions");
+const { AI_MODELS_MESSAGES, AI_MODELS_UNAVAILABLE_MESSAGE } = await import("../src/lib/ai-models.functions");
+const { decideCapacity } = await import("../src/lib/billing-capacity");
 
 let pass = 0,
   fail = 0;
@@ -122,6 +130,18 @@ add("AI_ALLOWANCE_UNAVAILABLE_MESSAGE", AI_ALLOWANCE_UNAVAILABLE_MESSAGE);
 add("generationSentence(12, 50)", generationSentence(12, 50, false));
 add("generationSentence(paused)", generationSentence(3, 50, true));
 add("generationSentence(cap 0)", generationSentence(0, 0, false));
+// Round 5: the launch-hidden AI routes' gates, the publish step after a
+// charged quick page (correctness L2), the two throttles (security L9, L2),
+// the model picker (Part 3) and the internal entitlement's wording (Part 2).
+add("SEO_COACH_UNAVAILABLE_MESSAGE", SEO_COACH_UNAVAILABLE_MESSAGE);
+add("PAGE_AUDITOR_UNAVAILABLE_MESSAGE", PAGE_AUDITOR_UNAVAILABLE_MESSAGE);
+add("PUBLISH_STEP_FAILED_MESSAGE", PUBLISH_STEP_FAILED_MESSAGE);
+add("BRIEFING_THROTTLED_MESSAGE", BRIEFING_THROTTLED_MESSAGE);
+add("KEY_TEST_THROTTLED_MESSAGE", KEY_TEST_THROTTLED_MESSAGE);
+for (const [k, v] of Object.entries(AI_MODELS_MESSAGES)) add(`AI_MODELS_MESSAGES.${k}`, v);
+add("AI_MODELS_UNAVAILABLE_MESSAGE", AI_MODELS_UNAVAILABLE_MESSAGE);
+add("generationSentence(internal)", generationSentence(12, 2_147_483_647, false, true));
+add("decideCapacity(internal).reason", decideCapacity({ subscriptionStatus: null, trialEndsAt: null, currentPeriodEnd: null, internalUnlimited: true }).reason);
 
 // ---- the literals in the AI sources -----------------------------------------------
 const SAMPLE: Record<string, string> = {
@@ -143,6 +163,7 @@ const AI_SOURCES = [
   "src/lib/ai-byok.functions.ts",
   "src/lib/coach-briefing.server.ts",
   "src/lib/ai-allowance.functions.ts",
+  "src/lib/ai-models.functions.ts",
 ];
 const PATTERNS: RegExp[] = [
   /new CustomerFacingError\(\s*"([^"]+)"/g,

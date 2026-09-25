@@ -11,21 +11,12 @@
 // <anon>` let anyone trigger full-tenant syncs. Use a shared secret instead.
 
 import { createFileRoute } from "@tanstack/react-router";
-import { timingSafeEqual } from "crypto";
 import {
   runSharetribeSyncBounded,
   runSharetribeSyncForWorkspace,
   SYNC_ALL_BATCH_LIMIT,
 } from "@/lib/sharetribe-sync.server";
-
-function safeEqual(a: string, b: string): boolean {
-  const len = Math.max(a.length, b.length);
-  const aBuf = Buffer.alloc(len);
-  const bBuf = Buffer.alloc(len);
-  aBuf.write(a);
-  bBuf.write(b);
-  return a.length === b.length && timingSafeEqual(aBuf, bBuf);
-}
+import { secretsMatch } from "@/lib/secret-compare";
 
 export const Route = createFileRoute("/api/public/hooks/sync-sharetribe")({
   server: {
@@ -39,7 +30,8 @@ export const Route = createFileRoute("/api/public/hooks/sync-sharetribe")({
         const auth = request.headers.get("authorization") ?? "";
         const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
         const presented = bearer || request.headers.get("x-cron-secret") || "";
-        if (!presented || !safeEqual(presented, expected)) {
+        // Constant time, digest-based (src/lib/secret-compare.ts).
+        if (!secretsMatch(presented, expected)) {
           return new Response("unauthorized", { status: 401 });
         }
 

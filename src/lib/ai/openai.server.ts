@@ -128,6 +128,20 @@ export type OpenAiFailure = {
 
 export type OpenAiResult<T> = OpenAiSuccess<T> | OpenAiFailure;
 
+/**
+ * The only errors callOpenAI throws on purpose: a check that runs BEFORE any
+ * request can leave (a model outside the allowlist, no key, missing limits,
+ * an invalid format name). Anything else that escapes callOpenAI happened at
+ * an unknown point — possibly after the request left — and the spend flow
+ * settles it at the full hold (round-4 correctness L6).
+ */
+export class OpenAiPreSendError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OpenAiPreSendError";
+  }
+}
+
 const FORMAT_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
 
 /** Strip a key (and anything shaped like one) from text bound for a log line. */
@@ -186,18 +200,18 @@ function isAbortLike(e: unknown): boolean {
 /**
  * One Responses API call. Never throws for a provider outcome: every result,
  * success or failure, comes back typed, with `sent` (did a request leave) and
- * the usage the API reported whenever it reported any. Throws only for a
- * programming error caught before anything is sent (a model outside the
- * allowlist, an invalid format name, a missing key).
+ * the usage the API reported whenever it reported any. Throws on purpose only
+ * OpenAiPreSendError, for a programming error caught before anything is sent
+ * (a model outside the allowlist, an invalid format name, a missing key).
  */
 export async function callOpenAI<T = unknown>(call: OpenAiCall<T>): Promise<OpenAiResult<T>> {
-  if (!isAllowedModel(call.model)) throw new Error(`model not on the allowlist: ${String(call.model)}`);
-  if (!call.apiKey) throw new Error("callOpenAI: no API key");
+  if (!isAllowedModel(call.model)) throw new OpenAiPreSendError(`model not on the allowlist: ${String(call.model)}`);
+  if (!call.apiKey) throw new OpenAiPreSendError("callOpenAI: no API key");
   if (!(call.maxOutputTokens > 0) || !(call.timeoutMs > 0)) {
-    throw new Error("callOpenAI: maxOutputTokens and timeoutMs are required");
+    throw new OpenAiPreSendError("callOpenAI: maxOutputTokens and timeoutMs are required");
   }
   if (call.format && !FORMAT_NAME.test(call.format.name)) {
-    throw new Error(`callOpenAI: invalid structured format name ${call.format.name}`);
+    throw new OpenAiPreSendError(`callOpenAI: invalid structured format name ${call.format.name}`);
   }
   const log = call.log ?? ((line: string) => console.error(line));
   const tag = `[openai] model=${call.model}`;

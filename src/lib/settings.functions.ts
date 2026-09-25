@@ -3,10 +3,16 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
+import { internalAccessFields, type InternalAccessFields } from "@/lib/billing-capacity";
 
 const sb = () => supabaseAdmin as any;
 
-export type SettingsContext = {
+/**
+ * internalUnlimited / planLabel / revealLaunchHiddenFeatures: the founder /
+ * internal unlimited entitlement, computed here from the workspace's grants
+ * on every request (member-only, read-only; see InternalAccessFields).
+ */
+export type SettingsContext = InternalAccessFields & {
   role: string;
   isOwner: boolean;
   workspace: {
@@ -21,6 +27,12 @@ export type SettingsContext = {
   domains: Array<{ hostname: string; verified: boolean }>;
   sharetribeConnected: boolean;
   configuredSecretKeys: string[];
+  /**
+   * The AI providers this workspace has its own key for: ["openai"] when the
+   * one BYOK store (the workspace secret OPENAI_API_KEY, what every AI call
+   * reads) holds a key, otherwise []. Never the retired
+   * tenant_ai_credentials rows, which no AI path reads.
+   */
   configuredAiProviders: string[];
 };
 
@@ -31,12 +43,14 @@ export const getSettingsContext = createServerFn({ method: "GET" })
     const role = await assertWorkspaceMember(data.workspaceId, context.userId);
     const isOwner = role === "owner";
 
+    const { isInternalUnlimitedOrFalse } = await import("@/lib/entitlement-grants.server");
     const [
       { data: ws },
       { data: domains },
       { data: integration },
       { data: secrets },
-      { data: aiCreds },
+      { data: ownAiKey },
+      internal,
     ] = await Promise.all([
       sb()
         .from("workspaces")
@@ -59,7 +73,15 @@ export const getSettingsContext = createServerFn({ method: "GET" })
       isOwner
         ? sb().from("workspace_secrets").select("key_name").eq("workspace_id", data.workspaceId)
         : Promise.resolve({ data: [] }),
-      sb().from("tenant_ai_credentials").select("provider").eq("workspace_id", data.workspaceId),
+      // Existence only (the row id), for every member: the same read the model
+      // picker makes (src/lib/ai-models.functions.ts).
+      sb()
+        .from("workspace_secrets")
+        .select("id")
+        .eq("workspace_id", data.workspaceId)
+        .eq("key_name", "OPENAI_API_KEY")
+        .maybeSingle(),
+      isInternalUnlimitedOrFalse(data.workspaceId),
     ]);
 
     return {
@@ -72,6 +94,7 @@ export const getSettingsContext = createServerFn({ method: "GET" })
       })),
       sharetribeConnected: integration?.status === "connected",
       configuredSecretKeys: (secrets ?? []).map((s: any) => s.key_name as string),
-      configuredAiProviders: (aiCreds ?? []).map((c: any) => c.provider as string),
+      configuredAiProviders: ownAiKey ? ["openai"] : [],
+      ...internalAccessFields(internal),
     };
   });

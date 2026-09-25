@@ -3,8 +3,20 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { planByKey, TRIAL_PAGE_LIMIT } from "@/lib/plan-catalog";
-import { decideCapacity, effectivePageLimit, type BillingState } from "@/lib/billing-capacity";
-import { readGrantedPages, isGrantActive, type GrantRow } from "@/lib/entitlement-grants.server";
+import {
+  decideCapacity,
+  effectivePageLimit,
+  internalAccessFields,
+  type BillingState,
+  type InternalAccessFields,
+} from "@/lib/billing-capacity";
+import {
+  readGrantedPages,
+  isGrantActive,
+  isInternalUnlimited,
+  isInternalUnlimitedOrFalse,
+  type GrantRow,
+} from "@/lib/entitlement-grants.server";
 
 const sb = () => supabaseAdmin as any;
 
@@ -41,7 +53,7 @@ export type PageEntitlement = {
   canPublish: boolean;
   pagesServe: boolean;
   billingReason: string;
-};
+} & InternalAccessFields;
 
 /**
  * The entitlement read the dashboard/billing/publishing UIs run on. Stripe is
@@ -80,7 +92,7 @@ async function countByStatus(workspaceId: string, status: string): Promise<numbe
 }
 
 export async function readEntitlement(workspaceId: string): Promise<PageEntitlement> {
-  const [wsRes, published, drafts, suspended, { data: bal }, granted] = await Promise.all([
+  const [wsRes, published, drafts, suspended, { data: bal }, granted, internal] = await Promise.all([
     sb()
       .from("workspaces")
       .select(
@@ -96,6 +108,9 @@ export async function readEntitlement(workspaceId: string): Promise<PageEntitlem
     // admin/app view and the pre-publish check, where under-reporting capacity
     // shows a confusing number, and over-reporting it hands out free pages.
     readGrantedPages(workspaceId),
+    // The founder / internal unlimited entitlement, read fresh (throws on a
+    // read failure, like the grants above).
+    isInternalUnlimited(workspaceId),
   ]);
   const ws = wsRes.data;
   if (!ws) {
@@ -125,6 +140,7 @@ export async function readEntitlement(workspaceId: string): Promise<PageEntitlem
     trialEndsAt: ws.trial_ends_at,
     currentPeriodEnd: ws.current_period_end,
     grantedPages: granted,
+    internalUnlimited: internal,
   });
   const limit = effectivePageLimit({ base, addon, bonus, granted }, decision);
 
@@ -154,6 +170,7 @@ export async function readEntitlement(workspaceId: string): Promise<PageEntitlem
     canPublish: decision.publish,
     pagesServe: decision.serve,
     billingReason: decision.reason,
+    ...internalAccessFields(internal),
   };
 }
 
@@ -180,7 +197,7 @@ export type BetaStatus = {
    * open-ended grant means the workspace is not counting down to anything.
    */
   expiresAt: string | null;
-};
+} & InternalAccessFields;
 
 /**
  * What the app shell and dashboard need to tell a beta tenant the truth:
@@ -194,7 +211,11 @@ export type BetaStatus = {
  * would blank the whole dashboard shell for a database blip.
  */
 export async function readBetaStatus(workspaceId: string): Promise<BetaStatus> {
-  const none: BetaStatus = { beta: false, pageLimit: 0, expiresAt: null };
+  // The founder / internal unlimited entitlement is not a free beta: it has
+  // its own fields (a failed read reads "not internal", like everything here).
+  const internal = await isInternalUnlimitedOrFalse(workspaceId);
+  const none: BetaStatus = { beta: false, pageLimit: 0, expiresAt: null, ...internalAccessFields(internal) };
+  if (internal) return none;
   const { data, error } = await sb()
     .from("workspace_entitlement_grants")
     .select("page_limit, starts_at, expires_at, revoked_at")
@@ -238,7 +259,7 @@ export async function readBetaStatus(workspaceId: string): Promise<BetaStatus> {
       expiresAt = g.expires_at;
     }
   }
-  return { beta: pageLimit > 0, pageLimit, expiresAt };
+  return { beta: pageLimit > 0, pageLimit, expiresAt, ...internalAccessFields(false) };
 }
 
 export const getBetaStatus = createServerFn({ method: "GET" })

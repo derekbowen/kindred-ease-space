@@ -38,6 +38,8 @@ import {
   grantEntitlement,
   revokeGrant,
   DEFAULT_BETA_GRANT,
+  GRANT_TYPE_OPTIONS,
+  INTERNAL_GRANT_PAGE_LIMIT,
 } from "@/lib/admin-entitlement-grants.functions";
 import { toast } from "sonner";
 
@@ -46,7 +48,7 @@ export const Route = createFileRoute("/_authenticated/app/ops/plan-requests")({
   component: EntitlementGrantsPage,
 });
 
-const GRANT_TYPES = ["beta", "trial", "promotional", "manual"] as const;
+type GrantTypeOption = (typeof GRANT_TYPE_OPTIONS)[number]["type"];
 
 type Workspace = Awaited<ReturnType<typeof listGrantableWorkspaces>>[number];
 type Summary = Awaited<ReturnType<typeof listWorkspaceGrants>>;
@@ -80,9 +82,7 @@ function EntitlementGrantsPage() {
   const [denied, setDenied] = useState(false);
 
   // The approved product default: beta, 50 pages, 30 days, no card.
-  const [grantType, setGrantType] = useState<(typeof GRANT_TYPES)[number]>(
-    DEFAULT_BETA_GRANT.grantType,
-  );
+  const [grantType, setGrantType] = useState<GrantTypeOption>(DEFAULT_BETA_GRANT.grantType);
   const [pageLimit, setPageLimit] = useState<string>(String(DEFAULT_BETA_GRANT.pageLimit));
   const [expiresOn, setExpiresOn] = useState<string>(
     dateInputValue(isoDaysFromNow(DEFAULT_BETA_GRANT.durationDays)),
@@ -291,15 +291,19 @@ function EntitlementGrantsPage() {
                 <Label htmlFor="grant-type">Grant type</Label>
                 <Select
                   value={grantType}
-                  onValueChange={(v) => setGrantType(v as typeof grantType)}
+                  onValueChange={(v) => {
+                    setGrantType(v as GrantTypeOption);
+                    // An internal grant is always the maximum page grant.
+                    if (v === "internal") setPageLimit(String(INTERNAL_GRANT_PAGE_LIMIT));
+                  }}
                 >
                   <SelectTrigger id="grant-type" className="mt-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {GRANT_TYPES.map((g) => (
-                      <SelectItem key={g} value={g}>
-                        {g}
+                    {GRANT_TYPE_OPTIONS.map((g) => (
+                      <SelectItem key={g.type} value={g.type}>
+                        {g.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -312,6 +316,7 @@ function EntitlementGrantsPage() {
                   className="mt-1"
                   inputMode="numeric"
                   value={pageLimit}
+                  disabled={grantType === "internal"}
                   onChange={(e) => setPageLimit(e.target.value)}
                 />
               </div>

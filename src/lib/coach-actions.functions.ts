@@ -101,6 +101,20 @@ export type ActionCtx = {
 
 const NOT_FOUND = "That page was not found in this workspace.";
 
+/**
+ * An edit is delivered only when it landed on exactly ONE page row: a page
+ * deleted (or moved) during the call updates nothing, and "nothing" must not
+ * be charged as a delivered edit (round-4 correctness L4). Throwing here
+ * settles the call as not_delivered — the customer refunded in full.
+ */
+function assertOneRowUpdated(rows: unknown[] | null | undefined): void {
+  const n = Array.isArray(rows) ? rows.length : 0;
+  if (n !== 1) {
+    console.error("[coach] page edit updated", n, "rows; not delivered");
+    throw new CustomerFacingError(NOT_FOUND);
+  }
+}
+
 async function loadPage(workspaceId: string, pageId: string) {
   const { data: page, error } = await supabaseAdmin
     .from("tenant_pages")
@@ -134,12 +148,14 @@ async function fixThinPage(ctx: ActionCtx, pageId: string): Promise<ActionResult
     // Saved before the call is settled: the customer pays only for an edit
     // that landed.
     deliver: async (out) => {
-      const { error: upErr } = await supabaseAdmin
+      const { data: rows, error: upErr } = await supabaseAdmin
         .from("tenant_pages")
         .update({ body_markdown: out.text.trim() })
         .eq("id", pageId)
-        .eq("workspace_id", ctx.workspaceId);
+        .eq("workspace_id", ctx.workspaceId)
+        .select("id");
       if (upErr) throw new Error(upErr.message);
+      assertOneRowUpdated(rows);
     },
     deps: ctx.deps,
   });
@@ -176,6 +192,7 @@ export const META_FORMAT = {
 const STOP_CODES = new Set([
   "rate_limited",
   "platform_paused",
+  "workspace_budget_exhausted",
   "budget_exhausted",
   "insufficient",
   "no_key",
@@ -219,12 +236,14 @@ async function addMeta(
         // Saved before the call is settled: a page whose update fails is
         // refunded (not_delivered) and skipped.
         deliver: async (out) => {
-          const { error: upErr } = await supabaseAdmin
+          const { data: rows, error: upErr } = await supabaseAdmin
             .from("tenant_pages")
             .update({ meta_description: out.data!.seo_description.slice(0, 320) })
             .eq("id", p.id)
-            .eq("workspace_id", ctx.workspaceId);
+            .eq("workspace_id", ctx.workspaceId)
+            .select("id");
           if (upErr) throw new Error(`page update failed: ${upErr.message}`);
+          assertOneRowUpdated(rows);
         },
         deps: ctx.deps,
       });
@@ -395,12 +414,14 @@ async function addInternalLinks(ctx: ActionCtx, pageId: string): Promise<ActionR
     // Saved before the call is settled: the customer pays only for links
     // that landed on the page.
     deliver: async (out) => {
-      const { error: upErr } = await supabaseAdmin
+      const { data: rows, error: upErr } = await supabaseAdmin
         .from("tenant_pages")
         .update({ body_markdown: out.text.trim() })
         .eq("id", pageId)
-        .eq("workspace_id", ctx.workspaceId);
+        .eq("workspace_id", ctx.workspaceId)
+        .select("id");
       if (upErr) throw new Error(upErr.message);
+      assertOneRowUpdated(rows);
     },
     deps: ctx.deps,
   });

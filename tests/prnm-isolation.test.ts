@@ -236,7 +236,58 @@ console.log("\n=== c) the probe can only send customer credentials ===");
   );
   t("it refuses a token that is not a signed-in customer's", /claims\.role !== "authenticated"/.test(code));
   t("it refuses a platform admin's token (has_role, read through the customer's own token)", /if \(await isAdmin\(\)\) fail\(/.test(code) && /rpc\/has_role/.test(code));
-  t("only 401 / 403 (or 404, not deployed) count as unreachable", /new Set\(\[401, 403, 404\]\)/.test(code));
+  // Round-4 security L5: a 404 is no longer "unreachable" for the deployed
+  // PRNM functions (a function that accepted the caller could answer 404);
+  // it passes only for the four retired AI functions, and only as the
+  // gateway's own "Requested function was not found".
+  t(
+    "for the PRNM functions only 401 / 403 count as unreachable (a 404 fails)",
+    /const UNREACHABLE = new Set\(\[401, 403\]\);/.test(code) &&
+      /return \{ fn, as, status: res\.status, ok: UNREACHABLE\.has\(res\.status\) \};/.test(code) &&
+      !/new Set\(\[[^\]]*404/.test(code),
+  );
+  t(
+    "the retired AI functions are exactly ai-proxy, coach-chat, help-assistant-chat, help-assistant-embed",
+    /const LEGACY_FUNCTIONS = \["ai-proxy", "coach-chat", "help-assistant-chat", "help-assistant-embed"\] as const;/.test(code),
+  );
+  const legacy = code.slice(code.indexOf("async function callLegacy("), code.indexOf("if (await isAdmin())"));
+  t(
+    "…probed with a credential-free, body-free OPTIONS preflight (a preflight runs no handler work)",
+    legacy.length > 0 && /method: "OPTIONS",/.test(legacy) && !/headers|apikey|Authorization|body:/.test(legacy),
+    legacy.slice(0, 120),
+  );
+  t(
+    "…where a 404 passes only when its body is the gateway's own not-found",
+    /const deleted = res\.status === 404 && isGatewayNotFound\(body\);/.test(legacy) && /ok: UNREACHABLE\.has\(res\.status\) \|\| deleted,/.test(legacy),
+  );
+  {
+    // The gateway check, executed (transpiled out of the script).
+    const src = probe.slice(probe.indexOf("function isGatewayNotFound("), probe.indexOf("function fail("));
+    const js = new Bun.Transpiler({ loader: "ts" }).transformSync(src);
+    const isGatewayNotFound = new Function(`${js}; return isGatewayNotFound;`)() as (b: string) => boolean;
+    const cases: Array<[string, boolean]> = [
+      ['{"code":"NOT_FOUND","message":"Requested function was not found"}', true],
+      ['{"message":"Requested function was not found"}', true],
+      ['{"code":"NOT_FOUND","message":"Page not found"}', false],
+      ['{"code":"NOT_FOUND"}', false],
+      ['{"error":"not found"}', false],
+      ['{"code":"BOOT_ERROR","message":"Requested function was not found"}', false],
+      ["Not Found", false],
+      ["", false],
+    ];
+    const wrong = cases.filter(([b, want]) => isGatewayNotFound(b) !== want).map(([b]) => b);
+    t("the gateway's not-found body is recognised, and nothing else is", wrong.length === 0, wrong.join(" | "));
+  }
+  t(
+    "an sb_secret_ key is refused whichever variable carries it, before any request",
+    /if \(\/\^sb_secret_\/i\.test\(jwt\) \|\| \/\^sb_secret_\/i\.test\(publishable\)\) fail\(/.test(code) &&
+      code.indexOf("sb_secret_") < code.indexOf("await fetch("),
+  );
+  t(
+    "the publishable key must be an sb_publishable_ key or a JWT whose role is anon",
+    /if \(!isJwt && !\/\^sb_publishable_\[A-Za-z0-9_-\]\+\$\/\.test\(publishable\)\) \{\s*fail\(/.test(code) &&
+      /if \(pubClaims && pubClaims\.role !== "anon"\) fail\(/.test(code),
+  );
   t("it prints statuses only, never a token or a response body", !/console\.(log|error)\([^)]*\b(jwt|publishable|serviceKey)\b/.test(code) && /res\.body\?\.cancel\(\)/.test(code));
   const runners = [...walk(join(ROOT, ".github")), join(ROOT, "package.json")].filter((f) => existsSync(f) && /probe-prnm-isolation/.test(readFileSync(f, "utf8")));
   t("no CI workflow or npm script runs it (operator-only)", runners.length === 0, runners.map(rel).join(", "));

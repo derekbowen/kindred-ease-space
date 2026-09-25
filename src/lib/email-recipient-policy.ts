@@ -34,6 +34,15 @@
  * bounce is smaller than the cost of silently losing a customer's
  * confirmation email.
  *
+ * ONE RECIPIENT PER STRING (round-3 F6 / round-4 security L7). A string
+ * carrying a list — any "," or ";" — or an address with whitespace, a
+ * control character, quotes, angle brackets or more than one "@" is not a
+ * recipient: it is refused, never forwarded. Classifying "a@x.com,b@y.com"
+ * by its last "@" used to pass it through as one address; handed raw to the
+ * provider it could reach both. What sendEmail forwards is the NORMALISED
+ * bare address, never the caller's raw string (a display name, if one was
+ * given, is dropped).
+ *
  * Pure: no I/O, no env. Safe to import from anywhere.
  */
 
@@ -65,18 +74,36 @@ export type RecipientVerdict =
   | { deliverable: true; address: string }
   | { deliverable: false; address: string; reason: string };
 
+/** Characters that make a string something other than ONE bare address. */
+const LIST_SEPARATORS = /[,;]/;
+// An apostrophe is allowed: o'brien@example.com is a real mailbox.
+const NOT_IN_ADDRESS = /[\s"<>()[\]\\\u0000-\u001f\u007f]/;
+const NOT_IN_DISPLAY_NAME = /[@<>"\u0000-\u001f\u007f]/;
+
 /**
  * Normalise a recipient string to a bare lowercase address. Accepts the
  * display-name form ("Jane <jane@x.com>") because templates and callers
- * pass both. Returns null when no address can be found.
+ * pass both. Returns null when the string is not exactly ONE address: no
+ * "@", a list (any "," or ";"), whitespace / a control character / quotes /
+ * brackets inside the address, more than one "@", or a display name that
+ * itself carries an address or a control character.
  */
 export function normalizeRecipient(raw: string | null | undefined): string | null {
   if (typeof raw !== "string") return null;
-  let s = raw.trim();
-  const angle = s.match(/<([^<>]+)>\s*$/);
-  if (angle) s = angle[1].trim();
+  const trimmed = raw.trim();
+  if (!trimmed || LIST_SEPARATORS.test(trimmed)) return null;
+  let s = trimmed;
+  const angle = trimmed.match(/^([^<>]*)<([^<>]+)>$/);
+  if (angle) {
+    if (NOT_IN_DISPLAY_NAME.test(angle[1]!)) return null;
+    s = angle[2]!.trim();
+  } else if (/[<>]/.test(trimmed)) {
+    return null;
+  }
   s = s.toLowerCase();
-  if (!s || !s.includes("@")) return null;
+  if (!s || NOT_IN_ADDRESS.test(s)) return null;
+  const at = s.indexOf("@");
+  if (at <= 0 || at !== s.lastIndexOf("@") || at === s.length - 1) return null;
   return s;
 }
 
@@ -84,7 +111,8 @@ export function normalizeRecipient(raw: string | null | undefined): string | nul
 export function classifyRecipient(raw: string | null | undefined): RecipientVerdict {
   const address = normalizeRecipient(raw);
   if (!address) {
-    return { deliverable: false, address: String(raw ?? ""), reason: "not an email address" };
+    // Never echo a refused raw string (it may be a whole list): the reason only.
+    return { deliverable: false, address: "", reason: "not a single email address" };
   }
   const at = address.lastIndexOf("@");
   const local = address.slice(0, at);
@@ -126,6 +154,8 @@ export function isBlockedTestRecipient(raw: string | null | undefined): boolean 
 /**
  * Split a recipient list into what may be sent and what must be dropped.
  * Order is preserved; duplicates are kept as given (the provider dedupes).
+ * `deliverable` holds the NORMALISED bare addresses — what the provider is
+ * given — never the caller's raw strings.
  */
 export function partitionRecipients(to: string | string[]): {
   deliverable: string[];
@@ -136,7 +166,7 @@ export function partitionRecipients(to: string | string[]): {
   const blocked: Array<{ address: string; reason: string }> = [];
   for (const raw of list) {
     const v = classifyRecipient(raw);
-    if (v.deliverable) deliverable.push(raw);
+    if (v.deliverable) deliverable.push(v.address);
     else blocked.push({ address: v.address, reason: v.reason });
   }
   return { deliverable, blocked };

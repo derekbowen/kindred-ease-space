@@ -146,6 +146,16 @@ export const deleteAiCredential = createServerFn({ method: "POST" })
 
 // ---------- test key (zero tokens) ----------
 
+/**
+ * Key tests per workspace per hour (round-4 security L2): the test is a
+ * zero-token models.retrieve, but unthrottled it is a key-validity oracle
+ * over founders.click's egress. Counted by the database (check_rate_limit,
+ * 20260825121000), so every Worker isolate shares one count.
+ */
+export const BYOK_KEY_TESTS_PER_HOUR = 5;
+export const KEY_TEST_THROTTLED_MESSAGE =
+  "Too many key tests for this workspace. Try again in an hour.";
+
 export const testAiCredential = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -153,28 +163,47 @@ export const testAiCredential = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertWorkspaceOwner(data.workspaceId, context.userId);
-    const { data: apiKey, error } = await supabaseAdmin.rpc("tenant_get_workspace_secret", {
-      _workspace_id: data.workspaceId,
-      _key_name: BYOK_SECRET_NAME,
-    });
-    if (error) {
-      console.error("[ai-byok] key read failed", error.message);
-      return { ok: false as const, error: "Could not read the saved key. Try again in a minute." };
-    }
-    if (typeof apiKey !== "string" || !apiKey) {
-      return { ok: false as const, error: "No key is saved for this workspace yet." };
-    }
-    const { verifyOpenAiKey } = await import("@/lib/ai/openai.server");
-    const check = await verifyOpenAiKey(apiKey);
-    if (check.ok) return { ok: true as const };
-    const error_ =
-      check.reason === "invalid_key"
-        ? "The AI provider rejected this key. Check it and save it again."
-        : check.reason === "no_access"
-          ? "This key cannot use the model the app runs on. Check the key's project permissions."
-          : "The key could not be tested right now. Try again in a minute.";
-    return { ok: false as const, error: error_ };
+    return runKeyTest(data.workspaceId);
   });
+
+/**
+ * The key test behind testAiCredential; the caller has checked ownership.
+ * The throttle comes first, so a refused test reads no key and sends nothing.
+ */
+export async function runKeyTest(workspaceId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  // check_rate_limit is not in the generated types (service-role only).
+  const { data: allowed, error: throttleErr } = await (supabaseAdmin as any).rpc("check_rate_limit", {
+    _bucket: `byok_key_test:${workspaceId}`,
+    _max: BYOK_KEY_TESTS_PER_HOUR,
+    _window_seconds: 3600,
+  });
+  if (throttleErr) {
+    console.error("[ai-byok] key test throttle read failed", throttleErr.message);
+    return { ok: false, error: "The key could not be tested right now. Try again in a minute." };
+  }
+  if (allowed !== true) return { ok: false, error: KEY_TEST_THROTTLED_MESSAGE };
+  const { data: apiKey, error } = await supabaseAdmin.rpc("tenant_get_workspace_secret", {
+    _workspace_id: workspaceId,
+    _key_name: BYOK_SECRET_NAME,
+  });
+  if (error) {
+    console.error("[ai-byok] key read failed", error.message);
+    return { ok: false, error: "Could not read the saved key. Try again in a minute." };
+  }
+  if (typeof apiKey !== "string" || !apiKey) {
+    return { ok: false, error: "No key is saved for this workspace yet." };
+  }
+  const { verifyOpenAiKey } = await import("@/lib/ai/openai.server");
+  const check = await verifyOpenAiKey(apiKey);
+  if (check.ok) return { ok: true };
+  const error_ =
+    check.reason === "invalid_key"
+      ? "The AI provider rejected this key. Check it and save it again."
+      : check.reason === "no_access"
+        ? "This key cannot use the model the app runs on. Check the key's project permissions."
+        : "The key could not be tested right now. Try again in a minute.";
+  return { ok: false, error: error_ };
+}
 
 // ---------- usage summary ----------
 

@@ -23,18 +23,34 @@
  * supersedes a TRIAL, which is not a paid entitlement, and never an active
  * paid subscription. Before that a beta tenant read as 'trialing' for its
  * first fortnight — Trial badge, "pick a plan" countdown, metered generation.
+ *
+ * Round 5 (owner request 2026-09-25): an ACTIVE grant of type 'internal' —
+ * the founder / internal unlimited entitlement — decides first and alone:
+ *
+ *   internal   = an active grant_type 'internal' grant (not revoked, started,
+ *                not expired; a NULL expiry is permanent)
+ *   internal  → state 'internal', serve, publish, page limit 2147483647
+ *
+ * Every row of EXPECTED is also run with that grant (it must read internal
+ * whatever the Stripe facts say) and without it (it must read exactly as
+ * before) — in TypeScript, and LIVE against the SQL on PGlite (section 12).
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { PGlite } from "@electric-sql/pglite";
 import {
   decideCapacity,
   effectivePageLimit,
+  INTERNAL_UNLIMITED_PAGE_LIMIT,
+  INTERNAL_UNLIMITED_PLAN_LABEL,
+  internalAccessFields,
   normalizeGrantedPages,
   PAST_DUE_GRACE_DAYS,
   STALE_PERIOD_DAYS,
   type BillingState,
 } from "../src/lib/billing-capacity";
 import { isGrantActive, type GrantRow } from "../src/lib/entitlement-grants.server";
+import { MIGRATION_700, MIGRATION_GRANTS, SUPABASE_STUBS, readRepo } from "./_support/ai-db";
 
 let pass = 0,
   fail = 0;
@@ -60,8 +76,10 @@ function resolve(
     trialEndsAt?: string | null;
     currentPeriodEnd?: string | null;
     grantedPages?: number;
+    internalUnlimited?: boolean | null;
   },
   stored: { base: number; addon: number; bonus: number },
+  now: number = NOW,
 ) {
   const decision = decideCapacity(
     {
@@ -69,8 +87,9 @@ function resolve(
       trialEndsAt: facts.trialEndsAt ?? null,
       currentPeriodEnd: facts.currentPeriodEnd ?? null,
       grantedPages: facts.grantedPages ?? 0,
+      ...(facts.internalUnlimited === undefined ? {} : { internalUnlimited: facts.internalUnlimited }),
     },
-    NOW,
+    now,
   );
   return {
     ...decision,
@@ -572,7 +591,23 @@ console.log("\n=== 10. the SQL half carries the same amendment (migration text) 
     "000700 zeroes paid capacity in the granted state (mirrors effectivePageLimit)",
     amended.includes("v_paid := 0;"),
   );
-  t("000700 changes nothing else in the body", amended.replace(NEW_BLOCK, OLD_BLOCK) === original);
+  // Round 5: the founder / internal unlimited branch, first and alone —
+  // right after the workspace is found, before any Stripe fact is read.
+  const INTERNAL_BLOCK =
+    "  IF public.workspace_is_internal_unlimited(_workspace_id) THEN\n" +
+    "    RETURN QUERY SELECT 'internal'::text, true, true, 2147483647;\n" +
+    "    RETURN;\n" +
+    "  END IF;\n\n";
+  t(
+    "000700 answers the internal entitlement first and alone: once, after NOT FOUND, before the Stripe facts",
+    amended.split(INTERNAL_BLOCK).length === 2 &&
+      amended.indexOf(INTERNAL_BLOCK) > amended.indexOf("RAISE EXCEPTION 'workspace_not_found';") &&
+      amended.indexOf(INTERNAL_BLOCK) < amended.indexOf("v_status  := lower("),
+  );
+  t(
+    "000700 changes nothing else in the body",
+    amended.replace(NEW_BLOCK, OLD_BLOCK).replace(INTERNAL_BLOCK, "") === original,
+  );
   t(
     "000700 keeps the function service-role only",
     migration.includes(
@@ -605,10 +640,11 @@ console.log("\n=== 10. the SQL half carries the same amendment (migration text) 
   t("the rollback restores the 20260918 body verbatim", capacityRaw(rollback) === originalRaw);
   const restored = withoutComments(capacityRaw(rollback));
   t(
-    "the rollback body has no trace of the new predicate",
+    "the rollback body has no trace of the new predicate (nor of the internal branch)",
     restored.length > 0 &&
       !restored.includes("v_state = 'trialing'") &&
-      !restored.includes("v_paid := 0;"),
+      !restored.includes("v_paid := 0;") &&
+      !restored.includes("workspace_is_internal_unlimited"),
   );
   t(
     "the rollback is transactional and keeps the grants",
@@ -626,19 +662,175 @@ console.log("\n=== 10. the SQL half carries the same amendment (migration text) 
   );
 }
 
-/*
- * LIVE PARITY — run against the database after applying
- * 20260918000000_entitlement_grants.sql and 20260924000700_grant_supersedes_trial.sql.
- * Every row must report true; each corresponds to a `spec:` case above (the
- * "trialing live + grant" row reads 'granted' / 50 only once 000700 is in).
- *
- *   SELECT c.state, c.serve, c.publish, c.page_limit
- *     FROM public.workspace_capacity('<workspace-id>') c;
- *
- * The SQL mirrors decideCapacity() case for case and shares its two constants
- * (PAST_DUE_GRACE_DAYS = 7, STALE_PERIOD_DAYS = 45). If either side changes
- * without the other, the state/limit pair stops matching this table.
- */
+// ---------------------------------------------------------------------------
+console.log("\n=== 11. the founder / internal unlimited entitlement decides first and alone (TS) ===");
+// ---------------------------------------------------------------------------
+{
+  const INTERNAL = { state: "internal" as BillingState, serve: true, publish: true, limit: INTERNAL_UNLIMITED_PAGE_LIMIT };
+  const regressions: string[] = [];
+  let checked = 0;
+  for (const c of EXPECTED) {
+    const facts = {
+      subscriptionStatus: c.status,
+      trialEndsAt: c.trialEndsAt ?? null,
+      currentPeriodEnd: c.periodEnd ?? null,
+      grantedPages: c.granted,
+    };
+    const on = resolve({ ...facts, internalUnlimited: true }, c.stored);
+    t(
+      `internal + ${c.name}: internal, serves, publishes, no page limit`,
+      on.state === INTERNAL.state && on.serve && on.publish && on.limit === INTERNAL.limit,
+      `got state=${on.state} serve=${on.serve} publish=${on.publish} limit=${on.limit}`,
+    );
+    // The regression half: the same facts without the grant read exactly as before.
+    for (const off of [false, null, undefined]) {
+      const r = resolve({ ...facts, internalUnlimited: off }, c.stored);
+      checked++;
+      if (!(r.state === c.expect.state && r.serve === c.expect.serve && r.publish === c.expect.publish && r.limit === c.expect.limit)) {
+        regressions.push(`${String(off)} + ${c.name}: state=${r.state} limit=${r.limit}`);
+      }
+    }
+  }
+  t(
+    `internalUnlimited false / null / absent changes no row of the table (${checked} checks)`,
+    checked === EXPECTED.length * 3 && regressions.length === 0,
+    regressions.join("; "),
+  );
+  t("the internal page limit is int4's maximum (what workspace_capacity returns)", INTERNAL_UNLIMITED_PAGE_LIMIT === 2_147_483_647);
+  t(
+    "the internal reason says so, by its label",
+    resolve({ subscriptionStatus: "trialing", trialEndsAt: days(-30), internalUnlimited: true }, NO_PLAN).reason.startsWith(
+      `${INTERNAL_UNLIMITED_PLAN_LABEL}: no page, publishing or AI usage limits`,
+    ),
+  );
+  t(
+    "an expired trial never reads expired while the internal grant is active",
+    resolve({ subscriptionStatus: "trialing", trialEndsAt: days(-365), internalUnlimited: true }, NO_PLAN).state === "internal",
+  );
+  t(
+    "only a literal true counts (a truthy non-boolean from a bad read does not)",
+    resolve({ subscriptionStatus: "trialing", trialEndsAt: days(-5), internalUnlimited: "true" as unknown as boolean }, NO_PLAN).state === "trial_expired",
+  );
+  const on = internalAccessFields(true);
+  const off = internalAccessFields(false);
+  t(
+    "the UI fields: internal → { internalUnlimited: true, planLabel: 'Founder / Internal Unlimited', revealLaunchHiddenFeatures: true }",
+    JSON.stringify(on) === JSON.stringify({ internalUnlimited: true, planLabel: "Founder / Internal Unlimited", revealLaunchHiddenFeatures: true }),
+    JSON.stringify(on),
+  );
+  t(
+    "the UI fields: everyone else → { internalUnlimited: false, planLabel: null, revealLaunchHiddenFeatures: false }",
+    JSON.stringify(off) === JSON.stringify({ internalUnlimited: false, planLabel: null, revealLaunchHiddenFeatures: false }),
+    JSON.stringify(off),
+  );
+}
+
+// ---------------------------------------------------------------------------
+console.log("\n=== 12. LIVE PARITY: workspace_capacity() against decideCapacity(), row by row (PGlite) ===");
+// ---------------------------------------------------------------------------
+// 20260918000000 and 20260924000700 applied to PGlite (Postgres compiled to
+// WASM) on the Supabase stand-ins; every EXPECTED row becomes a real
+// workspace (its billing facts, a beta grant for its granted pages) and is
+// read through the SQL, once as is and once more holding an internal grant.
+// Dates are the table's offsets from the real clock, since the SQL reads
+// now(). The SQL shares decideCapacity()'s two constants
+// (PAST_DUE_GRACE_DAYS = 7, STALE_PERIOD_DAYS = 45).
+{
+  const db = await PGlite.create();
+  await db.exec(SUPABASE_STUBS);
+  await db.exec(readRepo(MIGRATION_GRANTS));
+  await db.exec(readRepo(MIGRATION_700));
+  const ADMIN = "0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a";
+  await db.exec(`INSERT INTO auth.users (id) VALUES ('${ADMIN}')`);
+  const live = (iso: string | null | undefined) =>
+    iso ? new Date(Date.now() + (Date.parse(iso) - NOW)).toISOString() : null;
+  let n = 0;
+  const wsId = () => `eeeeeeee-eeee-4eee-8eee-${String(++n).padStart(12, "0")}`;
+  const capacity = async (ws: string) =>
+    (await db.query<{ state: string; serve: boolean; publish: boolean; page_limit: number }>(
+      "SELECT state, serve, publish, page_limit FROM public.workspace_capacity($1)",
+      [ws],
+    )).rows[0]!;
+  const grant = (ws: string, type: string, pages: number) =>
+    db.query(
+      `INSERT INTO public.workspace_entitlement_grants (workspace_id, grant_type, page_limit, starts_at, granted_by, reason)
+       VALUES ($1, $2, $3, now() - interval '1 day', $4, 'parity test')`,
+      [ws, type, pages, ADMIN],
+    );
+  let agreed = 0;
+  for (const c of EXPECTED) {
+    for (const internal of [false, true]) {
+      const ws = wsId();
+      await db.query(
+        `INSERT INTO public.workspaces (id, subscription_status, trial_ends_at, current_period_end,
+                                        page_limit_base, page_limit_addon, page_limit_bonus)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [ws, c.status, live(c.trialEndsAt), live(c.periodEnd), c.stored.base, c.stored.addon, c.stored.bonus],
+      );
+      if (c.granted > 0) await grant(ws, "beta", c.granted);
+      if (internal) await grant(ws, "internal", 1_000_000);
+      const sql = await capacity(ws);
+      const ts = resolve(
+        {
+          subscriptionStatus: c.status,
+          trialEndsAt: live(c.trialEndsAt),
+          currentPeriodEnd: live(c.periodEnd),
+          grantedPages: c.granted,
+          internalUnlimited: internal,
+        },
+        c.stored,
+        Date.now(),
+      );
+      const want = internal
+        ? { state: "internal", serve: true, publish: true, limit: INTERNAL_UNLIMITED_PAGE_LIMIT }
+        : c.expect;
+      const same =
+        sql.state === ts.state && sql.serve === ts.serve && sql.publish === ts.publish && sql.page_limit === ts.limit;
+      const right =
+        sql.state === want.state && sql.serve === want.serve && sql.publish === want.publish && sql.page_limit === want.limit;
+      t(
+        `live: ${internal ? "internal + " : ""}${c.name} — SQL and TS agree, and match the table`,
+        same && right,
+        `sql=${JSON.stringify(sql)} ts=${JSON.stringify({ state: ts.state, serve: ts.serve, publish: ts.publish, limit: ts.limit })}`,
+      );
+      if (same && right) agreed++;
+    }
+  }
+  t(`every row agrees live (${EXPECTED.length * 2} workspaces)`, agreed === EXPECTED.length * 2, `${agreed}`);
+
+  // Revocation and the grant window, live.
+  const ws = wsId();
+  await db.query(
+    `INSERT INTO public.workspaces (id, subscription_status, trial_ends_at) VALUES ($1, 'trialing', now() - interval '3 days')`,
+    [ws],
+  );
+  await grant(ws, "internal", 1_000_000);
+  t("an expired trial holding an internal grant reads internal", (await capacity(ws)).state === "internal");
+  await db.query(`UPDATE public.workspace_entitlement_grants SET revoked_at = now() WHERE workspace_id = $1`, [ws]);
+  const back = await capacity(ws);
+  t(
+    "revoked: the very next read is the workspace's own facts again (trial_expired: no serve, no publish, 0 pages)",
+    back.state === "trial_expired" && !back.serve && !back.publish && back.page_limit === 0,
+    JSON.stringify(back),
+  );
+  await db.query(
+    `INSERT INTO public.workspace_entitlement_grants (workspace_id, grant_type, page_limit, starts_at, expires_at, granted_by, reason)
+     VALUES ($1, 'internal', 1000000, now() - interval '5 days', now() - interval '1 day', $2, 'expired'),
+            ($1, 'internal', 1000000, now() + interval '1 day', NULL, $2, 'not yet started')`,
+    [ws, ADMIN],
+  );
+  t("an expired or not-yet-started internal grant is not internal", (await capacity(ws)).state === "trial_expired");
+  const other = wsId();
+  await db.query(`INSERT INTO public.workspaces (id, subscription_status, trial_ends_at) VALUES ($1, 'trialing', now() + interval '5 days')`, [other]);
+  await grant(other, "beta", 50);
+  const o = await capacity(other);
+  t(
+    "a workspace without the internal grant is untouched by another workspace's (per-workspace, never global)",
+    o.state === "granted" && o.page_limit === 50,
+    JSON.stringify(o),
+  );
+  await db.close();
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
