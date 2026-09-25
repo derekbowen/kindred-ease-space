@@ -751,13 +751,20 @@ t("the header says the script refuses, and how to clear the way", /REFUSES/.test
 const RB4 = resolve(ROOT, "supabase/rollback/20260923000400_launch_hardening_rollback.sql");
 t("rollback for 000400 exists", existsSync(RB4), RB4);
 const rb4 = existsSync(RB4) ? withoutComments(readFileSync(RB4, "utf8")) : "";
-const dropAt = rb4.indexOf('DROP POLICY IF EXISTS "Anyone can create tickets" ON public.support_tickets;');
-const createAt = rb4.indexOf('CREATE POLICY "Anyone can create tickets" ON public.support_tickets FOR INSERT TO public WITH CHECK (true);');
-t("000400 rollback drops the ticket policy before recreating it (re-runnable)", dropAt > 0 && createAt > dropAt);
-t("…inside the transaction", rb4.indexOf("BEGIN;") < dropAt && createAt < rb4.indexOf("COMMIT;"));
-t("…keeping every grant it restores", (rb4.match(/GRANT EXECUTE ON FUNCTION/g) ?? []).length === 9);
-t("…and its VERIFY query",
-  /has_function_privilege\('anon','public\.consume_platform_ai_credit\(uuid\)','EXECUTE'\) AS anon_credit/.test(rb4) &&
+// Round-4 security review M2: the rollback used to restore the audited
+// vulnerability (anon/PUBLIC EXECUTE on nine functions and the anonymous
+// ticket-insert policy). No build needs that access, so the rollback now only
+// reverts consume_platform_ai_credit's body and restates 000400's grants.
+const grants = rb4.match(/GRANT EXECUTE ON FUNCTION[^;]*;/g) ?? [];
+t("000400 rollback never grants to anon or PUBLIC", grants.length > 0 && grants.every((g) => !/\bTO\b[^;]*\b(PUBLIC|anon)\b/i.test(g)), grants.find((g) => /\bTO\b[^;]*\b(PUBLIC|anon)\b/i.test(g)) ?? "");
+t("…and never recreates the anonymous ticket-insert policy", !/CREATE POLICY "Anyone can create tickets"/.test(rb4));
+t("…consume_platform_ai_credit is service_role only", /GRANT EXECUTE ON FUNCTION public\.consume_platform_ai_credit\(uuid\) TO service_role;/.test(rb4) && /REVOKE EXECUTE ON FUNCTION public\.consume_platform_ai_credit\(uuid\) FROM PUBLIC, anon, authenticated;/.test(rb4));
+t("…host resolvers are service_role only", /GRANT EXECUTE ON FUNCTION public\.current_workspace_id_by_host\(text\) TO service_role;/.test(rb4) && /GRANT EXECUTE ON FUNCTION public\.workspace_for_host\(text\) TO service_role;/.test(rb4));
+const userCalled = ["provision_workspace_for_user(text,text,text,boolean)", "tenant_set_ai_credential(uuid,text,text,text,jsonb)", "tenant_delete_ai_credential(uuid,text)", "tenant_set_integration_secret(uuid,text)", "tenant_set_workspace_secret(uuid,text,text)", "tenant_delete_workspace_secret(uuid,uuid)"];
+t("…user-called functions go to authenticated + service_role only", userCalled.every((sig) => rb4.includes(`GRANT EXECUTE ON FUNCTION public.${sig} TO authenticated, service_role;`) && rb4.includes(`REVOKE EXECUTE ON FUNCTION public.${sig} FROM PUBLIC, anon;`)));
+t("…all inside the transaction", rb4.indexOf("BEGIN;") >= 0 && rb4.lastIndexOf("GRANT EXECUTE") < rb4.indexOf("COMMIT;"));
+t("…and its VERIFY query checks nothing anonymous is open",
+  /has_function_privilege\('anon','public\.consume_platform_ai_credit\(uuid\)','EXECUTE'\)/.test(rb4) &&
     /pg_policies WHERE tablename='support_tickets' AND policyname='Anyone can create tickets'/.test(rb4));
 
 finish();

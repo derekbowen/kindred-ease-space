@@ -125,7 +125,10 @@ tolerates; dropping it re-opens the one-marketplace-many-workspaces hole.
 the previous build's hook accepts the per-workspace body as well as an empty
 body. 000400 only removes privileges the application never used from
 `authenticated`/`anon`; a previous build keeps working because every affected
-call goes through the service role. 000500 changes only which of two matching
+call goes through the service role or the signed-in user's own client. Its
+rollback file therefore reverts only consume_platform_ai_credit's body and
+never re-opens an anonymous path: no anon/PUBLIC EXECUTE, no anonymous
+ticket-insert policy (round-4 security review M2). 000500 changes only which of two matching
 workspaces the resolver returns for one hostname; a previous build calls the
 same function and is unaffected.
 20260924000700 replaces one function body that is evaluated at read time and stores nothing, so no data changes either way. A code-only rollback (previous Worker) leaves the two halves disagreeing for a trialing workspace with an active grant — the DB says 'granted' / grant-only limit, the old app says 'trialing' / trial base + grant — so roll the SQL back with the app if the app is rolled back. Harmless today: 0 such workspaces (verified 2026-09-24).
