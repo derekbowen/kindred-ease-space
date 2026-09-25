@@ -254,9 +254,12 @@ export const approveOpportunity = createServerFn({ method: "POST" })
       .eq("workspace_id", data.workspaceId)
       .eq("id", data.id)
       .maybeSingle();
-    if (!opp) return { ok: false as const, error: "not found" };
+    if (!opp) return { ok: false as const, error: "That opportunity was not found in this workspace." };
     if (opp.recommendation !== "BUILD_NEW_PAGE") {
-      return { ok: false as const, error: `This opportunity is marked ${opp.recommendation}` };
+      return {
+        ok: false as const,
+        error: "Only an opportunity that recommends a new page can be approved here.",
+      };
     }
 
     const { buildPageBrief, briefToPrompt } = await import("./opportunity/brief.server");
