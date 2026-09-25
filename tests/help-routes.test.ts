@@ -13,6 +13,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  ARTICLE_BODY_CLASS,
   formatHelpDate,
   helpArticlePath,
   stripLeadingTitle,
@@ -128,6 +129,13 @@ t(
 t(
   "the Updated date is formatted in a fixed zone (no server/client mismatch)",
   article.includes("formatHelpDate(article.updated_at)") && !/toLocaleDateString/.test(article),
+);
+t(
+  "the article body has its own typography (MarkdownRenderer's prose classes need a plugin that is not installed)",
+  article.includes("<article className={ARTICLE_BODY_CLASS}>") &&
+    ["[&_h2]:text-xl", "[&_ul]:list-disc", "[&_ol]:list-decimal", "[&_a]:underline", "[&_p]:my-4"].every((c) =>
+      ARTICLE_BODY_CLASS.split(" ").includes(c),
+    ),
 );
 t(
   "a missing article says so and is noindex",

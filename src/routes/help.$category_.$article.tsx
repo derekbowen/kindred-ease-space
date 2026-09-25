@@ -7,6 +7,7 @@ import { HelpfulFeedback } from "@/components/help/HelpfulFeedback";
 import { ArticleCard } from "@/components/help/ArticleCard";
 import { canonicalUrl } from "@/lib/canonical";
 import {
+  ARTICLE_BODY_CLASS,
   formatHelpDate,
   helpArticlePath,
   stripLeadingTitle,
@@ -129,7 +130,7 @@ function ArticlePage() {
         </div>
       </header>
 
-      <article>
+      <article className={ARTICLE_BODY_CLASS}>
         {/* The title above is the page's one <h1>; a leading "# Title" in the
             stored markdown would render a second. */}
         <MarkdownRenderer content={stripLeadingTitle(article.content)} />
