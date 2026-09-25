@@ -89,7 +89,11 @@ function SignupPage() {
           <Link to="/" className="text-xl font-bold tracking-tight">
             founders<span className="text-orange-500">.click</span>
           </Link>
-          <p className="mt-2 text-sm text-muted-foreground">14-day free trial. No card required.</p>
+          {/* The page's one heading. The page stays noindex (see head). */}
+          <h1 className="mt-4 text-2xl font-semibold tracking-tight">
+            {confirmEmail ? "Check your email" : "Start your free trial"}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">14-day free trial. No card required.</p>
         </div>
         {confirmEmail ? (
           <div className="space-y-4 text-center">

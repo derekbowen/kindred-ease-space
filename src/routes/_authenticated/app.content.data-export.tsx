@@ -10,17 +10,38 @@ import { userMessage } from "@/lib/user-message";
 
 type TableName = "tenant_pages" | "tenant_listings" | "content_plan" | "content_pages";
 
-const TABLE_COPY: Record<TableName, { title: string; description: string }> = {
+// What the customer reads for each export. The table names are the server's
+// allowlist keys only: they are sent to exportTable and never shown. `noun`
+// counts rows in the result line; `file` names the download.
+const TABLE_COPY: Record<
+  TableName,
+  { title: string; description: string; noun: [string, string]; file: string }
+> = {
   tenant_pages: {
-    title: "Pages",
-    description: "Every landing page in this workspace: title, slug, body, status and SEO fields.",
+    title: "Your pages",
+    description:
+      "Every landing page in this workspace: title, web address, content, status and SEO fields.",
+    noun: ["page", "pages"],
+    file: "pages",
   },
   tenant_listings: {
-    title: "Listings",
+    title: "Your synced listings",
     description: "The marketplace listings imported from Sharetribe, as they were last synced.",
+    noun: ["listing", "listings"],
+    file: "synced-listings",
   },
-  content_plan: { title: "Content plan (legacy)", description: "Planned pages from the earlier content planner." },
-  content_pages: { title: "Content pages (legacy)", description: "Pages from the earlier content system." },
+  content_plan: {
+    title: "Your planned pages (earlier planner)",
+    description: "Pages planned with the earlier content planner, if you used it.",
+    noun: ["planned page", "planned pages"],
+    file: "planned-pages",
+  },
+  content_pages: {
+    title: "Your earlier content pages",
+    description: "Pages written with the earlier content system, if you used it.",
+    noun: ["page", "pages"],
+    file: "earlier-content-pages",
+  },
 };
 
 export const Route = createFileRoute("/_authenticated/app/content/data-export")({
@@ -43,12 +64,15 @@ function TableCard({ workspaceId, table }: { workspaceId: string | null; table: 
       const ts = new Date().toISOString().replace(/[:.]/g, "-");
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `${table}-${ts}.csv`;
+      a.download = `${TABLE_COPY[table].file}-${ts}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(a.href);
-      setStatus(`Exported ${res.rowCount} rows (${Math.round(blob.size / 1024)} KB)`);
+      const [one, many] = TABLE_COPY[table].noun;
+      setStatus(
+        `Downloaded ${res.rowCount.toLocaleString()} ${res.rowCount === 1 ? one : many} (${Math.round(blob.size / 1024)} KB).`,
+      );
     } catch (e: any) {
       setStatus(userMessage(e, "Couldn't export this data. Try again in a moment."));
     } finally {
@@ -59,10 +83,7 @@ function TableCard({ workspaceId, table }: { workspaceId: string | null; table: 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">
-          {TABLE_COPY[table].title}{" "}
-          <span className="font-mono text-xs text-muted-foreground">{table}</span>
-        </CardTitle>
+        <CardTitle className="text-base">{TABLE_COPY[table].title}</CardTitle>
         <CardDescription>{TABLE_COPY[table].description} Exported as CSV.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">

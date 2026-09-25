@@ -27,6 +27,7 @@ import { getBetaStatus } from "@/lib/entitlements.functions";
 import { CoachLauncher } from "@/components/coach/CoachLauncher";
 import { userMessage } from "@/lib/user-message";
 import { describePlanStatus } from "@/components/billing/plan-status";
+import { workspaceInitial } from "@/components/workspace-initial";
 
 export const Route = createFileRoute("/_authenticated/app")({
   component: AppShell,
@@ -145,9 +146,7 @@ function AppShell() {
                   className="h-7 w-7 rounded flex items-center justify-center text-white text-xs font-bold"
                   style={{ background: activeWorkspace?.brand_color ?? "hsl(var(--primary))" }}
                 >
-                  {(activeWorkspace?.brand_name || activeWorkspace?.name || "F")
-                    .slice(0, 1)
-                    .toUpperCase()}
+                  {workspaceInitial(activeWorkspace?.brand_name, activeWorkspace?.name)}
                 </div>
               )}
               <div className="text-sm min-w-0">

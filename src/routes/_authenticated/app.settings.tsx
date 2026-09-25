@@ -12,6 +12,12 @@ import { CheckCircle2, Plug, Sparkles, KeyRound } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { updateWorkspaceProfile } from "@/lib/workspace.functions";
 import { getSettingsContext } from "@/lib/settings.functions";
+import { listWorkspaceDomains, type WorkspaceDomainRow } from "@/lib/admin-domains.functions";
+import {
+  describeDomainStatus,
+  normalizeDomainInput,
+  pickDomainForSettings,
+} from "@/components/settings/domain-status";
 import { WorkspaceBrandingCard } from "@/components/WorkspaceBrandingCard";
 import { SettingsNav } from "@/components/settings/SettingsNav";
 import { OwnerOnlyBanner } from "@/components/settings/OwnerOnlyBanner";
@@ -42,6 +48,8 @@ function SettingsPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const saveProfile = useServerFn(updateWorkspaceProfile);
   const loadCtx = useServerFn(getSettingsContext);
+  const loadDomains = useServerFn(listWorkspaceDomains);
+  const [domainRows, setDomainRows] = useState<WorkspaceDomainRow[]>([]);
 
   const [name, setName] = useState("");
   const [domain, setDomain] = useState("");
@@ -60,7 +68,12 @@ function SettingsPage() {
     loadCtx({ data: { workspaceId } })
       .then(setCtx)
       .catch(() => setCtx(null));
-  }, [workspaceId, loadCtx, reloadKey]);
+    // The same rows Settings → Domains shows, so both screens describe a
+    // domain with the same two facts (ownership, certificate).
+    loadDomains({ data: { workspaceId } })
+      .then((r) => setDomainRows(r.rows))
+      .catch(() => setDomainRows([]));
+  }, [workspaceId, loadCtx, loadDomains, reloadKey]);
 
   useEffect(() => {
     if (ws) {
@@ -69,9 +82,12 @@ function SettingsPage() {
     }
   }, [ws]);
 
-  const hasVerifiedDomain =
-    Boolean(ws?.domain_verified_at) || (ctx?.domains ?? []).some((d) => d.verified);
   const domainConfigured = Boolean(domain.trim());
+  const domainRow = pickDomainForSettings(domainRows, ws?.marketplace_domain);
+  const domainFacts = domainRow ? describeDomainStatus(domainRow.status, domainRow.verified) : null;
+  const domainRowIsAnother =
+    !!domainRow &&
+    normalizeDomainInput(domainRow.hostname) !== normalizeDomainInput(ws?.marketplace_domain);
 
   const onSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,7 +114,7 @@ function SettingsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Workspace profile, integrations, and API keys.
+          Your workspace profile, branding, domain and integrations.
         </p>
       </div>
 
@@ -108,6 +124,7 @@ function SettingsPage() {
       {ws && isOwner && (
         <WorkspaceBrandingCard
           workspaceId={ws.id}
+          workspaceName={ws.name ?? null}
           initial={{
             brand_name: ws.brand_name ?? null,
             brand_color: ws.brand_color ?? null,
@@ -121,8 +138,8 @@ function SettingsPage() {
         <CardHeader>
           <CardTitle>Workspace</CardTitle>
           <CardDescription>
-            Your marketplace name and primary domain. Pages at <code>/a/{"{slug}"}</code> resolve on
-            this hostname.
+            Your marketplace name and primary domain. Published pages appear under{" "}
+            <code>/a/</code> on this domain.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -152,16 +169,35 @@ function SettingsPage() {
                   spellCheck={false}
                   disabled={!isOwner}
                 />
-                {hasVerifiedDomain ? (
+                {domainFacts ? (
+                  <Badge
+                    variant="outline"
+                    className={
+                      domainFacts.tone === "ok"
+                        ? "gap-1 text-emerald-600 border-emerald-500/30"
+                        : domainFacts.tone === "warn"
+                          ? "gap-1 text-amber-600 border-amber-500/30"
+                          : "gap-1"
+                    }
+                  >
+                    {domainFacts.tone === "ok" && <CheckCircle2 className="h-3 w-3" />}
+                    {domainFacts.label}
+                  </Badge>
+                ) : ws?.domain_verified_at ? (
                   <Badge variant="outline" className="gap-1 text-emerald-600 border-emerald-500/30">
-                    <CheckCircle2 className="h-3 w-3" /> Verified
+                    <CheckCircle2 className="h-3 w-3" /> Ownership verified
                   </Badge>
                 ) : domainConfigured ? (
-                  <Badge variant="outline">Configured</Badge>
+                  <Badge variant="outline">Not connected yet</Badge>
                 ) : (
                   <Badge variant="outline">Not set</Badge>
                 )}
               </div>
+              {domainRowIsAnother && domainRow && (
+                <p className="text-xs text-muted-foreground">
+                  Status shown for your connected domain {domainRow.hostname}.
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
                 Use your bare domain (no https://). For DNS verification and SSL, use{" "}
                 <Link to="/app/settings/domains" className="text-primary hover:underline">
@@ -233,12 +269,18 @@ function SettingsPage() {
           </div>
           <div>
             <span className="text-muted-foreground">Role:</span>{" "}
-            {ctx?.role ?? me?.memberships?.[0]?.role ?? "—"}
+            {roleLabel(ctx?.role ?? me?.memberships?.[0]?.role)}
           </div>
         </CardContent>
       </Card>
     </div>
   );
+}
+
+/** "owner" → "Owner": the stored role in customer words. */
+function roleLabel(role: string | null | undefined): string {
+  const r = (role ?? "").trim();
+  return r ? r.charAt(0).toUpperCase() + r.slice(1).replace(/_/g, " ") : "—";
 }
 
 function StatusCard({

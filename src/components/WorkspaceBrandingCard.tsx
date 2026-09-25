@@ -8,9 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { updateWorkspaceBranding } from "@/lib/workspace.functions";
+import { workspaceInitial } from "@/components/workspace-initial";
 
 interface Props {
   workspaceId: string;
+  /** The workspace's own name: the placeholder's initial when no brand name is set. */
+  workspaceName?: string | null;
   initial: {
     brand_name: string | null;
     brand_color: string | null;
@@ -19,7 +22,7 @@ interface Props {
   onSaved?: () => void;
 }
 
-export function WorkspaceBrandingCard({ workspaceId, initial, onSaved }: Props) {
+export function WorkspaceBrandingCard({ workspaceId, workspaceName, initial, onSaved }: Props) {
   const update = useServerFn(updateWorkspaceBranding);
   const fileRef = useRef<HTMLInputElement>(null);
   const [brandName, setBrandName] = useState(initial.brand_name ?? "");
@@ -105,7 +108,9 @@ export function WorkspaceBrandingCard({ workspaceId, initial, onSaved }: Props) 
               <img src={logoUrl} alt="Workspace logo" className="h-full w-full object-contain" />
             ) : (
               <span className="text-white font-bold text-xl">
-                {(brandName || "W").slice(0, 1).toUpperCase()}
+                {/* Same initial the sidebar shows: brand name, else the
+                    workspace's name — not a fixed "W". */}
+                {workspaceInitial(brandName, workspaceName)}
               </span>
             )}
           </div>
