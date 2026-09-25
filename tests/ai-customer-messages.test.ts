@@ -171,7 +171,7 @@ for (const rel of AI_SOURCES) {
 // approveOpportunity is an AI route (it generates a page): its refusals too.
 {
   const opp = read("src/lib/opportunities.functions.ts");
-  const approve = opp.slice(opp.indexOf("export const approveOpportunity"), opp.indexOf("export const skipOpportunity"));
+  const approve = opp.slice(opp.indexOf("export async function runApproveOpportunity("), opp.indexOf("export const skipOpportunity"));
   for (const m of approve.matchAll(/error: "([^"]+)"/g)) add("approveOpportunity literal", m[1]!);
 }
 

@@ -164,7 +164,7 @@ const SERVER_FNS: Array<{ file: string; name: string; validator: RegExp; guard: 
   { file: "src/lib/coach-actions.functions.ts", name: "runCoachAction", validator: /CoachActionInputSchema\.parse/, guard: /await assertWorkspaceMember\(data\.workspaceId, userId\);[\s\S]*?runCoachActionPipeline\(data, userId\)/ },
   { file: "src/lib/admin-seo-coach.functions.ts", name: "seoCoachChat", validator: /SeoCoachInputSchema\.parse/, guard: /runSeoCoachTurn\(data, context\.userId\)/ },
   { file: "src/lib/admin-page-auditor.functions.ts", name: "auditPage", validator: /AuditPageInputSchema\.parse/, guard: /runPageAudit\(data, context\.userId\)/ },
-  { file: "src/lib/opportunities.functions.ts", name: "approveOpportunity", validator: /ApproveOpportunityInputSchema\.parse/, guard: /await assertWorkspaceOwner\(data\.workspaceId, context\.userId\);/ },
+  { file: "src/lib/opportunities.functions.ts", name: "approveOpportunity", validator: /ApproveOpportunityInputSchema\.parse/, guard: /runApproveOpportunity\(data, context\.userId\)/ },
   { file: "src/lib/coach.functions.ts", name: "generateBriefingNow", validator: /GenerateBriefingInputSchema\.parse/, guard: /await assertWorkspaceMember\(data\.workspaceId, context\.userId\);[\s\S]*?return requestBriefing\(data\.workspaceId\);/ },
   { file: "src/lib/ai-byok.functions.ts", name: "testAiCredential", validator: /\.strict\(\)\.parse\(d\)/, guard: /await assertWorkspaceOwner\(data\.workspaceId, context\.userId\);/ },
   { file: "src/lib/ai-allowance.functions.ts", name: "getAiAllowance", validator: /GetAiAllowanceInputSchema\.parse/, guard: /await assertWorkspaceMember\(data\.workspaceId, context\.userId\);\s*return await readAiAllowance\(/ },
@@ -179,6 +179,12 @@ for (const f of SERVER_FNS) {
 {
   const seo = read("src/lib/admin-seo-coach.functions.ts");
   const audit = read("src/lib/admin-page-auditor.functions.ts");
+  const opp = read("src/lib/opportunities.functions.ts");
+  const approve = opp.slice(opp.indexOf("export async function runApproveOpportunity("), opp.indexOf("export const approveOpportunity"));
+  t(
+    "runApproveOpportunity checks the engine switch and the OWNER before anything else",
+    /^export async function runApproveOpportunity\([\s\S]*?\) \{\s*await assertAvailable\(data\.workspaceId\);\s*await assertWorkspaceOwner\(data\.workspaceId, userId\);/.test(approve),
+  );
   const turn = seo.slice(seo.indexOf("export async function runSeoCoachTurn("));
   const run = audit.slice(audit.indexOf("export async function runPageAudit("));
   t("runSeoCoachTurn checks membership before reading the key", turn.indexOf("assertWorkspaceMember(") > 0 && turn.indexOf("assertWorkspaceMember(") < turn.indexOf("resolveAiKey("));

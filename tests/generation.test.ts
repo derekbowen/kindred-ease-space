@@ -1659,8 +1659,8 @@ console.log("\n=== coach create_city_page runs through the core ===");
 console.log("\n=== approveOpportunity: idempotent and guarded ===");
 {
   const opp = read("src/lib/opportunities.functions.ts");
-  const approve = opp.slice(opp.indexOf("export const approveOpportunity"), opp.indexOf("export const skipOpportunity"));
-  t("approveOpportunity was found", approve.length > 0);
+  const approve = opp.slice(opp.indexOf("export async function runApproveOpportunity("), opp.indexOf("export const skipOpportunity"));
+  t("approveOpportunity (its pipeline, runApproveOpportunity) was found", approve.length > 0 && /\.handler\(async \(\{ data, context \}\) => runApproveOpportunity\(data, context\.userId\)\)/.test(approve));
   t("the opportunity id is the generation request id", approve.includes("generationRequestId: opp.id,"));
   t(
     "the 'generating' transition is guarded against in-flight and finished states and reports its rows",

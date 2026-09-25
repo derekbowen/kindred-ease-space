@@ -4,7 +4,8 @@
  * The real pipelines behind the AI server functions — the SEO coach
  * (runSeoCoachTurn), the page auditor (runPageAudit), the Daily Briefing
  * actions (runCoachActionPipeline: fix_thin_page, add_meta, add_internal_links,
- * create_city_page) and the on-demand briefing request (requestBriefing) —
+ * create_city_page), the Opportunity Engine's approve (runApproveOpportunity)
+ * and the on-demand briefing request (requestBriefing) —
  * against a fake PostgREST and a fake OpenAI behind globalThis.fetch
  * (tests/_support/fake-backend.ts). Page generation (quick page, batch) is
  * driven the same way in tests/generation-flow.test.ts.
@@ -29,6 +30,7 @@ backend.install();
 const { runSeoCoachTurn, SEO_COACH_MAX_CHARS } = await import("../src/lib/admin-seo-coach.functions");
 const { runPageAudit, PAGE_NOT_FOUND_MESSAGE } = await import("../src/lib/admin-page-auditor.functions");
 const { runCoachActionPipeline, CoachActionInputSchema } = await import("../src/lib/coach-actions.functions");
+const { runApproveOpportunity } = await import("../src/lib/opportunities.functions");
 const { requestBriefing, BRIEFING_FAILED_MESSAGE } = await import("../src/lib/coach-briefing.server");
 const { AI_MESSAGES, CustomerFacingError } = await import("../src/lib/ai/customer-error");
 const { AI_ROUTE_LIMITS, AI_MAX_INPUT_TOKENS, ADD_META_MAX_PAGES } = await import("../src/lib/ai/limits");
@@ -365,6 +367,84 @@ try {
   {
     const r = await run(action("create_city_page", { city: "Austin", state: "TX" }));
     t("a city that already has a page is refused before any slot or spend", r.err instanceof CustomerFacingError && backend.rpcHits("reserve_generation_slot").length === 0 && backend.noSpend(), errMsg(r.err));
+  }
+
+  // -------------------------------------------------------------------------
+  console.log("\n=== Opportunity Engine: approve → one generation under the opportunity's id ===");
+  {
+    const OPP = "88888888-8888-4888-8888-888888888888";
+    const oppRow = {
+      id: OPP,
+      workspace_id: WS,
+      recommendation: "BUILD_NEW_PAGE",
+      status: "approved",
+      intent_key: "boats|austin",
+      intent_label: "Boat rentals in Austin",
+      proposed_title: "Boat rentals in Austin, TX",
+      proposed_slug: "boat-rentals-austin",
+      geo_city: "Austin",
+      geo_state: "TX",
+      normalized_geo: "austin|tx",
+      normalized_category: "boats",
+      query_variants: ["boat rental austin"],
+      ranking_urls: [],
+    };
+    const oppWorld = () => {
+      backend.reset();
+      process.env.OPPORTUNITY_ENGINE_ENABLED = "1";
+      backend.rest["GET feature_enrollments"] = () => [{ workspace_id: WS }];
+      backend.rest["GET seo_opportunities"] = (h) => (h.query.get("id") === `eq.${OPP}` ? [oppRow] : []);
+      backend.openai = () => okJson(pageBody);
+    };
+    const approve = async () => {
+      try {
+        return { ok: await runApproveOpportunity({ workspaceId: WS, id: OPP }, USER), err: null as unknown };
+      } catch (e) {
+        return { ok: null, err: e };
+      }
+    };
+    oppWorld();
+    {
+      const r = await approve();
+      t("an approved opportunity becomes a draft", (r.ok as any)?.ok === true && backend.restHits("POST", "tenant_pages").length === 1, errMsg(r.err) || JSON.stringify(r.ok));
+      t(
+        "the opportunity id is the request id of the slot and of the hold",
+        backend.rpcHits("reserve_generation_slot")[0]?.body?._request_id === OPP && hold()?._request_id === OPP,
+      );
+      t(
+        "slot → hold → marks → provider → settle; page generation, standard model, source opportunity",
+        backend.spendOrder() === FULL_ORDER && hold()?._feature === "page_generation" && hold()?._model === "gpt-5-nano" && hold()?._source === "opportunity",
+        backend.spendOrder() + " " + JSON.stringify(hold()),
+      );
+      t(
+        "the 'generating' transition was taken before any spend",
+        backend.indexOf((h) => h.kind === "rest" && h.method === "PATCH" && h.name === "seo_opportunities" && h.body?.status === "generating") <
+          backend.rpcAt("reserve_generation_slot"),
+      );
+    }
+    oppWorld();
+    backend.rest["PATCH seo_opportunities"] = (h) => (h.body?.status === "generating" ? [] : [{ id: OPP }]);
+    {
+      const r = await approve();
+      t(
+        "a second approve (already generating or drafted) is refused before any slot or spend",
+        (r.ok as any)?.ok === false && (r.ok as any)?.error === "This opportunity is already being generated or has a page." && backend.rpcHits("reserve_generation_slot").length === 0 && backend.noSpend(),
+        JSON.stringify(r.ok),
+      );
+    }
+    oppWorld();
+    backend.rest["GET workspace_members"] = () => [{ role: "member" }];
+    {
+      const r = await approve();
+      t("a member who is not the owner is refused before anything is read or spent", r.err !== null && backend.noSpend() && backend.restHits("GET", "seo_opportunities").length === 0);
+    }
+    oppWorld();
+    process.env.OPPORTUNITY_ENGINE_ENABLED = "";
+    {
+      const r = await approve();
+      t("with the engine switched off nothing runs", r.err !== null && backend.noSpend());
+    }
+    delete process.env.OPPORTUNITY_ENGINE_ENABLED;
   }
 
   // -------------------------------------------------------------------------
