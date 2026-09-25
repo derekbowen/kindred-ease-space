@@ -212,7 +212,8 @@ export const seoCoachChat = createServerFn({ method: "POST" })
       const apiKey = secret.key;
 
       // Meter platform-key usage against workspace credits (BYOK is not metered).
-      const { reservePlatformAi, settlePlatformAi } = await import("@/lib/ai-metering.server");
+      const { reservePlatformAi, settlePlatformAi, OUT_OF_INCLUDED_AI_MESSAGE } =
+        await import("@/lib/ai-metering.server");
       let billing: import("@/lib/ai-metering.server").PlatformBilling | null = null;
       if (secret.source === "platform") {
         try {
@@ -240,11 +241,8 @@ export const seoCoachChat = createServerFn({ method: "POST" })
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({ model: "google/gemini-2.5-flash", messages }),
         });
-        if (resp.status === 402)
-          return {
-            ok: false,
-            error: "AI credits exhausted — top up in Settings → Workspace → Usage.",
-          };
+        // Credit packs are not for sale: no purchase path to point at.
+        if (resp.status === 402) return { ok: false, error: OUT_OF_INCLUDED_AI_MESSAGE };
         if (resp.status === 429)
           return { ok: false, error: "Rate limited. Try again in a moment." };
         if (!resp.ok) {

@@ -719,7 +719,11 @@ ${body.context ? `CURRENT PAGE CONTEXT: ${JSON.stringify(body.context)}` : ""}`;
         if (!bal || bal.balance < estCredits) {
           return new Response(
             JSON.stringify({
-              error: "Out of AI credits. Top up in Billing to keep coaching.",
+              // Credit packs are not for sale, so there is no purchase to
+              // point at: same meaning as OUT_OF_INCLUDED_AI_MESSAGE
+              // (src/lib/ai-metering.server.ts).
+              error:
+                "This workspace has used up its included AI generation. Contact support to continue coaching.",
               code: "insufficient_credits",
             }),
             { status: 402, headers: { ...cors, "Content-Type": "application/json" } },

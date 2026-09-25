@@ -1,7 +1,8 @@
 // Unified AI proxy with BYOK -> platform fallback.
 // Tries the workspace's own provider key first; otherwise uses the platform
 // OpenRouter key and bills the workspace's purchased credits at a markup
-// (after a small free trial quota). No hard cap — out of credits => top up.
+// (after a small free trial quota). Out of credits => refused with a pointer to
+// support (credit packs are not for sale; there is nothing to buy).
 //
 // Surfaces real provider errors verbatim (no swallowing), but never logs the key.
 // Logs every call (success or failure) into ai_usage_log.
@@ -211,8 +212,9 @@ Deno.serve(async (req) => {
         qErr.message.includes("platform_ai_quota_exhausted")
       ) {
         // 2. Trial exhausted — bill purchased credits. Pre-check the balance so we
-        //    don't pay OpenRouter for a client who can't cover it. No hard cap:
-        //    a zero balance just means "top up to continue".
+        //    don't pay OpenRouter for a client who can't cover it. A short
+        //    balance is refused with the same meaning as OUT_OF_INCLUDED_AI_MESSAGE
+        //    (src/lib/ai-metering.server.ts): included AI used up, contact support.
         platformBilling = "credits";
         const promptChars = body.messages.reduce((n, m) => n + (m.content?.length ?? 0), 0);
         const estCredits = estimateCreditsBeforeCall(model, promptChars, body.maxTokens);
@@ -222,7 +224,8 @@ Deno.serve(async (req) => {
           .eq("workspace_id", body.workspaceId)
           .maybeSingle();
         if (!bal || bal.balance < estCredits) {
-          const msg = "Out of AI credits. Top up in Billing to keep generating.";
+          const msg =
+            "This workspace has used up its included AI generation. Contact support to continue generating.";
           await admin.from("ai_usage_log").insert({
             workspace_id: body.workspaceId,
             user_id: userId,

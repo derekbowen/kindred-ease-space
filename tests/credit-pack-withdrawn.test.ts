@@ -208,6 +208,51 @@ t(
   "the site would advertise a SKU the API refuses",
 );
 
+console.log("\n=== no AI refusal promises a purchase that does not exist ===");
+{
+  // The Coach, the AI proxy and the SEO coach refused with a purchase that
+  // is not for sale ("Top up in Billing", "top up in Settings → Workspace →
+  // Usage"). They now say what OUT_OF_INCLUDED_AI_MESSAGE says
+  // (src/lib/ai-metering.server.ts): included AI used up, contact support.
+  const read = (rel: string) => readFileSync(resolve(ROOT, rel), "utf8");
+  const metering = read("src/lib/ai-metering.server.ts");
+  const meteringMsg = metering.match(/OUT_OF_INCLUDED_AI_MESSAGE =\s*"([^"]+)"/)?.[1] ?? "";
+  const coachChat = read("supabase/functions/coach-chat/index.ts");
+  const aiProxy = read("supabase/functions/ai-proxy/index.ts");
+  const seoCoach = read("src/lib/admin-seo-coach.functions.ts");
+  const coachMsg =
+    coachChat.match(/error:\s*"([^"]*)",\s*code: "insufficient_credits"/)?.[1] ?? "";
+  const proxyMsg = aiProxy.match(/const msg =\s*"([^"]*)";/)?.[1] ?? "";
+  t("the metering refusal was found", meteringMsg.length > 0);
+  t("coach-chat's out-of-credits refusal was found", coachMsg.length > 0);
+  t("ai-proxy's out-of-credits refusal was found", proxyMsg.length > 0);
+  for (const [label, msg] of [
+    ["ai-metering refusal", meteringMsg],
+    ["coach-chat refusal", coachMsg],
+    ["ai-proxy refusal", proxyMsg],
+  ] as const) {
+    t(
+      `${label} names the included allowance and support`,
+      /included AI generation/.test(msg) && /contact support/i.test(msg),
+      msg,
+    );
+    t(
+      `${label} has no purchase path`,
+      !/top up/i.test(msg) && !/Billing/.test(msg) && !/buy|purchase/i.test(msg),
+      msg,
+    );
+  }
+  t(
+    "the SEO coach answers a 402 with OUT_OF_INCLUDED_AI_MESSAGE itself",
+    /if \(resp\.status === 402\) return \{ ok: false, error: OUT_OF_INCLUDED_AI_MESSAGE \};/.test(seoCoach) &&
+      /OUT_OF_INCLUDED_AI_MESSAGE \} =\s*await import\(\s*"@\/lib\/ai-metering\.server"/.test(seoCoach),
+  );
+  t(
+    "no coach, proxy or SEO-coach source still offers a top-up",
+    ![coachChat, aiProxy, seoCoach].some((src) => /top up/i.test(src)),
+  );
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.log("Failed: " + failed.join(", "));
