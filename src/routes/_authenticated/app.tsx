@@ -256,6 +256,7 @@ function AppShell() {
             <Outlet />
           </main>
         </SidebarInset>
+        {/* Renders nothing while the Coach is off for launch (coach-availability). */}
         <CoachLauncher workspaceId={me?.memberships?.[0]?.workspace_id ?? null} />
       </div>
     </SidebarProvider>

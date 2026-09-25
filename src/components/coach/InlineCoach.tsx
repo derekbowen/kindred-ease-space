@@ -2,12 +2,14 @@ import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CoachPanel } from "./CoachPanel";
+import { useCoachEnabled } from "./coach-availability";
 
 /**
  * InlineCoach renders a compact "Ask coach" trigger anchored within an editor
  * page. When opened it slides in the shared CoachPanel pre-loaded with the
  * current page/route context so suggestions are scoped to what the user is
- * editing. Hidden until a workspaceId is available.
+ * editing. Hidden until a workspaceId is available, and hidden entirely
+ * while the Coach is off (coach-availability).
  */
 export function InlineCoach({
   workspaceId,
@@ -24,8 +26,9 @@ export function InlineCoach({
   size?: "sm" | "default" | "lg";
   className?: string;
 }) {
+  const enabled = useCoachEnabled();
   const [open, setOpen] = useState(false);
-  if (!workspaceId) return null;
+  if (!enabled || !workspaceId) return null;
   return (
     <>
       <Button

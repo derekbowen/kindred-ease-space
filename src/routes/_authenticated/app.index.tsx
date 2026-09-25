@@ -9,6 +9,7 @@ import { getMe } from "@/lib/auth.functions";
 import { getWorkspaceOverview } from "@/lib/workspace.functions";
 import { getBetaStatus } from "@/lib/entitlements.functions";
 import { DailyBriefing } from "@/components/coach/DailyBriefing";
+import { useCoachEnabled } from "@/components/coach/coach-availability";
 import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
 
 export const Route = createFileRoute("/_authenticated/app/")({
@@ -19,6 +20,7 @@ export const Route = createFileRoute("/_authenticated/app/")({
 function DashboardPage() {
   const navigate = useNavigate();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const coachEnabled = useCoachEnabled();
 
   useEffect(() => {
     let cancelled = false;
@@ -227,13 +229,17 @@ function DashboardPage() {
             <Link to="/app/seo/gsc-import">Import GSC data</Link>
           </Button>
           {/* The click report is still a stub (nothing writes city_link_clicks);
-              the dashboard must not link a customer to a "coming soon" page. */}
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/app/coach">
-              <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-              Ask Coach
-            </Link>
-          </Button>
+              the dashboard must not link a customer to a "coming soon" page.
+              The Coach is off for launch, so its link follows the same switch
+              as its sidebar entry (coach-availability). */}
+          {coachEnabled && (
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/app/coach">
+                <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                Ask Coach
+              </Link>
+            </Button>
+          )}
         </CardContent>
       </Card>
     </div>
