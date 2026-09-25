@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-message";
 import { getMe } from "@/lib/auth.functions";
 import {
   getAffiliateSettings,
@@ -126,7 +127,12 @@ function CustomisePage() {
                           await qc.invalidateQueries({ queryKey: ["affiliate-apps", workspaceId] });
                           toast.success("Approved");
                         } catch (e) {
-                          toast.error(e instanceof Error ? e.message : "Failed");
+                          toast.error(
+                            userMessage(
+                              e,
+                              "Couldn't approve this application. Try again in a moment.",
+                            ),
+                          );
                         }
                       }}
                     >
@@ -142,7 +148,12 @@ function CustomisePage() {
                           });
                           await qc.invalidateQueries({ queryKey: ["affiliate-apps", workspaceId] });
                         } catch (e) {
-                          toast.error(e instanceof Error ? e.message : "Failed");
+                          toast.error(
+                            userMessage(
+                              e,
+                              "Couldn't reject this application. Try again in a moment.",
+                            ),
+                          );
                         }
                       }}
                     >

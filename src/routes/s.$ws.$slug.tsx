@@ -1,6 +1,7 @@
 import { createFileRoute, notFound, redirect, useRouter } from "@tanstack/react-router";
 import { getPublicTenantPage } from "@/lib/public-tenant-page.functions";
 import { CityHub } from "@/components/templates/CityHub";
+import { userMessage } from "@/lib/user-message";
 
 export const Route = createFileRoute("/s/$ws/$slug")({
   // Platform-hosted preview of a tenant page (founders.click/s/{workspace}/{slug}).
@@ -52,7 +53,9 @@ function ErrorComp({ error, reset }: { error: Error; reset: () => void }) {
     <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
       <div className="text-center">
         <h1 className="text-2xl font-bold mb-2">Something went wrong</h1>
-        <p className="text-muted-foreground mb-4">{error.message}</p>
+        <p className="text-muted-foreground mb-4">
+          {userMessage(error, "This page couldn't load. Try again in a moment.")}
+        </p>
         <button
           onClick={() => {
             router.invalidate();

@@ -6,9 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-message";
 import { getMe } from "@/lib/auth.functions";
 import { getAffiliateSettings, updateAffiliateSettings } from "@/lib/affiliates.functions";
 import { runAffiliateSync } from "@/lib/affiliate-sync.functions";
+
+const AFFILIATE_SYNC_FAILED =
+  "Couldn't sync affiliate sales from your marketplace. Try again in a few minutes, or contact support if it keeps happening.";
 
 export const Route = createFileRoute("/_authenticated/app/affiliates/settings")({
   head: () => ({ meta: [{ title: "Affiliate Settings — founders.click" }] }),
@@ -60,7 +64,12 @@ function AffiliateSettings() {
       });
       toast.success("Settings saved.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not save");
+      toast.error(
+        userMessage(
+          err,
+          "Couldn't save your affiliate settings. Try again, or contact support if it keeps happening.",
+        ),
+      );
     } finally {
       setSaving(false);
     }
@@ -143,9 +152,9 @@ function AffiliateSettings() {
                   toast.success(
                     `Synced: ${r.newTransactions} new transactions, ${r.attributed} attributed.`,
                   );
-                else toast.error(r.error || "Sync failed");
+                else toast.error(userMessage(r.error, AFFILIATE_SYNC_FAILED));
               } catch (err) {
-                toast.error(err instanceof Error ? err.message : "Sync failed");
+                toast.error(userMessage(err, AFFILIATE_SYNC_FAILED));
               } finally {
                 setSyncing(false);
               }

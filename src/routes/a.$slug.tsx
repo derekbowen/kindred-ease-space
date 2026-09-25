@@ -126,13 +126,18 @@ function PublicPage() {
   return <CityHub page={page} />;
 }
 
-function ErrorComp({ error, reset }: { error: Error; reset: () => void }) {
+// A visitor on the tenant's own domain reads this: never the loader's error
+// text (it can carry database or transport wording), and never a sentence
+// naming the platform — these pages are white-labelled.
+function ErrorComp({ reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
   return (
     <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
       <div className="text-center">
         <h1 className="text-2xl font-bold mb-2">Something went wrong</h1>
-        <p className="text-muted-foreground mb-4">{error.message}</p>
+        <p className="text-muted-foreground mb-4">
+          This page couldn't load. Try again in a moment.
+        </p>
         <button
           onClick={() => {
             router.invalidate();

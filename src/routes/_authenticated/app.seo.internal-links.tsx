@@ -13,6 +13,7 @@ import {
   updateLinkSuggestionStatus,
   type LinkSuggestionRow,
 } from "@/lib/admin-seo-tools.functions";
+import { userMessage } from "@/lib/user-message";
 
 export const Route = createFileRoute("/_authenticated/app/seo/internal-links")({
   head: () => ({ meta: [{ title: "Internal Links — founders.click" }] }),
@@ -48,7 +49,11 @@ function InternalLinksPage() {
     setMsg(null);
     try {
       const r = await gen({ data: { workspaceId, sampleSize: 500, minScore: 0.18, perPage: 5 } });
-      setMsg(r.ok ? `Generated ${r.count} suggestions.` : `Error: ${r.error}`);
+      setMsg(
+        r.ok
+          ? `Generated ${r.count} suggestions.`
+          : userMessage(r.error, "Couldn't generate link suggestions. Try again in a few minutes."),
+      );
       await reload(workspaceId);
     } finally {
       setBusy(false);

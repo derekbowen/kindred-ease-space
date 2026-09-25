@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Upload, Loader2 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { importTable } from "@/lib/admin-data-io.functions";
+import { userMessage } from "@/lib/user-message";
 
 type TableName = "content_plan" | "content_pages";
 
@@ -51,7 +52,9 @@ function TableImporter({ workspaceId, table }: { workspaceId: string | null; tab
           : `Imported ${res.inserted}/${res.totalRows} rows`,
       );
     } catch (e: any) {
-      setStatus(`Error: ${e?.message ?? String(e)}`);
+      setStatus(
+        userMessage(e, "Couldn't import this file. Check that it's a valid CSV, then try again."),
+      );
     } finally {
       setBusy(null);
     }
@@ -128,7 +131,8 @@ function TableImporter({ workspaceId, table }: { workspaceId: string | null; tab
                 <ul className="mt-2 max-h-64 overflow-auto space-y-1 text-xs">
                   {result.rowErrors.slice(0, 200).map((e, i) => (
                     <li key={i} className="font-mono">
-                      Row {e.row} {e.key ? `(${e.key})` : ""}: {e.reason}
+                      Row {e.row} {e.key ? `(${e.key})` : ""}:{" "}
+                      {userMessage(e.reason, "This row couldn't be saved.")}
                     </li>
                   ))}
                 </ul>
@@ -141,7 +145,9 @@ function TableImporter({ workspaceId, table }: { workspaceId: string | null; tab
                 </summary>
                 <ul className="mt-2 space-y-1 text-xs">
                   {result.chunkErrors.map((e, i) => (
-                    <li key={i}>{e}</li>
+                    <li key={i}>
+                      {userMessage(e, "Some rows in this batch had to be retried one at a time.")}
+                    </li>
                   ))}
                 </ul>
               </details>

@@ -15,7 +15,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { canonicalUrl } from "@/lib/canonical";
+import { userMessage } from "@/lib/user-message";
 import { CheckCircle2 } from "lucide-react";
+
+const CONTACT_FAILED =
+  "Your message didn't send. Try again, or email support@founders.click if it keeps happening.";
 
 export const Route = createFileRoute("/help/contact")({
   head: () => ({
@@ -56,9 +60,9 @@ function ContactPage() {
         },
       });
       if (res.ok) setTicketId(res.ticketId);
-      else setError(res.error ?? "Something went wrong.");
+      else setError(userMessage(res.error, CONTACT_FAILED));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(userMessage(err, CONTACT_FAILED));
     } finally {
       setSubmitting(false);
     }

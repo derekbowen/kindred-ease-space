@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-message";
 import { getMe } from "@/lib/auth.functions";
 import { getAffiliateDashboard, startAffiliateTrial } from "@/lib/affiliates.functions";
 
@@ -90,7 +91,12 @@ function AffiliateDashboard() {
                   await qc.invalidateQueries({ queryKey: ["affiliate-dashboard", workspaceId] });
                   toast.success("Affiliate add-on trial started.");
                 } catch (e) {
-                  toast.error(e instanceof Error ? e.message : "Could not start trial");
+                  toast.error(
+                    userMessage(
+                      e,
+                      "Couldn't start the Affiliate add-on trial. Try again, or contact support if it keeps happening.",
+                    ),
+                  );
                 } finally {
                   setStarting(false);
                 }

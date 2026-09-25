@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-message";
 import { getMe } from "@/lib/auth.functions";
 import {
   listAffiliates,
@@ -74,7 +75,9 @@ function AffiliatesPage() {
       await refresh();
       toast.success("Affiliate created.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not create affiliate");
+      toast.error(
+        userMessage(err, "Couldn't add this affiliate. Check the details and try again."),
+      );
     }
   };
 
@@ -199,7 +202,12 @@ function AffiliatesPage() {
                           });
                           await refresh();
                         } catch (err) {
-                          toast.error(err instanceof Error ? err.message : "Failed");
+                          toast.error(
+                            userMessage(
+                              err,
+                              "Couldn't change this affiliate's status. Try again, or contact support if it keeps happening.",
+                            ),
+                          );
                         }
                       }}
                     >

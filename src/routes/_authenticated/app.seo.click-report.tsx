@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, MousePointerClick, Users } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { getCityClickReport, type CityClickReport } from "@/lib/click-report.functions";
+import { userMessage } from "@/lib/user-message";
 
 export const Route = createFileRoute("/_authenticated/app/seo/click-report")({
   head: () => ({ meta: [{ title: "Click Report — founders.click" }] }),
@@ -36,7 +37,7 @@ function ClickReportPage() {
       const r = await fetchReport({ data: { workspaceId, days, limit } });
       setReport(r);
     } catch (e: any) {
-      setErr(e?.message || String(e));
+      setErr(userMessage(e, "Couldn't load the click report. Try again in a moment."));
     } finally {
       setLoading(false);
     }

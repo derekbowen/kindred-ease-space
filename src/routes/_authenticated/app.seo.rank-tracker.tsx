@@ -14,6 +14,7 @@ import {
   runSerpCheck,
   type TrackedKeywordRow,
 } from "@/lib/admin-rank-tracker.functions";
+import { userMessage } from "@/lib/user-message";
 
 export const Route = createFileRoute("/_authenticated/app/seo/rank-tracker")({
   head: () => ({ meta: [{ title: "Rank Tracker — founders.click" }] }),
@@ -61,7 +62,7 @@ function RankTrackerPage() {
         setKeyword("");
         setTarget("");
         await reload(workspaceId);
-      } else setMsg(r.error);
+      } else setMsg(userMessage(r.error, "Couldn't add that keyword. Check it and try again."));
     } finally {
       setBusy(false);
     }
@@ -76,7 +77,8 @@ function RankTrackerPage() {
       if (r.ok) {
         setMsg(`Checked ${r.results.length} keywords.`);
         await reload(workspaceId);
-      } else setMsg(r.error);
+      } else
+        setMsg(userMessage(r.error, "Couldn't check your rankings. Try again in a few minutes."));
     } finally {
       setBusy(false);
     }
