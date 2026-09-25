@@ -209,11 +209,16 @@ export function describePlanStatus(input: PlanStatusInput, opts: WordingOptions 
     state === "active" && input.currentPeriodEnd
       ? `Renews ${formatPlanDate(input.currentPeriodEnd, tz)}`
       : null;
+  // The badge names the plan alone only while the subscription is active. A
+  // cancelled or past-due plan showed just "Growth" in the shell, as if all
+  // were well (round-4 release review L10); it now says what is wrong.
+  const statusLabel = subscriptionStatusLabel(input.subscriptionStatus);
+  const healthy = (input.subscriptionStatus ?? "").trim().toLowerCase() === "active";
   return {
     kind: "paid",
-    badge: planName || subscriptionStatusLabel(input.subscriptionStatus),
+    badge: planName ? (healthy ? planName : `${planName} · ${statusLabel}`) : statusLabel,
     planLabel: planName || "—",
-    statusLine: subscriptionStatusLabel(input.subscriptionStatus),
+    statusLine: statusLabel,
     dateLine: renews,
     trialHeadline: null,
     daysLeft: null,

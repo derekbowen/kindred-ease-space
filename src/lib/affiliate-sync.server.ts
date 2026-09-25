@@ -2,6 +2,11 @@
 // the referrerID stored in the referred user's private data, and accrue payouts.
 // Reuses the same Integration API auth pattern as the listings sync.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import {
+  AFFILIATE_CONNECT_MESSAGE,
+  affiliateConnectionProblem,
+  connectionModeOf,
+} from "@/lib/affiliate-requirements";
 
 const SHARETRIBE_AUTH_URL = "https://flex-integ-api.sharetribe.com/v1/auth/token";
 const SHARETRIBE_API_BASE = "https://flex-integ-api.sharetribe.com/v1/integration_api";
@@ -78,11 +83,19 @@ export async function runAffiliateReferralSync(workspaceId: string): Promise<Aff
 
   const { data: integration } = await sb
     .from("tenant_integrations")
-    .select("id, client_id")
+    .select("id, client_id, auth_mode")
     .eq("workspace_id", workspaceId)
     .eq("provider", "sharetribe")
     .maybeSingle();
-  if (!integration) throw new Error("integration_not_found");
+  // Referral tracking reads transactions through the Integration API. Without
+  // a connection, or on the read-only Marketplace API one (no client secret —
+  // the Vault read below would fail as secret_decrypt_failed), retrying can
+  // never help: say what the owner has to do instead (round-4 release review
+  // M1). Both are customer sentences that userMessage shows as they are.
+  const connectionProblem = affiliateConnectionProblem(connectionModeOf(integration));
+  if (!integration || connectionProblem) {
+    throw new Error(connectionProblem ?? AFFILIATE_CONNECT_MESSAGE);
+  }
 
   const { data: secretRow, error: secretErr } = await sb.rpc("tenant_get_integration_secret", {
     _workspace_id: workspaceId,

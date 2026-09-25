@@ -71,7 +71,7 @@ function SeoCoachPage() {
         <CardHeader>
           <CardTitle>Conversation</CardTitle>
           <CardDescription>
-            Powered by OpenAI. Snapshot is rebuilt on each turn from your workspace data.
+            Each answer draws on a fresh snapshot of your workspace data.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

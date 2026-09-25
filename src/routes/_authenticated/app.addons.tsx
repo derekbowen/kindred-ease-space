@@ -6,12 +6,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Check } from "lucide-react";
+import { AlertTriangle, Check, Info } from "lucide-react";
 import { toast } from "sonner";
 import { userMessage } from "@/lib/user-message";
 import { supabase } from "@/integrations/supabase/client";
 import { getMe } from "@/lib/auth.functions";
 import { getAddons } from "@/lib/addons.functions";
+import { SHARETRIBE_SETTINGS_PATH } from "@/lib/affiliate-requirements";
+import { edgeFunctionError } from "@/lib/edge-function-error";
 
 const addonsSearchSchema = z.object({
   success: z.coerce.string().optional(),
@@ -63,7 +65,9 @@ function AddonsPage() {
       const { data: res, error } = await supabase.functions.invoke("create-checkout", {
         body: { workspace_id: workspaceId, mode: "addon", addon_key: addonKey },
       });
-      if (error) throw error;
+      // A refusal's own sentence (e.g. the Affiliate add-on's connection
+      // requirement) rides in the body of a non-2xx answer.
+      if (error) throw await edgeFunctionError(error);
       if (res?.url) window.location.href = res.url;
       else throw new Error("No checkout URL returned");
     } catch (e) {
@@ -98,6 +102,9 @@ function AddonsPage() {
           {(data?.catalog ?? []).map((a) => {
             const isAffiliate = a.key === "affiliate-standard";
             const active = a.requestStatus === "active";
+            // Server-computed: the add-on cannot work on this workspace's
+            // connection, and the trial and checkout would refuse it.
+            const blocked = !active && a.blockedReason ? a.blockedReason : null;
             return (
               <Card key={a.key} className="flex flex-col">
                 <CardHeader>
@@ -117,6 +124,23 @@ function AddonsPage() {
                       </li>
                     ))}
                   </ul>
+                  {a.requires && (
+                    <p className="flex items-start gap-2 text-xs text-muted-foreground">
+                      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      {a.requires}
+                    </p>
+                  )}
+                  {blocked && (
+                    <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                      <p className="flex items-start gap-2">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                        {blocked}
+                      </p>
+                      <Button asChild variant="link" size="sm" className="h-auto px-0 pt-1">
+                        <Link to={SHARETRIBE_SETTINGS_PATH}>Open Sharetribe settings →</Link>
+                      </Button>
+                    </div>
+                  )}
                   <div className="mt-auto pt-2">
                     <div className="mb-3 text-2xl font-bold">
                       ${(a.priceCents / 100).toFixed(0)}
@@ -131,7 +155,7 @@ function AddonsPage() {
                     ) : (
                       <Button
                         className="w-full"
-                        disabled={busy === a.key}
+                        disabled={busy === a.key || !!blocked}
                         onClick={() => checkout(a.key)}
                       >
                         {busy === a.key
@@ -139,7 +163,7 @@ function AddonsPage() {
                           : `Get it — $${(a.priceCents / 100).toFixed(0)}/${a.cadence}`}
                       </Button>
                     )}
-                    {isAffiliate && (
+                    {isAffiliate && !blocked && (
                       <Button asChild variant="ghost" size="sm" className="mt-2 w-full">
                         <Link to="/app/affiliates">Or start a free trial →</Link>
                       </Button>

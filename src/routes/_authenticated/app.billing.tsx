@@ -17,6 +17,7 @@ import {
 import { PAGE_PLANS, PAGE_ADDON, EVERY_PLAN_INCLUDES, TRIAL_PAGE_LIMIT } from "@/lib/plan-catalog";
 import { toast } from "sonner";
 import { userMessage } from "@/lib/user-message";
+import { edgeFunctionError } from "@/lib/edge-function-error";
 import { describePlanStatus, formatPlanDate } from "@/components/billing/plan-status";
 import { formatAllowanceCount as formatAiToday, useAiAllowance } from "@/components/ai/use-ai-allowance";
 
@@ -115,7 +116,9 @@ function BillingPage() {
       const { data, error } = await supabase.functions.invoke("create-checkout", {
         body: { workspace_id: workspaceId, mode, quantity, tier },
       });
-      if (error) throw error;
+      // create-checkout's refusals ("already has an active plan", "Pick a plan
+      // first") carry their sentence in the body of a non-2xx answer.
+      if (error) throw await edgeFunctionError(error);
       if (data?.url) window.location.href = data.url;
       else if (data?.message) throw new Error(data.message);
       else throw new Error("No checkout URL returned");

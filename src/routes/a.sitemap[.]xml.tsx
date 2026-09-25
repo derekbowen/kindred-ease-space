@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { tenantSitemapXml } from "@/lib/sitemap.server";
+import { sitemapPageParam, tenantSitemapXml } from "@/lib/sitemap.server";
 
 // Tenant sitemap under the /a/ prefix. On a root-domain connection the
 // Founders edge only controls /a/* — the customer's own site owns
@@ -10,7 +10,10 @@ export const Route = createFileRoute("/a/sitemap.xml")({
     handlers: {
       GET: async ({ request }) => {
         const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
-        const tenant = await tenantSitemapXml(host);
+        // Above 50,000 URLs this is a sitemap index of /a/sitemap.xml?page=N.
+        const page = sitemapPageParam(request.url);
+        if (page === null) return new Response("not found", { status: 404 });
+        const tenant = await tenantSitemapXml(host, { page });
         if (!tenant) {
           return new Response("not found", { status: 404 });
         }

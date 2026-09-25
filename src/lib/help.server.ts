@@ -44,6 +44,34 @@ export type HelpArticleFull = HelpArticleListItem & {
   tags: string[];
 };
 
+/**
+ * WHERE A PLATFORM ARTICLE MAY APPEAR. The public help center shows an article
+ * only while its category is a PUBLISHED PLATFORM category:
+ * help_categories.workspace_id IS NULL AND is_published.
+ *
+ * help_categories.slug is globally unique and help_articles.category_slug
+ * references it, so a platform article can be filed under a category a
+ * workspace owns (Pool Rental Near Me owns `getting-started` and `billing`) or
+ * under one that has been unpublished (`page-builder`, 000910). Neither may
+ * render or be listed. Round-4 release review M3: against pre-000900 data the
+ * retired BYOK article — filed under PRNM's `billing` — rendered at
+ * /help/billing/bring-your-own-ai-key-byok and sat in /help/sitemap.xml.
+ *
+ * null when the read failed: every caller then shows nothing (fails closed).
+ */
+export async function listPublishedPlatformCategorySlugs(): Promise<Set<string> | null> {
+  const { data, error } = await supabaseAdmin
+    .from("help_categories")
+    .select("slug")
+    .is("workspace_id", null)
+    .eq("is_published", true);
+  if (error) {
+    console.error("[help] listPublishedPlatformCategorySlugs", error);
+    return null;
+  }
+  return new Set(((data ?? []) as Array<{ slug: string }>).map((r) => r.slug));
+}
+
 export async function listCategories(): Promise<HelpCategory[]> {
   const { data, error } = await supabaseAdmin
     .from("help_categories")
@@ -91,35 +119,97 @@ export async function listArticlesByCategory(categorySlug: string): Promise<Help
   return (data ?? []) as HelpArticleListItem[];
 }
 
+/**
+ * The article at /help/<categorySlug>/<articleSlug>, or null. Null unless the
+ * URL's category is the article's own category (the query pins
+ * category_slug) AND that category is a published platform category (see
+ * listPublishedPlatformCategorySlugs).
+ */
 export async function getArticleBySlug(
   categorySlug: string,
   articleSlug: string,
 ): Promise<HelpArticleFull | null> {
-  const { data, error } = await supabaseAdmin
-    .from("help_articles")
-    .select(
-      "id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at,content,author_name,author_avatar_url,helpful_count,not_helpful_count,related_article_ids,tags",
-    )
-    .is("workspace_id", null)
-    .eq("category_slug", categorySlug)
-    .eq("slug", articleSlug)
-    .eq("status", "published")
-    .maybeSingle();
+  const [category, { data, error }] = await Promise.all([
+    getCategoryBySlug(categorySlug),
+    supabaseAdmin
+      .from("help_articles")
+      .select(
+        "id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at,content,author_name,author_avatar_url,helpful_count,not_helpful_count,related_article_ids,tags",
+      )
+      .is("workspace_id", null)
+      .eq("category_slug", categorySlug)
+      .eq("slug", articleSlug)
+      .eq("status", "published")
+      .maybeSingle(),
+  ]);
   if (error) {
     console.error("[help] getArticleBySlug", error);
     return null;
   }
-  return (data as HelpArticleFull) ?? null;
+  // getCategoryBySlug reads only published platform categories.
+  if (!category) return null;
+  const article = (data as HelpArticleFull | null) ?? null;
+  return article && article.category_slug === categorySlug ? article : null;
 }
+
+/**
+ * The canonical path of a published platform article, looked up by its slug
+ * alone (help_articles.slug is globally unique), or null when the article is
+ * not published or its category is not a published platform category. The
+ * article route answers a URL whose category is not the article's with a 301
+ * to this path — e.g. the four articles 000900 moved from `getting-started`
+ * to `start-here` — and with a 404 when this is null.
+ */
+export async function findCanonicalArticlePath(articleSlug: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("help_articles")
+    .select("category_slug,slug")
+    .is("workspace_id", null)
+    .eq("slug", articleSlug)
+    .eq("status", "published")
+    .limit(2);
+  if (error) {
+    console.error("[help] findCanonicalArticlePath", error);
+    return null;
+  }
+  const rows = (data ?? []) as Array<{ category_slug: string; slug: string }>;
+  // Exactly one row, or there is no single canonical URL to send anyone to.
+  if (rows.length !== 1) return null;
+  const category = await getCategoryBySlug(rows[0].category_slug);
+  if (!category) return null;
+  return `/help/${rows[0].category_slug}/${rows[0].slug}`;
+}
+
+/**
+ * What /help/<categorySlug>/<articleSlug> should do when getArticleBySlug
+ * finds nothing there: the article's canonical path when it is public under
+ * another category (the route answers 301), otherwise null (404).
+ */
+export async function articleRedirectFor(
+  categorySlug: string,
+  articleSlug: string,
+): Promise<string | null> {
+  const canonical = await findCanonicalArticlePath(articleSlug);
+  if (!canonical) return null;
+  return canonical === `/help/${categorySlug}/${articleSlug}` ? null : canonical;
+}
+
+// Every list below links to /help/<category_slug>/<slug>. Each keeps to
+// articles in published platform categories, so none links to a page the
+// article route would 404.
 
 export async function getRelatedArticles(ids: string[]): Promise<HelpArticleListItem[]> {
   if (!ids?.length) return [];
+  const slugs = await listPublishedPlatformCategorySlugs();
+  if (!slugs?.size) return [];
   const { data, error } = await supabaseAdmin
     .from("help_articles")
     .select(
       "id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at",
     )
     .in("id", ids)
+    .is("workspace_id", null)
+    .in("category_slug", [...slugs])
     .eq("status", "published")
     .limit(4);
   if (error) {
@@ -130,12 +220,15 @@ export async function getRelatedArticles(ids: string[]): Promise<HelpArticleList
 }
 
 export async function listPopularArticles(limit = 6): Promise<HelpArticleListItem[]> {
+  const slugs = await listPublishedPlatformCategorySlugs();
+  if (!slugs?.size) return [];
   const { data, error } = await supabaseAdmin
     .from("help_articles")
     .select(
       "id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at",
     )
     .is("workspace_id", null)
+    .in("category_slug", [...slugs])
     .eq("status", "published")
     .order("view_count", { ascending: false })
     .limit(limit);
@@ -147,12 +240,15 @@ export async function listPopularArticles(limit = 6): Promise<HelpArticleListIte
 }
 
 export async function listRecentArticles(limit = 4): Promise<HelpArticleListItem[]> {
+  const slugs = await listPublishedPlatformCategorySlugs();
+  if (!slugs?.size) return [];
   const { data, error } = await supabaseAdmin
     .from("help_articles")
     .select(
       "id,slug,title,excerpt,category_slug,reading_time_minutes,view_count,published_at,updated_at",
     )
     .is("workspace_id", null)
+    .in("category_slug", [...slugs])
     .eq("status", "published")
     .order("updated_at", { ascending: false })
     .limit(limit);
@@ -163,33 +259,51 @@ export async function listRecentArticles(limit = 4): Promise<HelpArticleListItem
   return (data ?? []) as HelpArticleListItem[];
 }
 
+/**
+ * Every article URL /help/sitemap.xml lists: published platform articles in
+ * published platform categories only (see listPublishedPlatformCategorySlugs).
+ * Empty when either read fails — a sitemap must never advertise a URL that
+ * 404s.
+ */
 export async function listAllPublishedArticleSlugs(): Promise<
   Array<{ category_slug: string; slug: string; updated_at: string }>
 > {
-  const { data, error } = await supabaseAdmin
-    .from("help_articles")
-    .select("category_slug,slug,updated_at")
-    .is("workspace_id", null)
-    .eq("status", "published");
+  const [slugs, { data, error }] = await Promise.all([
+    listPublishedPlatformCategorySlugs(),
+    supabaseAdmin
+      .from("help_articles")
+      .select("category_slug,slug,updated_at")
+      .is("workspace_id", null)
+      .eq("status", "published")
+      .order("category_slug", { ascending: true })
+      .order("slug", { ascending: true }),
+  ]);
   if (error) {
     console.error("[help] listAllPublishedArticleSlugs", error);
     return [];
   }
-  return (data ?? []) as Array<{ category_slug: string; slug: string; updated_at: string }>;
+  if (!slugs) return [];
+  return (
+    (data ?? []) as Array<{ category_slug: string; slug: string; updated_at: string }>
+  ).filter((a) => slugs.has(a.category_slug));
 }
 
 export async function searchArticles(query: string, limit = 25): Promise<HelpArticleListItem[]> {
   const expanded = expandSynonyms(query);
   if (!expanded) return [];
-  const { data, error } = await supabaseAdmin.rpc("help_search_v2", {
-    q: expanded,
-    max_results: limit,
-  });
+  const [slugs, { data, error }] = await Promise.all([
+    listPublishedPlatformCategorySlugs(),
+    supabaseAdmin.rpc("help_search_v2", {
+      q: expanded,
+      max_results: limit,
+    }),
+  ]);
   if (error) {
     console.error("[help] searchArticles", error);
     return [];
   }
-  return (data ?? []) as HelpArticleListItem[];
+  if (!slugs) return [];
+  return ((data ?? []) as HelpArticleListItem[]).filter((a) => slugs.has(a.category_slug));
 }
 
 export async function suggestArticleTitles(
@@ -198,15 +312,19 @@ export async function suggestArticleTitles(
 ): Promise<HelpTitleSuggestion[]> {
   const q = query.trim();
   if (q.length < 2) return [];
-  const { data, error } = await supabaseAdmin.rpc("help_suggest_titles", {
-    q,
-    max_results: limit,
-  });
+  const [slugs, { data, error }] = await Promise.all([
+    listPublishedPlatformCategorySlugs(),
+    supabaseAdmin.rpc("help_suggest_titles", {
+      q,
+      max_results: limit,
+    }),
+  ]);
   if (error) {
     console.error("[help] suggestArticleTitles", error);
     return [];
   }
-  return (data ?? []) as HelpTitleSuggestion[];
+  if (!slugs) return [];
+  return ((data ?? []) as HelpTitleSuggestion[]).filter((s) => slugs.has(s.category_slug));
 }
 
 // ---------------- Synonyms ----------------

@@ -5,10 +5,13 @@ import { useServerFn } from "@tanstack/react-start";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { userMessage } from "@/lib/user-message";
 import { getMe } from "@/lib/auth.functions";
 import { getAffiliateDashboard, startAffiliateTrial } from "@/lib/affiliates.functions";
+import { getAffiliateRequirement } from "@/lib/affiliate-requirements.functions";
+import { AFFILIATE_REQUIREMENT_NOTE, SHARETRIBE_SETTINGS_PATH } from "@/lib/affiliate-requirements";
 
 export const Route = createFileRoute("/_authenticated/app/affiliates")({
   head: () => ({ meta: [{ title: "Affiliate Dashboard — founders.click" }] }),
@@ -22,6 +25,25 @@ function AffiliatesRoute() {
   const childMatches = useChildMatches();
   if (childMatches.length > 0) return <Outlet />;
   return <AffiliateDashboard />;
+}
+
+/**
+ * The Affiliate add-on cannot track anything on this workspace's Sharetribe
+ * connection: say why and where to fix it (server-computed; the trial and
+ * the checkout refuse on the same rule).
+ */
+function ConnectionRequirement({ problem }: { problem: string }) {
+  return (
+    <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+      <p className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+        {problem}
+      </p>
+      <Button asChild variant="link" size="sm" className="h-auto px-0 pt-1">
+        <Link to={SHARETRIBE_SETTINGS_PATH}>Open Sharetribe settings →</Link>
+      </Button>
+    </div>
+  );
 }
 
 function fmtMoney(n: number, currency: string) {
@@ -49,6 +71,15 @@ function AffiliateDashboard() {
     queryFn: () => getAffiliateDashboard({ data: { workspaceId: workspaceId! } }),
     enabled: !!workspaceId,
   });
+  // Whether referral tracking can work on this workspace's Sharetribe
+  // connection. Unknown (loading, or the read failed) blocks nothing here:
+  // the trial itself checks on the server.
+  const { data: requirement } = useQuery({
+    queryKey: ["affiliate-requirement", workspaceId],
+    queryFn: () => getAffiliateRequirement({ data: { workspaceId: workspaceId! } }),
+    enabled: !!workspaceId,
+  });
+  const connectionProblem = requirement?.problem ?? null;
 
   if (!workspaceId || isLoading) {
     return (
@@ -81,32 +112,36 @@ function AffiliateDashboard() {
               trial.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            <Button
-              disabled={starting}
-              onClick={async () => {
-                setStarting(true);
-                try {
-                  await startTrial({ data: { workspaceId } });
-                  await qc.invalidateQueries({ queryKey: ["affiliate-dashboard", workspaceId] });
-                  toast.success("Affiliate add-on trial started.");
-                } catch (e) {
-                  toast.error(
-                    userMessage(
-                      e,
-                      "Couldn't start the Affiliate add-on trial. Try again, or contact support if it keeps happening.",
-                    ),
-                  );
-                } finally {
-                  setStarting(false);
-                }
-              }}
-            >
-              {starting ? "Starting…" : "Start free trial"}
-            </Button>
-            <Button variant="outline" asChild>
-              <Link to="/app/addons">View add-ons</Link>
-            </Button>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">{AFFILIATE_REQUIREMENT_NOTE}</p>
+            {connectionProblem && <ConnectionRequirement problem={connectionProblem} />}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={starting || !!connectionProblem}
+                onClick={async () => {
+                  setStarting(true);
+                  try {
+                    await startTrial({ data: { workspaceId } });
+                    await qc.invalidateQueries({ queryKey: ["affiliate-dashboard", workspaceId] });
+                    toast.success("Affiliate add-on trial started.");
+                  } catch (e) {
+                    toast.error(
+                      userMessage(
+                        e,
+                        "Couldn't start the Affiliate add-on trial. Try again, or contact support if it keeps happening.",
+                      ),
+                    );
+                  } finally {
+                    setStarting(false);
+                  }
+                }}
+              >
+                {starting ? "Starting…" : "Start free trial"}
+              </Button>
+              <Button variant="outline" asChild>
+                <Link to="/app/addons">View add-ons</Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -136,6 +171,7 @@ function AffiliateDashboard() {
           </span>
         )}
       </div>
+      {connectionProblem && <ConnectionRequirement problem={connectionProblem} />}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {cards.map((c) => (
           <Card key={c.label}>

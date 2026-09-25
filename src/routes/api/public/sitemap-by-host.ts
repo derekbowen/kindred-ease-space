@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { tenantSitemapXml } from "@/lib/sitemap.server";
+import { sitemapPageParam, tenantSitemapXml } from "@/lib/sitemap.server";
 import { clientIp, rateLimit } from "@/lib/public-rate-limit";
 
 const Query = z.object({
@@ -25,7 +25,9 @@ export const Route = createFileRoute("/api/public/sitemap-by-host")({
         if (!parsed.success) {
           return new Response("hostname required", { status: 400 });
         }
-        const xml = await tenantSitemapXml(parsed.data.hostname);
+        const page = sitemapPageParam(request.url);
+        if (page === null) return new Response("not found", { status: 404 });
+        const xml = await tenantSitemapXml(parsed.data.hostname, { page });
         if (xml === null) return new Response("not found", { status: 404 });
         return new Response(xml, {
           headers: {

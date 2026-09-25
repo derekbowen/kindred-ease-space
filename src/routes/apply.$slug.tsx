@@ -75,7 +75,7 @@ function ApplyPage() {
         {done ? (
           <div className="rounded-lg border border-border p-6 text-center">
             <p className="text-sm">
-              Thanks! Your application has been received. We'll email you once it's reviewed.
+              Thanks! Your application has been received and will be reviewed.
             </p>
           </div>
         ) : form.programs.length === 0 ? (

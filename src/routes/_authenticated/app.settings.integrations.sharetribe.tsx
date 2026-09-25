@@ -395,7 +395,8 @@ function SharetribeIntegrationPage() {
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Client ID + Client Secret. Full marketplace access — only if you need it.
+                    Client ID + Client Secret. Full marketplace access — only if you need it, such
+                    as for the Affiliate add-on&apos;s referral tracking.
                   </p>
                 </div>
               </label>

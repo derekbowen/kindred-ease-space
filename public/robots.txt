@@ -1,9 +1,11 @@
 User-agent: *
 Allow: /
+# The app shell: /app itself and everything under it. Anchored, so /apply/*
+# stays crawlable (a bare "Disallow: /app" would match it as a prefix).
+Disallow: /app$
 Disallow: /app/
-Disallow: /login
-Disallow: /signup
-Disallow: /reset-password
+# /login, /signup and /reset-password are crawlable on purpose: each answers
+# with `noindex`, which a crawler can only read if it may fetch the page.
 
 Sitemap: https://www.founders.click/sitemap.xml
 Sitemap: https://www.founders.click/help/sitemap.xml

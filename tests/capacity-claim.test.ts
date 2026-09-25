@@ -39,7 +39,8 @@ const beta = collapse(read("src/routes/beta.tsx"));
 t('homepage no longer says "from your dashboard"', !/from your dashboard/i.test(home));
 t(
   "homepage names Billing & Plans and the paid-plan condition",
-  /On any paid plan, add capacity in blocks of\{" "\} \{PAGE_ADDON\.pagesPerUnit\.toLocaleString\(\)\} pages/.test(home) &&
+  // Pinned locale: "1.000" under de-DE broke hydration (round-4 release review L1).
+  /On any paid plan, add capacity in blocks of\{" "\} \{PAGE_ADDON\.pagesPerUnit\.toLocaleString\("en-US"\)\} pages/.test(home) &&
     /under Billing &amp; Plans in the app/.test(home),
 );
 t("homepage quotes the catalog price", /\(\$\{PAGE_ADDON\.monthlyPrice\}\/month per block\)/.test(home));

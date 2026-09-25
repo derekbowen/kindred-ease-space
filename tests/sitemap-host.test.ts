@@ -23,7 +23,7 @@ import {
   LISTING_MAX_CHUNKS,
   type HostMatch,
 } from "../src/lib/sitemap.server";
-import { isThinPage, buildListingCounter, THIN_PAGE_MIN_BODY_CHARS } from "../src/lib/thin-page";
+import { isThinPage, isThinPageMeasured, thinPageBodyChars, buildListingCounter, THIN_PAGE_MIN_BODY_CHARS } from "../src/lib/thin-page";
 import { isPublicPageSlug, PUBLIC_PAGE_SLUG_RE } from "../src/lib/public-page-slug";
 import {
   isPublicPageSlug as pageRouteIsPublicPageSlug,
@@ -157,7 +157,18 @@ console.log("\n=== the thin-page rule is one rule, shared by the page and the si
     /const isThin = isThinPage\(\{ listingCount: p\.listings\.length, bodyMarkdown: p\.body_markdown \}\);/.test(page));
   t("a.$slug.tsx no longer restates the numbers", !/bodyLen < 300/.test(page));
   const sitemap = readFileSync(join(ROOT, "src/lib/sitemap.server.ts"), "utf8");
-  t("the sitemap imports the shared predicate", /from "@\/lib\/thin-page"/.test(sitemap) && /isThinPage\(\{ listingCount, bodyMarkdown: p\.body_markdown \}\)/.test(sitemap));
+  // The sitemap measures each body as its chunk arrives and keeps only the
+  // length, then applies the same rule to it (isThinPageMeasured is what
+  // isThinPage itself calls).
+  t("the sitemap imports the shared predicate",
+    /from "@\/lib\/thin-page"/.test(sitemap) &&
+      /body_chars: thinPageBodyChars\(row\.body_markdown\)/.test(sitemap) &&
+      /isThinPageMeasured\(\{ listingCount, bodyChars: p\.body_chars \}\)/.test(sitemap));
+  t("…the measured form is the same rule",
+    [0, 1].every((listingCount) =>
+      ["", "x".repeat(299), `  ${"x".repeat(299)}  `, "x".repeat(300), " ".repeat(400), null, undefined].every(
+        (body) => isThinPage({ listingCount, bodyMarkdown: body }) === isThinPageMeasured({ listingCount, bodyChars: thinPageBodyChars(body) }),
+      )));
   t("the sitemap reads listings in one query with an exact count",
     /\.from\("tenant_listings"\)\s*\.select\("city, state, category", \{ count: "exact" \}\)/.test(sitemap));
   t("the sitemap fails open when the listings read errors or is cut short",
@@ -275,7 +286,8 @@ console.log("\n=== the listings read is paged past the API row cap (B4) ===");
   const sitemap = readFileSync(join(ROOT, "src/lib/sitemap.server.ts"), "utf8");
   const chunkedAt = sitemap.indexOf("readInChunks<ListingLocation>((from, to) =>");
   const listingsAt = sitemap.indexOf('.from("tenant_listings")');
-  const rangeAt = sitemap.indexOf(".range(from, to)");
+  // The pages are read the same way now; the listings read is the one after its .from().
+  const rangeAt = sitemap.indexOf(".range(from, to)", listingsAt);
   t("the sitemap's listings read goes through readInChunks with a .range() per chunk", chunkedAt > 0 && listingsAt > chunkedAt && rangeAt > listingsAt);
   const listingQuery = sitemap.slice(listingsAt, rangeAt);
   t("…over a fixed order, so chunks neither overlap nor skip", /\.order\("id", \{ ascending: true \}\)/.test(listingQuery));

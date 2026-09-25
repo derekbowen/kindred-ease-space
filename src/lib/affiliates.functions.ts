@@ -120,7 +120,12 @@ export const updateAffiliateSettings = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
-/** Start a 14-day add-on trial so the operator can use the tools immediately. */
+/**
+ * Start a 14-day add-on trial so the operator can use the tools immediately —
+ * only on an Integration API connection: referral tracking cannot read
+ * transactions through the read-only Marketplace API (round-4 release review
+ * M1; src/lib/affiliate-requirements.ts).
+ */
 export const startAffiliateTrial = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ workspaceId: workspaceIdSchema }).parse(d))
@@ -128,6 +133,8 @@ export const startAffiliateTrial = createServerFn({ method: "POST" })
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     const s = await ensureSettings(data.workspaceId);
     if (s.addon_status === "active") return { ok: true as const, already: true };
+    const { assertAffiliateConnection } = await import("@/lib/affiliate-requirements.server");
+    await assertAffiliateConnection(data.workspaceId);
     const { error } = await sb()
       .from("workspace_affiliate_settings")
       .update({ addon_status: "trialing", addon_tier: s.addon_tier ?? "standard" })

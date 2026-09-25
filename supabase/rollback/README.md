@@ -7,7 +7,7 @@ its workspace_is_internal_unlimited predicate); 000930 requires 000700 (the 'int
 Roll back in reverse order. Each rollback file ends with a VERIFY query and states what it will not
 restore.
 
-## Post-migration verification (run after applying all eight)
+## Post-migration verification (the eight schema migrations, 000100 … 20260925000800; 000900 and 000910 have their own checks below)
 
 ```sql
 -- 000100: columns + constraints present, secret column nullable
@@ -170,11 +170,19 @@ same function and is unaffected.
 `supabase/migrations/20260925000900_help_center_platform_fix.sql` changes rows,
 not schema, and only rows with `workspace_id IS NULL` (the public
 founders.click help center). Pool Rental Near Me's categories
-`getting-started` and `billing` are read, never written. Independent of the
-migrations above; apply it before or after the app release that un-nests the
-article route (`src/routes/help.$category_.$article.tsx`). With the app first,
-the five articles render under their old `/help/getting-started/...` URLs
-until this runs; with this first, nothing renders any worse than today.
+`getting-started` and `billing` are read, never written.
+
+**Apply 000900, then 000910, BEFORE the Worker deploy** that un-nests the
+article route (`src/routes/help.$category_.$article.tsx`) — never after it
+(round-4 release review M3; step order in `docs/RELEASE_CHECKLIST.md`).
+Against pre-000900 rows the new route rendered the retired BYOK article
+(provider names, "unlimited", the `ai-proxy` function) at
+`/help/billing/bring-your-own-ai-key-byok`, plus the retired page-builder and
+old pricing articles, and listed them in `/help/sitemap.xml`. The app now also
+refuses any article whose category is not a published platform category
+(`src/lib/help.server.ts`), but that is defence in depth, not a reason to
+reorder. Applied first, against the live (nested-route) build, these rows
+render no worse than today.
 
 What it changes, row by row:
 

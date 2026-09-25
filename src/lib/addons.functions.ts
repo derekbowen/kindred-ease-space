@@ -7,6 +7,11 @@ import {
   assertWorkspaceOwner,
   workspaceIdSchema,
 } from "@/lib/admin-helpers.functions";
+import {
+  AFFILIATE_REQUIREMENT_NOTE,
+  affiliateConnectionProblem,
+} from "@/lib/affiliate-requirements";
+import { readSharetribeConnectionMode } from "@/lib/affiliate-requirements.server";
 
 const sb = () => supabaseAdmin as any;
 
@@ -19,6 +24,8 @@ export type AddonCatalogItem = {
   cadence: string;
   bullets: string[];
   fulfilment: "managed" | "self_serve";
+  /** What the customer must have set up for the add-on to work, said where it is sold. */
+  requires?: string;
 };
 
 // Resellable add-ons offered inside founders.click. "managed" = white-glove:
@@ -45,7 +52,7 @@ export const ADDON_CATALOG: AddonCatalogItem[] = [
     name: "Affiliate Programs",
     tagline: "Run referral/affiliate programs on your Sharetribe marketplace.",
     description:
-      "Create affiliate programs, track referred sign-ups and transactions, manage affiliates, and issue payouts — integrated with your Sharetribe marketplace. Roughly half the price of standalone tools.",
+      "Create affiliate programs, track referred sign-ups and transactions, manage affiliates, and issue payouts — integrated with your Sharetribe marketplace through its Integration API. Roughly half the price of standalone tools.",
     priceCents: 3000,
     cadence: "month",
     bullets: [
@@ -55,6 +62,10 @@ export const ADDON_CATALOG: AddonCatalogItem[] = [
       "Public, branded affiliate sign-up pages",
     ],
     fulfilment: "self_serve",
+    // Round-4 release review M1: the read-only Marketplace API connection
+    // (the default) cannot read transactions, so the add-on tracks nothing
+    // there. The trial and the checkout refuse it; the card says so first.
+    requires: AFFILIATE_REQUIREMENT_NOTE,
   },
 ];
 
@@ -83,8 +94,24 @@ export const getAddons = createServerFn({ method: "GET" })
     if (affStatus === "active" || affStatus === "trialing") {
       statusByKey.set("affiliate-standard", "active");
     }
+    // Why the Affiliate add-on cannot be started on this workspace's
+    // Sharetribe connection (the same rule startAffiliateTrial and
+    // create-checkout enforce), or null. A failed read shows no warning and
+    // blocks nothing here — the trial and the checkout still check for real.
+    let affiliateBlocked: string | null = null;
+    try {
+      affiliateBlocked = affiliateConnectionProblem(
+        await readSharetribeConnectionMode(data.workspaceId),
+      );
+    } catch {
+      affiliateBlocked = null;
+    }
     return {
-      catalog: ADDON_CATALOG.map((a) => ({ ...a, requestStatus: statusByKey.get(a.key) ?? null })),
+      catalog: ADDON_CATALOG.map((a) => ({
+        ...a,
+        requestStatus: statusByKey.get(a.key) ?? null,
+        blockedReason: a.key === "affiliate-standard" ? affiliateBlocked : null,
+      })),
     };
   });
 

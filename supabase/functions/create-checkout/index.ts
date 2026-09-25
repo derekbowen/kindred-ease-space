@@ -8,6 +8,10 @@ import {
   isPlanTier,
   PAGE_PLANS,
 } from "../_shared/stripe-catalog.ts";
+import {
+  affiliateConnectionRefusal,
+  isAffiliateAddonKey,
+} from "../_shared/affiliate-requirement.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -107,6 +111,36 @@ Deno.serve(async (req) => {
         }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
+
+    // The Affiliate add-on tracks referrals by reading transactions through
+    // Sharetribe's Integration API; on the read-only Marketplace API
+    // connection (the default) it can track nothing, so it is not sold there
+    // (round-4 release review M1). Checked before any Stripe object exists.
+    if (mode === "addon" && isAffiliateAddonKey(addon_key)) {
+      const { data: integration, error: integrationError } = await admin
+        .from("tenant_integrations")
+        .select("auth_mode")
+        .eq("workspace_id", workspace_id)
+        .eq("provider", "sharetribe")
+        .maybeSingle();
+      if (integrationError) {
+        console.error("create-checkout: connection read failed", integrationError.message);
+        return new Response(
+          JSON.stringify({
+            error: "connection_unverified",
+            message: "Couldn't check your Sharetribe connection. Try again in a minute.",
+          }),
+          { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      const refusal = affiliateConnectionRefusal(integration);
+      if (refusal) {
+        return new Response(
+          JSON.stringify({ error: "integration_api_required", message: refusal }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
 
     // Block a second concurrent plan subscription: Stripe happily creates
     // parallel subscriptions for the same customer, which would double-bill and

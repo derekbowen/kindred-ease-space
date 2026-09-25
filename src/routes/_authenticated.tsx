@@ -29,6 +29,9 @@ export const Route = createFileRoute("/_authenticated")({
   // localStorage-only session — cannot be read during SSR. Gating server-side
   // causes redirect loops on hard refresh and post-OAuth landings.
   ssr: false,
+  // The head still renders server-side: without this, /app answered crawlers
+  // with an indexable, empty "Dashboard" page (round-4 release review L8).
+  head: () => ({ meta: [{ name: "robots", content: "noindex, nofollow" }] }),
   beforeLoad: async ({ location }) => {
     if (typeof window === "undefined") return;
     const session = await waitForSession();

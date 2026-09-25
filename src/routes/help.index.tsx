@@ -65,7 +65,7 @@ function HelpHome() {
                 <Link to="/help/contact" className="text-orange-500 hover:underline">
                   contact support
                 </Link>{" "}
-                and we'll get back to you within one business day.
+                and we'll usually get back to you within one business day.
               </p>
             </div>
           ) : (

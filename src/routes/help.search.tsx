@@ -33,6 +33,8 @@ function SearchPage() {
     <div className="max-w-4xl mx-auto px-6 py-10">
       <Breadcrumb items={[{ label: "Search" }]} />
 
+      <h1 className="mb-4 text-2xl font-bold tracking-tight">Search the help center</h1>
+
       <form action="/help/search" method="get" className="mb-8">
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
