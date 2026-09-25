@@ -525,8 +525,12 @@ function Pricing() {
       </div>
 
       <p className="mt-8 text-center text-sm text-zinc-500">
-        Need more pages without changing plans? Add capacity in blocks of{" "}
-        {PAGE_ADDON.pagesPerUnit.toLocaleString()} from your dashboard.
+        {/* Where it really is: the "Need more pages?" card on Billing & Plans,
+            shown once a paid plan is active (create-checkout refuses a
+            page_addon without a base subscription). */}
+        Need more pages without changing plans? On any paid plan, add capacity in blocks of{" "}
+        {PAGE_ADDON.pagesPerUnit.toLocaleString()} pages (${PAGE_ADDON.monthlyPrice}/month per
+        block) under Billing &amp; Plans in the app.
       </p>
     </section>
   );
