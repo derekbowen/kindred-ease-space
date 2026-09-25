@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
+import { userMessage } from "@/lib/user-message";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -218,7 +219,12 @@ function QuickPageBuilder() {
       if (!(err instanceof TypeError) && !/still being generated/i.test(message)) {
         requestIdRef.current = newRequestId();
       }
-      setError(message);
+      setError(
+        userMessage(
+          err,
+          "Couldn't generate your page. Try again, or contact support if it keeps happening.",
+        ),
+      );
     } finally {
       setBusy(false);
     }

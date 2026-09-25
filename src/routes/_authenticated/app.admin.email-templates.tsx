@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-message";
 import {
   listEmailTemplates,
   saveEmailTemplate,
@@ -98,7 +99,7 @@ function EmailTemplatesPage() {
       toast.success("Template saved");
       await refresh();
     } catch (e: any) {
-      toast.error(e?.message ?? "Save failed");
+      toast.error(userMessage(e, "Couldn't save this template. Try again in a moment."));
     } finally {
       setBusy(false);
     }
@@ -113,7 +114,7 @@ function EmailTemplatesPage() {
       toast.success("Reverted to default");
       await refresh();
     } catch (e: any) {
-      toast.error(e?.message ?? "Reset failed");
+      toast.error(userMessage(e, "Couldn't reset this template. Try again in a moment."));
     } finally {
       setBusy(false);
     }
@@ -134,7 +135,7 @@ function EmailTemplatesPage() {
       });
       toast.success(`Test sent to ${testEmail}`);
     } catch (e: any) {
-      toast.error(e?.message ?? "Send failed");
+      toast.error(userMessage(e, "Couldn't send the test email. Check the address and try again."));
     } finally {
       setBusy(false);
     }

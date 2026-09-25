@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-message";
 
 export const Route = createFileRoute("/signup")({
   head: () => ({
@@ -41,7 +42,12 @@ function SignupPage() {
     });
     setSubmitting(false);
     if (error) {
-      toast.error(error.message);
+      toast.error(
+        userMessage(
+          error,
+          "Couldn't create your account. Try again, or contact support if it keeps happening.",
+        ),
+      );
       return;
     }
     // When email confirmation is required, signUp returns no session — keep the
@@ -63,11 +69,16 @@ function SignupPage() {
 
     if (error) {
       if (error.message.toLowerCase().includes("provider is not enabled")) {
-        toast.error("Google sign-in is not enabled in Supabase yet.");
+        toast.error("Google sign-up isn't available yet. Sign up with your email and a password.");
         return;
       }
 
-      toast.error(error.message);
+      toast.error(
+        userMessage(
+          error,
+          "Couldn't start Google sign-up. Try again, or sign up with your email and a password.",
+        ),
+      );
     }
   };
 

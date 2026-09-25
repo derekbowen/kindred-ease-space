@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-message";
 import { getMe } from "@/lib/auth.functions";
 import {
   listContentPages,
@@ -39,7 +40,7 @@ function BulkEditorPage() {
       const r = await fetchRows({ data: { workspaceId, search: search || undefined, limit: 100 } });
       setRows(r.rows);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to load pages");
+      toast.error(userMessage(e, "Couldn't load your pages. Refresh the page to try again."));
     } finally {
       setLoading(false);
     }
@@ -62,7 +63,9 @@ function BulkEditorPage() {
       });
       setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, in_sitemap: !r.in_sitemap } : r)));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Save failed");
+      toast.error(
+        userMessage(e, "Couldn't update this page's sitemap setting. Try again in a moment."),
+      );
     } finally {
       setSavingId(null);
     }

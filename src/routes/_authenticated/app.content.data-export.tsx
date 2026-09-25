@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Download, Loader2 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { exportTable } from "@/lib/admin-data-io.functions";
+import { userMessage } from "@/lib/user-message";
 
 type TableName = "tenant_pages" | "tenant_listings" | "content_plan" | "content_pages";
 
@@ -49,7 +50,7 @@ function TableCard({ workspaceId, table }: { workspaceId: string | null; table: 
       URL.revokeObjectURL(a.href);
       setStatus(`Exported ${res.rowCount} rows (${Math.round(blob.size / 1024)} KB)`);
     } catch (e: any) {
-      setStatus(`Error: ${e?.message ?? String(e)}`);
+      setStatus(userMessage(e, "Couldn't export this data. Try again in a moment."));
     } finally {
       setBusy(false);
     }

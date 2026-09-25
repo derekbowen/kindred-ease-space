@@ -25,6 +25,7 @@ import { useQuery } from "@tanstack/react-query";
 import { NAV_SECTIONS, isNavItemVisible } from "@/lib/app-nav";
 import { getBetaStatus } from "@/lib/entitlements.functions";
 import { CoachLauncher } from "@/components/coach/CoachLauncher";
+import { userMessage } from "@/lib/user-message";
 
 export const Route = createFileRoute("/_authenticated/app")({
   component: AppShell,
@@ -73,7 +74,12 @@ function AppShell() {
       .then(() => getMe().then(setMe))
       .catch((e) => {
         console.error("ensureWorkspace failed", e);
-        setProvisionError(e instanceof Error ? e.message : "We couldn't set up your workspace.");
+        setProvisionError(
+          userMessage(
+            e,
+            "We couldn't set up your workspace. Try again, or contact support if it keeps happening.",
+          ),
+        );
       })
       .finally(() => setProvisioning(false));
   }, [loading, me]);
@@ -256,6 +262,7 @@ function AppShell() {
             <Outlet />
           </main>
         </SidebarInset>
+        {/* Renders nothing while the Coach is off for launch (coach-availability). */}
         <CoachLauncher workspaceId={me?.memberships?.[0]?.workspace_id ?? null} />
       </div>
     </SidebarProvider>

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { safeNextPath } from "@/lib/safe-next";
+import { userMessage } from "@/lib/user-message";
 
 const searchSchema = z.object({ next: z.string().optional() });
 
@@ -41,8 +42,12 @@ function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setSubmitting(false);
     if (error) {
-      setError(error.message);
-      toast.error(error.message);
+      const msg = userMessage(
+        error,
+        "Couldn't sign you in. Check your email and password and try again.",
+      );
+      setError(msg);
+      toast.error(msg);
       return;
     }
     navigate({ to: safeNextPath(search.next) });
@@ -56,11 +61,16 @@ function LoginPage() {
 
     if (error) {
       if (error.message.toLowerCase().includes("provider is not enabled")) {
-        toast.error("Google sign-in is not enabled in Supabase yet.");
+        toast.error("Google sign-in isn't available yet. Sign in with your email and password.");
         return;
       }
 
-      toast.error(error.message);
+      toast.error(
+        userMessage(
+          error,
+          "Couldn't start Google sign-in. Try again, or sign in with your email and password.",
+        ),
+      );
     }
   };
 

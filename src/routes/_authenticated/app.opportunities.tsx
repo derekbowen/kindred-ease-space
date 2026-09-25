@@ -16,11 +16,18 @@ import {
   skipOpportunity,
   type OpportunityListItem,
 } from "@/lib/opportunities.functions";
+import { userMessage } from "@/lib/user-message";
 
 export const Route = createFileRoute("/_authenticated/app/opportunities")({
   head: () => ({ meta: [{ title: "SEO Opportunities — founders.click" }] }),
   component: OpportunitiesPage,
 });
+
+const STEP_LABELS: Record<string, string> = {
+  site_scan: "Site scan",
+  inventory: "Listings",
+  discovery: "Opportunities",
+};
 
 /** Customer-facing bands only. The internal numeric score is never rendered —
  *  it exists to sort candidates, not to imply precision we don't have. */
@@ -76,7 +83,7 @@ function OpportunitiesPage() {
         setRows(r.rows);
         setCounts(r.counts);
       } catch (e) {
-        setErr(e instanceof Error ? e.message : "Failed to load opportunities");
+        setErr(userMessage(e, "Couldn't load your opportunities. Refresh the page to try again."));
       }
     },
     [listFn],
@@ -95,16 +102,27 @@ function OpportunitiesPage() {
       if (domain.trim()) {
         const d = await setDomainFn({ data: { workspaceId, domain: domain.trim() } });
         if (!d.ok) {
-          setErr(d.error);
+          setErr(
+            userMessage(d.error, "Couldn't save that domain. Enter a domain like example.com."),
+          );
           return;
         }
       }
       const r = await analyzeFn({ data: { workspaceId, skipScan: false } });
-      const steps = (r.steps ?? []).map((s) => `${s.step}: ${s.detail}`).join(" · ");
+      // A failed step's detail is the server's raw error text: only a
+      // finished step's detail is shown as it is.
+      const steps = (r.steps ?? [])
+        .map(
+          (s) =>
+            `${STEP_LABELS[s.step] ?? "Analysis"}: ${
+              s.ok ? s.detail : userMessage(s.detail, "didn't run this time")
+            }`,
+        )
+        .join(" · ");
       setMsg(steps);
       await reload(workspaceId);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Analysis failed");
+      setErr(userMessage(e, "The analysis didn't finish. Try again in a few minutes."));
     } finally {
       setAnalyzing(false);
     }
@@ -120,7 +138,7 @@ function OpportunitiesPage() {
         setMsg("Draft created. Review it under Pages, then publish when you're happy.");
         await reload(workspaceId);
       } else {
-        setErr(r.error ?? "Could not build the page");
+        setErr(userMessage(r.error, "Couldn't build this page. Try again in a few minutes."));
       }
     } finally {
       setWorkingId(null);

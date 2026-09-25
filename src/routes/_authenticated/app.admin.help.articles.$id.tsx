@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-message";
 import { MarkdownRenderer } from "@/components/help/MarkdownRenderer";
 import { SeoPreviewPanel } from "@/components/help/SeoPreviewPanel";
 import {
@@ -90,7 +91,15 @@ function EditArticlePage() {
         });
         setMeta({ published_at: a.published_at ?? null, updated_at: a.updated_at ?? null });
       })
-      .catch((e) => toast.error("Failed to load", { description: String(String(e)) }))
+      // Anyone signed in can open this URL; a customer gets "forbidden" here.
+      .catch((e) =>
+        toast.error("Failed to load", {
+          description: userMessage(
+            e,
+            "This article couldn't be loaded. Refresh the page to try again.",
+          ),
+        }),
+      )
       .finally(() => setLoading(false));
   }, [id, getFn, catsFn, navigate]);
 

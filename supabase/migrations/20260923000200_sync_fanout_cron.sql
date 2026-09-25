@@ -53,7 +53,14 @@ BEGIN
         'Content-Type', 'application/json',
         'Authorization', 'Bearer ' || v_secret
       ),
-      body := jsonb_build_object('workspace_id', v_row.workspace_id)
+      body := jsonb_build_object('workspace_id', v_row.workspace_id),
+      -- pg_net's default is 5 s. One tenant's sync takes longer than that
+      -- as soon as it has a real catalogue (125 listings: ~6 s in production
+      -- on 2026-09-25), so every response was recorded as a timeout and the
+      -- caller hung up while the Worker was still writing. Two minutes covers
+      -- the hook's own bounded work; the request stays asynchronous, so the
+      -- cron tick itself is not held up.
+      timeout_milliseconds := 120000
     );
     v_count := v_count + 1;
   END LOOP;

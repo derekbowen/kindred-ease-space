@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
+import { userMessage } from "@/lib/user-message";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,7 +70,8 @@ function ApiKeysPage() {
       setRows(r.rows);
     } catch (e) {
       setRows([]);
-      if (isOwner) setMsg(e instanceof Error ? e.message : "Failed to load");
+      if (isOwner)
+        setMsg(userMessage(e, "Couldn't load your API keys. Refresh the page to try again."));
     }
   }
 
@@ -81,7 +83,9 @@ function ApiKeysPage() {
       const r = await upsert({
         data: { workspaceId, keyName: keyName.trim().toUpperCase(), value: value.trim() },
       });
-      setMsg(r.ok ? "Saved." : `Error: ${r.error}`);
+      setMsg(
+        r.ok ? "Saved." : userMessage(r.error, "Couldn't save that key. Check it and try again."),
+      );
       if (r.ok) {
         setValue("");
         await reload(workspaceId);

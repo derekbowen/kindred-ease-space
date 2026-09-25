@@ -7,6 +7,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { seoCoachChat } from "@/lib/admin-seo-coach.functions";
+import { userMessage } from "@/lib/user-message";
+
+const SEO_COACH_FAILED = "The SEO Coach couldn't answer that. Try again in a moment.";
 
 export const Route = createFileRoute("/_authenticated/app/seo-coach")({
   head: () => ({ meta: [{ title: "SEO Coach — founders.click" }] }),
@@ -42,9 +45,9 @@ function SeoCoachPage() {
     try {
       const r = await chat({ data: { workspaceId, messages: next } });
       if (r.ok) setMessages([...next, { role: "assistant", content: r.reply }]);
-      else setError(r.error);
+      else setError(userMessage(r.error, SEO_COACH_FAILED));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unknown error");
+      setError(userMessage(e, SEO_COACH_FAILED));
     } finally {
       setBusy(false);
     }

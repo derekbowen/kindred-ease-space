@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-message";
 import { getMe } from "@/lib/auth.functions";
 import { getProgram, upsertProgram } from "@/lib/affiliates.functions";
 
@@ -81,7 +82,7 @@ function ProgramEdit() {
       toast.success("Program saved.");
       navigate({ to: "/app/affiliates/programs" });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Could not save program";
+      const msg = userMessage(err, "Couldn't save this program. Check the details and try again.");
       setError(msg);
       toast.error(msg);
     } finally {

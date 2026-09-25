@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Check } from "lucide-react";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-message";
 import { supabase } from "@/integrations/supabase/client";
 import { getMe } from "@/lib/auth.functions";
 import { getAddons } from "@/lib/addons.functions";
@@ -66,7 +67,12 @@ function AddonsPage() {
       if (res?.url) window.location.href = res.url;
       else throw new Error("No checkout URL returned");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not start checkout");
+      toast.error(
+        userMessage(
+          e,
+          "Couldn't start checkout for this add-on. Try again, or contact support if it keeps happening.",
+        ),
+      );
       setBusy(null);
     }
   };

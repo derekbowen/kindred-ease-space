@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-message";
 
 export const Route = createFileRoute("/reset-password")({
   head: () => ({
@@ -80,7 +81,11 @@ function ResetPasswordPage() {
       redirectTo: `${window.location.origin}/reset-password`,
     });
     setSubmitting(false);
-    if (error) return toast.error(error.message);
+    if (error) {
+      return toast.error(
+        userMessage(error, "Couldn't send the reset link. Check the email address and try again."),
+      );
+    }
     toast.success("Check your email for a reset link.");
   };
 
@@ -89,7 +94,14 @@ function ResetPasswordPage() {
     setSubmitting(true);
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     setSubmitting(false);
-    if (error) return toast.error(error.message);
+    if (error) {
+      return toast.error(
+        userMessage(
+          error,
+          "Couldn't update your password. Request a new reset link and try again.",
+        ),
+      );
+    }
     toast.success("Password updated.");
     navigate({ to: "/app" });
   };

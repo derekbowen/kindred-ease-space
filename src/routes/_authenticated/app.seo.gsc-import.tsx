@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { parseDelimited } from "@/lib/csv";
 import { importGscQueries, getKeywordStats } from "@/lib/admin-seo-tools.functions";
+import { userMessage } from "@/lib/user-message";
 
 export const Route = createFileRoute("/_authenticated/app/seo/gsc-import")({
   head: () => ({ meta: [{ title: "GSC Import — founders.click" }] }),
@@ -104,7 +105,14 @@ function GscImportPage() {
     setMsg(null);
     try {
       const r = await importFn({ data: { workspaceId, rows: rows.slice(0, 5000) } });
-      setMsg(r.ok ? `Imported ${r.upserted} rows.` : `Error: ${r.error}`);
+      setMsg(
+        r.ok
+          ? `Imported ${r.upserted} rows.`
+          : userMessage(
+              r.error,
+              "Couldn't import that Search Console data. Check the CSV and try again.",
+            ),
+      );
       if (r.ok) await loadStats(workspaceId);
     } finally {
       setBusy(false);

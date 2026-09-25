@@ -14,6 +14,7 @@ import {
   deleteCompetitor,
   type CompetitorRow,
 } from "@/lib/admin-seo-tools.functions";
+import { userMessage } from "@/lib/user-message";
 
 export const Route = createFileRoute("/_authenticated/app/seo/competitor-tracker")({
   head: () => ({ meta: [{ title: "Competitor Tracker — founders.click" }] }),
@@ -57,7 +58,7 @@ function CompetitorTrackerPage() {
         setUrl("");
         setNotes("");
         await reload(workspaceId);
-      } else setMsg(r.error);
+      } else setMsg(userMessage(r.error, "Couldn't read that page. Check the URL and try again."));
     } finally {
       setBusy(false);
     }

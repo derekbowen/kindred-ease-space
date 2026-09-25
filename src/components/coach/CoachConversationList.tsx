@@ -16,6 +16,7 @@ import { Plus, MessageSquare, Pencil, Trash2, Search, Loader2 } from "lucide-rea
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { createConversation, renameConversation, deleteConversation } from "@/lib/coach.functions";
+import { userMessage } from "@/lib/user-message";
 
 export type ConversationListItem = {
   id: string;
@@ -51,7 +52,7 @@ export function CoachConversationList({
     },
     onError: (e) =>
       toast.error("Failed to create conversation", {
-        description: e instanceof Error ? e.message : String(e),
+        description: userMessage(e, "Try again in a moment."),
       }),
   });
 
@@ -64,7 +65,7 @@ export function CoachConversationList({
       toast.success("Renamed");
     },
     onError: (e) =>
-      toast.error("Rename failed", { description: e instanceof Error ? e.message : String(e) }),
+      toast.error("Rename failed", { description: userMessage(e, "Try again in a moment.") }),
   });
 
   const remove = useMutation({
@@ -76,7 +77,7 @@ export function CoachConversationList({
       toast.success("Conversation deleted");
     },
     onError: (e) =>
-      toast.error("Delete failed", { description: e instanceof Error ? e.message : String(e) }),
+      toast.error("Delete failed", { description: userMessage(e, "Try again in a moment.") }),
   });
 
   const filtered = filter.trim()

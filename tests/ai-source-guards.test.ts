@@ -288,8 +288,17 @@ console.log("\n=== one provider module, one spend path ===");
 console.log("\n=== no other AI provider is reachable ===");
 {
   const banned = /openrouter|ai\.gateway\.lovable\.dev|LOVABLE_API_KEY|api\.anthropic\.com|ANTHROPIC_API_KEY|@anthropic-ai|generativelanguage\.googleapis\.com|GEMINI_API_KEY|@google\/generative-ai|google\/gemini/i;
-  const hits = [...srcFiles, ...fnFiles].filter((f) => banned.test(read(f)));
+  // src/lib/user-message.ts names providers in exactly one place: the
+  // denylist that stops any message mentioning them from reaching a customer.
+  const DENYLIST = "src/lib/user-message.ts";
+  const hits = [...srcFiles, ...fnFiles].filter((f) => f !== DENYLIST && banned.test(read(f)));
   t("no Worker or Supabase function source names OpenRouter, the Lovable AI gateway, Anthropic or Gemini", hits.length === 0, hits.join(", "));
+  const denyLines = read(DENYLIST).split("\n").filter((l) => banned.test(l));
+  t(
+    "…except the customer-message denylist, where they appear only inside the leak pattern",
+    denyLines.length === 1 && /^\s*\/\\b\(OpenRouter\|OpenAI\|Anthropic\|Gemini\|Lovable\|/.test(denyLines[0]!),
+    denyLines.join(" | "),
+  );
   const pkg = JSON.parse(read("package.json"));
   const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
   const aiDeps = deps.filter((d) => /anthropic|openrouter|generative-ai|^@ai-sdk\/|^ai$|langchain|lovable\.dev\/(ai|gateway)/.test(d));
@@ -306,9 +315,6 @@ console.log("\n=== the legacy AI endpoints are gone ===");
     t(`supabase/functions/${name} does not exist`, !existsSync(join(ROOT, "supabase/functions", name)));
     t(`config.toml has no [functions.${name}]`, !config.includes(`[functions.${name}]`));
     const refs = [...srcFiles, ...fnFiles].filter((f) => {
-      // TEMPORARY: the launch branch (55fe4fe) replaces CoachPanel with a
-      // static "coming soon" panel; this exception is removed by the merge.
-      if (f === "src/components/coach/CoachPanel.tsx" && name === "coach-chat") return false;
       const s = read(f);
       return s.includes(`functions/v1/${name}`) || new RegExp(`invoke\\(\\s*["'\`]${name}["'\`]`).test(s);
     });

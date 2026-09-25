@@ -263,6 +263,12 @@ t("fan-out posts one workspace_id per request", /jsonb_build_object\('workspace_
 t("fan-out filters connected/pending sharetribe rows", /status IN \('connected', 'pending'\)/.test(m2) && /provider = 'sharetribe'/.test(m2));
 t("fan-out skips with a NOTICE when the secret is missing", /IF v_secret IS NULL THEN[\s\S]*RAISE NOTICE[\s\S]*RETURN 0;/.test(m2));
 t("Bearer header uses the Vault secret", /'Authorization', 'Bearer ' \|\| v_secret/.test(m2));
+// pg_net gives up after 5 s by default; a 125-listing sync took ~6 s in
+// production, so every fan-out response was logged as a timeout. The request
+// must wait long enough for one tenant's bounded sync to answer.
+const timeoutMs = Number(/timeout_milliseconds\s*:=\s*(\d+)/.exec(m2)?.[1] ?? 0);
+t("fan-out waits long enough for one tenant's sync (>= 60 s, <= 5 min)",
+  timeoutMs >= 60_000 && timeoutMs <= 300_000, String(timeoutMs));
 t("verification checks exactly one sharetribe cron job", /count\(\*\) = 1 FROM cron\.job WHERE jobname ILIKE '%sharetribe%'/.test(m2));
 
 console.log(`\n${p} passed, ${f} failed\n`); process.exit(f ? 1 : 0);
