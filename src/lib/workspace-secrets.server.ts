@@ -28,23 +28,36 @@ export async function getWorkspaceSecret(
   return null;
 }
 
+type SecretRpc = {
+  rpc: (
+    fn: string,
+    args: Record<string, unknown>,
+  ) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
+};
+
 /**
- * Like getWorkspaceSecret, but reports whether the key came from the workspace's
- * own vault ("byok") or the platform env fallback ("platform"). Callers meter
- * platform-key usage against workspace credits; BYOK usage is the customer's own
- * provider bill and is not metered.
+ * Like getWorkspaceSecret, but reports whether the key came from the
+ * workspace's own vault ("byok") or the platform env fallback ("platform"),
+ * and FAILS CLOSED: a vault read error throws instead of quietly falling back
+ * to the platform key (which would bill a BYOK workspace's usage to its
+ * platform allowance). The only caller is the AI key resolution
+ * (src/lib/ai/spend.server.ts resolveAiKey, "OPENAI_API_KEY"); `db` is a
+ * test seam and defaults to the service-role client.
  */
 export async function getWorkspaceSecretWithSource(
   workspaceId: string,
   keyName: string,
   envFallback?: string,
+  db?: SecretRpc,
 ): Promise<{ key: string; source: "byok" | "platform" } | null> {
-  const { data, error } = await supabaseAdmin.rpc("tenant_get_workspace_secret", {
+  const client = db ?? (supabaseAdmin as unknown as SecretRpc);
+  const { data, error } = await client.rpc("tenant_get_workspace_secret", {
     _workspace_id: workspaceId,
     _key_name: keyName,
   });
   if (error) {
     console.error(`workspace-secrets: failed to read ${keyName}:`, error.message);
+    throw new Error(`workspace secret ${keyName} could not be read`);
   }
   if (typeof data === "string" && data.length > 0) return { key: data, source: "byok" };
   if (envFallback) {

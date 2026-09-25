@@ -1,41 +1,58 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { creditsForUsage } from "@/lib/ai-pricing";
+import { AI_ROUTE_LIMITS } from "@/lib/ai/limits";
 import {
-  OPENROUTER_BASE,
-  PLATFORM_MODEL_ALLOWLIST,
-  creditsForUsage,
-  resolvePlatformModel,
-} from "@/lib/ai-pricing";
-import { getWorkspaceSecretWithSource } from "@/lib/workspace-secrets.server";
+  AI_DEFAULT_TIER,
+  AI_QUALITY_TIERS,
+  AI_TIER_OPTIONS,
+  modelForTier,
+  type AiModelId,
+  type AiQualityTier,
+} from "@/lib/ai/models";
+import { AI_MESSAGES, CustomerFacingError } from "@/lib/ai/customer-error";
+import type { AiUsage, OpenAiTransport, StructuredFormat } from "@/lib/ai/openai.server";
+import {
+  billingClassFor,
+  resolveAiKey,
+  runMeteredAiCall,
+  type AiBillingClass,
+  type AiDb,
+  type AiKey,
+  type AiSettlement,
+  type SpendBilling,
+} from "@/lib/ai/spend.server";
 import {
   findUniqueTenantSlug,
   getActiveTemplateId,
   slugifyPage,
 } from "@/lib/tenant-page-helpers.server";
 import { checkPageBeforePublish, type ContractCheck } from "@/lib/seo/page-contract.server";
+import { z } from "zod";
+
+export { CustomerFacingError, customerMessage } from "@/lib/ai/customer-error";
 
 /**
- * Shared page-generation core. The Quick Page Builder, the Opportunity Engine
- * and the batch "Generate Content" job all run through here so there is ONE
- * prompt, ONE inventory-grounding rule, ONE metering path and ONE model policy.
+ * Shared page-generation core. The Quick Page Builder, the coach's city page,
+ * the Opportunity Engine and the batch "Generate Content" job all run through
+ * here so there is ONE prompt, ONE inventory-grounding rule, ONE spend path
+ * and ONE model policy.
  *
- * Ordering matters and is the whole point of this module:
- *   0. resolveBillingMode    — who pays, decided BEFORE anything is spent:
- *      BYOK (the customer's own provider bill), a beta grant (included), or
- *      the platform key — which must be able to pay for a whole page, not
- *      merely hold a positive balance.
- *   1. generatePageContent  — the AI call. Nothing is charged here. A failed
- *      generation costs the customer nothing and a retry does not pay twice.
- *      Every caller first holds a daily-cap reservation (reserveGenerationSlot,
- *      one per provider call) and marks it spent immediately before the
- *      provider request (beforeProviderCall → markGenerationProviderCalled).
- *      Only a failure BEFORE that mark may release the slot; after it the
- *      slot stays counted for 24 hours and the failure is logged
- *      (recordFailedGeneration), so a failing request can never loop the
- *      platform key for free.
- *   2. persistGeneratedPage — the draft row. Never auto-publishes.
- *   3. settleGeneration     — charges the platform quota/credits ONLY now,
- *      and reports honestly: a deduction that did not happen is recorded as
- *      'unbilled', never as a charge.
+ * Ordering matters and is the whole point of this module (and of its
+ * callers, runQuickPage and the batch runItem):
+ *   validate → pause (fail fast) → key and billing class (resolveBillingMode)
+ *   → the daily-cap slot (reserveGenerationSlot, one per provider call)
+ *   → the spend hold (runMeteredAiCall → ai_reserve; a refusal releases the
+ *     slot) → mark both (the slot in beforeProviderCall, then ai_mark_called)
+ *   → the OpenAI call → settle (ai_settle, the actual cost capped at the hold)
+ *   → the draft row (persistGeneratedPage, never auto-published).
+ * The slot and the hold share ONE request id. Only a failure BEFORE the marks
+ * releases anything; after them the slot stays counted for 24 hours (and the
+ * reservation counts toward the per-minute rate limit), so a failing request
+ * can never loop the platform key without bound. The call is settled on two
+ * books: the customer pays only for a delivered page and is refunded in full
+ * for any failure; the platform budget keeps what OpenAI may have been paid.
+ * There is exactly one settlement per request, and it happens in the
+ * database before the page is written.
  *
  * The pure helpers at the top have no I/O so tests can import this file
  * without a database or network (supabaseAdmin is a lazy proxy).
@@ -47,48 +64,35 @@ import { checkPageBeforePublish, type ContractCheck } from "@/lib/seo/page-contr
 // Pure helpers (no I/O)
 // ---------------------------------------------------------------------------
 
-/**
- * Cheapest allowlisted model. The old default ('google/gemini-2.5-flash') was
- * not on the allowlist, so resolvePlatformModel silently swapped it for the
- * Pro-tier default and customers paid ~4x for "flash".
- */
-export const GENERATION_DEFAULT_MODEL = "google/gemini-3-flash-preview";
-
 /** A typical city page: ~1.5K prompt tokens (brief + inventory) and ~1.5K out. */
 export const TYPICAL_PAGE_TOKENS = { prompt: 1500, completion: 1500 };
 
-/** Credits one page is likely to cost on a platform key, for the cost hint. */
-export function estimatedCreditsPerPage(model: string): number {
-  return creditsForUsage(model, TYPICAL_PAGE_TOKENS.prompt, TYPICAL_PAGE_TOKENS.completion);
+/** Credits one page is likely to cost on the platform key at a quality tier, for the cost hint. */
+export function estimatedCreditsPerPage(tier: AiQualityTier): number {
+  return creditsForUsage(modelForTier(tier), TYPICAL_PAGE_TOKENS.prompt, TYPICAL_PAGE_TOKENS.completion);
 }
 
-/** Human labels + a one-line cost hint per allowlisted model, for pickers. */
-export const GENERATION_MODEL_OPTIONS: Array<{ id: string; label: string; hint: string }> = [
-  {
-    id: "google/gemini-3.1-flash-lite-preview",
-    label: "Gemini 3.1 Flash Lite",
-    note: "lightest, shorter copy",
-  },
-  { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash", note: "fast and cheap" },
-  { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash", note: "balanced" },
-  { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro", note: "best quality" },
-]
-  .filter((m) => PLATFORM_MODEL_ALLOWLIST.includes(m.id))
-  .map((m) => ({
-    id: m.id,
-    label: m.label,
-    hint: `${m.note} — about ${estimatedCreditsPerPage(m.id)} credit${estimatedCreditsPerPage(m.id) === 1 ? "" : "s"} per page on the platform key`,
-  }));
-
 /**
- * The model ids a customer may ask for, as a tuple for z.enum. Anything else
- * is rejected at the input boundary: an unknown id must never be "resolved"
- * to the most expensive model on the customer's behalf.
+ * The quality tiers a page request may ask for, as a tuple for z.enum. A tier
+ * is the ONLY say a customer has in the model (models.ts maps it on the
+ * server); a model name in a request body is a validation error.
  */
-export const GENERATION_MODEL_IDS = GENERATION_MODEL_OPTIONS.map((m) => m.id) as [
-  string,
-  ...string[],
-];
+export const GENERATION_TIERS = AI_QUALITY_TIERS;
+export const GENERATION_DEFAULT_TIER: AiQualityTier = AI_DEFAULT_TIER;
+
+/** Labels + a one-line cost hint per tier, for the pickers. No model names. */
+export const GENERATION_TIER_OPTIONS: Array<{ tier: AiQualityTier; label: string; hint: string }> =
+  AI_TIER_OPTIONS.map((o) => {
+    const credits = estimatedCreditsPerPage(o.tier);
+    return {
+      tier: o.tier,
+      label: o.label,
+      hint: `${o.hint} About ${credits} credit${credits === 1 ? "" : "s"} per page on the platform key.`,
+    };
+  });
+
+/** The source label a generation is logged under (ai_usage_log.feature). */
+export type GenerationSource = "quick_page" | "batch_generation" | "coach_city_page" | "opportunity";
 
 /**
  * Stable identity for a batch target. Batch items are idempotent by THIS key,
@@ -174,20 +178,6 @@ export function dailyCapRemaining(cap: number, consumedLast24h: number): number 
 
 export const DAILY_CAP_WINDOW_MS = 24 * 3600_000;
 
-/**
- * An error whose message was written for the customer. Everything else that
- * escapes the pipeline — PostgREST text, constraint and column names, half a
- * stack trace — is replaced by a generic sentence at the boundary, see
- * customerMessage. Throw this for the refusals a customer is meant to read
- * (no key, out of funds, paused, daily cap, provider error, thin output).
- */
-export class CustomerFacingError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "CustomerFacingError";
-  }
-}
-
 export const GENERATION_UNAVAILABLE_MESSAGE =
   "Generation is temporarily unavailable. Please try again in a few minutes.";
 
@@ -259,41 +249,6 @@ export function batchAttemptRequestId(item: {
 }
 
 /**
- * The one place a thrown error becomes something a tenant may read: a
- * CustomerFacingError passes through, anything else is logged in full for
- * ops and replaced by `fallback`. Nothing stored in generation_items.error or
- * thrown to the browser may carry database or provider text.
- */
-export function customerMessage(e: unknown, fallback: string): string {
-  if (e instanceof CustomerFacingError) return e.message;
-  console.error(
-    "[generation] internal error withheld from the customer:",
-    e instanceof Error ? (e.stack ?? e.message) : String(e),
-  );
-  return fallback;
-}
-
-/**
- * The usage a page is billed for. A provider that omits usage (0 tokens both
- * ways) is billed as a typical page, never as nothing: once the free quota is
- * gone, a zero-usage page must not become a free page. `assumed` tells the
- * caller to log that the numbers are an estimate.
- */
-export function billableUsage(
-  promptTokens: number,
-  completionTokens: number,
-): { promptTokens: number; completionTokens: number; assumed: boolean } {
-  const p = Number.isFinite(promptTokens) ? Math.max(0, Math.floor(promptTokens)) : 0;
-  const c = Number.isFinite(completionTokens) ? Math.max(0, Math.floor(completionTokens)) : 0;
-  if (p + c > 0) return { promptTokens: p, completionTokens: c, assumed: false };
-  return {
-    promptTokens: TYPICAL_PAGE_TOKENS.prompt,
-    completionTokens: TYPICAL_PAGE_TOKENS.completion,
-    assumed: true,
-  };
-}
-
-/**
  * A stable request id for a generation that has a natural identity but no
  * browser-kept id — the coach's "create a page for this insight". SHA-256 of
  * the seed, first 16 bytes, with the version-4 and variant bits set so it
@@ -310,20 +265,6 @@ export async function deterministicRequestId(seed: string): Promise<string> {
   b[8] = (b[8]! & 0x3f) | 0x80;
   const hex = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
-/**
- * Did a settlement write lose to a concurrent one for the same page? Either
- * the unique_violation code or the settlement index named in the message:
- * PostgREST relays both, and the index name survives a driver that drops the
- * code.
- */
-export function isSettlementConflict(
-  e: { code?: string | null; message?: string | null } | null | undefined,
-): boolean {
-  if (!e) return false;
-  if (e.code === "23505") return true;
-  return /credit_ledger_generation_settlement_uidx/.test(String(e.message ?? ""));
 }
 
 /**
@@ -441,11 +382,12 @@ export function planJobItems(
 export const STALE_RUNNING_MS = 3 * 60_000;
 
 /**
- * Hard ceiling on one provider call. It MUST be shorter than STALE_RUNNING_MS:
- * a driver that is still waiting on the provider must never look abandoned,
- * or a second driver reclaims the item and generates the page twice.
+ * Hard ceiling on one provider call — the page-generation row of the route
+ * table (src/lib/ai/limits.ts). It MUST be shorter than STALE_RUNNING_MS: a
+ * driver that is still waiting on the provider must never look abandoned, or
+ * a second driver reclaims the item and generates the page twice.
  */
-export const OPENROUTER_TIMEOUT_MS = 120_000;
+export const PAGE_GENERATION_TIMEOUT_MS = AI_ROUTE_LIMITS.page_generation.timeoutMs;
 
 export function isStaleRunning(updatedAt: string | null | undefined, now = Date.now()): boolean {
   if (!updatedAt) return true;
@@ -454,66 +396,18 @@ export function isStaleRunning(updatedAt: string | null | undefined, now = Date.
   return now - t > STALE_RUNNING_MS;
 }
 
-/**
- * Can the platform key pay for ONE page? Free trial quota first; once that is
- * gone the purchased balance must cover a whole page at this model's price.
- * A balance of 1 credit against a 5-credit page used to pass ("> 0") and the
- * deduction then failed silently — generation for free, forever.
- * A missing quota row means the RPC will create one with the default free
- * allowance on first consume, so null counts as "free quota available".
- */
-export function hasPlatformFunds(p: {
-  freeQuotaRemaining: number | null;
-  balance: number | null;
-  model: string;
-}): boolean {
-  const freeLeft = p.freeQuotaRemaining === null ? true : p.freeQuotaRemaining > 0;
-  if (freeLeft) return true;
-  return (Number(p.balance) || 0) >= estimatedCreditsPerPage(p.model);
-}
-
-export type BillingMode = "byok" | "granted" | "platform";
-export type SettleBilling = "byok" | "granted" | "free_quota" | "credits" | "unbilled";
-/** generation_items.billing_status */
-export type ItemBillingStatus = "pending" | "charged" | "free" | "unbilled";
-
-/** What an item's billing_status must say once settlement has run. */
-export function billingStatusFor(
-  billing: SettleBilling,
-  creditsCharged: number,
-): ItemBillingStatus {
-  if (billing === "unbilled") return "unbilled";
-  if (billing === "credits") return creditsCharged > 0 ? "charged" : "free";
-  return "free";
-}
-
-/**
- * billing_status the moment the draft row exists, before settlement. Only a
- * platform-metered generation has a charge outstanding; BYOK and beta grants
- * are settled by construction, so a crash after this point owes nothing.
- */
-export function initialBillingStatus(mode: BillingMode): ItemBillingStatus {
-  return mode === "platform" ? "pending" : "free";
-}
 
 /** Customer-facing wording. Provider bodies never reach these strings. */
-export const PROVIDER_ERROR_MESSAGE =
-  "The AI provider returned an error; try again or contact support.";
-export const PROVIDER_TIMEOUT_MESSAGE =
-  "The AI provider took too long to respond. Try again in a minute.";
-export const GENERATION_PAUSED_MESSAGE =
-  "Paused: page generation is paused platform-wide right now. Try again later.";
+export const PROVIDER_ERROR_MESSAGE = AI_MESSAGES.providerError;
+export const PROVIDER_TIMEOUT_MESSAGE = AI_MESSAGES.timeout;
+export const GENERATION_PAUSED_MESSAGE = AI_MESSAGES.generationPaused;
 export const ATTEMPTS_EXHAUSTED_MESSAGE = `Gave up after ${MAX_ITEM_ATTEMPTS} attempts. Contact support if you need this city written.`;
-export const UNBILLED_ITEM_MESSAGE =
-  "The draft was written but could not be billed: this workspace is out of included AI generation. Contact support, then retry — the page will not be generated again.";
 
 /**
  * Credit packs are not for sale (tests/credit-pack-withdrawn.test.ts), so
- * there is no purchase path to point at: the way to continue is support. The
- * model is accepted for call-site compatibility; a per-model price would only
- * describe something the customer cannot buy.
+ * there is no purchase path to point at: the way to continue is support.
  */
-export function outOfCreditsMessage(_model: string): string {
+export function outOfCreditsMessage(): string {
   return "This workspace has used up its included AI generation. Contact support to continue generating pages.";
 }
 
@@ -521,6 +415,31 @@ export function dailyCapMessage(cap: number, remaining: number): string {
   return remaining === 0
     ? `You've hit today's limit of ${cap} generated pages. Try again in 24 hours.`
     : `You can generate ${remaining} more page${remaining === 1 ? "" : "s"} in the next 24 hours (limit ${cap} per day). Pick ${remaining} or fewer cities.`;
+}
+
+export type KeySource = "byok" | "platform";
+/** Who paid for a generated page, as tenant_pages.generation_billing_mode records it. */
+export type BillingMode = "byok" | "granted" | "platform";
+/** generation_items.billing_status */
+export type ItemBillingStatus = "pending" | "charged" | "free" | "unbilled";
+
+/** The page's billing mode for a spend hold's billing. */
+export function billingModeFor(billing: SpendBilling): BillingMode {
+  if (billing === "byok") return "byok";
+  if (billing === "granted") return "granted";
+  return "platform";
+}
+
+/**
+ * What an item's (or a page's) billing status says once the call is settled.
+ * Funds are held BEFORE the call, so a settled platform page can no longer
+ * end up unbilled; a settle that could not be recorded stays 'pending' (the
+ * hold covers it and the reaper settles it within 35 minutes).
+ */
+export function billingStatusFor(s: Pick<AiSettlement, "settled" | "billing" | "creditsCharged">): ItemBillingStatus {
+  if (!s.settled) return "pending";
+  if (s.billing === "credits" && s.creditsCharged > 0) return "charged";
+  return "free";
 }
 
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -579,30 +498,56 @@ Voice: confident, friendly, customer-first, never spammy. Short paragraphs.
 Real, useful copy — no filler, no "in this article we will".
 Format: Markdown only. Use ## and ### headings.
 Always end with a short CTA paragraph.
-Return your answer ONLY by calling the write_page tool.
+Return the page as the write_page object: title, seo_title, seo_description, body_markdown.
 `.trim();
 
-export const WRITE_PAGE_TOOL = {
-  type: "function" as const,
-  function: {
-    name: "write_page",
-    description: "Return the generated page content.",
-    parameters: {
-      type: "object",
-      properties: {
-        title: { type: "string" },
-        seo_title: { type: "string", description: "≤60 chars" },
-        seo_description: { type: "string", description: "≤155 chars" },
-        body_markdown: {
-          type: "string",
-          description: "Full markdown body, 600-1200 words, no frontmatter",
-        },
-      },
-      required: ["title", "seo_title", "seo_description", "body_markdown"],
-      additionalProperties: false,
+/**
+ * The page's output format — the same four fields, descriptions and
+ * strictness the forced write_page tool had, now as a Structured Outputs JSON
+ * Schema (text.format json_schema, strict) and validated again on arrival.
+ */
+export const WRITE_PAGE_SCHEMA = {
+  type: "object",
+  properties: {
+    title: { type: "string" },
+    seo_title: { type: "string", description: "≤60 chars" },
+    seo_description: { type: "string", description: "≤155 chars" },
+    body_markdown: {
+      type: "string",
+      description: "Full markdown body, 600-1200 words, no frontmatter",
     },
   },
+  required: ["title", "seo_title", "seo_description", "body_markdown"],
+  additionalProperties: false,
+} as const;
+
+export type WritePageOutput = {
+  title: string;
+  seo_title: string;
+  seo_description: string;
+  body_markdown: string;
 };
+
+const WritePageOutputSchema = z
+  .object({
+    title: z.string(),
+    seo_title: z.string(),
+    seo_description: z.string(),
+    body_markdown: z.string(),
+  })
+  .strict();
+
+export const WRITE_PAGE_FORMAT: StructuredFormat<WritePageOutput> = {
+  name: "write_page",
+  schema: WRITE_PAGE_SCHEMA as unknown as Record<string, unknown>,
+  parse: (value) => {
+    const r = WritePageOutputSchema.safeParse(value);
+    return r.success ? r.data : null;
+  },
+};
+
+/** Anything shorter than this is a refusal or a truncated stream, not a page. */
+export const MIN_BODY_CHARS = 300;
 
 export function buildUserPrompt(p: {
   title: string;
@@ -624,202 +569,11 @@ Use ## for the main sections and ### for sub-points. Lead with a strong opening 
 seo_title (≤60 chars) and seo_description (≤155 chars) optimised for the topic.`;
 }
 
-export type WritePageOutput = {
-  title: string;
-  seo_title: string;
-  seo_description: string;
-  body_markdown: string;
-};
-
-export type OpenRouterResult = WritePageOutput & {
-  promptTokens: number;
-  completionTokens: number;
-};
-
-/** Anything shorter than this is a refusal or a truncated stream, not a page. */
-export const MIN_BODY_CHARS = 300;
-
-type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
-
-/**
- * One forced tool call to OpenRouter. `fetchImpl` is injectable so the
- * parsing rules (tool-call shape, short-body rejection, non-2xx handling,
- * the timeout) are testable offline.
- *
- * Provider error bodies go to the server log ONLY. What is thrown — and so
- * what lands in generation_items.error and in front of the customer — is a
- * generic sentence. A raw upstream body can carry request ids, quota
- * details or half a stack trace; none of that belongs in a tenant's UI.
- */
-export async function callOpenRouterWritePage(opts: {
-  apiKey: string;
-  model: string;
-  systemPrompt: string;
-  userPrompt: string;
-  fetchImpl?: FetchLike;
-  timeoutMs?: number;
-  log?: (message: string) => void;
-}): Promise<OpenRouterResult> {
-  const doFetch: FetchLike = opts.fetchImpl ?? ((i, init) => fetch(i, init));
-  const log = opts.log ?? ((m: string) => console.error(m));
-  const signal = AbortSignal.timeout(opts.timeoutMs ?? OPENROUTER_TIMEOUT_MS);
-
-  let resp: Response;
-  try {
-    resp = await doFetch(`${OPENROUTER_BASE}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${opts.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: opts.model,
-        messages: [
-          { role: "system", content: opts.systemPrompt },
-          { role: "user", content: opts.userPrompt },
-        ],
-        tools: [WRITE_PAGE_TOOL],
-        tool_choice: { type: "function", function: { name: "write_page" } },
-      }),
-      signal,
-    });
-  } catch (e) {
-    const name = (e as { name?: unknown } | null)?.name;
-    const timedOut = signal.aborted || name === "TimeoutError" || name === "AbortError";
-    const reason = e instanceof Error ? e.message : String(e);
-    log(
-      `[openrouter] ${timedOut ? "timeout" : "network error"} model=${opts.model}: ${reason.slice(0, 300)}`,
-    );
-    throw new CustomerFacingError(timedOut ? PROVIDER_TIMEOUT_MESSAGE : PROVIDER_ERROR_MESSAGE);
-  }
-
-  if (!resp.ok) {
-    const t = await resp.text().catch(() => "");
-    log(`[openrouter] HTTP ${resp.status} model=${opts.model}: ${t.slice(0, 500)}`);
-    throw new CustomerFacingError(PROVIDER_ERROR_MESSAGE);
-  }
-  // The body is still the provider's: the timeout can fire while it streams
-  // in, and a truncated or non-JSON body is a provider failure too. Neither
-  // may surface as the raw abort or parse message.
-  let json: any;
-  try {
-    json = await resp.json();
-  } catch (e) {
-    const name = (e as { name?: unknown } | null)?.name;
-    const timedOut = signal.aborted || name === "TimeoutError" || name === "AbortError";
-    const reason = e instanceof Error ? e.message : String(e);
-    log(
-      `[openrouter] ${timedOut ? "timeout" : "unreadable body"} model=${opts.model}: ${reason.slice(0, 300)}`,
-    );
-    throw new CustomerFacingError(timedOut ? PROVIDER_TIMEOUT_MESSAGE : PROVIDER_ERROR_MESSAGE);
-  }
-  const promptTokens = Number(json?.usage?.prompt_tokens ?? 0) || 0;
-  const completionTokens = Number(json?.usage?.completion_tokens ?? 0) || 0;
-  try {
-    const tc = json?.choices?.[0]?.message?.tool_calls?.[0];
-    if (!tc?.function?.arguments) throw new CustomerFacingError("AI response missing tool call");
-    let gen: Partial<WritePageOutput>;
-    try {
-      gen =
-        typeof tc.function.arguments === "string"
-          ? JSON.parse(tc.function.arguments)
-          : tc.function.arguments;
-    } catch {
-      throw new CustomerFacingError("AI response was not valid JSON");
-    }
-    if (!gen.body_markdown || gen.body_markdown.length < MIN_BODY_CHARS) {
-      throw new CustomerFacingError(
-        `Generated body too short (${gen.body_markdown?.length ?? 0} chars)`,
-      );
-    }
-    return {
-      title: String(gen.title ?? ""),
-      seo_title: String(gen.seo_title ?? ""),
-      seo_description: String(gen.seo_description ?? ""),
-      body_markdown: gen.body_markdown,
-      promptTokens,
-      completionTokens,
-    };
-  } catch (e) {
-    // The provider answered and billed the key for this: the refusal keeps
-    // the usage it reported, so the caller can log real spend for ops.
-    throw withProviderUsage(e, { promptTokens, completionTokens });
-  }
-}
-
-export type ProviderUsage = { promptTokens: number; completionTokens: number };
-
-const PROVIDER_USAGE = Symbol.for("generation.providerUsage");
-
-/** Attach the usage a provider reported to the error thrown over its response. */
-export function withProviderUsage(e: unknown, usage: ProviderUsage): unknown {
-  if (e && typeof e === "object") {
-    Object.defineProperty(e, PROVIDER_USAGE, {
-      value: usage,
-      enumerable: false,
-      configurable: true,
-    });
-  }
-  return e;
-}
-
-/** The usage a failed provider response reported, if the error carries it. */
-export function providerUsageOf(e: unknown): ProviderUsage | null {
-  if (!e || typeof e !== "object") return null;
-  const u = (e as Record<symbol, unknown>)[PROVIDER_USAGE] as ProviderUsage | undefined;
-  return u && typeof u === "object" ? u : null;
-}
-
 // ---------------------------------------------------------------------------
 // Database-backed steps
 // ---------------------------------------------------------------------------
 
 const sb = () => supabaseAdmin as any;
-
-export type KeySource = "byok" | "platform";
-
-/** BYOK first, platform env-var fallback — and REMEMBER which one it was. */
-export async function resolveGenerationKey(
-  workspaceId: string,
-): Promise<{ key: string; source: KeySource }> {
-  const found = await getWorkspaceSecretWithSource(
-    workspaceId,
-    "OPENROUTER_API_KEY",
-    "OPENROUTER_API_KEY",
-  );
-  if (!found) {
-    throw new CustomerFacingError(
-      "Page generation is not available right now: no AI key is configured for this workspace. Contact support.",
-    );
-  }
-  return found;
-}
-
-/**
- * Cheap read-only check that the workspace can pay for ONE platform call at
- * this model's price (see hasPlatformFunds). Nothing is reserved —
- * consumption happens in settleGeneration after the page row exists.
- */
-export async function assertPlatformAiAvailable(workspaceId: string, model: string): Promise<void> {
-  const [{ data: quota }, { data: bal }] = await Promise.all([
-    supabaseAdmin
-      .from("workspace_ai_quota")
-      .select("platform_credits_remaining")
-      .eq("workspace_id", workspaceId)
-      .maybeSingle(),
-    supabaseAdmin
-      .from("credit_balances")
-      .select("balance")
-      .eq("workspace_id", workspaceId)
-      .maybeSingle(),
-  ]);
-  const ok = hasPlatformFunds({
-    freeQuotaRemaining: quota ? (quota.platform_credits_remaining ?? 0) : null,
-    balance: bal?.balance ?? 0,
-    model,
-  });
-  if (!ok) throw new CustomerFacingError(outOfCreditsMessage(model));
-}
 
 /**
  * Is AI generation included for this workspace? True for a beta tenant whose
@@ -843,35 +597,37 @@ export async function isGenerationGranted(workspaceId: string): Promise<boolean>
   }
 }
 
-/** For a platform-keyed generation: included by grant, or metered (with funds). */
-export async function resolvePlatformSettlementMode(
-  workspaceId: string,
-  model: string,
-): Promise<"granted" | "platform"> {
-  if (await isGenerationGranted(workspaceId)) return "granted";
-  await assertPlatformAiAvailable(workspaceId, model);
-  return "platform";
-}
-
-export type ResolvedBilling = { key: string; source: KeySource; mode: BillingMode };
+/** For a platform-keyed generation: included by the beta grant, or metered. */
+export type ResolvedBilling = {
+  key: AiKey;
+  keySource: KeySource;
+  billingClass: AiBillingClass;
+  mode: BillingMode;
+};
 
 /**
- * Step 0: who pays. Throws with a customer-readable message when nobody can
- * (no key, or a platform key without the funds for a whole page). Callers run
- * this BEFORE claiming an item so a refusal here never counts as an attempt.
+ * Who pays, decided BEFORE anything is reserved: the workspace's own OpenAI
+ * key (byok), a beta grant (page generation is included in it), or the
+ * platform key metered against the free quota and credits. Whether the funds
+ * cover the call is not read here — ai_reserve takes the hold atomically. No
+ * key at all is a customer-facing refusal.
  */
-export async function resolveBillingMode(
-  workspaceId: string,
-  model: string,
-): Promise<ResolvedBilling> {
-  const { key, source } = await resolveGenerationKey(workspaceId);
-  if (source === "byok") return { key, source, mode: "byok" };
-  const mode = await resolvePlatformSettlementMode(workspaceId, model);
-  return { key, source, mode };
+export async function resolveBillingMode(workspaceId: string, db?: AiDb): Promise<ResolvedBilling> {
+  const key = await resolveAiKey(workspaceId, db);
+  const granted = key.source === "platform" ? await isGenerationGranted(workspaceId) : false;
+  const billingClass = billingClassFor(key, { route: "page_generation", granted });
+  const mode: BillingMode = billingClass === "byok" ? "byok" : billingClass === "granted" ? "granted" : "platform";
+  return { key, keySource: key.source, billingClass, mode };
 }
 
 export type GenerateInput = {
   workspaceId: string;
+  /** The authenticated user the call is attributed to. */
+  userId: string;
+  /** The ONE request id: the daily-cap slot and the spend hold share it. */
+  requestId: string;
+  source: GenerationSource;
+  tier: AiQualityTier;
   title: string;
   description?: string | null;
   topic: string;
@@ -880,35 +636,34 @@ export type GenerateInput = {
   categoryPlural?: string | null;
   /** Category used to narrow the inventory grounding query, if known. */
   category?: string | null;
-  model?: string | null;
-  /** Pre-resolved by the caller (resolveBillingMode); resolved here otherwise. */
-  billing?: ResolvedBilling;
+  billing: ResolvedBilling;
   /**
-   * Awaited IMMEDIATELY before the provider request, after every other step
-   * that can fail. Callers holding a daily-cap reservation mark it here
+   * Awaited after the spend hold is granted and IMMEDIATELY before the
+   * provider call. Callers holding a daily-cap slot mark it here
    * (markGenerationProviderCalled): from then on the slot is spent and must
-   * never be released. A throw here aborts before the provider is called.
+   * never be released. A throw here releases the hold and aborts.
    */
   beforeProviderCall?: () => Promise<void>;
-  fetchImpl?: FetchLike;
+  deps?: { db?: AiDb; transport?: OpenAiTransport };
 };
 
 export type GeneratedContent = WritePageOutput & {
-  promptTokens: number;
-  completionTokens: number;
-  model: string;
+  usage: AiUsage | null;
+  model: AiModelId;
   keySource: KeySource;
   billingMode: BillingMode;
+  settlement: AiSettlement;
 };
 
 /**
- * Step 1: produce content. Charges nothing. Throws with a customer-readable
- * message on any failure (no key, no credits, provider error, thin output).
+ * Produce a page's content through the one spend flow. The inventory facts
+ * are read first, so the hold covers the real prompt; then runMeteredAiCall
+ * reserves, calls beforeProviderCall, marks, calls OpenAI with the write_page
+ * format and settles. Throws CustomerFacingError with a customer sentence on
+ * every refusal and failure; a failure after the call has already been
+ * settled with the usage OpenAI reported.
  */
 export async function generatePageContent(input: GenerateInput): Promise<GeneratedContent> {
-  const model = resolvePlatformModel(input.model ?? GENERATION_DEFAULT_MODEL);
-  const billing = input.billing ?? (await resolveBillingMode(input.workspaceId, model));
-
   // Ground generation in the tenant's real inventory when a city is targeted.
   let inventoryFacts = "";
   const city = input.city?.trim();
@@ -924,20 +679,77 @@ export async function generatePageContent(input: GenerateInput): Promise<Generat
     inventoryFacts = formatInventoryFacts(city, (cityListings ?? []) as InventoryRow[]);
   }
 
-  await input.beforeProviderCall?.();
-  const gen = await callOpenRouterWritePage({
-    apiKey: billing.key,
-    model,
-    systemPrompt: GENERATION_SYSTEM_PROMPT,
-    userPrompt: buildUserPrompt({
+  const result = await runMeteredAiCall<WritePageOutput>({
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    requestId: input.requestId,
+    route: "page_generation",
+    source: input.source,
+    tier: input.tier,
+    key: input.billing.key,
+    billingClass: input.billing.billingClass,
+    instructions: GENERATION_SYSTEM_PROMPT,
+    input: buildUserPrompt({
       title: input.title,
       description: input.description,
       topic: input.topic,
       inventoryFacts,
     }),
-    fetchImpl: input.fetchImpl,
+    format: WRITE_PAGE_FORMAT,
+    check: (out) => {
+      const n = out.data?.body_markdown?.length ?? 0;
+      return n < MIN_BODY_CHARS
+        ? { code: "thin_output", message: `Generated body too short (${n} chars)` }
+        : null;
+    },
+    beforeCall: input.beforeProviderCall,
+    refusalMessages: {
+      in_progress: GENERATION_IN_PROGRESS_MESSAGE,
+      done: GENERATION_ALREADY_USED_MESSAGE,
+      conflict: GENERATION_ALREADY_USED_MESSAGE,
+      generation_paused: GENERATION_PAUSED_MESSAGE,
+      insufficient: outOfCreditsMessage(),
+      mark_refused: GENERATION_UNAVAILABLE_MESSAGE,
+    },
+    deps: input.deps,
   });
-  return { ...gen, model, keySource: billing.source, billingMode: billing.mode };
+  const page = result.output.data!;
+  return {
+    title: String(page.title ?? ""),
+    seo_title: String(page.seo_title ?? ""),
+    seo_description: String(page.seo_description ?? ""),
+    body_markdown: page.body_markdown,
+    usage: result.output.usage,
+    model: result.model,
+    keySource: input.billing.keySource,
+    billingMode: billingModeFor(result.billing),
+    settlement: result.settlement,
+  };
+}
+
+/**
+ * The settlement recorded for a request id, for a replay that returns a page
+ * the request already made: nothing is charged again, the charge it reports
+ * is the one the database holds. null when the request has no spend row (a
+ * hand-written page, or one generated before 000800).
+ */
+export async function readSpendSettlement(
+  workspaceId: string,
+  requestId: string,
+): Promise<{ status: string; billing: SpendBilling; creditsCharged: number } | null> {
+  const { data, error } = await sb()
+    .from("ai_spend_reservations")
+    .select("status, billing, credits_charged")
+    .eq("workspace_id", workspaceId)
+    .eq("request_id", requestId)
+    .maybeSingle();
+  if (error) throw new Error(`ai_spend_reservations read failed: ${error.message}`);
+  if (!data) return null;
+  return {
+    status: String(data.status),
+    billing: data.billing as SpendBilling,
+    creditsCharged: Number(data.credits_charged) || 0,
+  };
 }
 
 export type PersistedPage = {
@@ -1021,17 +833,19 @@ export async function findExistingCityPage(
  * gated step (page contract + entitlement) that callers run explicitly.
  *
  * With a generationRequestId the insert is idempotent per workspace (partial
- * unique index): a concurrent duplicate request loses the race, reads the
- * winner's row and returns it flagged `replayed`, so the caller knows NOT to
- * settle — the winner does. Batch items never pass one; they are keyed by
- * generation_items instead. (The daily cap does not read pages at all: it
+ * unique index): should a duplicate of the request ever get this far it
+ * loses the race, reads the winner's row and returns it flagged `replayed`.
+ * (The request id's slot and spend hold make that a second line of defence:
+ * one id buys one provider call.) Batch items never pass one; they are keyed
+ * by generation_items instead. (The daily cap does not read pages at all: it
  * counts generation_reservations, one per provider call.)
  *
  * The slug comes from generatedPageBaseSlug, the same derivation
  * validatePageRequest checks before a quick page reserves anything.
  *
- * The row records who paid (generation_billing_mode) so a later replay can
- * tell a platform page that may still owe its charge from one that never did.
+ * The row records who paid (generation_billing_mode: byok / granted /
+ * platform) for reporting. The charge itself was settled in the database
+ * before this row was written (ai_spend_reservations).
  */
 export async function persistGeneratedPage(input: {
   workspaceId: string;
@@ -1115,266 +929,6 @@ export async function persistGeneratedPage(input: {
     throw new Error(insErr.message);
   }
 }
-
-export type LedgerSettlement = { billing: "free_quota" | "credits"; amount: number };
-
-/** The ref_type values a generated page's settlement row may carry. */
-export const GENERATION_LEDGER_REF_TYPES = ["batch_generation", "quick_page"] as const;
-
-/**
- * The settlement already on the ledger for this page, or null. The ledger row
- * is the settlement record: one per page, whichever currency paid — a
- * deduct_credits row (delta < 0) when purchased credits paid, a delta-0 row
- * from settle_generation_free_quota when the free quota did. The partial
- * unique index credit_ledger_generation_settlement_uidx makes a second row
- * for the same page impossible, so this read — not the item, not memory —
- * is the whole idempotency check: a settlement that died between the write
- * and the item update is recognised on the retry instead of paid again.
- * Throws on a read error: not knowing must never turn into a fresh charge.
- */
-export async function findLedgerCharge(
-  workspaceId: string,
-  refId: string,
-): Promise<LedgerSettlement | null> {
-  const { data, error } = await sb()
-    .from("credit_ledger")
-    .select("delta")
-    .eq("workspace_id", workspaceId)
-    .eq("ref_id", refId)
-    .eq("reason", "ai_usage")
-    .in("ref_type", [...GENERATION_LEDGER_REF_TYPES])
-    .lte("delta", 0)
-    .limit(1);
-  if (error) throw new Error(`credit ledger read failed: ${error.message}`);
-  const row = (data ?? [])[0] as { delta: number } | undefined;
-  if (!row) return null;
-  const delta = Number(row.delta) || 0;
-  return { billing: delta < 0 ? "credits" : "free_quota", amount: Math.abs(delta) };
-}
-
-const quotaExhausted = (e: { message?: string | null } | null | undefined): boolean =>
-  typeof e?.message === "string" && e.message.includes("platform_ai_quota_exhausted");
-
-type PlatformSettlement =
-  | { ok: true; billing: "free_quota" | "credits"; creditsCharged: number }
-  | { ok: false; failure: string };
-
-/**
- * The platform-key branch of settleGeneration. The ledger row is the
- * settlement record: one per page, whichever currency paid.
- *   1. already on the ledger for this page → that is the charge; nothing moves.
- *   2. settle_generation_free_quota → writes the row, then spends one free
- *      credit. Lost the unique index? a concurrent settlement won: adopt its
- *      row. Quota exhausted? fall through to credits.
- *   3. deduct_credits → writes its own row (delta < 0) with the same ref.
- *      Lost the index the same way? adopt the winner's row.
- * Without a refId (not the batch or quick page — both always pass the page
- * id) the old, unkeyed consume-then-deduct path is kept so nothing regresses.
- */
-async function settleOnPlatform(p: {
-  workspaceId: string;
-  model: string;
-  feature: string;
-  refId: string | null;
-  usage: { promptTokens: number; completionTokens: number };
-}): Promise<PlatformSettlement> {
-  const adopt = async (cause: string): Promise<PlatformSettlement> => {
-    const won = p.refId ? await findLedgerCharge(p.workspaceId, p.refId) : null;
-    if (won) return { ok: true, billing: won.billing, creditsCharged: won.amount };
-    return { ok: false, failure: `${cause}: settlement conflict but no ledger row for this page` };
-  };
-
-  const deduct = async (): Promise<PlatformSettlement> => {
-    const owed = creditsForUsage(p.model, p.usage.promptTokens, p.usage.completionTokens);
-    if (owed <= 0) return { ok: true, billing: "credits", creditsCharged: 0 };
-    const { error } = await supabaseAdmin.rpc("deduct_credits", {
-      _workspace_id: p.workspaceId,
-      _amount: owed,
-      _reason: "ai_usage",
-      _ai_model: p.model,
-      _ref_type: p.feature,
-      _ref_id: p.refId ?? undefined,
-      _metadata: { provider: "platform", feature: p.feature },
-    });
-    if (!error) return { ok: true, billing: "credits", creditsCharged: owed };
-    if (p.refId && isSettlementConflict(error)) return adopt("deduct_credits");
-    return { ok: false, failure: `deduct_credits failed (${owed} credits): ${error.message}` };
-  };
-
-  if (p.refId) {
-    // Checked before touching the free quota, so a retry after a crash
-    // cannot pay twice in either currency.
-    const prior = await findLedgerCharge(p.workspaceId, p.refId);
-    if (prior) return { ok: true, billing: prior.billing, creditsCharged: prior.amount };
-    const { error: qErr } = await sb().rpc("settle_generation_free_quota", {
-      _workspace_id: p.workspaceId,
-      _ref_type: p.feature,
-      _ref_id: p.refId,
-      _ai_model: p.model,
-    });
-    if (!qErr) return { ok: true, billing: "free_quota", creditsCharged: 0 };
-    if (isSettlementConflict(qErr)) return adopt("settle_generation_free_quota");
-    if (quotaExhausted(qErr)) return deduct();
-    return { ok: false, failure: `settle_generation_free_quota failed: ${qErr.message}` };
-  }
-
-  const { error: qErr } = await supabaseAdmin.rpc("consume_platform_ai_credit", {
-    _workspace_id: p.workspaceId,
-  });
-  if (!qErr) return { ok: true, billing: "free_quota", creditsCharged: 0 };
-  if (quotaExhausted(qErr)) return deduct();
-  return { ok: false, failure: `consume_platform_ai_credit failed: ${qErr.message}` };
-}
-
-/**
- * Step 3: settle. Runs ONLY after a page row exists.
- *   BYOK      → nothing to charge; logged for the usage history only.
- *   granted   → included in the beta grant; logged, not charged.
- *   platform  → the ledger row is the settlement record: one per page,
- *               whichever currency paid. Already there? then the page is
- *               paid and nothing moves. Otherwise the free quota first
- *               (settle_generation_free_quota, which writes the row before
- *               it spends), then purchased credits (deduct_credits, which
- *               writes its own row). A write that loses to a concurrent
- *               settlement re-reads the ledger and adopts the winner's.
- * A provider that omitted usage is billed as a typical page (billableUsage),
- * never as a free one. A deduction that fails is reported as `unbilled` with
- * creditsCharged 0 — never as a charge that did not happen — and logged
- * loudly for ops. The caller decides what that means for its record (a batch
- * item fails so its retry can settle without regenerating).
- */
-export async function settleGeneration(opts: {
-  workspaceId: string;
-  userId?: string | null;
-  keySource: KeySource;
-  billingMode?: BillingMode;
-  model: string;
-  promptTokens: number;
-  completionTokens: number;
-  feature: string;
-  refId?: string | null;
-}): Promise<{ creditsCharged: number; billing: SettleBilling; billingStatus: ItemBillingStatus }> {
-  const mode: BillingMode = opts.billingMode ?? (opts.keySource === "byok" ? "byok" : "platform");
-  let creditsCharged = 0;
-  let billing: SettleBilling =
-    mode === "byok" ? "byok" : mode === "granted" ? "granted" : "unbilled";
-  let failure: string | null = null;
-
-  const usage = billableUsage(opts.promptTokens, opts.completionTokens);
-  if (usage.assumed) {
-    console.warn(
-      `[settleGeneration] provider omitted usage; billing a typical page feature=${opts.feature} refId=${opts.refId ?? "none"} model=${opts.model}`,
-    );
-  }
-
-  if (mode === "platform") {
-    const outcome = await settleOnPlatform({
-      workspaceId: opts.workspaceId,
-      model: opts.model,
-      feature: opts.feature,
-      refId: opts.refId ?? null,
-      usage,
-    });
-    if (outcome.ok) {
-      billing = outcome.billing;
-      creditsCharged = outcome.creditsCharged;
-    } else {
-      failure = outcome.failure;
-      // The page already exists and the provider has been paid. This line is
-      // the only record that WE were not — keep it loud and greppable.
-      console.error(
-        "[settleGeneration] UNBILLED generation",
-        JSON.stringify({
-          workspaceId: opts.workspaceId,
-          feature: opts.feature,
-          refId: opts.refId ?? null,
-          model: opts.model,
-          promptTokens: usage.promptTokens,
-          completionTokens: usage.completionTokens,
-          usageAssumed: usage.assumed,
-          failure,
-        }),
-      );
-      billing = "unbilled";
-      creditsCharged = 0;
-    }
-  }
-
-  await supabaseAdmin.from("ai_usage_log").insert({
-    workspace_id: opts.workspaceId,
-    user_id: opts.userId ?? undefined,
-    provider: opts.keySource === "byok" ? "openrouter" : "platform",
-    model: opts.model,
-    feature: opts.feature,
-    prompt_tokens: usage.promptTokens,
-    completion_tokens: usage.completionTokens,
-    total_tokens: usage.promptTokens + usage.completionTokens,
-    used_byok: opts.keySource === "byok",
-    status: billing === "unbilled" ? "unbilled" : "ok",
-    error: failure ? failure.slice(0, 300) : undefined,
-  });
-  return { creditsCharged, billing, billingStatus: billingStatusFor(billing, creditsCharged) };
-}
-
-/**
- * A generation that failed AFTER the provider was called: the key was billed
- * for tokens and no page came of it. Nothing is charged to the customer — no
- * page, no settlement — but ops must be able to see the spend, so it is
- * logged in ai_usage_log with status 'failed': the usage the provider
- * reported when it is known (a persist failure, a thin or malformed
- * response), a typical page otherwise (a timeout or an error status reports
- * none). The error column is shown to workspace members (Settings → AI), so
- * only a customer-written message goes there; anything else stays in the
- * server log. Best effort: never throws over the error being recorded.
- */
-export async function recordFailedGeneration(opts: {
-  workspaceId: string;
-  userId?: string | null;
-  keySource: KeySource;
-  model: string;
-  feature: string;
-  usage?: ProviderUsage | null;
-  error: unknown;
-}): Promise<void> {
-  const usage = billableUsage(opts.usage?.promptTokens ?? 0, opts.usage?.completionTokens ?? 0);
-  const reason =
-    opts.error instanceof CustomerFacingError
-      ? opts.error.message
-      : "Failed after the AI provider was called.";
-  const note = usage.assumed ? " (usage estimated as a typical page)" : "";
-  try {
-    const { error } = await supabaseAdmin.from("ai_usage_log").insert({
-      workspace_id: opts.workspaceId,
-      user_id: opts.userId ?? undefined,
-      provider: opts.keySource === "byok" ? "openrouter" : "platform",
-      model: opts.model,
-      feature: opts.feature,
-      prompt_tokens: usage.promptTokens,
-      completion_tokens: usage.completionTokens,
-      total_tokens: usage.promptTokens + usage.completionTokens,
-      used_byok: opts.keySource === "byok",
-      status: "failed",
-      error: `${reason}${note}`.slice(0, 300),
-    });
-    if (error) throw new Error(error.message);
-  } catch (e) {
-    console.error(
-      "[generation] could not log a failed generation's spend",
-      JSON.stringify({
-        workspaceId: opts.workspaceId,
-        feature: opts.feature,
-        model: opts.model,
-        promptTokens: usage.promptTokens,
-        completionTokens: usage.completionTokens,
-        error: e instanceof Error ? e.message : String(e),
-      }),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Platform-wide knobs and the daily-cap ledger (shared by batch + quick page)
-// ---------------------------------------------------------------------------
 
 export const DEFAULT_DAILY_CAP = 50;
 

@@ -45,9 +45,9 @@ type BuilderCtx = {
   gaps: BuilderCity[];
   stats: { cityGaps: number; publishedPages: number };
   dominantCategory: string | null;
-  /** The platform's model picker — same list and same cheap default as batch. */
-  models: Array<{ id: string; label: string; hint: string }>;
-  defaultModel: string;
+  /** The quality picker — same tiers and same default as batch. Tiers, never model names. */
+  tiers: Array<{ tier: string; label: string; hint: string }>;
+  defaultTier: string;
 };
 
 /**
@@ -79,9 +79,9 @@ function QuickPageBuilder() {
   const [topic, setTopic] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
-  // Filled from the server's default once the context loads — never a
-  // hardcoded id here, so the UI cannot drift to a pricier model than batch.
-  const [model, setModel] = useState<string>("");
+  // Filled from the server's default tier once the context loads. The
+  // request carries only this tier; the server maps it to a model.
+  const [quality, setQuality] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
@@ -124,10 +124,10 @@ function QuickPageBuilder() {
       gaps: r.gaps,
       stats: r.stats,
       dominantCategory: r.dominantCategory ?? null,
-      models: r.models ?? [],
-      defaultModel: r.defaultModel ?? "",
+      tiers: r.tiers ?? [],
+      defaultTier: r.defaultTier ?? "",
     });
-    setModel((m) => m || r.defaultModel || "");
+    setQuality((q) => q || r.defaultTier || "");
   }, []);
 
   useEffect(() => {
@@ -137,7 +137,7 @@ function QuickPageBuilder() {
 
   const slug = title ? slugifyPageTitle(title) : "";
   const canSubmit =
-    !!workspaceId && !!model && title.trim().length >= 3 && topic.trim().length >= 10 && !busy;
+    !!workspaceId && !!quality && title.trim().length >= 3 && topic.trim().length >= 10 && !busy;
   const activePreset = PAGE_PRESETS.find((p) => p.id === preset) ?? PAGE_PRESETS[0];
   const category = ctx?.dominantCategory ?? undefined;
 
@@ -179,7 +179,7 @@ function QuickPageBuilder() {
           title,
           description,
           topic,
-          model,
+          quality: quality === "premium" ? "premium" : "standard",
           city: city || undefined,
           state: state || undefined,
           categoryPlural: ctx?.dominantCategory || "listings",
@@ -411,22 +411,22 @@ function QuickPageBuilder() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="model">AI model</Label>
-                  <Select value={model} onValueChange={setModel} disabled={!ctx}>
-                    <SelectTrigger id="model">
-                      <SelectValue placeholder="Loading models…" />
+                  <Label htmlFor="quality">Writing quality</Label>
+                  <Select value={quality} onValueChange={setQuality} disabled={!ctx}>
+                    <SelectTrigger id="quality">
+                      <SelectValue placeholder="Loading…" />
                     </SelectTrigger>
                     <SelectContent>
-                      {(ctx?.models ?? []).map((m) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.label}
+                      {(ctx?.tiers ?? []).map((t) => (
+                        <SelectItem key={t.tier} value={t.tier}>
+                          {t.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
-                    {ctx?.models.find((m) => m.id === model)?.hint ??
-                      "Cost depends on the model you pick."}
+                    {ctx?.tiers.find((t) => t.tier === quality)?.hint ??
+                      "Standard is the default. Premium writes stronger pages and uses more of your included AI."}
                   </p>
                 </div>
 

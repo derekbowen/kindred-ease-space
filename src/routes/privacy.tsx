@@ -112,7 +112,7 @@ function PrivacyPage() {
         <li>
           <strong>Service providers / sub-processors:</strong> hosting, database, email, analytics,
           AI, error monitoring, and payment processors that act on our instructions under written
-          contracts (e.g., Supabase, Cloudflare, Stripe, EmailIt, OpenAI/Lovable AI Gateway).
+          contracts (e.g., Supabase, Cloudflare, Stripe, EmailIt, OpenAI).
         </li>
         <li>
           <strong>Connected services you authorize:</strong> e.g., Sharetribe and other integrations

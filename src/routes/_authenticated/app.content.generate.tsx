@@ -62,7 +62,8 @@ function GenerateContentPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [model, setModel] = useState<string>("");
+  // The quality tier the job runs at (the server maps it to a model).
+  const [quality, setQuality] = useState<string>("");
   const [job, setJob] = useState<GenerationJobRow | null>(null);
   const [items, setItems] = useState<GenerationItemRow[]>([]);
   const [running, setRunning] = useState(false);
@@ -92,7 +93,7 @@ function GenerateContentPage() {
     try {
       const r = await fetchTargets({ data: { workspaceId } });
       setOverview(r);
-      setModel((m) => m || r.defaultModel);
+      setQuality((q) => q || r.defaultTier);
       // Drop selections that are no longer eligible.
       setSelected((prev) => {
         const eligible = new Set(r.targets.filter(isSelectable).map((t) => t.targetKey));
@@ -115,7 +116,7 @@ function GenerateContentPage() {
   const paused = overview?.paused ?? false;
   const overCap = selectedCount > remaining;
   const canGenerate =
-    !!workspaceId && !paused && !running && selectedCount > 0 && !overCap && !!model;
+    !!workspaceId && !paused && !running && selectedCount > 0 && !overCap && !!quality;
 
   function toggle(key: string) {
     setSelected((prev) => {
@@ -165,7 +166,11 @@ function GenerateContentPage() {
     setPublishError(null);
     try {
       const created = await startJob({
-        data: { workspaceId, targetKeys: [...selected], model },
+        data: {
+          workspaceId,
+          targetKeys: [...selected],
+          quality: quality === "premium" ? "premium" : "standard",
+        },
       });
       setJob(created.job);
       setItems(created.items);
@@ -376,29 +381,29 @@ function GenerateContentPage() {
           <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Writing model</CardTitle>
+                <CardTitle className="text-base">Writing quality</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="model">Model</Label>
-                  <Select value={model} onValueChange={setModel} disabled={running}>
-                    <SelectTrigger id="model">
-                      <SelectValue placeholder="Choose a model" />
+                  <Label htmlFor="quality">Quality</Label>
+                  <Select value={quality} onValueChange={setQuality} disabled={running}>
+                    <SelectTrigger id="quality">
+                      <SelectValue placeholder="Choose a quality" />
                     </SelectTrigger>
                     <SelectContent>
-                      {overview.models.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.label}
+                      {overview.tiers.map((t) => (
+                        <SelectItem key={t.tier} value={t.tier}>
+                          {t.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
-                    {overview.models.find((m) => m.id === model)?.hint ??
-                      "Cost depends on the model you pick."}
+                    {overview.tiers.find((t) => t.tier === quality)?.hint ??
+                      "Standard is the default. Premium writes stronger pages and uses more of your included AI."}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Using your own OpenRouter key? Then pages are billed to that key instead.
+                    Using your workspace's own OpenAI key? Then pages are billed to that key instead.
                   </p>
                 </div>
 

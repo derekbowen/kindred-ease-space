@@ -103,13 +103,24 @@ t(
   "same reason — dormant, not destroyed",
 );
 
-t(
-  "internal credit metering is untouched",
-  /consume_platform_ai_credit|credit_balances/.test(
-    readFileSync(resolve(ROOT, "src/lib/ai-metering.server.ts"), "utf8"),
-  ),
-  "withdrawing the SKU must not disable internal generation metering",
-);
+{
+  // Internal metering moved from src/lib/ai-metering.server.ts (deleted with
+  // the OpenAI switch) to the one spend path: src/lib/ai/spend.server.ts
+  // reserves through ai_reserve and settles through ai_settle, and those
+  // hold/refund credit_balances in migration 20260925000800.
+  const spend = readFileSync(resolve(ROOT, "src/lib/ai/spend.server.ts"), "utf8");
+  const spendSql = readFileSync(
+    resolve(ROOT, "supabase/migrations/20260925000800_ai_spend_reservations.sql"),
+    "utf8",
+  );
+  t(
+    "internal credit metering is untouched",
+    /\.rpc\(\s*"ai_reserve"/.test(spend) &&
+      /\.rpc\(\s*"ai_settle"/.test(spend) &&
+      /UPDATE public\.credit_balances/.test(spendSql),
+    "withdrawing the SKU must not disable internal generation metering",
+  );
+}
 
 console.log("\n=== the supported checkout modes are unaffected ===");
 
@@ -210,26 +221,31 @@ t(
 
 console.log("\n=== no AI refusal promises a purchase that does not exist ===");
 {
-  // The Coach, the AI proxy and the SEO coach refused with a purchase that
-  // is not for sale ("Top up in Billing", "top up in Settings → Workspace →
-  // Usage"). They now say what OUT_OF_INCLUDED_AI_MESSAGE says
-  // (src/lib/ai-metering.server.ts): included AI used up, contact support.
+  // The Coach, the AI proxy and the SEO coach once refused with a purchase
+  // that is not for sale ("Top up in Billing", "top up in Settings →
+  // Workspace → Usage"). Since the OpenAI switch every AI route refuses an
+  // empty allowance through ONE sentence — AI_MESSAGES.outOfFunds in
+  // src/lib/ai/customer-error.ts, chosen by refusalMessage("insufficient")
+  // in src/lib/ai/spend.server.ts — or page generation's own
+  // outOfCreditsMessage(). coach-chat and ai-proxy no longer exist.
   const read = (rel: string) => readFileSync(resolve(ROOT, rel), "utf8");
-  const metering = read("src/lib/ai-metering.server.ts");
-  const meteringMsg = metering.match(/OUT_OF_INCLUDED_AI_MESSAGE =\s*"([^"]+)"/)?.[1] ?? "";
-  const coachChat = read("supabase/functions/coach-chat/index.ts");
-  const aiProxy = read("supabase/functions/ai-proxy/index.ts");
+  const customerErrors = read("src/lib/ai/customer-error.ts");
+  const spend = read("src/lib/ai/spend.server.ts");
+  const generation = read("src/lib/generation.server.ts");
   const seoCoach = read("src/lib/admin-seo-coach.functions.ts");
-  const coachMsg =
-    coachChat.match(/error:\s*"([^"]*)",\s*code: "insufficient_credits"/)?.[1] ?? "";
-  const proxyMsg = aiProxy.match(/const msg =\s*"([^"]*)";/)?.[1] ?? "";
-  t("the metering refusal was found", meteringMsg.length > 0);
-  t("coach-chat's out-of-credits refusal was found", coachMsg.length > 0);
-  t("ai-proxy's out-of-credits refusal was found", proxyMsg.length > 0);
+  const outOfFunds = customerErrors.match(/outOfFunds:\s*"([^"]+)"/)?.[1] ?? "";
+  const generationMsg =
+    generation.match(/export function outOfCreditsMessage\(\): string \{\s*return "([^"]+)";/)?.[1] ??
+    "";
+  t("the shared out-of-allowance refusal was found", outOfFunds.length > 0);
+  t("page generation's out-of-credits refusal was found", generationMsg.length > 0);
+  t(
+    "an 'insufficient' reservation is refused with the shared sentence",
+    /case "insufficient":\s*return AI_MESSAGES\.outOfFunds;/.test(spend),
+  );
   for (const [label, msg] of [
-    ["ai-metering refusal", meteringMsg],
-    ["coach-chat refusal", coachMsg],
-    ["ai-proxy refusal", proxyMsg],
+    ["shared AI refusal", outOfFunds],
+    ["page generation refusal", generationMsg],
   ] as const) {
     t(
       `${label} names the included allowance and support`,
@@ -243,14 +259,25 @@ console.log("\n=== no AI refusal promises a purchase that does not exist ===");
     );
   }
   t(
-    "the SEO coach answers a 402 with OUT_OF_INCLUDED_AI_MESSAGE itself",
-    /if \(resp\.status === 402\) return \{ ok: false, error: OUT_OF_INCLUDED_AI_MESSAGE \};/.test(seoCoach) &&
-      /OUT_OF_INCLUDED_AI_MESSAGE \} =\s*await import\(\s*"@\/lib\/ai-metering\.server"/.test(seoCoach),
+    "the SEO coach refuses through the shared spend path (no route-specific purchase copy)",
+    /runMeteredAiCall/.test(seoCoach) && !/status === 402/.test(seoCoach),
   );
   t(
-    "no coach, proxy or SEO-coach source still offers a top-up",
-    ![coachChat, aiProxy, seoCoach].some((src) => /top up/i.test(src)),
+    "coach-chat and ai-proxy are gone, not merely unreferenced",
+    !existsSync(resolve(ROOT, "supabase/functions/coach-chat")) &&
+      !existsSync(resolve(ROOT, "supabase/functions/ai-proxy")),
   );
+  const aiSources = [
+    "src/lib/ai/customer-error.ts",
+    "src/lib/ai/spend.server.ts",
+    "src/lib/generation.server.ts",
+    "src/lib/admin-seo-coach.functions.ts",
+    "src/lib/coach-actions.functions.ts",
+    "src/lib/admin-page-auditor.functions.ts",
+    "supabase/functions/coach-briefing-cron/index.ts",
+  ];
+  const offering = aiSources.filter((rel) => /top up/i.test(read(rel)));
+  t("no AI source still offers a top-up", offering.length === 0, offering.join(", "));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

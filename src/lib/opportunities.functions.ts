@@ -233,13 +233,17 @@ export const getOpportunity = createServerFn({ method: "GET" })
     return { ok: true as const, opportunity: opp, evidence: evidence ?? [] };
   });
 
+/** An AI route (it generates a page): strict, so a body carrying a model,
+ *  a token count or any other provider parameter is a validation error. */
+export const ApproveOpportunityInputSchema = z
+  .object({ workspaceId: workspaceIdSchema, id: z.string().uuid() })
+  .strict();
+
 /** Approve → brief → existing generation → tenant_pages DRAFT.
  *  Publishing is untouched: the draft goes through the existing gate later. */
 export const approveOpportunity = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z.object({ workspaceId: workspaceIdSchema, id: z.string().uuid() }).parse(d),
-  )
+  .inputValidator((d: unknown) => ApproveOpportunityInputSchema.parse(d))
   .handler(async ({ data, context }) => {
     await assertAvailable(data.workspaceId);
     await assertWorkspaceOwner(data.workspaceId, context.userId);

@@ -29,33 +29,14 @@ export const Route = createFileRoute("/_authenticated/app/settings/ai")({
   component: AiSettingsPage,
 });
 
-const PROVIDER_META: Record<
-  AiProvider,
-  { label: string; placeholder: string; help: string; defaultModel: string }
-> = {
+// OpenAI is the only provider. The key is stored as the workspace secret
+// OPENAI_API_KEY (the same one Settings → API Keys manages); no model is
+// chosen here — the platform decides the model for every AI feature.
+const PROVIDER_META: Record<AiProvider, { label: string; placeholder: string; help: string }> = {
   openai: {
     label: "OpenAI",
     placeholder: "sk-...",
     help: "Get a key at platform.openai.com/api-keys",
-    defaultModel: "gpt-5-mini",
-  },
-  anthropic: {
-    label: "Anthropic (Claude)",
-    placeholder: "sk-ant-...",
-    help: "Get a key at console.anthropic.com/settings/keys",
-    defaultModel: "claude-haiku-4-5",
-  },
-  google: {
-    label: "Google AI (Gemini)",
-    placeholder: "AIza...",
-    help: "Get a key at aistudio.google.com/apikey",
-    defaultModel: "gemini-2.5-flash",
-  },
-  openrouter: {
-    label: "OpenRouter",
-    placeholder: "sk-or-...",
-    help: "Get a key at openrouter.ai/keys",
-    defaultModel: "google/gemini-2.5-flash",
   },
 };
 
@@ -66,7 +47,6 @@ function AiSettingsPage() {
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [provider, setProvider] = useState<AiProvider>("openai");
   const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
 
   const list = useServerFn(listAiCredentials);
@@ -116,13 +96,11 @@ function AiSettingsPage() {
           workspaceId,
           provider,
           apiKey: apiKey.trim(),
-          defaultModels: { default: model.trim() || meta.defaultModel },
         },
       });
       if (r.ok) {
         toast.success(`${meta.label} key saved. Test it to start using it.`);
         setApiKey("");
-        setModel("");
         await refresh(workspaceId);
       } else {
         toast.error(r.error);
@@ -165,8 +143,9 @@ function AiSettingsPage() {
       <div>
         <h1 className="text-2xl font-bold">AI Providers</h1>
         <p className="text-sm text-muted-foreground">
-          Bring your own API keys. Stored encrypted in Supabase Vault and only decrypted server-side
-          at call time. Keys are never logged — only the last four characters are shown.
+          Bring your own OpenAI key. It is stored encrypted as this workspace&apos;s OPENAI_API_KEY
+          secret (the same one Settings → API Keys shows) and only decrypted server-side at call
+          time. Keys are never logged — only the last four characters are shown.
         </p>
       </div>
 
@@ -251,13 +230,7 @@ function AiSettingsPage() {
                     {r.status === "untested" && <Badge variant="outline">Untested</Badge>}
                   </div>
                   <div className="flex-1 text-xs text-muted-foreground">
-                    {r.last_error ? (
-                      <span className="text-destructive">{r.last_error}</span>
-                    ) : r.last_tested_at ? (
-                      `Tested ${new Date(r.last_tested_at).toLocaleString()}`
-                    ) : (
-                      "Never tested"
-                    )}
+                    {`Saved ${new Date(r.updated_at).toLocaleString()} · use Test to check it`}
                   </div>
                   <Button
                     size="sm"
@@ -323,18 +296,6 @@ function AiSettingsPage() {
               />
             </div>
           </div>
-          <div className="space-y-1 max-w-md">
-            <Label>Default model (optional)</Label>
-            <Input
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder={PROVIDER_META[provider].defaultModel}
-              disabled={!isOwner}
-            />
-            <p className="text-xs text-muted-foreground">
-              Used by AI features when they don't specify a model.
-            </p>
-          </div>
           <Button
             onClick={save}
             disabled={busy === "save" || !workspaceId || !isOwner || !apiKey.trim()}
@@ -349,7 +310,9 @@ function AiSettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Recent AI calls</CardTitle>
-          <CardDescription>Last 25 calls this month. Errors are surfaced verbatim.</CardDescription>
+          <CardDescription>
+            Last 25 calls this month. A failed call shows a short reason code.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {!usage || usage.recent.length === 0 ? (

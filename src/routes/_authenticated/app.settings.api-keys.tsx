@@ -24,12 +24,8 @@ export const Route = createFileRoute("/_authenticated/app/settings/api-keys")({
 
 const KNOWN_KEYS: Array<{ name: string; help: string }> = [
   {
-    name: "OPENROUTER_API_KEY",
-    help: "Powers Quick Page Builder and AI content. Get one at openrouter.ai/keys.",
-  },
-  {
-    name: "LOVABLE_API_KEY",
-    help: "Powers Coach actions (expand pages, meta, city drafts). Your Lovable project API key.",
+    name: "OPENAI_API_KEY",
+    help: "Your own OpenAI key. When set, every AI feature in this workspace runs on it instead of the platform key. Get one at platform.openai.com/api-keys.",
   },
   {
     name: "FIRECRAWL_API_KEY",
