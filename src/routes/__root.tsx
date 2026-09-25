@@ -12,7 +12,7 @@ import {
 import appCss from "../styles.css?url";
 import { installServerFnAuthFetch } from "@/integrations/supabase/server-fn-fetch";
 import { supabase } from "@/integrations/supabase/client";
-import { authLandingFromHash, shouldNavigateOnSignIn } from "@/lib/auth-landing";
+import { authEventNavigation, authLandingFromHash } from "@/lib/auth-landing";
 import { I18nProvider } from "@/lib/i18n";
 import { canonicalUrl } from "@/lib/canonical";
 import { Toaster } from "@/components/ui/sonner";
@@ -152,6 +152,9 @@ function RootComponent() {
   );
 }
 
+/** Identity transitions: the ones that refresh router context and queries. */
+const IDENTITY_EVENTS = new Set(["SIGNED_IN", "SIGNED_OUT", "USER_UPDATED", "PASSWORD_RECOVERY"]);
+
 /**
  * Single global Supabase auth listener. Without this, sign-in / sign-out in
  * one tab doesn't refresh router context or react-query caches in another,
@@ -167,32 +170,35 @@ function AuthStateBridge() {
     // client strips the fragment as it stores the session, so by the time
     // SIGNED_IN fires the hash is gone.
     //
-    // A `let`, CONSUMED EXACTLY ONCE. @supabase/auth-js re-emits SIGNED_IN on
+    // A `let`, CONSUMED EXACTLY ONCE: by the FIRST auth event of any kind,
+    // whatever that event is. @supabase/auth-js re-emits SIGNED_IN on
     // tab visibility recovery and this listener lives for the whole session,
-    // so a landing that stayed armed sent a customer editing a page under
-    // /app back to the dashboard every time they switched tabs and returned.
+    // so a landing that stayed armed was replayed later: a customer editing a
+    // page under /app was sent back to the dashboard every time they switched
+    // tabs and returned, and a recovery link — whose PASSWORD_RECOVERY never
+    // consumed the landing — sent the customer to the password form again on
+    // a later tab switch.
     let landing = authLandingFromHash(window.location.hash, window.location.pathname);
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
-      router.invalidate();
-      // On SIGNED_OUT, don't refetch protected queries against a cleared
-      // session — that just produces a 401 storm. Sign-out flows clear the
-      // cache themselves.
-      if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       // The pathname is re-read at event time, not at mount: if the customer
       // is already inside /app (or on the password form) there is nothing to
       // correct. Recovery links emit PASSWORD_RECOVERY rather than SIGNED_IN
-      // (reset-password.tsx handles that), so the "/reset-password" landing
-      // is defensive only.
-      if (event === "SIGNED_IN" && shouldNavigateOnSignIn(landing, window.location.pathname)) {
-        // Confirmation and magic links redirect to the Auth "Site URL", which
-        // is the marketing homepage, with the session in the fragment. The
-        // session is stored fine, but the customer is left on a page that
-        // says "Sign in". Take them where the link was for — once.
-        const to = landing;
-        landing = null;
-        router.navigate({ to, replace: true });
+      // (auth-js 2.105.4): it goes to the password form in update mode,
+      // /reset-password?recovery=1, which reset-password.tsx honours with the
+      // live recovery session. Confirmation and magic links redirect to the
+      // Auth "Site URL", which is the marketing homepage, with the session in
+      // the fragment: the session is stored fine, but the customer is left on
+      // a page that says "Sign in" — take them where the link was for, once.
+      const to = authEventNavigation(event, landing, window.location.pathname, !!session);
+      landing = null;
+      if (IDENTITY_EVENTS.has(event)) {
+        router.invalidate();
+        // On SIGNED_OUT, don't refetch protected queries against a cleared
+        // session — that just produces a 401 storm. Sign-out flows clear the
+        // cache themselves.
+        if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
       }
+      if (to) router.navigate({ href: to, replace: true });
     });
     return () => sub.subscription.unsubscribe();
   }, [router, queryClient]);

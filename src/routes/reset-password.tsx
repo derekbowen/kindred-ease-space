@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
+import { hasRecoveryMarker, passwordFormMode } from "@/lib/auth-landing";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,12 +31,30 @@ function ResetPasswordPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    let live = true;
     // Implicit flow returns "#...type=recovery"; PKCE returns "?code=...". In both
     // cases supabase-js fires a PASSWORD_RECOVERY auth event once the recovery
     // session is established, which is the only reliable signal (the URL hash is
     // cleared by detectSessionInUrl before this effect may run).
-    if (window.location.hash.includes("type=recovery")) {
+    const hash = window.location.hash;
+    const search = window.location.search;
+    if (passwordFormMode({ search, hash, hasSession: false }) === "update") {
       setMode("update");
+    }
+    // A recovery link that landed elsewhere (the Auth Site URL is the
+    // homepage) is sent here by the root auth bridge as ?recovery=1, AFTER
+    // PASSWORD_RECOVERY has fired — this page's listener below never hears
+    // it. With the live recovery session that marker means "set a new
+    // password"; without a session it is just a URL.
+    if (hasRecoveryMarker(search)) {
+      void supabase.auth.getSession().then(({ data: current }) => {
+        if (
+          live &&
+          passwordFormMode({ search, hash, hasSession: !!current.session }) === "update"
+        ) {
+          setMode("update");
+        }
+      });
     }
     // An expired or already-used link arrives as
     // "#error=access_denied&error_code=otp_expired" — surface it instead of
@@ -48,7 +67,10 @@ function ResetPasswordPage() {
     const { data } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") setMode("update");
     });
-    return () => data.subscription.unsubscribe();
+    return () => {
+      live = false;
+      data.subscription.unsubscribe();
+    };
   }, []);
 
   const onRequest = async (e: React.FormEvent) => {
