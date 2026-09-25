@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
 import { modelForTier, tierForModel } from "@/lib/ai/models";
+import { SPEND_REFUSAL_CODES } from "@/lib/ai/spend-refusals";
 import { getPageBuilderContext } from "@/lib/page-builder.functions";
 import {
   ATTEMPTS_EXHAUSTED_MESSAGE,
@@ -25,8 +26,10 @@ import {
   customerMessage,
   dailyCapMessage,
   dailyCapRemaining,
+  effectiveDailyCap,
   findExistingCityPage,
   generatePageContent,
+  isInternalWorkspace,
   isStaleRunning,
   markGenerationProviderCalled,
   persistGeneratedPage,
@@ -250,12 +253,15 @@ export const listGenerationTargets = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => customerSafe(async () => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
 
-    const [{ targets, syncedListings, dominantCategory }, settings, consumed24h] =
+    const [{ targets, syncedListings, dominantCategory }, settings, consumed24h, internal] =
       await Promise.all([
         loadTargets(data.workspaceId, data.minListings),
         readPlatformSettings(),
         countConsumedLast24h(data.workspaceId),
+        isInternalWorkspace(data.workspaceId),
       ]);
+    // The founder / internal unlimited entitlement has no daily cap.
+    const dailyCap = effectiveDailyCap(settings.dailyCap, internal);
 
     // Only the items for the cities on screen (at most a few dozen), and only
     // the columns the listing needs — never the whole table.
@@ -298,8 +304,10 @@ export const listGenerationTargets = createServerFn({ method: "POST" })
       dominantCategory,
       minListings: data.minListings,
       paused: settings.paused,
-      dailyCap: settings.dailyCap,
-      remainingToday: dailyCapRemaining(settings.dailyCap, consumed24h),
+      dailyCap,
+      remainingToday: dailyCapRemaining(dailyCap, consumed24h),
+      /** No daily cap: the workspace holds the founder / internal unlimited entitlement. */
+      internalUnlimited: internal,
       // Quality tiers, never model names: the server maps a tier to a model.
       tiers: GENERATION_TIER_OPTIONS,
       defaultTier: GENERATION_DEFAULT_TIER,
@@ -317,149 +325,163 @@ export const StartGenerationJobInputSchema = z
   })
   .strict();
 
+export type StartGenerationJobInput = z.infer<typeof StartGenerationJobInputSchema>;
+
 export const startGenerationJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => StartGenerationJobInputSchema.parse(d))
   .handler(async ({ data, context }) => customerSafe(async () => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
+    return startJob(data, context.userId);
+  }));
 
-    const settings = await readPlatformSettings();
-    if (settings.paused) {
-      throw new CustomerFacingError("Generation is paused platform-wide right now.");
-    }
-    const model = modelForTier(data.quality);
+/**
+ * The job start behind startGenerationJob; the caller has checked membership.
+ * The job records the model the SERVER resolved from the requested tier
+ * (modelForTier) — the value every item of the job then runs on (runItem
+ * maps it back through tierForModel and refuses anything off the allowlist).
+ */
+async function startJob(data: StartGenerationJobInput, userId: string) {
+  const settings = await readPlatformSettings();
+  if (settings.paused) {
+    throw new CustomerFacingError("Generation is paused platform-wide right now.");
+  }
+  const model = modelForTier(data.quality);
 
-    const { targets, dominantCategory } = await loadTargets(data.workspaceId, data.minListings);
-    const targetByKey = new Map(targets.map((t) => [t.targetKey, t]));
-    const unknown = data.targetKeys.filter((k) => !targetByKey.has(k));
-    if (unknown.length) {
+  const { targets, dominantCategory } = await loadTargets(data.workspaceId, data.minListings);
+  const targetByKey = new Map(targets.map((t) => [t.targetKey, t]));
+  const unknown = data.targetKeys.filter((k) => !targetByKey.has(k));
+  if (unknown.length) {
+    throw new CustomerFacingError(
+      "Some of those cities are no longer eligible (a page may have been created since). Refresh the list and try again.",
+    );
+  }
+
+  const { data: existing, error: exErr } = await sb()
+    .from("generation_items")
+    .select("target_key, status, page_id, updated_at, attempts")
+    .eq("workspace_id", data.workspaceId)
+    .in("target_key", data.targetKeys);
+  if (exErr) throw new Error(exErr.message);
+  const plan = planJobItems(data.targetKeys, existing ?? []);
+  const newWork = plan.create.length + plan.reattach.length;
+  if (newWork === 0) {
+    if (plan.inProgress.length) {
       throw new CustomerFacingError(
-        "Some of those cities are no longer eligible (a page may have been created since). Refresh the list and try again.",
+        "Those cities are being written right now in another session. Give it a few minutes, then refresh.",
       );
     }
-
-    const { data: existing, error: exErr } = await sb()
-      .from("generation_items")
-      .select("target_key, status, page_id, updated_at, attempts")
-      .eq("workspace_id", data.workspaceId)
-      .in("target_key", data.targetKeys);
-    if (exErr) throw new Error(exErr.message);
-    const plan = planJobItems(data.targetKeys, existing ?? []);
-    const newWork = plan.create.length + plan.reattach.length;
-    if (newWork === 0) {
-      if (plan.inProgress.length) {
-        throw new CustomerFacingError(
-          "Those cities are being written right now in another session. Give it a few minutes, then refresh.",
-        );
-      }
-      if (plan.exhausted.length) {
-        throw new CustomerFacingError(
-          `Those cities were given up on after ${MAX_ITEM_ATTEMPTS} failed attempts each. Contact support if you need them written.`,
-        );
-      }
-      throw new CustomerFacingError("Every city you picked already has a generated draft. Nothing to do.");
+    if (plan.exhausted.length) {
+      throw new CustomerFacingError(
+        `Those cities were given up on after ${MAX_ITEM_ATTEMPTS} failed attempts each. Contact support if you need them written.`,
+      );
     }
+    throw new CustomerFacingError("Every city you picked already has a generated draft. Nothing to do.");
+  }
 
-    // Sizing only: the job may not ask for more pages than today's cap has
-    // left. The cap itself is enforced per item ATTEMPT — each one reserves
-    // its own slot right before its claim (reserve_generation_slot) — so two
-    // tabs starting jobs at once cannot overrun it: the items beyond the cap
-    // are refused when they run, without consuming an attempt.
-    const consumed24h = await countConsumedLast24h(data.workspaceId);
-    const remaining = dailyCapRemaining(settings.dailyCap, consumed24h);
-    if (newWork > remaining) {
-      throw new CustomerFacingError(dailyCapMessage(settings.dailyCap, remaining));
-    }
+  // Sizing only: the job may not ask for more pages than today's cap has
+  // left. The cap itself is enforced per item ATTEMPT — each one reserves
+  // its own slot right before its claim (reserve_generation_slot) — so two
+  // tabs starting jobs at once cannot overrun it: the items beyond the cap
+  // are refused when they run, without consuming an attempt.
+  const [consumed24h, internal] = await Promise.all([
+    countConsumedLast24h(data.workspaceId),
+    isInternalWorkspace(data.workspaceId),
+  ]);
+  const remaining = dailyCapRemaining(effectiveDailyCap(settings.dailyCap, internal), consumed24h);
+  if (newWork > remaining) {
+    throw new CustomerFacingError(dailyCapMessage(settings.dailyCap, remaining));
+  }
 
-    const { data: job, error: jobErr } = await sb()
-      .from("generation_jobs")
-      .insert({
+  const { data: job, error: jobErr } = await sb()
+    .from("generation_jobs")
+    .insert({
+      workspace_id: data.workspaceId,
+      requested_by: userId,
+      status: "queued",
+      model,
+    })
+    .select("*")
+    .single();
+  if (jobErr) throw new Error(jobErr.message);
+
+  const categoryPlural = dominantCategory || "listings";
+  if (plan.create.length) {
+    const rows = plan.create.map((key) => {
+      const t = targetByKey.get(key)!;
+      return {
+        job_id: job.id,
         workspace_id: data.workspaceId,
-        requested_by: context.userId,
-        status: "queued",
-        model,
+        target_key: key,
+        target: { city: t.city, state: t.state, listingCount: t.listingCount, categoryPlural },
+        status: "pending",
+      };
+    });
+    // UNIQUE (workspace_id, target_key) makes a concurrent double-click
+    // safe: the second insert conflicts and is ignored, the row it collided
+    // with is picked up by the job read below only if it belongs to this job.
+    const { error: insErr } = await sb()
+      .from("generation_items")
+      .upsert(rows, { onConflict: "workspace_id,target_key", ignoreDuplicates: true });
+    if (insErr) throw new Error(insErr.message);
+  }
+
+  // Re-attaching is guarded by the same state the plan saw, so an item that
+  // moved on between the read and this write (another tab just claimed it)
+  // is left alone. A live `running` row is NEVER reset to pending: that is
+  // precisely how two drivers came to write the same city twice.
+  const reattachPatch = { job_id: job.id, status: "pending", error: null };
+  if (plan.reattachBy.idle.length) {
+    const { error } = await sb()
+      .from("generation_items")
+      .update(reattachPatch)
+      .eq("workspace_id", data.workspaceId)
+      .in("target_key", plan.reattachBy.idle)
+      .in("status", ["pending", "failed", "skipped"])
+      .lt("attempts", MAX_ITEM_ATTEMPTS);
+    if (error) throw new Error(error.message);
+  }
+  if (plan.reattachBy.staleRunning.length) {
+    const cutoff = new Date(Date.now() - STALE_RUNNING_MS).toISOString();
+    const { error } = await sb()
+      .from("generation_items")
+      .update(reattachPatch)
+      .eq("workspace_id", data.workspaceId)
+      .in("target_key", plan.reattachBy.staleRunning)
+      .eq("status", "running")
+      .lt("updated_at", cutoff);
+    if (error) throw new Error(error.message);
+  }
+  if (plan.reattachBy.pageDeleted.length) {
+    // The draft is gone; this is a fresh life for the item, so its attempt
+    // budget and billing record start over (the credit ledger keeps history).
+    const { error } = await sb()
+      .from("generation_items")
+      .update({
+        ...reattachPatch,
+        attempts: 0,
+        slug: null,
+        page_id: null,
+        prompt_tokens: null,
+        completion_tokens: null,
+        credits_charged: 0,
+        billing_status: "pending",
       })
-      .select("*")
-      .single();
-    if (jobErr) throw new Error(jobErr.message);
+      .eq("workspace_id", data.workspaceId)
+      .in("target_key", plan.reattachBy.pageDeleted)
+      .eq("status", "done")
+      .is("page_id", null);
+    if (error) throw new Error(error.message);
+  }
 
-    const categoryPlural = dominantCategory || "listings";
-    if (plan.create.length) {
-      const rows = plan.create.map((key) => {
-        const t = targetByKey.get(key)!;
-        return {
-          job_id: job.id,
-          workspace_id: data.workspaceId,
-          target_key: key,
-          target: { city: t.city, state: t.state, listingCount: t.listingCount, categoryPlural },
-          status: "pending",
-        };
-      });
-      // UNIQUE (workspace_id, target_key) makes a concurrent double-click
-      // safe: the second insert conflicts and is ignored, the row it collided
-      // with is picked up by the job read below only if it belongs to this job.
-      const { error: insErr } = await sb()
-        .from("generation_items")
-        .upsert(rows, { onConflict: "workspace_id,target_key", ignoreDuplicates: true });
-      if (insErr) throw new Error(insErr.message);
-    }
-
-    // Re-attaching is guarded by the same state the plan saw, so an item that
-    // moved on between the read and this write (another tab just claimed it)
-    // is left alone. A live `running` row is NEVER reset to pending: that is
-    // precisely how two drivers came to write the same city twice.
-    const reattachPatch = { job_id: job.id, status: "pending", error: null };
-    if (plan.reattachBy.idle.length) {
-      const { error } = await sb()
-        .from("generation_items")
-        .update(reattachPatch)
-        .eq("workspace_id", data.workspaceId)
-        .in("target_key", plan.reattachBy.idle)
-        .in("status", ["pending", "failed", "skipped"])
-        .lt("attempts", MAX_ITEM_ATTEMPTS);
-      if (error) throw new Error(error.message);
-    }
-    if (plan.reattachBy.staleRunning.length) {
-      const cutoff = new Date(Date.now() - STALE_RUNNING_MS).toISOString();
-      const { error } = await sb()
-        .from("generation_items")
-        .update(reattachPatch)
-        .eq("workspace_id", data.workspaceId)
-        .in("target_key", plan.reattachBy.staleRunning)
-        .eq("status", "running")
-        .lt("updated_at", cutoff);
-      if (error) throw new Error(error.message);
-    }
-    if (plan.reattachBy.pageDeleted.length) {
-      // The draft is gone; this is a fresh life for the item, so its attempt
-      // budget and billing record start over (the credit ledger keeps history).
-      const { error } = await sb()
-        .from("generation_items")
-        .update({
-          ...reattachPatch,
-          attempts: 0,
-          slug: null,
-          page_id: null,
-          prompt_tokens: null,
-          completion_tokens: null,
-          credits_charged: 0,
-          billing_status: "pending",
-        })
-        .eq("workspace_id", data.workspaceId)
-        .in("target_key", plan.reattachBy.pageDeleted)
-        .eq("status", "done")
-        .is("page_id", null);
-      if (error) throw new Error(error.message);
-    }
-
-    const loaded = await loadJob(data.workspaceId, job.id);
-    return {
-      ...loaded,
-      alreadyDone: plan.alreadyDone,
-      inProgress: plan.inProgress,
-      exhausted: plan.exhausted,
-    };
-  }));
+  const loaded = await loadJob(data.workspaceId, job.id);
+  return {
+    ...loaded,
+    alreadyDone: plan.alreadyDone,
+    inProgress: plan.inProgress,
+    exhausted: plan.exhausted,
+  };
+}
 
 const jobInput = (d: unknown) =>
   z.object({ workspaceId: workspaceIdSchema, jobId: z.string().uuid() }).strict().parse(d);
@@ -515,8 +537,12 @@ export const cancelGenerationJob = createServerFn({ method: "POST" })
  *
  * Policy gates (pause, attempt ceiling, the job's model, who pays, the daily
  * cap) run BEFORE the claim and never consume an attempt: they cost nothing
- * and clear on their own. The attempt counter is reserved for work that
- * actually ran.
+ * and clear on their own. The spend refusals that can only come after the
+ * claim — no funds, the workspace's or the platform's daily AI cap, the kill
+ * switch, the rate limit, a refused mark (SPEND_REFUSAL_CODES) — do not
+ * consume one either: the failure write puts the attempt back (round-4
+ * correctness M1). The attempt counter is reserved for work that reached, or
+ * may have reached, the provider.
  *
  * The daily cap is a RESERVATION per attempt: an attempt that can reach the
  * provider first takes a slot through reserve_generation_slot under an id
@@ -595,11 +621,13 @@ async function runItem(
     }
     // One slot per provider call, under an id unique to the attempt the claim
     // below will make: two drivers racing for the same attempt compute the
-    // same id and only one is granted it.
+    // same id and only one is granted it. The founder / internal unlimited
+    // entitlement lifts the cap, never the slot.
     const attemptId = await batchAttemptRequestId(row);
+    const cap = effectiveDailyCap(settings.dailyCap, await isInternalWorkspace(workspaceId));
     let slot: GenerationSlot;
     try {
-      slot = await reserveGenerationSlot(workspaceId, attemptId, settings.dailyCap);
+      slot = await reserveGenerationSlot(workspaceId, attemptId, cap);
     } catch (e) {
       return refuse(customerMessage(e, GENERATION_UNAVAILABLE_MESSAGE).slice(0, 300));
     }
@@ -744,9 +772,19 @@ async function runItem(
     // replaced by the generic sentence. customerMessage logs the raw error.
     const msg = customerMessage(e, GENERATION_UNAVAILABLE_MESSAGE);
     console.error("[generation] item failed", row.id, msg);
+    // A spend refusal before the provider call (the slot was never marked,
+    // and the refusal left the attempt's request id unspent) puts the attempt
+    // back: it cost nothing, so it must not bring the item closer to "gave
+    // up after 3 attempts". Fenced on the claim's token like every write.
+    const refusedBeforeCall =
+      !slotMarked && e instanceof CustomerFacingError && !!e.code && SPEND_REFUSAL_CODES.has(e.code);
     const { error: failErr } = await sb()
       .from("generation_items")
-      .update({ status: "failed", error: msg.slice(0, 300) })
+      .update({
+        status: "failed",
+        error: msg.slice(0, 300),
+        ...(refusedBeforeCall ? { attempts: token - 1 } : {}),
+      })
       .eq("id", row.id)
       .eq("status", "running")
       .eq("attempts", token);

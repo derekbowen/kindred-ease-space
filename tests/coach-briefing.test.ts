@@ -17,7 +17,12 @@
  *     deterministic request id) and settled; the kill switch stops it
  *     (heuristics instead); a claim abandoned mid-call is taken over without
  *     a second AI call;
- *   - the CRON_SECRET gate still fails closed.
+ *   - the CRON_SECRET gate still fails closed, compared in constant time
+ *     (round-4 security L9);
+ *   - the dashboard's Refresh (refreshBriefing, what generateBriefingNow
+ *     runs) reaches the function at most once per workspace per 10 minutes
+ *     (L9), answering the stored briefing when throttled;
+ *   - tenant text is clipped and the input is bounded (L4).
  *
  * PGlite is one connection, so this proves the logic across interleaved
  * requests; tests/ai-concurrency.pg.ts races the claim itself on
@@ -26,7 +31,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { MIGRATION_600, MIGRATION_800, SUPABASE_STUBS, pgliteSupabase, readRepo } from "./_support/ai-db";
+import { AI_CHAIN, SUPABASE_STUBS, pgliteSupabase, readRepo } from "./_support/ai-db";
 
 let pass = 0,
   fail = 0;
@@ -52,11 +57,11 @@ const g = globalThis as unknown as {
 // ---- the database ------------------------------------------------------------------
 const WS = "11111111-1111-4111-8111-111111111111";
 const WS2 = "22222222-2222-4222-8222-222222222222";
+const WS3 = "33333333-3333-4333-8333-333333333333";
 const MEMBER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const db = await PGlite.create();
 await db.exec(SUPABASE_STUBS);
-await db.exec(readRepo(MIGRATION_600));
-await db.exec(readRepo(MIGRATION_800));
+for (const rel of AI_CHAIN) await db.exec(readRepo(rel));
 await db.exec(`
   INSERT INTO public.workspaces (id, name, subscription_status) VALUES
     ('${WS}', 'Boats', 'active'), ('${WS2}', 'Bikes', 'canceled');
@@ -75,6 +80,7 @@ const today = new Date().toISOString().slice(0, 10);
 // ---- the fake OpenAI (counts every request) ----------------------------------------
 let aiRequests = 0;
 let aiDelayMs = 400;
+let lastAiInput = "";
 const INSIGHTS = {
   insights: [
     {
@@ -99,6 +105,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   aiRequests++;
   await new Promise((r) => setTimeout(r, aiDelayMs));
   const body = JSON.parse(String(init?.body ?? "{}"));
+  lastAiInput = typeof body.input === "string" ? body.input : JSON.stringify(body.input ?? "");
   if (body.model !== "gpt-5-nano" || body.max_output_tokens !== 1000 || body.text?.format?.strict !== true) {
     return new Response(JSON.stringify({ error: { message: "unexpected request" } }), { status: 400 });
   }
@@ -277,11 +284,72 @@ try {
   }
 
   // -------------------------------------------------------------------------
+  console.log("\n=== Refresh (refreshBriefing): at most one per workspace per 10 minutes ===");
+  {
+    const { refreshBriefing, BRIEFING_THROTTLED_MESSAGE, BRIEFING_REFRESH_INTERVAL_SECONDS } = await import("../src/lib/coach-briefing.server");
+    const sb = pgliteSupabase(db);
+    let calls = 0;
+    const counted = async (url: string | URL | Request, init?: RequestInit) => {
+      calls++;
+      return inProcess(url, init);
+    };
+    const press = (ws = WS) => refreshBriefing(ws, { fetch: counted, db: sb as any });
+    t("the interval is 10 minutes", BRIEFING_REFRESH_INTERVAL_SECONDS === 600);
+    const first = await press();
+    t("the first Refresh reaches the function (today's briefing: 'exists')", first.ok && (first as any).status === "exists" && calls === 1, JSON.stringify(first));
+    const burst = await Promise.all(Array.from({ length: 5 }, () => press()));
+    t("five more within the interval never reach the function", calls === 1, String(calls));
+    t("…and each answers today's stored briefing ('exists'), never an error", burst.every((r) => r.ok && (r as any).status === "exists"), JSON.stringify(burst));
+    // A workspace whose day has no briefing yet: throttled → the sentence.
+    await db.exec(`DELETE FROM public.coach_daily_briefings WHERE workspace_id = '${WS}'; DELETE FROM public.coach_briefing_claims;`);
+    const throttled = await press();
+    t("throttled with nothing stored yet: the fixed sentence, no function call", !throttled.ok && (throttled as any).error === BRIEFING_THROTTLED_MESSAGE && calls === 1, JSON.stringify(throttled));
+    await db.exec(`UPDATE public.coach_briefing_refreshes SET last_requested_at = now() - interval '11 minutes' WHERE workspace_id = '${WS}'`);
+    const aiBefore = aiRequests;
+    const again = await press();
+    t("after the interval the next Refresh goes through (and makes the day's briefing)", again.ok && (again as any).status === "created" && calls === 2, JSON.stringify(again));
+    t("…with no second AI call (the day's reservation already ran)", aiRequests === aiBefore);
+  }
+
+  // -------------------------------------------------------------------------
+  console.log("\n=== tenant text is clipped and the briefing input is bounded (L4) ===");
+  {
+    const long = "x".repeat(5_000);
+    await db.exec(`
+      INSERT INTO public.workspaces (id, name, subscription_status) VALUES ('${WS3}', 'Kayaks', 'active');
+      INSERT INTO public.tenant_pages (workspace_id, slug, title, status, body_markdown) VALUES
+        ('${WS3}', '${long}', 'Long', 'published', 'thin');
+      INSERT INTO public.tenant_listings (workspace_id, city, category) VALUES ('${WS3}', '${long}', 'boats');
+    `);
+    const aiBefore = aiRequests;
+    const r = await refresh(WS3);
+    t("a workspace with 5,000-character slugs and city names still gets its briefing", r.ok, JSON.stringify(r));
+    t("the AI request went out with every tenant string clipped to 120 characters", aiRequests === aiBefore + 1 && !lastAiInput.includes("x".repeat(121)) && lastAiInput.includes("x".repeat(120)), String(lastAiInput.length));
+    const src = readFileSync(join(ROOT, "supabase/functions/coach-briefing-cron/index.ts"), "utf8");
+    t(
+      "an input over 64,000 characters is never sent (heuristics instead)",
+      /export const BRIEFING_MAX_INPUT_CHARS = 64_000;/.test(src) &&
+        /if \(input\.length > BRIEFING_MAX_INPUT_CHARS\) \{[\s\S]*?return null;/.test(src) &&
+        src.indexOf("input.length > BRIEFING_MAX_INPUT_CHARS") < src.indexOf('rpc("ai_reserve"'),
+    );
+  }
+
+  // -------------------------------------------------------------------------
   console.log("\n=== the CRON_SECRET gate is unchanged ===");
   {
     const aiBefore = aiRequests;
     t("no secret → 401", (await cron(null)).status === 401);
     t("a wrong secret → 401", (await cron("not-the-secret")).status === 401);
+    t("the secret with one character more → 401", (await cron(`${CRON}x`)).status === 401);
+    t("the secret with one character less → 401", (await cron(CRON.slice(0, -1))).status === 401);
+    t("an empty secret header → 401", (await cron("")).status === 401);
+    const src = readFileSync(join(ROOT, "supabase/functions/coach-briefing-cron/index.ts"), "utf8");
+    t(
+      "the comparison is constant time over SHA-256 digests (no === / !== on the secret)",
+      /async function secretMatches\(/.test(src) && /crypto\.subtle\.digest\("SHA-256"/.test(src) &&
+        /if \(!\(await secretMatches\(req\.headers\.get\("x-cron-secret"\), CRON_SECRET\)\)\)/.test(src) &&
+        !/!== CRON_SECRET|=== CRON_SECRET/.test(src),
+    );
     g.__edgeEnv.CRON_SECRET = undefined;
     t("unset on the function → 503 (fails closed)", (await cron(CRON)).status === 503);
     g.__edgeEnv.CRON_SECRET = CRON;

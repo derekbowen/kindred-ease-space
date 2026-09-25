@@ -84,6 +84,40 @@ const INSTRUCTIONS =
   "create_city_page (an uncovered city), add_internal_links (a page id), or other. Only use ids that appear in the data; " +
   "set unused payload fields to null.";
 
+/**
+ * Constant-time CRON_SECRET check (round-4 security L9): both sides are
+ * hashed to fixed-length SHA-256 digests and compared byte by byte without
+ * an early exit, so neither the position of the first difference nor the
+ * secret's length shows in the response time. Empty on either side never
+ * matches. The Worker's hooks use the same rule (src/lib/secret-compare.ts).
+ */
+async function secretMatches(presented: string | null, configured: string): Promise<boolean> {
+  if (!presented || !configured) return false;
+  const enc = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", enc.encode(presented)),
+    crypto.subtle.digest("SHA-256", enc.encode(configured)),
+  ]);
+  const x = new Uint8Array(a);
+  const y = new Uint8Array(b);
+  let diff = x.length ^ y.length;
+  for (let i = 0; i < x.length; i++) diff |= x[i]! ^ y[i]!;
+  return diff === 0;
+}
+
+/**
+ * The briefing's input bound (round-4 security L4). The Worker refuses any
+ * AI request whose input could exceed AI_MAX_INPUT_TOKENS (64,000); here the
+ * input is built from tenant-controlled text (page slugs, city names), so
+ * every string is truncated when the summary is built and the whole input
+ * is capped at 64,000 characters — a UTF-8 byte bound of at most 256,000,
+ * under the database's 272,000-token bound — and a larger one is not sent
+ * at all (heuristics instead).
+ */
+export const BRIEFING_MAX_INPUT_CHARS = 64_000;
+const MAX_FIELD_CHARS = 120;
+const clip = (v: unknown) => String(v ?? "").slice(0, MAX_FIELD_CHARS);
+
 /** Same derivation as the Worker's deterministicRequestId (SHA-256 → v4-shaped uuid). */
 async function deterministicRequestId(seed: string): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(seed)));
@@ -140,7 +174,9 @@ Deno.serve(async (req) => {
   // internet: CRON_SECRET is mandatory and fails closed.
   const CRON_SECRET = Deno.env.get("CRON_SECRET");
   if (!CRON_SECRET) return json(503, { error: "cron_not_configured" });
-  if (req.headers.get("x-cron-secret") !== CRON_SECRET) return json(401, { error: "unauthorized" });
+  if (!(await secretMatches(req.headers.get("x-cron-secret"), CRON_SECRET))) {
+    return json(401, { error: "unauthorized" });
+  }
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -254,10 +290,10 @@ async function briefWorkspace(
     published: published.length,
     drafts: drafts.length,
     thin_pages: thinPages.length,
-    thin_examples: thinPages.slice(0, 3).map((p) => ({ id: p.id, slug: p.slug })),
+    thin_examples: thinPages.slice(0, 3).map((p) => ({ id: p.id, slug: clip(p.slug) })),
     missing_meta: missingMeta.length,
-    missing_meta_examples: missingMeta.slice(0, 3).map((p) => ({ id: p.id, slug: p.slug })),
-    uncovered_cities: uncoveredCities.map(([city, count]) => ({ city, listing_count: count })),
+    missing_meta_examples: missingMeta.slice(0, 3).map((p) => ({ id: p.id, slug: clip(p.slug) })),
+    uncovered_cities: uncoveredCities.map(([city, count]) => ({ city: clip(city), listing_count: count })),
     total_listings: listings.data?.length ?? 0,
   };
   const known = {
@@ -328,6 +364,10 @@ async function aiInsights(
 ): Promise<Insight[] | null> {
   const requestId = await deterministicRequestId(`briefing:${workspaceId}:${today}`);
   const input = `Workspace data:\n${JSON.stringify(summary)}`;
+  if (input.length > BRIEFING_MAX_INPUT_CHARS) {
+    console.error("[coach-briefing-cron] briefing input over the bound; heuristics only", workspaceId, input.length);
+    return null;
+  }
   const maxInputTokens = estimateMaxInputTokens(INSTRUCTIONS, input, BRIEFING_SCHEMA as unknown as Record<string, unknown>);
   const ids = { _workspace_id: workspaceId, _request_id: requestId };
 

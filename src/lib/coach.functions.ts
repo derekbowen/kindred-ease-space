@@ -110,7 +110,9 @@ export const getTodayBriefing = createServerFn({ method: "POST" })
  * Today's briefing, on demand. Idempotent per workspace and UTC day: the
  * first request generates it (at most one AI call, reserved and settled like
  * every other), every later or concurrent one returns the same stored
- * briefing. Answers a status or a fixed sentence, never upstream text.
+ * briefing. At most one refresh per workspace per 10 minutes reaches the
+ * briefing function (refreshBriefing). Answers a status or a fixed sentence,
+ * never upstream text.
  */
 export const GenerateBriefingInputSchema = z.object({ workspaceId: z.string().uuid() }).strict();
 
@@ -121,8 +123,8 @@ export const generateBriefingNow = createServerFn({ method: "POST" })
     // Without this, any authenticated user could ask for another workspace's
     // briefing via an arbitrary id.
     await assertWorkspaceMember(data.workspaceId, context.userId);
-    const { requestBriefing } = await import("@/lib/coach-briefing.server");
-    return requestBriefing(data.workspaceId);
+    const { refreshBriefing } = await import("@/lib/coach-briefing.server");
+    return refreshBriefing(data.workspaceId);
   });
 
 export const dismissInsight = createServerFn({ method: "POST" })

@@ -16,13 +16,25 @@
  * No Stripe object is created. A granted workspace has no subscription, no
  * customer record and no $0 price — it is entitled because an admin said so,
  * and the entitlement resolver treats that as a first-class reason to serve.
+ *
+ * The 'internal' type is the founder / internal unlimited entitlement: no
+ * page, publishing, generation or AI usage limits for that ONE workspace
+ * (workspace_is_internal_unlimited, 20260924000700). Created and revoked
+ * here like any grant — platform admins only, append-only, reason required —
+ * and always recorded with page_limit 1000000 (the schema requires it).
  */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { readEntitlement } from "@/lib/entitlements.functions";
-import { isGrantActive, type GrantRow } from "@/lib/entitlement-grants.server";
+import {
+  GRANT_TYPES,
+  isGrantActive,
+  type GrantRow,
+  type GrantType,
+} from "@/lib/entitlement-grants.server";
+import { INTERNAL_UNLIMITED_PLAN_LABEL } from "@/lib/billing-capacity";
 
 const sb = () => supabaseAdmin as any;
 
@@ -33,7 +45,22 @@ export const DEFAULT_BETA_GRANT = {
   durationDays: 30,
 };
 
-const GRANT_TYPES = ["trial", "beta", "promotional", "manual"] as const;
+/** The admin picker's grant types, in display order. */
+export const GRANT_TYPE_OPTIONS: ReadonlyArray<{ type: GrantType; label: string }> = [
+  { type: "beta", label: "Beta" },
+  { type: "trial", label: "Trial" },
+  { type: "promotional", label: "Promotional" },
+  { type: "manual", label: "Manual" },
+  { type: "internal", label: INTERNAL_UNLIMITED_PLAN_LABEL },
+];
+
+/** Every internal grant is recorded as the maximum page grant (the schema's CHECK). */
+export const INTERNAL_GRANT_PAGE_LIMIT = 1_000_000;
+
+/** The page_limit a grant is written with: an internal grant is always the maximum. */
+export function grantPageLimit(grantType: GrantType, requested: number): number {
+  return grantType === "internal" ? INTERNAL_GRANT_PAGE_LIMIT : requested;
+}
 
 /**
  * Platform-admin assertion.
@@ -152,7 +179,8 @@ export const listGrantableWorkspaces = createServerFn({ method: "GET" })
     }>;
   });
 
-const GrantInput = z.object({
+/** What an admin sends to create (or replace) a grant; exported for tests. */
+export const GrantInputSchema = z.object({
   workspaceId: z.string().uuid(),
   grantType: z.enum(GRANT_TYPES),
   pageLimit: z.number().int().min(0).max(1_000_000),
@@ -174,7 +202,7 @@ const GrantInput = z.object({
  */
 export const grantEntitlement = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => GrantInput.parse(d))
+  .inputValidator((d) => GrantInputSchema.parse(d))
   .handler(async ({ data, context }) => {
     await assertAdmin(context.userId);
 
@@ -191,7 +219,7 @@ export const grantEntitlement = createServerFn({ method: "POST" })
       .insert({
         workspace_id: data.workspaceId,
         grant_type: data.grantType,
-        page_limit: data.pageLimit,
+        page_limit: grantPageLimit(data.grantType, data.pageLimit),
         starts_at: data.startsAt ?? new Date().toISOString(),
         expires_at: expiresAt,
         granted_by: context.userId,
@@ -253,7 +281,7 @@ export const revokeGrant = createServerFn({ method: "POST" })
  */
 export const replaceGrant = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => GrantInput.extend({ replacesGrantId: z.string().uuid() }).parse(d))
+  .inputValidator((d) => GrantInputSchema.extend({ replacesGrantId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertAdmin(context.userId);
 
@@ -285,7 +313,7 @@ export const replaceGrant = createServerFn({ method: "POST" })
       .insert({
         workspace_id: data.workspaceId,
         grant_type: data.grantType,
-        page_limit: data.pageLimit,
+        page_limit: grantPageLimit(data.grantType, data.pageLimit),
         starts_at: data.startsAt ?? new Date().toISOString(),
         expires_at: expiresAt,
         granted_by: context.userId,

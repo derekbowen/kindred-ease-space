@@ -652,7 +652,13 @@ console.log("\n=== settlement → billing_status ===");
   );
   t(
     "the spend flow settles through ai_settle exactly once per call, and accepts only 'settled' / 'already_settled'",
-    (spend.match(/await settleSafely\(/g) ?? []).length === 2 &&
+    // Three exits, each settling once: a failed beforeCall (at zero, round-4
+    // L7), an exception out of callOpenAI (round-4 L6) — both rethrow at once,
+    // never reaching the final settle — and the normal settle.
+    (spend.match(/await settleSafely\(/g) ?? []).length === 3 &&
+      (spend.match(/await settleSafely\(db, call, model, billing, settleInputFor\(model, (?:notSent|result), null\)\);\s*throw e;/g) ?? [])
+        .length === 2 &&
+      /const settlement = await settleSafely\(db, call, model, billing, settleInputFor\(model, result, failCode\)\);/.test(spend) &&
       /if \(s\.status !== "settled" && s\.status !== "already_settled"\) \{/.test(spend),
   );
   t(
@@ -867,7 +873,9 @@ console.log("\n=== customerMessage: no database text reaches a tenant ===");
   );
   t(
     "the catch-all failure write's error is checked and logged, never swallowed",
-    /const \{ error: failErr \} = await sb\(\)\s*\.from\("generation_items"\)\s*\.update\(\{ status: "failed", error: msg\.slice\(0, 300\) \}\)/.test(
+    // Round-4 M1: the write gives the attempt back (token - 1) only for a
+    // spend refusal before the provider call; fenced on the claim's token.
+    /const \{ error: failErr \} = await sb\(\)\s*\.from\("generation_items"\)\s*\.update\(\{\s*status: "failed",\s*error: msg\.slice\(0, 300\),\s*\.\.\.\(refusedBeforeCall \? \{ attempts: token - 1 \} : \{\}\),\s*\}\)\s*\.eq\("id", row\.id\)\s*\.eq\("status", "running"\)\s*\.eq\("attempts", token\);/.test(
       runItem,
     ) && /if \(failErr\) \{[\s\S]*?console\.error\("\[generation\] could not record item failure"/.test(runItem),
   );
@@ -1214,13 +1222,16 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
   // not the pending item row: an item row can be re-armed, a reservation
   // cannot be taken back once its provider call is marked.
   const attemptIdAt = runItem.indexOf("const attemptId = await batchAttemptRequestId(row);");
-  const reserveAt = runItem.indexOf(
-    "slot = await reserveGenerationSlot(workspaceId, attemptId, settings.dailyCap);",
+  // The cap is the platform's, lifted (never the slot) for a workspace with
+  // the founder / internal unlimited entitlement — read fresh per attempt.
+  const capAt = runItem.indexOf(
+    "const cap = effectiveDailyCap(settings.dailyCap, await isInternalWorkspace(workspaceId));",
   );
+  const reserveAt = runItem.indexOf("slot = await reserveGenerationSlot(workspaceId, attemptId, cap);");
   t(
     "each attempt reserves its own daily-cap slot, under its attempt id, BEFORE the claim",
-    attemptIdAt > 0 && reserveAt > attemptIdAt && reserveAt < claim,
-    `${attemptIdAt} ${reserveAt} ${claim}`,
+    attemptIdAt > 0 && capAt > attemptIdAt && reserveAt > capAt && reserveAt < claim,
+    `${attemptIdAt} ${capAt} ${reserveAt} ${claim}`,
   );
   t(
     "the batch no longer counts the cap in TypeScript per item",
@@ -1243,7 +1254,7 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
   );
   t(
     "a failed reservation read refuses the item (never generates uncapped)",
-    /slot = await reserveGenerationSlot\(workspaceId, attemptId, settings\.dailyCap\);\s*\} catch \(e\) \{\s*return refuse\(customerMessage\(e, GENERATION_UNAVAILABLE_MESSAGE\)\.slice\(0, 300\)\);/.test(
+    /slot = await reserveGenerationSlot\(workspaceId, attemptId, cap\);\s*\} catch \(e\) \{\s*return refuse\(customerMessage\(e, GENERATION_UNAVAILABLE_MESSAGE\)\.slice\(0, 300\)\);/.test(
       runItem,
     ),
   );
@@ -1451,8 +1462,8 @@ console.log("\n=== quick page pipeline (source guards) ===");
   t("reserves a daily-cap slot before generating (not a count-and-compare)", reserve > 0 && reserve < gen);
   t("the quick page no longer counts the cap in TypeScript", !quick.includes("countConsumedLast24h("));
   t(
-    "the reservation is keyed by the request id and the platform cap",
-    /reserveGenerationSlot\(\s*data\.workspaceId,\s*generationRequestId,\s*settings\.dailyCap,?\s*\)/.test(
+    "the reservation is keyed by the request id and the platform cap (lifted only for the internal entitlement)",
+    /const cap = effectiveDailyCap\(settings\.dailyCap, await isInternalWorkspace\(data\.workspaceId, deps\.db\)\);\s*const slot = await reserveGenerationSlot\(data\.workspaceId, generationRequestId, cap\);/.test(
       handler,
     ),
   );

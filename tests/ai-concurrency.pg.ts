@@ -27,9 +27,27 @@
  *     (e) concurrent settle / release of one request → a single refund;
  *   plus the daily briefing's claim (50 racing runs → one claim) and the
  *   reaper racing itself and live traffic (no deadlock, one reaper).
+ *
+ *   Round 5, on the chain the spend SQL now runs on (20260918000000 →
+ *   000600 → 000700 → 000800, over stubs that carry production's indexes,
+ *   credit_ledger_grant_ref_unique — GLOBAL — among them):
+ *     5. H1: 20 workspaces reusing ONE request id at the same moment, every
+ *        call refunded (so every workspace writes a positive ledger row under
+ *        the global index) → 20 provider requests, 20 settlements, 20
+ *        refunds each under its own tenant's key; then 10 reapers racing
+ *        live traffic over dead holds that share one request id across 10
+ *        workspaces, plus one row that cannot be closed → every other hold
+ *        closed, the bad row reported, no error;
+ *     6. H2: 50 simultaneous calls in ONE workspace against a per-workspace
+ *        daily cost cap that covers exactly 10 holds (a slow provider, so
+ *        every hold is still open while the others arrive) → exactly 10
+ *        provider requests, 40 refused workspace_budget_exhausted; the same
+ *        burst in a workspace holding the founder / internal unlimited grant
+ *        → all 50 run (exempt from the cap, billed 'internal');
+ *     7. the on-demand briefing refresh throttle: 20 racing presses → one.
  */
 import { Pool, type PoolClient } from "pg";
-import { MIGRATION_600, MIGRATION_800, SUPABASE_STUBS, readRepo, rpcSql } from "./_support/ai-db";
+import { AI_CHAIN, PRODUCTION_INDEXES, SUPABASE_STUBS, readRepo, rpcSql } from "./_support/ai-db";
 import { responseBody } from "./_support/fake-backend";
 
 const URL_ = process.env.AI_PG_URL ?? process.env.TEST_PG_URL ?? "";
@@ -68,9 +86,15 @@ const version = (await pool.query<{ v: string }>("SELECT version() AS v")).rows[
 console.log(`\nServer: ${version}`);
 console.log(`Database: ${dbName} (created for this run, dropped at the end)`);
 await pool.query(SUPABASE_STUBS);
-await pool.query(readRepo(MIGRATION_600));
-await pool.query(readRepo(MIGRATION_800));
-console.log("Applied: Supabase stubs → 000600 → 000800");
+for (const f of AI_CHAIN) await pool.query(readRepo(f));
+console.log("Applied: Supabase stubs (production indexes) → 20260918000000 → 000600 → 000700 → 000800");
+{
+  const idx = await pool.query<{ n: string }>(
+    "SELECT indexname AS n FROM pg_indexes WHERE schemaname = 'public' AND indexname = ANY($1::text[])",
+    [[...PRODUCTION_INDEXES]],
+  );
+  if (idx.rows.length !== PRODUCTION_INDEXES.length) throw new Error(`production indexes missing: ${JSON.stringify(idx.rows)}`);
+}
 
 const { runMeteredAiCall } = await import("../src/lib/ai/spend.server");
 const { CustomerFacingError } = await import("../src/lib/ai/customer-error");
@@ -117,6 +141,8 @@ const q1 = async <T = any>(sql: string, params: unknown[] = []) => (await pool.q
 
 // ---- a fake OpenAI that counts ---------------------------------------------------
 let providerRequests = 0;
+/** How the fake answers: a 200 after 100 ms by default; a scenario may slow it down or make it fail. */
+const provider = { status: 200, delayMs: 100 };
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
@@ -124,7 +150,10 @@ const server = Bun.serve({
     const url = new URL(req.url);
     if (req.method !== "POST" || url.pathname !== "/v1/responses") return new Response("not found", { status: 404 });
     providerRequests++;
-    await Bun.sleep(100); // every accepted call is still in flight while the others arrive
+    await Bun.sleep(provider.delayMs); // every accepted call is still in flight while the others arrive
+    if (provider.status !== 200) {
+      return Response.json({ error: { message: "upstream exploded", type: "server_error" } }, { status: provider.status });
+    }
     return Response.json(responseBody("A short, useful answer."), { headers: { "x-request-id": "req_pg" } });
   },
 });
@@ -132,6 +161,7 @@ const transport = { baseURL: `http://127.0.0.1:${server.port}/v1` };
 console.log(`Fake OpenAI: ${transport.baseURL}/responses (counts requests)`);
 
 // ---- fixtures ------------------------------------------------------------------------
+const ADMIN_USER = "0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a";
 let wsSeq = 0;
 const uuid = (prefix: string, n: number) => `${prefix}-0000-4000-8000-${String(n).padStart(12, "0")}`;
 async function newWorkspace(o: { quota?: number; balance?: number } = {}) {
@@ -148,13 +178,14 @@ async function newWorkspace(o: { quota?: number; balance?: number } = {}) {
   await pool.query("INSERT INTO public.credit_balances (workspace_id, balance) VALUES ($1, $2)", [ws, o.balance ?? 0]);
   return { ws, user };
 }
-async function settings(o: { enabled?: boolean; budget?: number; rate?: number }) {
+async function settings(o: { enabled?: boolean; budget?: number; rate?: number; wsBudget?: number }) {
   await pool.query(
     `UPDATE public.ai_platform_settings SET
        platform_ai_enabled = COALESCE($1, platform_ai_enabled),
        daily_budget_micros = COALESCE($2, daily_budget_micros),
-       workspace_reservations_per_minute = COALESCE($3, workspace_reservations_per_minute)`,
-    [o.enabled ?? null, o.budget ?? null, o.rate ?? null],
+       workspace_reservations_per_minute = COALESCE($3, workspace_reservations_per_minute),
+       workspace_daily_budget_micros = COALESCE($4, workspace_daily_budget_micros)`,
+    [o.enabled ?? null, o.budget ?? null, o.rate ?? null, o.wsBudget ?? null],
   );
 }
 /** What today's ceiling has already recorded (rows are never deleted: the ledger stays consistent). */
@@ -226,7 +257,9 @@ console.warn = () => {};
 const log = (...a: unknown[]) => console.log(...a);
 
 try {
-  await settings({ enabled: true, budget: 1_000_000_000, rate: 1000 });
+  // The per-workspace daily cap (round-4 H2) is exercised in scenario 6; the
+  // others run under a cap high enough never to be the reason for anything.
+  await settings({ enabled: true, budget: 1_000_000_000, rate: 1000, wsBudget: 1_000_000_000 });
 
   // =========================================================================
   log("\n=== 1. 50 simultaneous calls through runMeteredAiCall, allowance for exactly 10 ===");
@@ -387,7 +420,7 @@ try {
     const mixed = await Promise.all(Array.from({ length: 20 }, (_, i) => (i % 2 ? rpc("ai_release", ids2) : rpc("ai_settle", settle))));
     const settles = mixed.filter((x) => x && typeof x === "object").map((x: any) => x.status);
     const releases = mixed.filter((x) => typeof x === "boolean");
-    const refunds2 = await q1<{ n: number }>("SELECT count(*)::int AS n FROM public.credit_ledger WHERE workspace_id = $1 AND reason = 'ai_refund' AND ref_id = $2", [ws, `${args2._request_id}#1`]);
+    const refunds2 = await q1<{ n: number }>("SELECT count(*)::int AS n FROM public.credit_ledger WHERE workspace_id = $1 AND reason = 'ai_refund' AND ref_id = $2", [ws, `${ws}:${args2._request_id}#1`]);
     log(`  (e2) settles ${JSON.stringify(settles.reduce((m: any, s: string) => ((m[s] = (m[s] ?? 0) + 1), m), {}))}; releases true ${releases.filter(Boolean).length}; refund rows ${refunds2.n}; balance ${await balance(ws)}`);
     t(
       "(e) 10 settles + 10 releases of one called request → one settlement, no release, a single refund",
@@ -447,6 +480,151 @@ try {
       "SELECT COALESCE((SELECT sum(spent_micros) FROM public.ai_budget_days), 0)::text AS a, COALESCE((SELECT sum(budget_micros) FROM public.ai_spend_reservations), 0)::text AS b",
     );
     t("the ceiling ledger still equals the sum of the rows' holds", consistent.a === consistent.b, `${consistent.a} = ${consistent.b}`);
+  }
+
+  // =========================================================================
+  log("\n=== 5. round-4 H1: one request id in 20 workspaces at once, every call refunded ===");
+  {
+    const people = await Promise.all(Array.from({ length: 20 }, () => newWorkspace({ quota: 0, balance: 10 })));
+    const shared = crypto.randomUUID();
+    provider.status = 500; // every call fails after it left: settled 'failed', the customer refunded
+    const before = providerRequests;
+    const r = await burst(20, (i) => meteredCall(people[i]!.ws, people[i]!.user, shared));
+    provider.status = 200;
+    const wsIds = people.map((p) => p.ws);
+    const rows = await pool.query<{ status: string; credits_charged: number }>(
+      "SELECT status, credits_charged FROM public.ai_spend_reservations WHERE request_id = $1 AND workspace_id = ANY($2::uuid[])",
+      [shared, wsIds],
+    );
+    const refunds = await pool.query<{ workspace_id: string; ref_id: string }>(
+      "SELECT workspace_id, ref_id FROM public.credit_ledger WHERE reason = 'ai_refund' AND ref_type = 'ai_spend' AND workspace_id = ANY($1::uuid[])",
+      [wsIds],
+    );
+    const balances = await pool.query<{ b: number }>("SELECT balance AS b FROM public.credit_balances WHERE workspace_id = ANY($1::uuid[])", [wsIds]);
+    log(`  ${r.ok} succeeded, ${r.refused} refused ${JSON.stringify(r.codes)} in ${r.ms} ms; provider requests ${providerRequests - before}; settled rows ${rows.rows.filter((x) => x.status === "settled").length}; refund rows ${refunds.rows.length}`);
+    t("20 provider requests: every workspace's call ran (none stopped by another's row)", providerRequests - before === 20, String(providerRequests - before));
+    t(
+      "every call failed as the provider's error — never a database error",
+      r.ok === 0 && r.codes["server_error"] === 20,
+      JSON.stringify(r.codes),
+    );
+    t("20 reservations under the one id, all settled, none charged", rows.rows.length === 20 && rows.rows.every((x) => x.status === "settled" && x.credits_charged === 0));
+    t(
+      "20 refunds on the GLOBAL unique index, each under its own tenant's key (workspace:request#1)",
+      refunds.rows.length === 20 && new Set(refunds.rows.map((x) => x.ref_id)).size === 20 &&
+        refunds.rows.every((x) => x.ref_id === `${x.workspace_id}:${shared}#1`),
+      JSON.stringify(refunds.rows.slice(0, 2)),
+    );
+    t("every workspace got its credits back (10 each)", balances.rows.every((x) => x.b === 10), balances.rows.map((x) => x.b).join(","));
+  }
+  {
+    // The reaper over dead holds sharing one id across 10 workspaces, one
+    // row that cannot be closed, 10 reapers and live traffic at once.
+    const people = await Promise.all(Array.from({ length: 10 }, () => newWorkspace({ quota: 0, balance: 30 })));
+    const shared = crypto.randomUUID();
+    for (const [i, p] of people.entries()) {
+      await rpc("ai_reserve", reserveArgs(p.ws, p.user, { _request_id: shared }));
+      if (i % 2) await rpc("ai_mark_called", { _workspace_id: p.ws, _request_id: shared });
+    }
+    const bad = await newWorkspace({ quota: 0, balance: 30 });
+    const badId = crypto.randomUUID();
+    await rpc("ai_reserve", reserveArgs(bad.ws, bad.user, { _request_id: badId }));
+    // Something already occupies the bad row's refund key: closing it raises 23505.
+    await pool.query(
+      "INSERT INTO public.credit_ledger (workspace_id, delta, reason, ref_type, ref_id) VALUES ($1, 1, 'ai_refund', 'ai_spend', $2)",
+      [bad.ws, `${bad.ws}:${badId}#1`],
+    );
+    const all = [...people.map((p) => p.ws), bad.ws];
+    await pool.query(
+      `UPDATE public.ai_spend_reservations SET reserved_at = now() - interval '11 minutes',
+              provider_called_at = CASE WHEN status = 'called' THEN now() - interval '31 minutes' END
+        WHERE workspace_id = ANY($1::uuid[])`,
+      [all],
+    );
+    const racing = await Promise.allSettled([
+      ...Array.from({ length: 10 }, () => rpc("ai_reap_stale_reservations", {})),
+      ...people.map((p) => rpc("ai_reserve", reserveArgs(p.ws, p.user))),
+    ]);
+    const errors = racing.filter((x) => x.status === "rejected").map((x: any) => String(x.reason?.message ?? x.reason));
+    const reaps = racing.slice(0, 10).map((x) => (x.status === "fulfilled" ? x.value : null)).filter((x: any) => x && x.skipped === false);
+    const failedTotal = reaps.reduce((n: number, x: any) => n + Number(x.failed ?? 0), 0);
+    const open = await pool.query<{ workspace_id: string }>(
+      "SELECT workspace_id FROM public.ai_spend_reservations WHERE workspace_id = ANY($1::uuid[]) AND status IN ('held','called') AND reserved_at < now() - interval '5 minutes'",
+      [all],
+    );
+    const balances = await pool.query<{ b: number }>("SELECT balance AS b FROM public.credit_balances WHERE workspace_id = ANY($1::uuid[])", [people.map((p) => p.ws)]);
+    log(`  reaper runs that worked ${reaps.length}; failed rows reported ${failedTotal}; errors ${errors.length}; stale rows left ${open.rows.length}; balances ${balances.rows.map((x) => x.b).join(",")}`);
+    t("no deadlock or error while 10 reapers race live reservations over one shared id", errors.length === 0, errors.join(" | "));
+    t("every dead hold under the shared id is closed; only the unclosable row is left", open.rows.length === 1 && open.rows[0]!.workspace_id === bad.ws, JSON.stringify(open.rows));
+    t("the reaper reported the bad row as failed instead of stopping", failedTotal >= 1, String(failedTotal));
+    t("every good workspace got its dead hold back (30 − 3 for its one live hold)", balances.rows.every((x) => x.b === 27), balances.rows.map((x) => x.b).join(","));
+    await pool.query("DELETE FROM public.credit_ledger WHERE workspace_id = $1 AND ref_id = $2 AND delta = 1", [bad.ws, `${bad.ws}:${badId}#1`]);
+    const repaired = await rpc("ai_reap_stale_reservations", {});
+    t("once repaired, the next reaper pass closes it", repaired.skipped === false && repaired.failed === 0 && (await balance(bad.ws)) === 30, JSON.stringify(repaired));
+  }
+
+  // =========================================================================
+  log("\n=== 6. round-4 H2: 50 simultaneous calls in ONE workspace vs a per-workspace cap for exactly 10 ===");
+  {
+    // Every call holds the same maximum (same route, same prompt): measure it once.
+    const probe = await newWorkspace({ quota: 0, balance: 100 });
+    const probeId = crypto.randomUUID();
+    await meteredCall(probe.ws, probe.user, probeId);
+    const hold = Number((await q1<{ m: string }>("SELECT max_cost_micros::text AS m FROM public.ai_spend_reservations WHERE request_id = $1", [probeId])).m);
+    await settings({ wsBudget: hold * 10 });
+    // A slow provider: every granted call is still in flight (its hold still
+    // counted in full) while the other 40 arrive.
+    provider.delayMs = 1500;
+    const { ws, user } = await newWorkspace({ quota: 0, balance: 1000 });
+    const before = providerRequests;
+    const stop = watch([ws]);
+    const r = await burst(50, () => meteredCall(ws, user));
+    const mins = await stop();
+    const reserved = await q1<{ n: number; b: string }>(
+      "SELECT count(*)::int AS n, COALESCE(sum(max_cost_micros), 0)::text AS b FROM public.ai_spend_reservations WHERE workspace_id = $1",
+      [ws],
+    );
+    log(`  hold ${hold} micros, cap ${hold * 10}; ${r.ok} succeeded, ${r.refused} refused ${JSON.stringify(r.codes)} in ${r.ms} ms; provider requests ${providerRequests - before}; reservations ${reserved.n}; min balance ${mins.minBalance}; final ${await balance(ws)}`);
+    t("exactly 10 provider requests", providerRequests - before === 10, String(providerRequests - before));
+    t("exactly 10 reservations; the other 40 refused workspace_budget_exhausted", reserved.n === 10 && r.ok === 10 && r.codes["workspace_budget_exhausted"] === 40, JSON.stringify(r.codes));
+    t("the reserved holds never exceed the cap", Number(reserved.b) <= hold * 10, `${reserved.b} ≤ ${hold * 10}`);
+    const charged = Number((await q1<{ c: string }>("SELECT COALESCE(sum(credits_charged), 0)::text AS c FROM public.ai_spend_reservations WHERE workspace_id = $1", [ws])).c);
+    t(
+      "the refused 40 charged nothing: the balance is 1000 minus what the 10 settled calls cost, never negative",
+      mins.minBalance >= 0 && (await balance(ws)) === 1000 - charged,
+      `${await balance(ws)} = 1000 − ${charged}`,
+    );
+
+    // The same burst in a workspace holding the founder / internal unlimited grant.
+    const founder = await newWorkspace({ quota: 0, balance: 0 });
+    await pool.query("INSERT INTO auth.users (id) VALUES ($1) ON CONFLICT DO NOTHING", [ADMIN_USER]);
+    await pool.query(
+      `INSERT INTO public.workspace_entitlement_grants (workspace_id, grant_type, page_limit, granted_by, reason)
+       VALUES ($1, 'internal', 1000000, $2, 'pg test: founder / internal unlimited')`,
+      [founder.ws, ADMIN_USER],
+    );
+    const beforeInternal = providerRequests;
+    const ri = await burst(50, () => meteredCall(founder.ws, founder.user));
+    const billed = await pool.query<{ billing: string }>("SELECT DISTINCT billing FROM public.ai_spend_reservations WHERE workspace_id = $1", [founder.ws]);
+    log(`  internal: ${ri.ok} succeeded, ${ri.refused} refused ${JSON.stringify(ri.codes)} in ${ri.ms} ms; provider requests ${providerRequests - beforeInternal}; billing ${billed.rows.map((x) => x.billing).join(",")}`);
+    t(
+      "an internal workspace is exempt from the per-workspace cap: all 50 run, billed 'internal' (no credits needed)",
+      providerRequests - beforeInternal === 50 && ri.ok === 50 && billed.rows.length === 1 && billed.rows[0]!.billing === "internal",
+      JSON.stringify(ri.codes),
+    );
+    provider.delayMs = 100;
+    await settings({ wsBudget: 1_000_000_000 });
+  }
+
+  // =========================================================================
+  log("\n=== 7. the on-demand briefing refresh, 20 racing presses ===");
+  {
+    const { ws } = await newWorkspace();
+    const rows = await Promise.all(
+      Array.from({ length: 20 }, () => rpc("coach_briefing_refresh_allowed", { _workspace_id: ws, _min_interval_seconds: 600 })),
+    );
+    log(`  allowed ${rows.filter((x) => x === true).length}, throttled ${rows.filter((x) => x === false).length}`);
+    t("exactly one refresh is allowed per 10 minutes, however many presses race", rows.filter((x) => x === true).length === 1 && rows.filter((x) => x === false).length === 19);
   }
 
   log(`\nPeak pool connections in use: ${maxInUse} (pool max 60); provider requests in total: ${providerRequests}`);

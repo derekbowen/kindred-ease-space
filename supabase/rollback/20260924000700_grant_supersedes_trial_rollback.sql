@@ -9,7 +9,28 @@
 -- stores nothing. The application half (decideCapacity in
 -- src/lib/billing-capacity.ts) is not restored by this file; redeploy the
 -- previous Worker version if the two must agree during the rollback window.
+--
+-- It also removes the founder / internal unlimited entitlement 000700 added:
+-- the workspace_is_internal_unlimited predicate and the 'internal' grant
+-- type. It REFUSES to run while an internal grant is still active (roll back
+-- 20260925000930 first — it revokes the founder grant — or revoke the grant
+-- by hand): without the predicate an active internal grant would silently
+-- become a plain 1,000,000-page grant. The predicate is dropped only once
+-- ai_reserve (20260925000800, which reads it) is gone; roll back 000800
+-- first, as the apply order says. The grant-type CHECK goes back to the four
+-- 20260918 types; revoked internal rows are kept (grants are append-only
+-- history), so the restored CHECK is left NOT VALID when such rows exist and
+-- validated otherwise.
 BEGIN;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.workspace_entitlement_grants
+              WHERE grant_type = 'internal' AND revoked_at IS NULL
+                AND (expires_at IS NULL OR expires_at > now())) THEN
+    RAISE EXCEPTION 'an internal grant is still active: roll back 20260925000930 (or revoke the grant) first';
+  END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION public.workspace_capacity(_workspace_id uuid)
 RETURNS TABLE (state text, serve boolean, publish boolean, page_limit int)
 LANGUAGE plpgsql
@@ -108,11 +129,42 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.workspace_capacity(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.workspace_capacity(uuid) TO service_role;
+
+-- The internal entitlement: the predicate (once nothing reads it) and the
+-- grant type.
+DO $$
+BEGIN
+  IF to_regprocedure('public.ai_reserve(uuid,uuid,uuid,text,text,text,int,int,bigint,int,text)') IS NULL THEN
+    DROP FUNCTION IF EXISTS public.workspace_is_internal_unlimited(uuid);
+  ELSE
+    RAISE NOTICE 'workspace_is_internal_unlimited kept: ai_reserve (20260925000800) still reads it; roll that back first';
+  END IF;
+END $$;
+ALTER TABLE public.workspace_entitlement_grants
+  DROP CONSTRAINT IF EXISTS workspace_entitlement_grants_internal_page_limit;
+ALTER TABLE public.workspace_entitlement_grants
+  DROP CONSTRAINT IF EXISTS workspace_entitlement_grants_grant_type_check;
+ALTER TABLE public.workspace_entitlement_grants
+  ADD CONSTRAINT workspace_entitlement_grants_grant_type_check
+  CHECK (grant_type IN ('trial','beta','promotional','manual')) NOT VALID;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.workspace_entitlement_grants WHERE grant_type = 'internal') THEN
+    ALTER TABLE public.workspace_entitlement_grants
+      VALIDATE CONSTRAINT workspace_entitlement_grants_grant_type_check;
+  END IF;
+END $$;
 COMMIT;
 -- VERIFY (rolled back): expect supersedes_trial = false, zeroes_paid = false,
--- service_role_only = true
+-- service_role_only = true, internal_branch = false, internal_type = false
+-- (and internal_predicate = false once 20260925000800 is rolled back too)
 SELECT prosrc LIKE '%OR v_state = ''trialing''%' AS supersedes_trial,
        prosrc LIKE '%v_paid := 0;%' AS zeroes_paid,
        NOT has_function_privilege('anon', oid, 'EXECUTE')
-         AND has_function_privilege('service_role', oid, 'EXECUTE') AS service_role_only
+         AND has_function_privilege('service_role', oid, 'EXECUTE') AS service_role_only,
+       prosrc LIKE '%workspace_is_internal_unlimited%' AS internal_branch,
+       EXISTS (SELECT 1 FROM pg_constraint
+                WHERE conname = 'workspace_entitlement_grants_grant_type_check'
+                  AND pg_get_constraintdef(oid) LIKE '%internal%') AS internal_type,
+       to_regprocedure('public.workspace_is_internal_unlimited(uuid)') IS NOT NULL AS internal_predicate
   FROM pg_proc WHERE oid = 'public.workspace_capacity(uuid)'::regprocedure;

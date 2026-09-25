@@ -103,6 +103,11 @@ export class FakeBackend {
       reserve_generation_slot: () => "reserved",
       mark_generation_provider_called: () => true,
       release_generation_slot: () => true,
+      // An ordinary workspace: no founder / internal unlimited grant.
+      workspace_is_internal_unlimited: () => false,
+      ai_workspace_spent_micros: () => 0,
+      check_rate_limit: () => true,
+      coach_briefing_refresh_allowed: () => true,
     };
     this.rest = {
       "GET workspace_members": () => [{ role: "owner" }],

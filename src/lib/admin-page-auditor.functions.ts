@@ -82,11 +82,21 @@ export const PAGE_NOT_FOUND_MESSAGE =
   "That page was not found in this workspace. Check the address or pick one of the suggestions.";
 
 /**
+ * The AI Page Auditor is not part of launch (`launch: false` in app-nav, no
+ * launch UI), so the server serves it only to a workspace holding the
+ * founder / internal unlimited entitlement — hiding the link is not a gate
+ * (round-4 correctness M2 / security L1).
+ */
+export const PAGE_AUDITOR_UNAVAILABLE_MESSAGE =
+  "The AI Page Auditor is not available for this workspace yet.";
+
+/**
  * Audit one page through the one spend flow (route page_audit: 1500 output
  * tokens, 60 s, gpt-5-nano, Structured Outputs). Membership first, then the
- * page is found BEFORE anything is reserved, so an unknown URL costs
- * nothing. Every refusal and failure is { ok: false, error } with a fixed
- * customer sentence.
+ * availability gate (internal workspaces only), then the page is found
+ * BEFORE anything is reserved, so an unknown URL costs nothing. Every
+ * refusal and failure is { ok: false, error } with a fixed customer
+ * sentence.
  */
 export async function runPageAudit(
   data: AuditPageInput,
@@ -96,6 +106,10 @@ export async function runPageAudit(
   const { customerMessage, AI_MESSAGES } = await import("@/lib/ai/customer-error");
   try {
     await assertWorkspaceMember(data.workspaceId, userId);
+    const { isInternalUnlimitedOrFalse } = await import("@/lib/entitlement-grants.server");
+    if (!(await isInternalUnlimitedOrFalse(data.workspaceId, deps.db))) {
+      return { ok: false as const, error: PAGE_AUDITOR_UNAVAILABLE_MESSAGE };
+    }
 
     const path = normalizeAuditPath(data.url_path);
 

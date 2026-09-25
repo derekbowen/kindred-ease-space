@@ -37,7 +37,10 @@ export const getPublicAffiliateForm = createServerFn({ method: "GET" })
       )
       .eq("form_slug", data.slug)
       .maybeSingle();
-    if (!settings || (settings.addon_status !== "active" && settings.addon_status !== "trialing")) {
+    // The add-on is live (active / trialing), or the workspace holds the
+    // founder / internal unlimited entitlement (server-side read by id).
+    const { affiliateAddonUsable } = await import("@/lib/entitlement-grants.server");
+    if (!settings || !(await affiliateAddonUsable(settings.workspace_id, settings.addon_status))) {
       return { form: null };
     }
     const { data: programs } = await sb()

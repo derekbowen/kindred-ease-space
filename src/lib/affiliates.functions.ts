@@ -56,9 +56,17 @@ async function ensureSettings(workspaceId: string) {
   );
 }
 
-/** Add-on must be active or trialing for write operations. */
+/**
+ * Add-on must be active or trialing for write operations — or the workspace
+ * holds the founder / internal unlimited entitlement (read fresh on the
+ * server by workspace id, never from the client; a failed read is "no"),
+ * which includes every add-on at its top tier whatever its own add-on row
+ * says.
+ */
 async function assertAddon(workspaceId: string) {
   const s = await ensureSettings(workspaceId);
+  const { isInternalUnlimitedOrFalse } = await import("@/lib/entitlement-grants.server");
+  if (await isInternalUnlimitedOrFalse(workspaceId)) return { ...s, addon_tier: "pro" };
   if (s.addon_status !== "active" && s.addon_status !== "trialing") {
     throw new Error(
       "The Affiliate add-on isn't active. Start the free trial or subscribe on the Add-ons page.",

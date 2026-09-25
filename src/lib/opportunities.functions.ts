@@ -24,7 +24,9 @@ export function opportunityEngineEnabled(): boolean {
 
 /** A workspace sees the engine only when the global switch is on AND that
  *  workspace is explicitly enrolled. Enrollment rows are service-role-only, so
- *  a customer cannot enrol themselves into an unvalidated engine. */
+ *  a customer cannot enrol themselves into an unvalidated engine. A workspace
+ *  holding the founder / internal unlimited entitlement counts as enrolled
+ *  (read on the server); the global switch still applies to it. */
 async function workspaceEnrolled(workspaceId: string): Promise<boolean> {
   const { data } = await sb()
     .from("feature_enrollments")
@@ -32,7 +34,9 @@ async function workspaceEnrolled(workspaceId: string): Promise<boolean> {
     .eq("workspace_id", workspaceId)
     .eq("feature", OPPORTUNITY_FEATURE)
     .maybeSingle();
-  return Boolean(data);
+  if (data) return true;
+  const { isInternalUnlimitedOrFalse } = await import("@/lib/entitlement-grants.server");
+  return isInternalUnlimitedOrFalse(workspaceId);
 }
 
 async function assertAvailable(workspaceId: string) {

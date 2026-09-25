@@ -28,14 +28,95 @@
 --   effective  = paidPages + grantPages        -- additive, never greater-of
 --   publish    = stripe_publish OR grantPages > 0
 --   serve      = stripe_serve   OR grantPages > 0
+-- and, before all of it:
+--   internal   = an active grant_type 'internal' grant exists
+--                → state 'internal', serve, publish, no page limit
 --
 -- No backfill: verified 2026-09-24 there are 0 active grants and 0 trialing
 -- workspaces holding one, so no stored value changes meaning; the function is
 -- evaluated at read time and stores nothing. The body below is the
--- 20260918000000 body verbatim except for the final block. The grants are
--- restated so this file is correct on its own.
+-- 20260918000000 body verbatim except for two blocks: the internal branch
+-- right after the workspace lookup (below) and the final block. The grants
+-- are restated so this file is correct on its own.
+--
+-- ALSO HERE (2026-09-25, owner request): THE FOUNDER / INTERNAL UNLIMITED
+-- ENTITLEMENT, built on the same grants table instead of a side channel:
+--
+--   grant_type 'internal' ("Founder / Internal Unlimited") — per workspace,
+--   written by the service role only (the table has no write privilege for
+--   anon/authenticated), append-only, reason mandatory, like every grant. An
+--   ACTIVE internal grant (not revoked, started, not expired; expires_at NULL
+--   = permanent) makes the workspace INTERNAL UNLIMITED. Nothing is derived
+--   from an email address, a platform role or anything the client sends.
+--
+--   workspace_is_internal_unlimited(uuid) — THE predicate (service role
+--   only), read fresh by every server-side usage check: workspace_capacity
+--   below, ai_reserve (20260925000800: no tenant funds on any route, exempt
+--   from the per-workspace daily AI cost cap, still under the kill switch,
+--   the platform ceiling and the rate limit), and the application's
+--   isInternalUnlimited (src/lib/entitlement-grants.server.ts).
+--
+--   workspace_capacity: an internal workspace reads state 'internal', serve
+--   and publish true, page_limit 2147483647 (no limit), whatever Stripe says —
+--   evaluated first, before any other rule. decideCapacity() in
+--   src/lib/billing-capacity.ts is the same rule; tests/entitlement-grants
+--   runs both against one table.
+--
+--   An internal grant always carries page_limit 1000000 (the CHECK maximum),
+--   so every reader that only SUMS grants (the public page gate, the tenant
+--   sitemap) serves the workspace too.
+--
+-- Rollback: supabase/rollback/20260924000700_grant_supersedes_trial_rollback.sql
 -- ============================================================================
 
+-- 1) The 'internal' grant type ------------------------------------------------
+-- The 20260918 column CHECK is replaced (found by definition, whatever its
+-- name), then restated with 'internal' plus the rule that an internal grant
+-- is the maximum page grant. Re-running drops and re-adds both.
+DO $$
+DECLARE c record;
+BEGIN
+  FOR c IN
+    SELECT conname FROM pg_constraint
+     WHERE conrelid = 'public.workspace_entitlement_grants'::regclass
+       AND contype = 'c'
+       AND pg_get_constraintdef(oid) LIKE '%grant_type%'
+  LOOP
+    EXECUTE format('ALTER TABLE public.workspace_entitlement_grants DROP CONSTRAINT %I', c.conname);
+  END LOOP;
+END $$;
+ALTER TABLE public.workspace_entitlement_grants
+  ADD CONSTRAINT workspace_entitlement_grants_grant_type_check
+  CHECK (grant_type IN ('trial','beta','promotional','manual','internal'));
+ALTER TABLE public.workspace_entitlement_grants
+  ADD CONSTRAINT workspace_entitlement_grants_internal_page_limit
+  CHECK (grant_type <> 'internal' OR page_limit = 1000000);
+
+-- 2) THE predicate ---------------------------------------------------------------
+-- Same active-grant rule as workspace_granted_pages (20260918): a timestamp
+-- comparison at read time, so revoking or expiring the grant takes effect on
+-- the next read with nothing to sweep.
+CREATE OR REPLACE FUNCTION public.workspace_is_internal_unlimited(_workspace_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM public.workspace_entitlement_grants
+     WHERE workspace_id = _workspace_id
+       AND grant_type = 'internal'
+       AND revoked_at IS NULL
+       AND starts_at <= now()
+       AND (expires_at IS NULL OR expires_at > now()));
+$$;
+
+REVOKE ALL ON FUNCTION public.workspace_is_internal_unlimited(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.workspace_is_internal_unlimited(uuid) TO service_role;
+
+-- 3) workspace_capacity ----------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.workspace_capacity(_workspace_id uuid)
 RETURNS TABLE (state text, serve boolean, publish boolean, page_limit int)
 LANGUAGE plpgsql
@@ -61,6 +142,14 @@ BEGIN
     FROM public.workspaces WHERE id = _workspace_id;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'workspace_not_found';
+  END IF;
+
+  -- The founder / internal unlimited entitlement: first and alone, so no
+  -- Stripe state can narrow it. No page limit (int4 max), always serves and
+  -- publishes. Mirrors decideCapacity()'s internalUnlimited branch.
+  IF public.workspace_is_internal_unlimited(_workspace_id) THEN
+    RETURN QUERY SELECT 'internal'::text, true, true, 2147483647;
+    RETURN;
   END IF;
 
   v_status  := lower(btrim(COALESCE(w.subscription_status::text, '')));
@@ -155,6 +244,29 @@ UNION ALL SELECT 'workspace_capacity: authenticated cannot execute',
        NOT has_function_privilege('authenticated', 'public.workspace_capacity(uuid)', 'EXECUTE')
 UNION ALL SELECT 'workspace_capacity: service_role can execute',
        has_function_privilege('service_role', 'public.workspace_capacity(uuid)', 'EXECUTE')
+UNION ALL SELECT 'workspace_capacity: an internal grant is unlimited, checked first',
+       (SELECT prosrc LIKE '%IF public.workspace_is_internal_unlimited(_workspace_id) THEN%'
+               AND position('workspace_is_internal_unlimited' IN prosrc) < position('v_granted := public.workspace_granted_pages' IN prosrc)
+          FROM pg_proc WHERE oid = 'public.workspace_capacity(uuid)'::regprocedure)
+UNION ALL SELECT 'grant types: trial, beta, promotional, manual and internal',
+       EXISTS (SELECT 1 FROM pg_constraint
+                WHERE conrelid = 'public.workspace_entitlement_grants'::regclass
+                  AND conname = 'workspace_entitlement_grants_grant_type_check'
+                  AND pg_get_constraintdef(oid) LIKE '%internal%')
+UNION ALL SELECT 'an internal grant is the maximum page grant (1000000)',
+       EXISTS (SELECT 1 FROM pg_constraint
+                WHERE conrelid = 'public.workspace_entitlement_grants'::regclass
+                  AND conname = 'workspace_entitlement_grants_internal_page_limit')
+UNION ALL SELECT 'workspace_is_internal_unlimited: SECURITY DEFINER, pinned search_path, service role only',
+       (SELECT p.prosecdef AND array_to_string(p.proconfig, ',') LIKE '%search_path=public%'
+               AND NOT has_function_privilege('anon', p.oid, 'EXECUTE')
+               AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE')
+               AND has_function_privilege('service_role', p.oid, 'EXECUTE')
+          FROM pg_proc p WHERE p.oid = 'public.workspace_is_internal_unlimited(uuid)'::regprocedure)
+UNION ALL SELECT 'grants are still not writable by anon or authenticated',
+       NOT has_table_privilege('authenticated', 'public.workspace_entitlement_grants', 'INSERT')
+       AND NOT has_table_privilege('authenticated', 'public.workspace_entitlement_grants', 'UPDATE')
+       AND NOT has_table_privilege('anon', 'public.workspace_entitlement_grants', 'INSERT')
 UNION ALL SELECT 'publish gate still derives its limit from workspace_capacity',
        (SELECT prosrc LIKE '%workspace_capacity%' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = 'public' AND p.proname = 'publish_tenant_pages');

@@ -28,6 +28,7 @@ import {
   slugifyPage,
 } from "@/lib/tenant-page-helpers.server";
 import { checkPageBeforePublish, type ContractCheck } from "@/lib/seo/page-contract.server";
+import { isInternalUnlimitedOrFalse } from "@/lib/entitlement-grants.server";
 import { z } from "zod";
 
 export { CustomerFacingError, customerMessage } from "@/lib/ai/customer-error";
@@ -41,9 +42,12 @@ export { CustomerFacingError, customerMessage } from "@/lib/ai/customer-error";
  * Ordering matters and is the whole point of this module (and of its
  * callers, runQuickPage and the batch runItem):
  *   validate → pause (fail fast) → key and billing class (resolveBillingMode)
- *   → the daily-cap slot (reserveGenerationSlot, one per provider call)
+ *   → the daily-cap slot (reserveGenerationSlot, one per provider call; no
+ *     cap for a workspace with the internal unlimited entitlement — the slot
+ *     is still taken, for idempotency and the ledger)
  *   → the spend hold (runMeteredAiCall → ai_reserve; a refusal releases the
- *     slot) → mark both (the slot in beforeProviderCall, then ai_mark_called)
+ *     slot) → mark both (ai_mark_called, then the slot in beforeProviderCall:
+ *     a refused hold mark never spends a slot)
  *   → the OpenAI call → the draft row (persistGeneratedPage, never
  *     auto-published) → settle (ai_settle: the customer is charged only for
  *     a saved page, the actual cost capped at the hold).
@@ -425,10 +429,14 @@ export type BillingMode = "byok" | "granted" | "platform";
 /** generation_items.billing_status */
 export type ItemBillingStatus = "pending" | "charged" | "free" | "unbilled";
 
-/** The page's billing mode for a spend hold's billing. */
+/**
+ * The page's billing mode for a spend hold's billing. 'internal' (the founder
+ * / internal unlimited entitlement) is recorded as 'granted': the page was
+ * included by an admin grant and cost the tenant nothing.
+ */
 export function billingModeFor(billing: SpendBilling): BillingMode {
   if (billing === "byok") return "byok";
-  if (billing === "granted") return "granted";
+  if (billing === "granted" || billing === "internal") return "granted";
   return "platform";
 }
 
@@ -641,10 +649,11 @@ export type GenerateInput = {
   category?: string | null;
   billing: ResolvedBilling;
   /**
-   * Awaited after the spend hold is granted and IMMEDIATELY before the
-   * provider call. Callers holding a daily-cap slot mark it here
+   * Awaited after the spend hold is granted AND marked, IMMEDIATELY before
+   * the provider call. Callers holding a daily-cap slot mark it here
    * (markGenerationProviderCalled): from then on the slot is spent and must
-   * never be released. A throw here releases the hold and aborts.
+   * never be released. A throw here aborts without a provider call: the
+   * marked hold is settled at zero (the customer refunded in full).
    */
   beforeProviderCall?: () => Promise<void>;
   /**
@@ -957,6 +966,30 @@ export async function persistGeneratedPage(input: {
 }
 
 export const DEFAULT_DAILY_CAP = 50;
+
+/**
+ * reserve_generation_slot's cap for a workspace holding the founder /
+ * internal unlimited entitlement: none (int4 max). The reservation itself is
+ * still taken — one per provider call, same request id as the spend hold —
+ * so idempotency, the 24-hour ledger and the "used today" count are
+ * unchanged; only the refusal at the cap goes away.
+ */
+export const UNLIMITED_GENERATION_CAP = 2_147_483_647;
+
+/** The cap a generation passes to reserve_generation_slot. */
+export function effectiveDailyCap(dailyCap: number, internalUnlimited: boolean): number {
+  return internalUnlimited ? UNLIMITED_GENERATION_CAP : dailyCap;
+}
+
+/**
+ * Does this workspace hold the founder / internal unlimited entitlement?
+ * Read fresh (no cache) through THE predicate (workspace_is_internal_unlimited,
+ * migration 20260924000700). For a LIMIT check a failed read is "no": the
+ * normal limits apply (fail closed), and it is logged.
+ */
+export function isInternalWorkspace(workspaceId: string, db?: AiDb): Promise<boolean> {
+  return isInternalUnlimitedOrFalse(workspaceId, db);
+}
 
 /**
  * platform_settings is service-role only. Fail CLOSED on any read error: if
