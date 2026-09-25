@@ -179,6 +179,10 @@ t("billing words the plan card with describePlanStatus", /describePlanStatus\(\{
 t("billing no longer prints the raw subscription status", !/\{[^}]*ent\??\.subscriptionStatus[^}]*\}\s*<\/div>/.test(billing) && !/"no charge" : \(ent\?\.subscriptionStatus/.test(billing));
 t('billing no longer says "Trial ends" from its own date math', !/Trial ends \{new Date/.test(billing));
 t("billing says an ended trial's pages are paused, not deleted", /kind === "trial_ended"[\s\S]{0,80}paused, not deleted/.test(billing));
+t(
+  "billing's unpublished-pages banner does not ask an ended trial to \"reactivate\" a plan it never had",
+  /planStatus\?\.kind === "trial_ended"\s*\?\s*"the free trial ended\. Your content is safe — choose a plan/.test(billing),
+);
 t("dashboard words the trial card with describePlanStatus", /describePlanStatus\(/.test(dash) && /\{planStatus\.trialHeadline\}/.test(dash));
 t("dashboard no longer counts days with its own Math.ceil", !/Math\.ceil/.test(dash) && !/day\{daysLeft === 1/.test(dash));
 t("dashboard shows the card for an ended trial too", /\(trialRunning \|\| trialEnded\) &&/.test(dash));

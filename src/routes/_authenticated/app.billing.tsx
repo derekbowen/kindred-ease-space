@@ -223,9 +223,12 @@ function BillingPage() {
 
       {ent && ent.suspendedPages > 0 && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
-          {ent.suspendedPages.toLocaleString()} of your pages are unpublished because the
-          subscription is inactive. Your content is safe — reactivate your plan and every page
-          returns at its original URL.
+          {/* An ended trial never had a plan to "reactivate". */}
+          {ent.suspendedPages.toLocaleString()} of your pages{" "}
+          {ent.suspendedPages === 1 ? "is" : "are"} unpublished because{" "}
+          {planStatus?.kind === "trial_ended"
+            ? "the free trial ended. Your content is safe — choose a plan and every page returns at its original URL."
+            : "the subscription is inactive. Your content is safe — reactivate your plan and every page returns at its original URL."}
         </div>
       )}
 
