@@ -105,16 +105,16 @@ function world(o: { enabled?: boolean | null; budget?: number; spent?: number; q
   t("the page count comes from the reservation ledger's RPC, for this workspace", backend.rpcHits("generation_consumed_last_24h")[0]?.body?._workspace_id === WS);
   t(
     "exactly the documented fields — no quota units, no credit balance, no ceiling",
-    Object.keys(a).sort().join() === "dailyCap,generationMessage,generationPaused,generationsUsedToday,message,state",
+    Object.keys(a).sort().join() === "dailyCap,generationPaused,generationSummary,generationsUsedToday,state,summary",
     Object.keys(a).join(),
   );
-  t("the sentences are the fixed ones", a.message === AI_ALLOWANCE_MESSAGES.ok && a.generationMessage === "7 of 50 AI-generated pages used in the last 24 hours.");
+  t("the sentences are the fixed ones", a.summary === AI_ALLOWANCE_MESSAGES.ok && a.generationSummary === "7 of 50 AI-generated pages used in the last 24 hours.");
   t("nothing was reserved, marked or sent to reach it", backend.noSpend());
 
   world({ quota: null });
   t("no quota row yet reads as the default free allowance (ok)", (await readAiAllowance(WS)).state === "ok");
   world({ quota: 0, balance: 0 });
-  t("no free quota and no credits → exhausted, with its sentence", (await readAiAllowance(WS)).message === AI_ALLOWANCE_MESSAGES.exhausted);
+  t("no free quota and no credits → exhausted, with its sentence", (await readAiAllowance(WS)).summary === AI_ALLOWANCE_MESSAGES.exhausted);
   world({ quota: 2, balance: 0 });
   t("two free calls left → low", (await readAiAllowance(WS)).state === "low");
   world({ enabled: false, quota: 20 });
@@ -128,7 +128,7 @@ function world(o: { enabled?: boolean | null; budget?: number; spent?: number; q
   world({ quota: 20, paused: true, used: 3 });
   {
     const a = await readAiAllowance(WS);
-    t("the generation pause is reported with its own sentence", a.generationPaused === true && /paused/.test(a.generationMessage));
+    t("the generation pause is reported with its own sentence", a.generationPaused === true && /paused/.test(a.generationSummary));
   }
   world({ quota: 20 });
   backend.rest["GET credit_balances"] = () => ({ status: 500, body: { message: "relation exploded" } });

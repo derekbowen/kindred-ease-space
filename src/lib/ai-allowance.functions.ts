@@ -20,7 +20,7 @@ import { creditsForCostMicros, maxCostMicros } from "@/lib/ai-pricing";
  *       workspace's included AI (free quota + credits), its own key (a
  *       workspace that brought its own key is never limited by either) and
  *       the platform kill switch / daily ceiling (platform_paused);
- *   message / generationMessage — fixed customer sentences for the state and
+ *   summary / generationSummary — fixed customer sentences for the state and
  *       for the page count.
  *
  * Read-only and member-only. The numbers behind the state (the quota units,
@@ -50,9 +50,9 @@ export type AiAllowance = {
   generationPaused: boolean;
   state: AiAllowanceState;
   /** A customer sentence for `state`. */
-  message: string;
+  summary: string;
   /** A customer sentence for the page count. */
-  generationMessage: string;
+  generationSummary: string;
 };
 
 /** A few calls or fewer left is "low". */
@@ -145,8 +145,8 @@ export async function readAiAllowance(
     dailyCap: platform.dailyCap,
     generationPaused: platform.paused,
     state,
-    message: AI_ALLOWANCE_MESSAGES[state],
-    generationMessage: generationSentence(used, platform.dailyCap, platform.paused),
+    summary: AI_ALLOWANCE_MESSAGES[state],
+    generationSummary: generationSentence(used, platform.dailyCap, platform.paused),
   };
 }
 

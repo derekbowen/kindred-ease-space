@@ -34,21 +34,25 @@ export type CredentialRow = {
   updated_at: string;
 };
 
+/**
+ * Usage VOLUME for the workspace this month, and what its own key was
+ * billed. What the platform side costs is never shown here: included AI is
+ * described by ONE figure, getAiAllowance (src/lib/ai-allowance.functions.ts),
+ * never by quota units, credits or provider dollars.
+ */
 export type UsageSummary = {
-  monthCostUsd: number;
   monthCalls: number;
   monthTokens: number;
   byok: { calls: number; costUsd: number };
-  platform: { calls: number; costUsd: number };
-  quotaRemaining: number;
-  quotaLifetimeUsed: number;
+  platform: { calls: number };
   recent: Array<{
     created_at: string;
     provider: string;
     model: string;
     feature: string | null;
     total_tokens: number;
-    cost_usd_micros: number;
+    /** What the workspace's own key was billed; null for calls on the platform key (included). */
+    cost_usd_micros: number | null;
     used_byok: boolean;
     status: string;
     error: string | null;
@@ -194,45 +198,32 @@ export const getAiUsageSummary = createServerFn({ method: "POST" })
       .limit(500);
 
     const list = rows ?? [];
-    let monthCostMicros = 0;
     let monthTokens = 0;
     let byokCalls = 0;
     let byokCostMicros = 0;
     let platformCalls = 0;
-    let platformCostMicros = 0;
     for (const r of list) {
-      monthCostMicros += r.cost_usd_micros ?? 0;
       monthTokens += r.total_tokens ?? 0;
       if (r.used_byok) {
         byokCalls++;
         byokCostMicros += r.cost_usd_micros ?? 0;
       } else {
         platformCalls++;
-        platformCostMicros += r.cost_usd_micros ?? 0;
       }
     }
 
-    const { data: q } = await supabaseAdmin
-      .from("workspace_ai_quota")
-      .select("platform_credits_remaining, lifetime_platform_used")
-      .eq("workspace_id", data.workspaceId)
-      .maybeSingle();
-
     return {
-      monthCostUsd: monthCostMicros / 1_000_000,
       monthCalls: list.length,
       monthTokens,
       byok: { calls: byokCalls, costUsd: byokCostMicros / 1_000_000 },
-      platform: { calls: platformCalls, costUsd: platformCostMicros / 1_000_000 },
-      quotaRemaining: q?.platform_credits_remaining ?? 20,
-      quotaLifetimeUsed: q?.lifetime_platform_used ?? 0,
+      platform: { calls: platformCalls },
       recent: list.slice(0, 25).map((r) => ({
         created_at: r.created_at as string,
         provider: r.provider as string,
         model: r.model as string,
         feature: (r.feature as string | null) ?? null,
         total_tokens: r.total_tokens ?? 0,
-        cost_usd_micros: r.cost_usd_micros ?? 0,
+        cost_usd_micros: r.used_byok ? (r.cost_usd_micros ?? 0) : null,
         used_byok: !!r.used_byok,
         status: r.status as string,
         // Only short failure codes are ever stored here (ai_settle refuses

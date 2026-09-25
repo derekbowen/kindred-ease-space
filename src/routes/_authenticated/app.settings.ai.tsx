@@ -21,6 +21,7 @@ import {
   testAiCredential,
   getAiUsageSummary,
 } from "@/lib/ai-byok.functions";
+import { getAiAllowance, type AiAllowance } from "@/lib/ai-allowance.functions";
 import { getSettingsContext } from "@/lib/settings.functions";
 import { SettingsNav } from "@/components/settings/SettingsNav";
 import { OwnerOnlyBanner } from "@/components/settings/OwnerOnlyBanner";
@@ -46,6 +47,10 @@ function AiSettingsPage() {
   const [isOwner, setIsOwner] = useState(true);
   const [rows, setRows] = useState<CredentialRow[]>([]);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
+  // The ONE allowance figure (getAiAllowance): pages against the daily cap
+  // and a plain state for the rest. No quota units or credits on this page.
+  const [allowance, setAllowance] = useState<AiAllowance | null>(null);
+  const [allowanceError, setAllowanceError] = useState<string | null>(null);
   const [provider, setProvider] = useState<AiProvider>("openai");
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -55,6 +60,7 @@ function AiSettingsPage() {
   const del = useServerFn(deleteAiCredential);
   const test = useServerFn(testAiCredential);
   const usageFn = useServerFn(getAiUsageSummary);
+  const allowanceFn = useServerFn(getAiAllowance);
   const loadCtx = useServerFn(getSettingsContext);
 
   useEffect(() => {
@@ -75,6 +81,16 @@ function AiSettingsPage() {
   }, [workspaceId]);
 
   async function refresh(ws: string) {
+    allowanceFn({ data: { workspaceId: ws } })
+      .then((a) => {
+        setAllowance(a);
+        setAllowanceError(null);
+      })
+      .catch((e) =>
+        setAllowanceError(
+          userMessage(e, "Couldn't load this workspace's AI allowance. Refresh the page to try again."),
+        ),
+      );
     try {
       const [r, u] = await Promise.all([
         list({ data: { workspaceId: ws } }),
@@ -161,41 +177,50 @@ function AiSettingsPage() {
       <SettingsNav />
       <OwnerOnlyBanner isOwner={isOwner} />
 
-      {/* Usage dashboard */}
+      {/* Usage: the one allowance figure, then volume and what the own key was billed */}
       <div className="grid gap-4 sm:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Included AI</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            {allowance ? (
+              <>
+                <div className="text-sm font-medium">{allowance.generationSummary}</div>
+                <div
+                  className={
+                    allowance.state === "ok"
+                      ? "text-xs text-muted-foreground"
+                      : "text-xs text-destructive"
+                  }
+                >
+                  {allowance.summary}
+                </div>
+              </>
+            ) : (
+              <div className="text-xs text-muted-foreground">{allowanceError ?? "Loading…"}</div>
+            )}
+          </CardContent>
+        </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>This month</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${(usage?.monthCostUsd ?? 0).toFixed(2)}</div>
+            <div className="text-2xl font-bold">{usage?.monthCalls ?? 0}</div>
             <div className="text-xs text-muted-foreground">
-              {usage?.monthCalls ?? 0} calls · {usage?.monthTokens.toLocaleString() ?? 0} tokens
+              AI calls · {usage?.monthTokens.toLocaleString() ?? 0} tokens
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Your keys (BYOK)</CardDescription>
+            <CardDescription>Your key (BYOK)</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">${(usage?.byok.costUsd ?? 0).toFixed(2)}</div>
             <div className="text-xs text-muted-foreground">
               {usage?.byok.calls ?? 0} calls · billed to your provider
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Free tier remaining</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {usage?.quotaRemaining ?? 20}{" "}
-              <span className="text-sm font-normal text-muted-foreground">/ generations</span>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {usage?.quotaLifetimeUsed ?? 0} used lifetime · add a key for unlimited
             </div>
           </CardContent>
         </Card>
@@ -213,7 +238,7 @@ function AiSettingsPage() {
         <CardContent>
           {rows.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              No providers yet. Add one below to skip the platform quota.
+              No key yet. Add one below to run AI on your own OpenAI account.
             </p>
           ) : (
             <div className="divide-y">
@@ -354,7 +379,9 @@ function AiSettingsPage() {
                       <td className="py-2 pr-4 font-mono text-xs">{r.model}</td>
                       <td className="py-2 pr-4 text-xs">{r.total_tokens.toLocaleString()}</td>
                       <td className="py-2 pr-4 text-xs">
-                        ${(r.cost_usd_micros / 1_000_000).toFixed(4)}
+                        {r.cost_usd_micros === null
+                          ? "Included"
+                          : `$${(r.cost_usd_micros / 1_000_000).toFixed(4)}`}
                       </td>
                       <td className="py-2 text-xs">
                         {r.status === "ok" ? (

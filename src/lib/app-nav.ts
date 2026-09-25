@@ -69,8 +69,9 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Overview",
     items: [
       { to: "/app", label: "Dashboard", icon: LayoutDashboard, exact: true, launch: true },
-      // Coach still runs (the launcher in the shell and the dashboard briefing
-      // use it) but it is not a launch surface, so it stays off the sidebar.
+      // The Coach chat is not part of launch: its backend is removed and
+      // /app/coach is a static notice (the dashboard's daily briefing is
+      // separate and unaffected), so it stays off the sidebar.
       { to: "/app/coach", label: "Coach", icon: MessagesSquare, launch: false },
       { to: "/app/seo-coach", label: "SEO Coach", icon: Sparkles, launch: false },
     ],

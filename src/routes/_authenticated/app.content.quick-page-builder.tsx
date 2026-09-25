@@ -565,7 +565,11 @@ function QuickPageBuilder() {
                 <Link to="/app/pages/bulk" className="font-medium text-primary hover:underline">
                   CSV import
                 </Link>{" "}
-                or ask Coach to draft cities.
+                or{" "}
+                <Link to="/app/content/generate" className="font-medium text-primary hover:underline">
+                  Generate Content
+                </Link>{" "}
+                for many cities at once.
               </p>
             </CardContent>
           </Card>
