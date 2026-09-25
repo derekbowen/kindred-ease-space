@@ -22,39 +22,70 @@ type Admin = ReturnType<typeof createClient>;
  * metadata. Anyone who can create test-mode objects (test-dashboard access, a
  * leaked sk_test) could therefore have the test deployment set the plan,
  * capacity, page status or credits of ANY workspace. So in test mode a
- * workspace must be flagged internal (workspaces.is_internal, set by an
- * operator in SQL) before the first write for it; anything else is refused
- * with this error before any write happens. A no-op on the live deployment,
- * which never reads the flag.
+ * workspace must be listed in the STRIPE_TEST_WORKSPACE_IDS function secret
+ * (comma-separated workspace UUIDs — a throwaway workspace created for the
+ * proof, never a customer's) before any write for it; anything else is
+ * refused with this error before any write happens. The allowlist is
+ * configuration, not data: nothing in the shared database (such as a
+ * workspace flag a SQL mistake could set on a real tenant) can widen it.
+ * Unset or empty means every test-mode event that would write is refused.
+ * Events that resolve no workspace at all are refused the same way in test
+ * mode (they would otherwise write an unattributed audit row or update a
+ * subscription by its id alone). A no-op on the live deployment, which never
+ * reads the allowlist.
  */
 export class TestModeWorkspaceRefused extends Error {
-  readonly workspaceId: string;
-  constructor(workspaceId: string) {
-    super(`test mode: workspace ${workspaceId} is not internal; no changes made`);
+  readonly workspaceId: string | null;
+  constructor(workspaceId: string | null) {
+    super(
+      workspaceId
+        ? `test mode: workspace ${workspaceId} is not in STRIPE_TEST_WORKSPACE_IDS; no changes made`
+        : "test mode: the event resolves to no workspace; no changes made",
+    );
     this.name = "TestModeWorkspaceRefused";
     this.workspaceId = workspaceId;
   }
 }
 
-/** What the refused event's audit row says. */
+/** What the refused event's audit row says, and the `ignored` reason Stripe sees. */
 export const TEST_MODE_WORKSPACE_REFUSED_ERROR =
-  "test mode: workspace is not internal; no changes made";
+  "test mode: workspace is not in STRIPE_TEST_WORKSPACE_IDS; no changes made";
+export const TEST_MODE_WORKSPACE_REFUSED_REASON = "workspace_not_allowlisted";
+export const TEST_MODE_WORKSPACE_UNRESOLVED_ERROR =
+  "test mode: the event resolves to no workspace; no changes made";
+export const TEST_MODE_WORKSPACE_UNRESOLVED_REASON = "workspace_unresolved";
 
-async function assertTestModeWorkspace(
-  admin: Admin,
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * STRIPE_TEST_WORKSPACE_IDS, parsed: comma-separated workspace UUIDs,
+ * compared lower-case. Anything that is not a UUID is dropped, never
+ * matched loosely. Unset or empty is the empty set — every write refused.
+ */
+export function parseTestWorkspaceIds(raw: string | null | undefined): Set<string> {
+  const ids = new Set<string>();
+  for (const part of String(raw ?? "").split(",")) {
+    const id = part.trim().toLowerCase();
+    if (UUID_RE.test(id)) ids.add(id);
+  }
+  return ids;
+}
+
+/**
+ * The test-mode gate, run before the first write of every handler. `null`
+ * (nothing resolved) is refused too: in test mode nothing is written that
+ * cannot be pinned to an allowlisted workspace.
+ */
+function assertTestModeWorkspace(
   env: { test: boolean },
-  workspace_id: string,
-): Promise<void> {
+  workspace_id: string | null | undefined,
+): void {
   if (!env.test) return;
-  const { data, error } = await admin
-    .from("workspaces")
-    .select("is_internal")
-    .eq("id", workspace_id)
-    .maybeSingle();
-  // A failed read proves nothing either way: fail loud (500, Stripe retries)
-  // rather than record "not internal" for a database blip.
-  if (error) throw error;
-  if (data?.is_internal !== true) throw new TestModeWorkspaceRefused(workspace_id);
+  if (!workspace_id) throw new TestModeWorkspaceRefused(null);
+  const allowed = parseTestWorkspaceIds(Deno.env.get("STRIPE_TEST_WORKSPACE_IDS"));
+  if (!allowed.has(String(workspace_id).trim().toLowerCase())) {
+    throw new TestModeWorkspaceRefused(workspace_id);
+  }
 }
 
 /**
@@ -253,7 +284,7 @@ Deno.serve(async (req) => {
         const workspace_id = s.metadata?.workspace_id;
         const mode = s.metadata?.mode;
         if (!workspace_id) break;
-        await assertTestModeWorkspace(admin, env, workspace_id);
+        assertTestModeWorkspace(env, workspace_id);
 
         if (mode === "credits") {
           const lineItems = await stripe.checkout.sessions.listLineItems(s.id);
@@ -301,7 +332,7 @@ Deno.serve(async (req) => {
         }
         const workspace_id = sub.metadata?.workspace_id ?? evSub.metadata?.workspace_id;
         if (!workspace_id) break;
-        await assertTestModeWorkspace(admin, env, workspace_id);
+        assertTestModeWorkspace(env, workspace_id);
 
         const entitled = ["active", "trialing", "past_due"].includes(sub.status);
 
@@ -507,7 +538,7 @@ Deno.serve(async (req) => {
           plan_tier = stripeSub.metadata?.plan_tier ?? (await resolveTierFromPrice(stripe, priceId));
         }
         if (!workspace_id) break;
-        await assertTestModeWorkspace(admin, env, workspace_id);
+        assertTestModeWorkspace(env, workspace_id);
 
         // A paid invoice is proof of payment: restore suspended pages.
         const restored = await reactivatePages(admin, workspace_id);
@@ -559,7 +590,7 @@ Deno.serve(async (req) => {
           .eq("stripe_subscription_id", subId)
           .maybeSingle();
         if (!sub?.workspace_id) break;
-        await assertTestModeWorkspace(admin, env, sub.workspace_id);
+        assertTestModeWorkspace(env, sub.workspace_id);
         // Grace period: no page action on a failed payment — Stripe retries and
         // the subscription.updated (past_due) handler keeps pages online. Pages
         // suspend only when Stripe finally cancels/marks unpaid.
@@ -581,7 +612,9 @@ Deno.serve(async (req) => {
       case "charge.refunded": {
         const charge = event.data.object as Stripe.Charge;
         const workspace_id = await workspaceForCharge(admin, stripe, charge);
-        if (workspace_id) await assertTestModeWorkspace(admin, env, workspace_id);
+        // Test mode: an unattributable refund is refused too, never logged
+        // with a null workspace. Live mode records it for a human, as before.
+        assertTestModeWorkspace(env, workspace_id);
         const fullyRefunded = charge.amount_refunded >= charge.amount;
         console.warn(
           `[stripe-webhook] charge ${charge.id} refunded ${charge.amount_refunded}/${charge.amount}` +
@@ -613,7 +646,8 @@ Deno.serve(async (req) => {
             console.error(`[stripe-webhook] dispute ${dispute.id}: charge lookup failed`, e);
           }
         }
-        if (workspace_id) await assertTestModeWorkspace(admin, env, workspace_id);
+        // Test mode: an unattributable dispute is refused too (see above).
+        assertTestModeWorkspace(env, workspace_id);
         console.error(
           `[stripe-webhook] DISPUTE opened on charge ${chargeId ?? "?"} ` +
             `(${dispute.amount} ${dispute.currency}, reason "${dispute.reason}") ` +
@@ -635,7 +669,9 @@ Deno.serve(async (req) => {
         const sub = event.data.object as Stripe.Subscription;
         const addonKey = sub.metadata?.addon_key;
         const workspace_id = sub.metadata?.workspace_id;
-        if (workspace_id) await assertTestModeWorkspace(admin, env, workspace_id);
+        // Test mode: without an allowlisted workspace nothing is written — not
+        // even the subscriptions update keyed by the subscription id alone.
+        assertTestModeWorkspace(env, workspace_id);
         if (addonKey && isAddonKey(addonKey) && workspace_id) {
           if (addonKey.startsWith("affiliate")) {
             await admin
@@ -685,9 +721,18 @@ Deno.serve(async (req) => {
       // The guard ran before the handler's first write, so nothing else
       // changed.
       console.warn(`[stripe-webhook] ${event.type} ${event.id} refused: ${e.message}`);
-      await markEvent("error", TEST_MODE_WORKSPACE_REFUSED_ERROR);
+      const unresolved = e.workspaceId === null;
+      await markEvent(
+        "error",
+        unresolved ? TEST_MODE_WORKSPACE_UNRESOLVED_ERROR : TEST_MODE_WORKSPACE_REFUSED_ERROR,
+      );
       return new Response(
-        JSON.stringify({ received: true, ignored: "workspace_not_internal" }),
+        JSON.stringify({
+          received: true,
+          ignored: unresolved
+            ? TEST_MODE_WORKSPACE_UNRESOLVED_REASON
+            : TEST_MODE_WORKSPACE_REFUSED_REASON,
+        }),
         { status: 200 },
       );
     }

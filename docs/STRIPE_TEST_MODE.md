@@ -21,15 +21,19 @@ endpoint, is recorded exactly once, updates entitlement, and an identical replay
    `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`,
    `invoice.payment_failed`, `charge.refunded`, `charge.dispute.created`.
    Copy its signing secret into `STRIPE_WEBHOOK_SECRET_TEST`.
-4. An internal workspace `<WS>`. The test deployment writes for a workspace only when
-   `public.workspaces.is_internal = true` for it (an internal/test tenant, never a customer).
-   An operator sets the flag in SQL:
-   ```sql
-   UPDATE public.workspaces SET is_internal = true WHERE id = '<WS>';
-   ```
+4. A throwaway workspace `<WS>`, created for this proof and for nothing else: sign up a fresh
+   account (or create a new workspace) and publish nothing in it, so there are no live pages
+   for a test event to suspend or reactivate. **Never use the pool-rental-near-me workspace**,
+   or any other workspace a customer, a live site or a sitemap depends on.
+5. Supabase project secret (Dashboard → Edge Functions → Secrets):
+   - `STRIPE_TEST_WORKSPACE_IDS` — the id of `<WS>`. Comma-separated UUIDs if a second
+     throwaway workspace is ever needed; anything that is not a UUID is ignored. The test
+     deployment writes for a workspace only when its id is in this list. Unset or empty, it
+     refuses every test-mode event that would write. Remove the id again when the proof is done.
 
 ## The proof
-Use the internal workspace id `<WS>` from input 4.
+Use the throwaway workspace id `<WS>` from input 4, listed in `STRIPE_TEST_WORKSPACE_IDS`
+(input 5).
 
 1. In Stripe test mode create a customer and a subscription on the Starter price with
    metadata `workspace_id=<WS>`, `plan_tier=starter` (Stripe CLI:
@@ -52,43 +56,58 @@ Use the internal workspace id `<WS>` from input 4.
    ```
 4. Negative: send any event with a wrong signature (curl with a bogus `stripe-signature`) →
    400 and no new row.
-5. Negative: repeat step 1 with `workspace_id` set to any workspace that is NOT internal.
-   Expect HTTP 200 with `{"received":true,"ignored":"workspace_not_internal"}` in the delivery
-   log, one event row marked as failed, and no change to that workspace:
+5. Negative: repeat step 1 with `workspace_id` set to a second throwaway workspace that is NOT
+   in `STRIPE_TEST_WORKSPACE_IDS` (never a customer's id — the point is that nothing happens,
+   and a mistake here must not be able to matter). Expect HTTP 200 with
+   `{"received":true,"ignored":"workspace_not_allowlisted"}` in the delivery log, one event row
+   marked as failed, and no change to that workspace:
    ```sql
    select stripe_event_id, processing_status, error from public.stripe_webhook_events
     where stripe_event_id = '<EVENT_ID>';
    -- expect: processing_status = error,
-   --         error = 'test mode: workspace is not internal; no changes made'
+   --         error = 'test mode: workspace is not in STRIPE_TEST_WORKSPACE_IDS; no changes made'
    select plan, subscription_status, page_limit_base from public.workspaces where id = '<OTHER_WS>';
    -- expect: unchanged
    ```
    Cancel that subscription afterwards; its `customer.subscription.deleted` is refused the
    same way.
-6. Clean up: cancel the test subscription (sends `customer.subscription.deleted`; expect the
-   workspace's published pages to flip to `billing_suspended`), then delete the test customer.
+6. Clean up: cancel the test subscription (sends `customer.subscription.deleted`; `<WS>` has no
+   published pages, so nothing flips to `billing_suspended`), delete the test customer, and
+   remove `<WS>` from `STRIPE_TEST_WORKSPACE_IDS` (leave the secret empty).
 
 ## What the test deployment refuses
 The test deployment shares the database and the service role with the live one, and every
 handler takes its workspace id from Stripe metadata — which anyone with test-dashboard access,
-or a leaked test key, can write. So it acts only for workspaces flagged `is_internal = true`.
-For any other workspace id it answers HTTP 200 `{"received":true,"ignored":"workspace_not_internal"}`
-(Stripe must not retry an event that can never succeed), records the event in
-`stripe_webhook_events` with `processing_status = error` and
-`error = 'test mode: workspace is not internal; no changes made'`, and writes nothing else:
+or a leaked test key, can write. So it acts only for workspaces listed in the
+`STRIPE_TEST_WORKSPACE_IDS` function secret. The allowlist is configuration, not a database
+flag: nothing written to the shared database can widen it. (It replaced
+`workspaces.is_internal`, which the test deployment no longer reads.)
+
+- A workspace id that is not listed (or any id at all while the secret is unset or empty):
+  HTTP 200 `{"received":true,"ignored":"workspace_not_allowlisted"}`, the event recorded in
+  `stripe_webhook_events` with `processing_status = error` and
+  `error = 'test mode: workspace is not in STRIPE_TEST_WORKSPACE_IDS; no changes made'`.
+- An event that resolves to no workspace at all where live mode would still write — a
+  `charge.refunded` or `charge.dispute.created` that cannot be attributed (live mode records an
+  unattributed audit row for a human), a `customer.subscription.deleted` without
+  `workspace_id` metadata (live mode still marks the subscription row canceled by its id):
+  HTTP 200 `{"received":true,"ignored":"workspace_unresolved"}`, the event row marked
+  `processing_status = error`, `error = 'test mode: the event resolves to no workspace; no changes made'`.
+
+Either way Stripe must not retry an event that can never succeed, and nothing else is written:
 no plan, capacity, page status, subscription row, audit row or credit grant. The check runs
 after signature verification and the `livemode` guard, and before the first write of every
-handler. The live deployment never reads the flag.
+handler. The live deployment never reads the allowlist and is unchanged.
 
 To list refusals:
 ```sql
-select stripe_event_id, event_type, received_at from public.stripe_webhook_events
- where error = 'test mode: workspace is not internal; no changes made' order by received_at desc;
+select stripe_event_id, event_type, error, received_at from public.stripe_webhook_events
+ where error like 'test mode:%' order by received_at desc;
 ```
 
 ## Why not point test keys at the live function
 The live deployment must keep exactly one signing secret. A shared function reading both would
 make a test-mode key a way into live processing. The `livemode` guard in the handler enforces
 the split even if an endpoint is misconfigured, the mode is read from the function name so no
-request path can change it, and the internal-workspace guard keeps the test deployment from
-touching any customer even with valid test-mode signatures.
+request path can change it, and the workspace allowlist (`STRIPE_TEST_WORKSPACE_IDS`) keeps the
+test deployment from touching any customer even with valid test-mode signatures.

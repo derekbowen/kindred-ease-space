@@ -9,7 +9,13 @@
  * idempotency, reclaim of a crashed attempt, failed-payment grace, suspension
  * on cancel/unpaid, the fail-loud paths (500 keeps Stripe retrying), and the
  * test-mode deployment: mode chosen by the function-name path segment, writes
- * only for a workspace flagged is_internal, nothing else touched otherwise.
+ * only for a workspace listed in STRIPE_TEST_WORKSPACE_IDS (configuration, not
+ * a database flag), refuses an event that resolves to no workspace, nothing
+ * else touched otherwise; the live deployment is unchanged.
+ *
+ * The test-mode cases were written against the workspaces.is_internal flag
+ * the gate used to read; they are converted to the env allowlist (each
+ * converted case says so), and the flag is now shown to widen nothing.
  */
 import Stripe from "stripe";
 
@@ -63,7 +69,11 @@ writeFileSync(built, src);
 const webhook = (await import(built)) as {
   stripeEnvFor: (url: string) => { test: boolean; apiKey?: string; webhookSecret?: string };
   stripeDeploymentName: (url: string) => string;
+  parseTestWorkspaceIds: (raw: string | null | undefined) => Set<string>;
   TEST_MODE_WORKSPACE_REFUSED_ERROR: string;
+  TEST_MODE_WORKSPACE_REFUSED_REASON: string;
+  TEST_MODE_WORKSPACE_UNRESOLVED_ERROR: string;
+  TEST_MODE_WORKSPACE_UNRESOLVED_REASON: string;
 };
 const handler = g.__edgeHandler;
 t("function registered a Deno.serve handler", typeof handler === "function");
@@ -76,6 +86,8 @@ function signed(payload: string, opts: { secret?: string; timestamp?: number } =
 }
 function reset() {
   g.__sbCalls.length = 0; g.__sbResponses = {}; g.__sbRpc = {}; g.__stripeStubs = {}; g.__stripeCalls.length = 0;
+  // The test-mode allowlist is unset unless a case sets it.
+  delete g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS;
 }
 async function deliver(event: Record<string, unknown>, headerOverride?: string | null, path = "/stripe-webhook") {
   const body = JSON.stringify(event);
@@ -256,7 +268,8 @@ reset();
 }
 reset();
 g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "active").data.object;
-g.__sbResponses["workspaces.select"] = [{ data: { is_internal: true } }]; // the proof workspace is internal (B1)
+// Converted from is_internal: the proof workspace is allowlisted (B1).
+g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = WS;
 {
   const ev = { ...subEvent("evt_tm_ok", "active"), livemode: false };
   const r = await deliver(ev, signed(JSON.stringify(ev), { secret: TEST_SECRET }), "/stripe-webhook-test");
@@ -302,14 +315,17 @@ console.log("\n=== test-mode deployment: the mode is the function-name segment, 
 }
 
 // ---------------------------------------------------------------------------
-console.log("\n=== test-mode deployment: writes only for a workspace flagged is_internal (B1b/c) ===");
+console.log("\n=== test-mode deployment: writes only for a workspace in STRIPE_TEST_WORKSPACE_IDS (B1b/c) ===");
 // The test deployment shares the database and the service role with the live
 // one, and every handler takes its workspace id from metadata that anyone with
-// test-dashboard access can write. So in test mode a workspace must be
-// is_internal = true before the first write for it; otherwise the event is
-// acknowledged (Stripe must not retry), the claimed event row says why, and
-// nothing else is touched.
+// test-dashboard access can write. So in test mode a workspace must be listed
+// in the STRIPE_TEST_WORKSPACE_IDS function secret before any write for it;
+// otherwise the event is acknowledged (Stripe must not retry), the claimed
+// event row says why, and nothing else is touched. The allowlist replaced the
+// workspaces.is_internal flag: configuration, which nothing written to the
+// shared database can widen.
 const TEST_PATH = "/functions/v1/stripe-webhook-test";
+const OTHER_WS = "99999999-9999-4999-8999-999999999999";
 const testSigned = (ev: Record<string, unknown>) => signed(JSON.stringify(ev), { secret: TEST_SECRET });
 const WRITE_OPS = new Set(["insert", "update", "upsert", "delete", "rpc"]);
 // Every write a handler makes for a workspace; the event log is the only table
@@ -318,126 +334,206 @@ const writes = () => g.__sbCalls.filter((c) => WRITE_OPS.has(c.op) && c.table !=
 const writeNames = () => JSON.stringify(writes().map((c) => `${c.table}.${c.op}`));
 const isInternalRead = (c: Call) =>
   c.table === "workspaces" && c.op === "select" && c.filters.some(([f, col, v]) => f === "select" && col === "cols" && v === "is_internal");
+const anyWorkspaceRead = () => g.__sbCalls.some((c) => c.table === "workspaces" && c.op === "select");
 const refusedRow = () => {
   const m = calls("stripe_webhook_events", "update").at(-1);
-  return m?.payload?.processing_status === "error" && m?.payload?.error === "test mode: workspace is not internal; no changes made";
+  return m?.payload?.processing_status === "error" && m?.payload?.error === "test mode: workspace is not in STRIPE_TEST_WORKSPACE_IDS; no changes made";
 };
-t("the refusal text is exported for the audit row", webhook.TEST_MODE_WORKSPACE_REFUSED_ERROR === "test mode: workspace is not internal; no changes made");
+const unresolvedRow = () => {
+  const m = calls("stripe_webhook_events", "update").at(-1);
+  return m?.payload?.processing_status === "error" && m?.payload?.error === "test mode: the event resolves to no workspace; no changes made";
+};
+const REFUSED = "workspace_not_allowlisted";
+const UNRESOLVED = "workspace_unresolved";
+// Converted from is_internal: the refusal text now names the allowlist.
+t("the refusal text is exported for the audit row", webhook.TEST_MODE_WORKSPACE_REFUSED_ERROR === "test mode: workspace is not in STRIPE_TEST_WORKSPACE_IDS; no changes made");
+t("the refusal reason is exported", webhook.TEST_MODE_WORKSPACE_REFUSED_REASON === REFUSED && webhook.TEST_MODE_WORKSPACE_UNRESOLVED_REASON === UNRESOLVED);
+t("the unresolved-workspace text is exported", webhook.TEST_MODE_WORKSPACE_UNRESOLVED_ERROR === "test mode: the event resolves to no workspace; no changes made");
 
+// Converted from is_internal: each "non-internal workspace" case below now
+// runs with the allowlist set to ANOTHER workspace (non-empty, but not WS).
 reset();
+g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = OTHER_WS;
 g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "active").data.object;
 {
-  // Nothing queued for workspaces.select: the fake answers {data:null} — not internal.
   const ev = { ...subEvent("evt_tm_notint_sub", "active"), livemode: false };
   const r = await deliver(ev, testSigned(ev), TEST_PATH);
-  t("subscription.updated for a non-internal workspace -> 200 ignored: workspace_not_internal",
-    r.status === 200 && r.json.received === true && r.json.ignored === "workspace_not_internal", JSON.stringify(r.json));
+  t("subscription.updated for a workspace not in the allowlist -> 200 ignored: workspace_not_allowlisted",
+    r.status === 200 && r.json.received === true && r.json.ignored === REFUSED, JSON.stringify(r.json));
   t("… the event row was claimed, then marked error with the refusal text",
     calls("stripe_webhook_events", "insert").length === 1 && refusedRow(), JSON.stringify(calls("stripe_webhook_events", "update").at(-1)?.payload));
-  t("… is_internal was read for that workspace id",
-    g.__sbCalls.some((c) => isInternalRead(c) && c.filters.some(([f, col, v]) => f === "eq" && col === "id" && v === WS)));
+  // Converted from "… is_internal was read for that workspace id": the
+  // decision is configuration now — no workspace row is consulted.
+  t("… the decision read no workspace row at all (the allowlist is configuration)", !anyWorkspaceRead());
   t("… and NOTHING was written: no workspaces/subscriptions/tenant_pages/billing_events rows, no rpc", writes().length === 0, writeNames());
 }
 reset();
+g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = OTHER_WS;
 g.__stripeStubs["checkout.sessions.listLineItems"] = async () => ({ data: [{ quantity: 3 }] });
 g.__sbRpc["grant_credits"] = () => ({ data: null, error: null });
 {
   const ev = { id: "evt_tm_notint_credits", object: "event", type: "checkout.session.completed", livemode: false, created: Math.floor(Date.now() / 1000),
     data: { object: { id: "cs_tm_1", object: "checkout.session", metadata: { workspace_id: WS, mode: "credits", credits_per_pack: "1000" }, payment_intent: "pi_tm_1", amount_total: 3000, currency: "usd" } } };
   const r = await deliver(ev, testSigned(ev), TEST_PATH);
-  t("a credits checkout for a non-internal workspace is refused the same way", r.status === 200 && r.json.ignored === "workspace_not_internal" && refusedRow(), JSON.stringify(r.json));
+  t("a credits checkout for a workspace not in the allowlist is refused the same way", r.status === 200 && r.json.ignored === REFUSED && refusedRow(), JSON.stringify(r.json));
   t("… no credit_purchases row, no grant_credits call, no write at all",
     calls("credit_purchases").length === 0 && calls("rpc:grant_credits").length === 0 && writes().length === 0, writeNames());
   t("… and Stripe was not even asked for the line items", !g.__stripeCalls.includes("checkout.sessions.listLineItems"));
 }
 reset();
+g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = OTHER_WS;
 g.__sbResponses["subscriptions.select"] = [{ data: { workspace_id: WS, plan_tier: "starter" } }];
 g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "active").data.object;
 {
   const ev = { id: "evt_tm_notint_inv", object: "event", type: "invoice.paid", livemode: false, created: Math.floor(Date.now() / 1000),
     data: { object: { id: "in_tm_1", object: "invoice", subscription: "sub_1", billing_reason: "subscription_cycle" } } };
   const r = await deliver(ev, testSigned(ev), TEST_PATH);
-  t("invoice.paid for a non-internal workspace is refused before reactivation and the monthly grant",
-    r.status === 200 && r.json.ignored === "workspace_not_internal" && refusedRow() && calls("tenant_pages").length === 0 && calls("rpc:grant_credits").length === 0 && writes().length === 0,
+  t("invoice.paid for a workspace not in the allowlist is refused before reactivation and the monthly grant",
+    r.status === 200 && r.json.ignored === REFUSED && refusedRow() && calls("tenant_pages").length === 0 && calls("rpc:grant_credits").length === 0 && writes().length === 0,
     writeNames());
 }
 reset();
+g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = OTHER_WS;
 {
   const ev = { ...subEvent("evt_tm_notint_del", "canceled", {}, "customer.subscription.deleted"), livemode: false };
   const r = await deliver(ev, testSigned(ev), TEST_PATH);
-  t("subscription.deleted for a non-internal workspace suspends nothing and cancels nothing",
-    r.status === 200 && r.json.ignored === "workspace_not_internal" && refusedRow() && calls("tenant_pages").length === 0 && calls("subscriptions").length === 0 && writes().length === 0,
+  t("subscription.deleted for a workspace not in the allowlist suspends nothing and cancels nothing",
+    r.status === 200 && r.json.ignored === REFUSED && refusedRow() && calls("tenant_pages").length === 0 && calls("subscriptions").length === 0 && writes().length === 0,
     writeNames());
 }
 reset();
+g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = OTHER_WS;
 g.__sbResponses["subscriptions.select"] = [{ data: { workspace_id: WS } }];
 {
   const ev = { id: "evt_tm_notint_pf", object: "event", type: "invoice.payment_failed", livemode: false, created: Math.floor(Date.now() / 1000),
     data: { object: { id: "in_tm_2", object: "invoice", subscription: "sub_1", attempt_count: 1, next_payment_attempt: 1 } } };
   const r = await deliver(ev, testSigned(ev), TEST_PATH);
-  t("invoice.payment_failed for a non-internal workspace is not even audited for it",
-    r.status === 200 && r.json.ignored === "workspace_not_internal" && refusedRow() && calls("billing_events").length === 0 && writes().length === 0, writeNames());
+  t("invoice.payment_failed for a workspace not in the allowlist is not even audited for it",
+    r.status === 200 && r.json.ignored === REFUSED && refusedRow() && calls("billing_events").length === 0 && writes().length === 0, writeNames());
 }
 reset();
+g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = OTHER_WS;
 g.__stripeStubs["invoices.retrieve"] = async () => ({ subscription: "sub_1" });
 g.__sbResponses["subscriptions.select"] = [{ data: { workspace_id: WS } }];
 {
   const ev = { id: "evt_tm_notint_ref", object: "event", type: "charge.refunded", livemode: false, created: Math.floor(Date.now() / 1000),
     data: { object: { id: "ch_tm_1", object: "charge", invoice: "in_tm_3", amount: 2900, amount_refunded: 2900, currency: "usd" } } };
   const r = await deliver(ev, testSigned(ev), TEST_PATH);
-  t("charge.refunded attributed to a non-internal workspace is refused before its audit row",
-    r.status === 200 && r.json.ignored === "workspace_not_internal" && refusedRow() && calls("billing_events").length === 0 && writes().length === 0, writeNames());
+  t("charge.refunded attributed to a workspace not in the allowlist is refused before its audit row",
+    r.status === 200 && r.json.ignored === REFUSED && refusedRow() && calls("billing_events").length === 0 && writes().length === 0, writeNames());
 }
 reset();
+g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = OTHER_WS;
 g.__stripeStubs["charges.retrieve"] = async () => ({ id: "ch_tm_2", invoice: null, customer: "cus_tm_1" });
 g.__sbResponses["stripe_customers.select"] = [{ data: { workspace_id: WS } }];
 {
   const ev = { id: "evt_tm_notint_disp", object: "event", type: "charge.dispute.created", livemode: false, created: Math.floor(Date.now() / 1000),
     data: { object: { id: "dp_tm_1", object: "dispute", charge: "ch_tm_2", amount: 2900, currency: "usd", reason: "fraudulent", status: "needs_response" } } };
   const r = await deliver(ev, testSigned(ev), TEST_PATH);
-  t("charge.dispute.created attributed to a non-internal workspace is refused before its audit row",
-    r.status === 200 && r.json.ignored === "workspace_not_internal" && refusedRow() && calls("billing_events").length === 0 && writes().length === 0, writeNames());
+  t("charge.dispute.created attributed to a workspace not in the allowlist is refused before its audit row",
+    r.status === 200 && r.json.ignored === REFUSED && refusedRow() && calls("billing_events").length === 0 && writes().length === 0, writeNames());
 }
-// "Exactly true": nothing else counts.
-for (const { label, row } of [
-  { label: "false", row: { is_internal: false } },
-  { label: "null", row: { is_internal: null } },
-  { label: "the string 'true'", row: { is_internal: "true" } },
-  { label: "a missing workspace row", row: null },
+// Converted from the "is_internal must be exactly true" loop: only an exact
+// UUID listed in the secret counts. Unset or empty refuses everything, and the
+// old database flag widens nothing.
+for (const { label, env, flag } of [
+  { label: "an unset allowlist", env: undefined, flag: undefined },
+  { label: "an empty allowlist", env: "", flag: undefined },
+  { label: "commas and whitespace only", env: " , ,, ", flag: undefined },
+  { label: "only other workspaces", env: `${OTHER_WS}, 88888888-8888-4888-8888-888888888888`, flag: undefined },
+  { label: "the id with a character missing", env: WS.slice(0, -1), flag: undefined },
+  { label: "the id inside a longer token", env: `x${WS}`, flag: undefined },
+  { label: "a wildcard", env: "*", flag: undefined },
+  { label: "is_internal = true in the database (the old flag) with the allowlist unset", env: undefined, flag: { is_internal: true } },
 ]) {
   reset();
-  g.__sbResponses["workspaces.select"] = [{ data: row }];
+  if (env !== undefined) g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = env;
+  if (flag) g.__sbResponses["workspaces.select"] = [{ data: flag }];
   g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "active").data.object;
-  const ev = { ...subEvent(`evt_tm_notint_${label.replace(/\W/g, "")}`, "active"), livemode: false };
+  const ev = { ...subEvent(`evt_tm_notint_${label.replace(/\W/g, "").slice(0, 40)}`, "active"), livemode: false };
   const r = await deliver(ev, testSigned(ev), TEST_PATH);
-  t(`is_internal = ${label} is refused`, r.status === 200 && r.json.ignored === "workspace_not_internal" && writes().length === 0, JSON.stringify(r.json));
+  t(`${label} is refused`, r.status === 200 && r.json.ignored === REFUSED && refusedRow() && writes().length === 0, JSON.stringify(r.json));
 }
+// Converted from "a failed is_internal read is a 500": there is no read any
+// more, so a database blip cannot turn into an answer either way.
 reset();
+g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = OTHER_WS;
 g.__sbResponses["workspaces.select"] = [{ data: null, error: { code: "XX000", message: "db down" } }];
 g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "active").data.object;
 {
   const ev = { ...subEvent("evt_tm_readerr", "active"), livemode: false };
   const r = await deliver(ev, testSigned(ev), TEST_PATH);
-  t("a failed is_internal read is a 500 (Stripe retries) with the real error on the row, never a write",
-    r.status === 500 && writes().length === 0 && /db down/.test(String(calls("stripe_webhook_events", "update").at(-1)?.payload?.error)), JSON.stringify(calls("stripe_webhook_events", "update").at(-1)?.payload));
+  t("the gate reads nothing, so a database error cannot decide it: refused as a 200, never a write",
+    r.status === 200 && r.json.ignored === REFUSED && refusedRow() && writes().length === 0 && !anyWorkspaceRead(), JSON.stringify(r.json));
 }
 reset();
+g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = WS;
 {
   const ev = { ...subEvent("evt_tm_order", "active"), livemode: true };
   const r = await deliver(ev, testSigned(ev), TEST_PATH);
-  t("signature and livemode come first: a live event on the test deployment is mode_mismatch before any is_internal read",
+  t("signature and livemode come first: a live event on the test deployment is mode_mismatch before any allowlist check",
     r.json.ignored === "mode_mismatch" && g.__sbCalls.length === 0);
 }
 reset();
+g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = WS;
 {
   const ev = { ...subEvent("evt_tm_unsigned", "active"), livemode: false };
   const r = await deliver(ev, null, TEST_PATH);
-  t("…and an unsigned event is a 400 before any is_internal read", r.status === 400 && g.__sbCalls.length === 0);
+  t("…and an unsigned event is a 400 before any allowlist check", r.status === 400 && g.__sbCalls.length === 0);
 }
 
-console.log("\n=== test-mode deployment: an internal workspace is processed as normal ===");
+console.log("\n=== test-mode deployment: an event that resolves to no workspace writes nothing ===");
+// Live mode records an unattributable refund or dispute (workspace_id null)
+// and cancels a subscription row by its id alone; the test deployment must
+// not, allowlist or not.
+for (const env of [undefined, WS]) {
+  const envLabel = env ? "with the allowlist set" : "with the allowlist unset";
+  reset();
+  if (env) g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = env;
+  {
+    // No invoice, no customer: workspaceForCharge resolves nothing.
+    const ev = { id: `evt_tm_unres_ref_${env ? "a" : "u"}`, object: "event", type: "charge.refunded", livemode: false, created: Math.floor(Date.now() / 1000),
+      data: { object: { id: "ch_tm_u1", object: "charge", invoice: null, customer: null, amount: 2900, amount_refunded: 2900, currency: "usd" } } };
+    const r = await deliver(ev, testSigned(ev), TEST_PATH);
+    t(`an unattributable charge.refunded is refused ${envLabel}: 200 ignored workspace_unresolved, no billing_events row`,
+      r.status === 200 && r.json.ignored === UNRESOLVED && unresolvedRow() && calls("billing_events").length === 0 && writes().length === 0, JSON.stringify(r.json) + writeNames());
+  }
+  reset();
+  if (env) g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = env;
+  g.__stripeStubs["charges.retrieve"] = async () => ({ id: "ch_tm_u2", invoice: null, customer: "cus_unknown" });
+  {
+    // The customer is not mapped to any workspace.
+    const ev = { id: `evt_tm_unres_disp_${env ? "a" : "u"}`, object: "event", type: "charge.dispute.created", livemode: false, created: Math.floor(Date.now() / 1000),
+      data: { object: { id: "dp_tm_u1", object: "dispute", charge: "ch_tm_u2", amount: 2900, currency: "usd", reason: "fraudulent", status: "needs_response" } } };
+    const r = await deliver(ev, testSigned(ev), TEST_PATH);
+    t(`an unattributable charge.dispute.created is refused ${envLabel}`,
+      r.status === 200 && r.json.ignored === UNRESOLVED && unresolvedRow() && calls("billing_events").length === 0 && writes().length === 0, JSON.stringify(r.json) + writeNames());
+  }
+  reset();
+  if (env) g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = env;
+  {
+    const ev = { ...subEvent(`evt_tm_unres_del_${env ? "a" : "u"}`, "canceled", { metadata: {} }, "customer.subscription.deleted"), livemode: false };
+    const r = await deliver(ev, testSigned(ev), TEST_PATH);
+    t(`a subscription.deleted with no workspace metadata cancels nothing by subscription id ${envLabel}`,
+      r.status === 200 && r.json.ignored === UNRESOLVED && unresolvedRow() && calls("subscriptions").length === 0 && calls("tenant_pages").length === 0 && writes().length === 0,
+      JSON.stringify(r.json) + writeNames());
+  }
+}
+
+console.log("\n=== the allowlist parser ===");
+{
+  const ids = webhook.parseTestWorkspaceIds(` ${WS.toUpperCase()} ,,${OTHER_WS},not-a-uuid, ${WS} `);
+  t("comma-separated, trimmed, lower-cased, de-duplicated", ids.size === 2 && ids.has(WS) && ids.has(OTHER_WS), JSON.stringify([...ids]));
+  t("anything that is not a UUID is dropped", !ids.has("not-a-uuid"));
+  t("unset and empty are the empty set", webhook.parseTestWorkspaceIds(undefined).size === 0 && webhook.parseTestWorkspaceIds(null).size === 0 && webhook.parseTestWorkspaceIds("").size === 0);
+}
+
+// Converted from "an internal workspace is processed as normal": the
+// workspace is allowlisted instead of flagged.
+console.log("\n=== test-mode deployment: an allowlisted workspace is processed as normal ===");
 reset();
-g.__sbResponses["workspaces.select"] = [{ data: { is_internal: true } }];
+// Mixed case, whitespace and a second id: still an exact match for WS.
+g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = ` ${OTHER_WS} , ${WS.toUpperCase()} `;
 g.__stripeStubs["checkout.sessions.listLineItems"] = async () => ({ data: [{ quantity: 2 }] });
 let granted: any = null;
 g.__sbRpc["grant_credits"] = (args) => { granted = args; return { data: null, error: null }; };
@@ -445,23 +541,23 @@ g.__sbRpc["grant_credits"] = (args) => { granted = args; return { data: null, er
   const ev = { id: "evt_tm_int_credits", object: "event", type: "checkout.session.completed", livemode: false, created: Math.floor(Date.now() / 1000),
     data: { object: { id: "cs_tm_2", object: "checkout.session", metadata: { workspace_id: WS, mode: "credits", credits_per_pack: "1000" }, payment_intent: "pi_tm_2", amount_total: 2000, currency: "usd" } } };
   const r = await deliver(ev, testSigned(ev), TEST_PATH);
-  t("internal workspace: credits checkout -> 200 received, not ignored", r.status === 200 && r.json.received === true && r.json.ignored === undefined, JSON.stringify(r.json));
+  t("allowlisted workspace: credits checkout -> 200 received, not ignored", r.status === 200 && r.json.received === true && r.json.ignored === undefined, JSON.stringify(r.json));
   t("… the purchase is recorded and the credits granted", calls("credit_purchases", "insert").length === 1 && granted?._workspace_id === WS && granted?._amount === 2000, JSON.stringify(granted));
-  const readAt = g.__sbCalls.findIndex(isInternalRead);
-  const firstWrite = g.__sbCalls.findIndex((c) => WRITE_OPS.has(c.op) && c.table !== "stripe_webhook_events");
-  t("… and is_internal was checked BEFORE the first write", readAt >= 0 && firstWrite > readAt, `${readAt} vs ${firstWrite}`);
+  // Converted from "… and is_internal was checked BEFORE the first write":
+  // the check is configuration now, so no workspace row is read at all.
+  t("… and the allowlist decision read no workspace row", !g.__sbCalls.some(isInternalRead) && !anyWorkspaceRead());
   t("… event marked processed", calls("stripe_webhook_events", "update").at(-1)?.payload?.processing_status === "processed");
 }
 reset();
-g.__sbResponses["workspaces.select"] = [{ data: { is_internal: true } }];
+g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = WS;
 {
   const ev = { ...subEvent("evt_tm_int_del", "canceled", {}, "customer.subscription.deleted"), livemode: false };
   const r = await deliver(ev, testSigned(ev), TEST_PATH);
-  t("internal workspace: subscription.deleted suspends its pages as on live",
+  t("allowlisted workspace: subscription.deleted suspends its pages as on live",
     r.status === 200 && r.json.received === true && calls("tenant_pages", "update").some((c) => c.payload?.status === "billing_suspended"));
 }
 reset();
-g.__sbResponses["workspaces.select"] = [{ data: { is_internal: true } }];
+g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = WS;
 g.__sbResponses["subscriptions.select"] = [{ data: { workspace_id: WS, plan_tier: "starter" } }];
 g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "active").data.object;
 g.__sbRpc["grant_credits"] = () => ({ data: null, error: null });
@@ -469,17 +565,30 @@ g.__sbRpc["grant_credits"] = () => ({ data: null, error: null });
   const ev = { id: "evt_tm_int_inv", object: "event", type: "invoice.paid", livemode: false, created: Math.floor(Date.now() / 1000),
     data: { object: { id: "in_tm_4", object: "invoice", subscription: "sub_1", billing_reason: "subscription_cycle" } } };
   const r = await deliver(ev, testSigned(ev), TEST_PATH);
-  t("internal workspace: invoice.paid reactivates pages and grants the monthly allowance",
+  t("allowlisted workspace: invoice.paid reactivates pages and grants the monthly allowance",
     r.status === 200 && r.json.received === true && calls("tenant_pages", "update").some((c) => c.payload?.status === "published") && calls("rpc:grant_credits").length === 1);
 }
+reset();
+g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = WS;
+g.__stripeStubs["invoices.retrieve"] = async () => ({ subscription: "sub_1" });
+g.__sbResponses["subscriptions.select"] = [{ data: { workspace_id: WS } }];
+{
+  const ev = { id: "evt_tm_int_ref", object: "event", type: "charge.refunded", livemode: false, created: Math.floor(Date.now() / 1000),
+    data: { object: { id: "ch_tm_i1", object: "charge", invoice: "in_tm_5", amount: 2900, amount_refunded: 1000, currency: "usd" } } };
+  const r = await deliver(ev, testSigned(ev), TEST_PATH);
+  t("allowlisted workspace: an attributable refund is audited as on live",
+    r.status === 200 && r.json.received === true && calls("billing_events", "insert").some((c) => c.payload?.event_type === "charge_refunded" && c.payload?.workspace_id === WS));
+}
 
-console.log("\n=== live deployment never consults is_internal ===");
+// Converted from "live deployment never consults is_internal": it never
+// consults the allowlist either — every case runs with it UNSET.
+console.log("\n=== live deployment never consults the allowlist (unchanged) ===");
 reset();
 g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "active").data.object;
 {
   const r = await deliver(subEvent("evt_live_noflag", "active"));
   t("live subscription.updated -> 200 with the entitlement granted", r.status === 200 && calls("workspaces", "update").some((c) => typeof c.payload?.page_limit_base === "number"));
-  t("… without any is_internal read", !g.__sbCalls.some(isInternalRead));
+  t("… without any is_internal read, and with STRIPE_TEST_WORKSPACE_IDS unset", !g.__sbCalls.some(isInternalRead) && g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS === undefined);
 }
 reset();
 g.__stripeStubs["checkout.sessions.listLineItems"] = async () => ({ data: [{ quantity: 1 }] });
@@ -493,6 +602,22 @@ reset();
 {
   const r = await deliver(subEvent("evt_live_del", "canceled", {}, "customer.subscription.deleted"));
   t("live subscription.deleted still suspends, with no is_internal read", r.status === 200 && calls("tenant_pages", "update").some((c) => c.payload?.status === "billing_suspended") && !g.__sbCalls.some(isInternalRead));
+}
+reset();
+{
+  const ev = { id: "evt_live_unres_ref", object: "event", type: "charge.refunded", livemode: true, created: Math.floor(Date.now() / 1000),
+    data: { object: { id: "ch_live_u1", object: "charge", invoice: null, customer: null, amount: 2900, amount_refunded: 2900, currency: "usd" } } };
+  const r = await deliver(ev);
+  t("live: an unattributable refund is still recorded for a human (workspace_id null), as before",
+    r.status === 200 && r.json.received === true && r.json.ignored === undefined &&
+      calls("billing_events", "insert").some((c) => c.payload?.event_type === "charge_refunded" && c.payload?.workspace_id === null));
+}
+reset();
+{
+  const r = await deliver(subEvent("evt_live_unres_del", "canceled", { metadata: {} }, "customer.subscription.deleted"));
+  t("live: a subscription.deleted without workspace metadata still cancels the row by subscription id, as before",
+    r.status === 200 && r.json.ignored === undefined &&
+      calls("subscriptions", "update").some((c) => c.payload?.status === "canceled" && c.filters.some(([f, col, v]) => f === "eq" && col === "stripe_subscription_id" && v === "sub_1")));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
