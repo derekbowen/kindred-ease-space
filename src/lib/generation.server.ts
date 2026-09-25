@@ -11,15 +11,16 @@ import {
 } from "@/lib/ai/models";
 import { AI_MESSAGES, CustomerFacingError } from "@/lib/ai/customer-error";
 import type { AiUsage, OpenAiTransport, StructuredFormat } from "@/lib/ai/openai.server";
-import {
-  billingClassFor,
-  resolveAiKey,
-  runMeteredAiCall,
-  type AiBillingClass,
-  type AiDb,
-  type AiKey,
-  type AiSettlement,
-  type SpendBilling,
+// Types only: the spend flow (and through it the OpenAI SDK) is imported
+// dynamically where it is used, so no client bundle that reaches this module
+// through a *.functions.ts file can pull the SDK in (bun run build + a grep of
+// .output/public checks it; tests/ai-source-guards.test.ts guards the graph).
+import type {
+  AiBillingClass,
+  AiDb,
+  AiKey,
+  AiSettlement,
+  SpendBilling,
 } from "@/lib/ai/spend.server";
 import {
   findUniqueTenantSlug,
@@ -613,6 +614,7 @@ export type ResolvedBilling = {
  * key at all is a customer-facing refusal.
  */
 export async function resolveBillingMode(workspaceId: string, db?: AiDb): Promise<ResolvedBilling> {
+  const { resolveAiKey, billingClassFor } = await import("@/lib/ai/spend.server");
   const key = await resolveAiKey(workspaceId, db);
   const granted = key.source === "platform" ? await isGenerationGranted(workspaceId) : false;
   const billingClass = billingClassFor(key, { route: "page_generation", granted });
@@ -679,6 +681,7 @@ export async function generatePageContent(input: GenerateInput): Promise<Generat
     inventoryFacts = formatInventoryFacts(city, (cityListings ?? []) as InventoryRow[]);
   }
 
+  const { runMeteredAiCall } = await import("@/lib/ai/spend.server");
   const result = await runMeteredAiCall<WritePageOutput>({
     workspaceId: input.workspaceId,
     userId: input.userId,

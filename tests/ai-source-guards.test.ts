@@ -285,6 +285,79 @@ console.log("\n=== one provider module, one spend path ===");
 }
 
 // ---------------------------------------------------------------------------
+console.log("\n=== the client bundle cannot reach the SDK or the spend flow ===");
+{
+  // Every route and component is a client entry. Follow their STATIC value
+  // imports (type-only imports are erased; dynamic import() is a separate
+  // chunk that runs where it is called) through src/: the provider module,
+  // the spend flow and the openai package must not be reachable. This is
+  // what keeps the SDK and the server-only AI code out of .output/public.
+  const resolveSpec = (from: string, spec: string): string | null => {
+    let base: string;
+    if (spec.startsWith("@/")) base = join(ROOT, "src", spec.slice(2));
+    else if (spec.startsWith(".")) base = join(ROOT, from, "..", spec);
+    else return `pkg:${spec.split("/")[0]!.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split("/")[0]}`;
+    for (const cand of [base, `${base}.ts`, `${base}.tsx`, join(base, "index.ts"), join(base, "index.tsx")]) {
+      if (existsSync(cand) && statSync(cand).isFile()) return relative(ROOT, cand);
+    }
+    return null;
+  };
+  const valueImports = (file: string): string[] => {
+    const src = read(file).replace(/\/\*[\s\S]*?\*\//g, "");
+    const out: string[] = [];
+    const re = /^\s*(import|export)\s+(type\s+)?([\s\S]*?)\s*from\s*["']([^"']+)["']|^\s*import\s+["']([^"']+)["']/gm;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(src))) {
+      if (m[5]) {
+        out.push(m[5]);
+        continue;
+      }
+      if (m[2]) continue; // import type / export type
+      const clause = m[3] ?? "";
+      const braces = clause.match(/\{([\s\S]*)\}/);
+      const outside = clause.replace(/\{[\s\S]*\}/, "").replace(/,/g, "").trim();
+      const named = braces ? braces[1]!.split(",").map((x) => x.trim()).filter(Boolean) : [];
+      const valueNamed = named.filter((n) => !/^type\s/.test(n));
+      if (outside || valueNamed.length || (!braces && clause.trim())) out.push(m[4]!);
+    }
+    return out;
+  };
+  const entries = srcFiles.filter((f) => /^src\/(routes|components)\//.test(f));
+  const seen = new Set<string>();
+  const via = new Map<string, string>();
+  const queue = [...entries];
+  const packages = new Set<string>();
+  while (queue.length) {
+    const f = queue.shift()!;
+    if (seen.has(f)) continue;
+    seen.add(f);
+    for (const spec of valueImports(f)) {
+      const r = resolveSpec(f, spec);
+      if (!r) continue;
+      if (r.startsWith("pkg:")) {
+        packages.add(r.slice(4));
+        if (!via.has(r)) via.set(r, f);
+        continue;
+      }
+      if (!seen.has(r)) {
+        if (!via.has(r)) via.set(r, f);
+        queue.push(r);
+      }
+    }
+  }
+  t("the walk covers the client entries and what they import", entries.length > 100 && seen.size > entries.length, `${entries.length} entries, ${seen.size} modules`);
+  for (const serverOnly of ["src/lib/ai/openai.server.ts", "src/lib/ai/spend.server.ts", "src/lib/coach-briefing.server.ts"]) {
+    t(`${serverOnly} is not statically reachable from any route or component`, !seen.has(serverOnly), `via ${via.get(serverOnly)}`);
+  }
+  t("the openai package is not statically reachable from any route or component", !packages.has("openai"), `via ${via.get("pkg:openai")}`);
+  const gen = read("src/lib/generation.server.ts");
+  t(
+    "generation.server imports the spend flow for types only, and loads it where it runs",
+    /import type \{[\s\S]*?\} from "@\/lib\/ai\/spend\.server";/.test(gen) && /await import\("@\/lib\/ai\/spend\.server"\)/.test(gen),
+  );
+}
+
+// ---------------------------------------------------------------------------
 console.log("\n=== no other AI provider is reachable ===");
 {
   const banned = /openrouter|ai\.gateway\.lovable\.dev|LOVABLE_API_KEY|api\.anthropic\.com|ANTHROPIC_API_KEY|@anthropic-ai|generativelanguage\.googleapis\.com|GEMINI_API_KEY|@google\/generative-ai|google\/gemini/i;

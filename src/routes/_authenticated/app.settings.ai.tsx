@@ -31,9 +31,9 @@ export const Route = createFileRoute("/_authenticated/app/settings/ai")({
   component: AiSettingsPage,
 });
 
-// OpenAI is the only provider. The key is stored as the workspace secret
-// OPENAI_API_KEY (the same one Settings → API Keys manages); no model is
-// chosen here — the platform decides the model for every AI feature.
+// OpenAI is the only provider. The server stores the key as the workspace's
+// OpenAI secret (src/lib/ai-byok.functions.ts); no model is chosen here — the
+// platform decides the model for every AI feature.
 const PROVIDER_META: Record<AiProvider, { label: string; placeholder: string; help: string }> = {
   openai: {
     label: "OpenAI",
@@ -168,9 +168,9 @@ function AiSettingsPage() {
       <div>
         <h1 className="text-2xl font-bold">AI Providers</h1>
         <p className="text-sm text-muted-foreground">
-          Bring your own OpenAI key. It is stored encrypted as this workspace&apos;s OPENAI_API_KEY
-          secret (the same one Settings → API Keys shows) and only decrypted server-side at call
-          time. Keys are never logged — only the last four characters are shown.
+          Bring your own OpenAI key. It is stored encrypted as a workspace secret and only
+          decrypted server-side at call time. Keys are never logged — only the last four
+          characters are shown.
         </p>
       </div>
 
