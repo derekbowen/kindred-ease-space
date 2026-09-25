@@ -208,7 +208,17 @@ function QuickPageBuilder() {
         loadCtx({ data: { workspaceId } }).then(applyCtx);
       }
     } catch (err: any) {
-      setError(err?.message || String(err));
+      const message = err?.message || String(err);
+      // A request the server answered is finished, and a provider call it
+      // made is spent: the same key can never buy another one, so the next
+      // click gets a fresh key. Two answers keep it: a lost response (the
+      // fetch itself failed, a TypeError — resubmitting replays whatever the
+      // server did) and "still being generated" (its page may yet appear
+      // under this key).
+      if (!(err instanceof TypeError) && !/still being generated/i.test(message)) {
+        requestIdRef.current = newRequestId();
+      }
+      setError(message);
     } finally {
       setBusy(false);
     }

@@ -43,8 +43,8 @@ SELECT prosrc LIKE '%ORDER BY priority ASC, verified_at DESC NULLS LAST, id ASC%
   FROM pg_proc WHERE oid = 'public.current_workspace_id_by_host(text)'::regprocedure;
 -- expect true
 
--- 000600: settlement index, the three generation functions service-role only,
--- reservations table, billing-mode column
+-- 000600: settlement index, the six generation functions service-role only,
+-- reservations table (with provider_called_at), billing-mode column, pin trigger
 SELECT indexname FROM pg_indexes
  WHERE schemaname='public' AND indexname='credit_ledger_generation_settlement_uidx';
 -- expect one row
@@ -54,12 +54,27 @@ SELECT f, has_function_privilege('anon', to_regprocedure(f), 'EXECUTE') AS anon_
 FROM unnest(ARRAY[
  'public.settle_generation_free_quota(uuid,text,text,text)',
  'public.reserve_generation_slot(uuid,uuid,int)',
- 'public.generation_consumed_last_24h(uuid,uuid)']) AS f;
+ 'public.mark_generation_provider_called(uuid,uuid)',
+ 'public.release_generation_slot(uuid,uuid)',
+ 'public.generation_consumed_last_24h(uuid)',
+ 'public.tenant_pages_pin_generation_columns()']) AS f;
 -- expect anon_exec = false, auth_exec = false, service_exec = true for every row
+SELECT prorettype::regtype AS returns FROM pg_proc
+ WHERE oid = 'public.reserve_generation_slot(uuid,uuid,int)'::regprocedure;
+-- expect text ('reserved' / 'cap_reached' / 'in_progress' / 'consumed')
+SELECT to_regprocedure('public.generation_consumed_last_24h(uuid,uuid)') AS old_overload;
+-- expect NULL (the count takes the workspace only; items are not counted)
 SELECT count(*) FROM public.generation_reservations;   -- 0 before first use
+SELECT column_name FROM information_schema.columns
+ WHERE table_schema='public' AND table_name='generation_reservations' AND column_name='provider_called_at';
+-- expect one row
 SELECT column_name FROM information_schema.columns
  WHERE table_schema='public' AND table_name='tenant_pages' AND column_name='generation_billing_mode';
 -- expect one row
+SELECT tgname, tgenabled FROM pg_trigger
+ WHERE tgrelid = 'public.tenant_pages'::regclass AND tgname = 'tenant_pages_pin_generation_columns';
+-- expect one row, tgenabled = 'O' (BEFORE UPDATE; keeps created_at, generation_request_id
+-- and generation_billing_mode unless the service role writes them)
 
 -- 20260924000700: a grant supersedes a trial; the granted state zeroes paid capacity
 SELECT prosrc LIKE '%IF v_granted > 0 AND (NOT v_stripe_pub OR v_state = ''trialing'') THEN%' AS supersedes_trial,

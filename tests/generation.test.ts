@@ -9,9 +9,13 @@
  *     "has a page" matches city AND state (Portland, OR ≠ Portland, ME)
  *   - a live `running` item is never handed to a second driver; only a stale
  *     one is; a done item whose draft was deleted is generatable again
- *   - the daily cap is a reservation (done + running + pending) counted in ONE
- *     place (the database), the quick page RESERVES its slot atomically, the
- *     attempt ceiling is 3, the pause switch accepts true and "true"
+ *   - the daily cap counts ONE thing — reservations, one per provider call —
+ *     in ONE place (the database); every generator (quick page, coach,
+ *     Opportunity Engine, each batch item attempt) reserves before its
+ *     provider call; a reservation is marked spent right before the call and
+ *     never released after it; a request that can only fail (an underivable
+ *     slug) fails before anything is reserved; the attempt ceiling is 3, the
+ *     pause switch accepts true and "true"
  *   - the platform key must afford a WHOLE page; settlement is idempotent by
  *     page through the credit ledger whichever currency paid; a failed
  *     deduction is recorded as unbilled, never as a charge; a provider that
@@ -27,16 +31,19 @@
  *     database text reaches the customer either (customerMessage)
  *   - out-of-funds copy sends customers to support, not to a withdrawn purchase
  *   - the migrations carry the idempotency keys, billing_status, the pause
- *     seed, the write REVOKEs, the settlement index, the reservation RPCs and
- *     the billing-mode column; the rollbacks undo them
+ *     seed, the write REVOKEs, the settlement index, the reservation state
+ *     machine (reserve / mark / release), the billing-mode column and the
+ *     pin trigger; the rollbacks undo them (tests/generation-sql.test.ts runs
+ *     the 000600 SQL itself in PGlite)
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   ATTEMPTS_EXHAUSTED_MESSAGE,
   CustomerFacingError,
-  DAILY_CAP_COUNTED_STATUSES,
+  GENERATION_ALREADY_USED_MESSAGE,
   GENERATION_DEFAULT_MODEL,
+  GENERATION_IN_PROGRESS_MESSAGE,
   GENERATION_LEDGER_REF_TYPES,
   GENERATION_MODEL_IDS,
   GENERATION_MODEL_OPTIONS,
@@ -45,12 +52,15 @@ import {
   MAX_ITEM_ATTEMPTS,
   MIN_BODY_CHARS,
   OPENROUTER_TIMEOUT_MS,
+  PAGE_SLUG_UNDERIVABLE_MESSAGE,
+  PAGE_TITLE_INVALID_MESSAGE,
   PROVIDER_ERROR_MESSAGE,
   PROVIDER_TIMEOUT_MESSAGE,
   STALE_RUNNING_MS,
   TYPICAL_PAGE_TOKENS,
   UNBILLED_ITEM_MESSAGE,
   attemptsExhausted,
+  batchAttemptRequestId,
   billableUsage,
   billingStatusFor,
   buildCityBrief,
@@ -61,6 +71,7 @@ import {
   deterministicRequestId,
   estimatedCreditsPerPage,
   formatInventoryFacts,
+  generatedPageBaseSlug,
   hasPlatformFunds,
   initialBillingStatus,
   isGenerationPaused,
@@ -68,8 +79,11 @@ import {
   isStaleRunning,
   outOfCreditsMessage,
   pageCoversCity,
+  parseGenerationSlot,
   planJobItems,
+  providerUsageOf,
   selectTargets,
+  validatePageRequest,
 } from "../src/lib/generation.server";
 import { PLATFORM_MODEL_ALLOWLIST, resolvePlatformModel } from "../src/lib/ai-pricing";
 import { QuickPageInputSchema } from "../src/lib/admin-quick-page.functions";
@@ -194,64 +208,152 @@ console.log("\n=== daily cap ===");
   t("negative consumed counts as 0", dailyCapRemaining(10, -5) === 10);
   t("fractional cap rounds down", dailyCapRemaining(10.9, 0) === 10);
 
-  t(
-    "the counted statuses are exactly done, running and pending",
-    [...DAILY_CAP_COUNTED_STATUSES].sort().join() === "done,pending,running",
-  );
-
-  // The count lives in SQL now (ONE definition, shared with the reservation
-  // RPC). The TypeScript list and the function body must say the same thing.
+  // The count lives in SQL (ONE definition, shared with the reservation
+  // RPC), and it counts ONE thing: reservations — one per provider call.
+  // Pages and batch items are rows a customer can delete, edit or re-arm;
+  // counting them let a deleted draft free a slot.
   const sql = read(MIGRATION_600);
   const consumedFn = sql.slice(
     sql.indexOf("CREATE OR REPLACE FUNCTION public.generation_consumed_last_24h"),
-    sql.indexOf("CREATE OR REPLACE FUNCTION public.reserve_generation_slot"),
+    sql.indexOf("REVOKE EXECUTE ON FUNCTION public.generation_consumed_last_24h"),
   );
-  const statusList = consumedFn.match(/i\.status IN \(([^)]+)\)/)?.[1] ?? "";
-  const sqlStatuses = statusList
-    .split(",")
-    .map((s) => s.trim().replace(/^'|'$/g, ""))
-    .sort();
+  t("generation_consumed_last_24h was found", consumedFn.length > 0);
   t(
-    "the SQL count uses exactly DAILY_CAP_COUNTED_STATUSES for batch items",
-    sqlStatuses.join() === [...DAILY_CAP_COUNTED_STATUSES].sort().join(),
-    sqlStatuses.join(),
+    "the SQL count has exactly one source: reservations (never pages, never items)",
+    (consumedFn.match(/count\(\*\)/g) ?? []).length === 1 &&
+      consumedFn.includes("FROM public.generation_reservations r") &&
+      !consumedFn.includes("tenant_pages") &&
+      !consumedFn.includes("generation_items"),
   );
   t(
-    "the SQL count has exactly three sources: items, quick pages, held reservations",
-    (consumedFn.match(/SELECT count\(\*\)/g) ?? []).length === 3 &&
-      consumedFn.includes("FROM public.generation_items i") &&
-      consumedFn.includes("FROM public.tenant_pages p") &&
-      consumedFn.includes("FROM public.generation_reservations r"),
+    "reservations count whether or not a page exists (no page join can neutralise one)",
+    !/NOT EXISTS/.test(consumedFn) && !/generation_request_id/.test(consumedFn),
   );
   t(
-    "quick pages count by their request id, reservations only until their page exists",
-    consumedFn.includes("p.generation_request_id IS NOT NULL") &&
-      /NOT EXISTS \(SELECT 1\s+FROM public\.tenant_pages p\s+WHERE p\.workspace_id = r\.workspace_id\s+AND p\.generation_request_id = r\.request_id\)/.test(
-        consumedFn,
-      ),
+    "the one source is bounded to the 24-hour window by created_at",
+    (consumedFn.match(/r\.created_at >= now\(\) - interval '24 hours'/g) ?? []).length === 1,
   );
   t(
-    "every source is bounded to the 24-hour window",
-    (consumedFn.match(/>= now\(\) - interval '24 hours'/g) ?? []).length === 3,
-  );
-  t(
-    "an item can exclude its own slot from the count",
-    consumedFn.includes("(_exclude_item_id IS NULL OR i.id <> _exclude_item_id)"),
+    "nothing can exclude itself from the count: it takes the workspace only",
+    /generation_consumed_last_24h\(\s*_workspace_id uuid\s*\)/.test(consumedFn) &&
+      !consumedFn.includes("_exclude_item_id"),
   );
   const server = read("src/lib/generation.server.ts");
   const countFn = server.slice(
     server.indexOf("export async function countConsumedLast24h"),
-    server.indexOf("export async function reserveGenerationSlot"),
+    server.indexOf("export type GenerationSlot"),
   );
   t(
     "countConsumedLast24h is a thin wrapper over the RPC (no second definition in TypeScript)",
     countFn.includes('rpc("generation_consumed_last_24h"') &&
-      countFn.includes("_exclude_item_id: opts.excludeItemId ?? null") &&
+      /rpc\("generation_consumed_last_24h", \{\s*_workspace_id: workspaceId,\s*\}\)/.test(countFn) &&
+      !countFn.includes("_exclude_item_id") &&
       !countFn.includes('.from("generation_items")') &&
       !countFn.includes('.from("tenant_pages")'),
   );
   t("an RPC error throws instead of reading as zero", /if \(error\) throw new Error/.test(countFn));
   t("the dead countsTowardDailyCap helper is gone", !server.includes("countsTowardDailyCap"));
+  t(
+    "DAILY_CAP_COUNTED_STATUSES is gone with the item count it described",
+    !server.includes("DAILY_CAP_COUNTED_STATUSES") &&
+      !read("src/lib/generation.functions.ts").includes("DAILY_CAP_COUNTED_STATUSES"),
+  );
+}
+
+console.log("\n=== reservation answers (reserve_generation_slot) ===");
+{
+  for (const v of ["reserved", "cap_reached", "in_progress", "consumed"] as const) {
+    t(`'${v}' is understood`, parseGenerationSlot(v) === v);
+  }
+  // The old boolean answer, or anything unexpected, must never read as a slot.
+  for (const bad of [true, false, null, undefined, "", "RESERVED", 1, { v: "reserved" }]) {
+    let threw = false;
+    try {
+      parseGenerationSlot(bad);
+    } catch {
+      threw = true;
+    }
+    t(`an unexpected answer (${JSON.stringify(bad) ?? "undefined"}) throws, never "reserved"`, threw);
+  }
+  t(
+    "the in-progress and already-used refusals are the customer-facing sentences",
+    GENERATION_IN_PROGRESS_MESSAGE === "This page is still being generated. Refresh in a minute." &&
+      GENERATION_ALREADY_USED_MESSAGE ===
+        "This request already generated a page. Start a new one from the Page Builder.",
+  );
+}
+
+console.log("\n=== deterministic validation before anything is reserved or spent ===");
+{
+  const refusal = (input: { title: string; slug?: string | null }) => {
+    try {
+      validatePageRequest(input);
+      return null;
+    } catch (e) {
+      return e;
+    }
+  };
+  const dashes = refusal({ title: "Boats in Austin", slug: "---" });
+  t(
+    'an underivable slug ("---") is refused as a customer-facing error, even with a good title',
+    dashes instanceof CustomerFacingError && (dashes as Error).message === PAGE_SLUG_UNDERIVABLE_MESSAGE,
+    String(dashes),
+  );
+  t(
+    "…exactly as persistGeneratedPage would derive it (slug first, then the title)",
+    generatedPageBaseSlug("---", "Boats in Austin") === "" &&
+      generatedPageBaseSlug("", "Boats in Austin") === "boats-in-austin" &&
+      generatedPageBaseSlug(undefined, "Boats in Austin") === "boats-in-austin" &&
+      generatedPageBaseSlug("My Slug!", "ignored") === "my-slug",
+  );
+  const symbols = refusal({ title: "!!!" });
+  t("a title with nothing to slug is refused", symbols instanceof CustomerFacingError);
+  t(
+    "a too-short or too-long title is refused before anything else",
+    refusal({ title: "ab" }) instanceof CustomerFacingError &&
+      (refusal({ title: "ab" }) as Error).message === PAGE_TITLE_INVALID_MESSAGE &&
+      refusal({ title: "x".repeat(141) }) instanceof CustomerFacingError &&
+      refusal({ title: "   " }) instanceof CustomerFacingError,
+  );
+  t(
+    "a good request passes and reports the base slug persist will use",
+    validatePageRequest({ title: "Boats in Austin" }).baseSlug === "boats-in-austin" &&
+      validatePageRequest({ title: "Boats in Austin", slug: "austin-boats" }).baseSlug === "austin-boats",
+  );
+  const server = read("src/lib/generation.server.ts");
+  const persistFn = server.slice(
+    server.indexOf("export async function persistGeneratedPage"),
+    server.indexOf("export type LedgerSettlement"),
+  );
+  t(
+    "persistGeneratedPage derives its slug with the same helper",
+    persistFn.includes("const baseSlug = generatedPageBaseSlug(input.slug, input.requestedTitle);"),
+  );
+}
+
+console.log("\n=== batch attempt ids (one reservation per attempt) ===");
+{
+  const item = { id: "11111111-1111-4111-8111-111111111111", job_id: "22222222-2222-4222-8222-222222222222", attempts: 0 };
+  const a = await batchAttemptRequestId(item);
+  const again = await batchAttemptRequestId({ ...item });
+  const next = await batchAttemptRequestId({ ...item, attempts: 1 });
+  const otherJob = await batchAttemptRequestId({ ...item, job_id: "33333333-3333-4333-8333-333333333333" });
+  const otherItem = await batchAttemptRequestId({ ...item, id: "44444444-4444-4444-8444-444444444444" });
+  t("two drivers reading the same row compute the same attempt id", a === again);
+  t("the next attempt gets a new id (a new slot)", a !== next);
+  t(
+    "a new life of the item (deleted draft: attempts reset to 0 in a NEW job) never collides with the old attempt 1",
+    a !== otherJob,
+  );
+  t("another item never shares an id", a !== otherItem);
+  t(
+    "the id is seeded by item, job and the attempt the claim will write",
+    a === (await deterministicRequestId(`item:${item.id}:${item.job_id}:1`)),
+  );
+  t(
+    "the id is a v4 uuid (the reservation key)",
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(a),
+  );
 }
 
 console.log("\n=== pause switch ===");
@@ -1030,6 +1132,20 @@ console.log("\n=== OpenRouter caller (stubbed fetch) ===");
   }
   t(`rejects a body under ${MIN_BODY_CHARS} chars`, /too short/.test(err), err);
   t("…as a customer-facing error", caught instanceof CustomerFacingError);
+  // The provider billed the key for that answer: the refusal carries the
+  // usage it reported, so a failure after the call logs real spend.
+  const thinUsage = providerUsageOf(caught);
+  t(
+    "…carrying the usage the provider reported (for the failed-spend log)",
+    thinUsage?.promptTokens === 812 && thinUsage?.completionTokens === 1204,
+    JSON.stringify(thinUsage),
+  );
+  t(
+    "…without changing what the error looks like (the usage is not enumerable)",
+    !Object.keys(caught as object).some((k) => /usage|token/i.test(k)) &&
+      !JSON.stringify(caught).includes("812") &&
+      (caught as Error).message === `Generated body too short (9 chars)`,
+  );
 
   err = "";
   caught = null;
@@ -1086,6 +1202,7 @@ console.log("\n=== OpenRouter caller (stubbed fetch) ===");
   }
   t("non-2xx throws the generic customer message", err === PROVIDER_ERROR_MESSAGE, err);
   t("…as a customer-facing error", caught instanceof CustomerFacingError);
+  t("…with no usage attached (none was reported: a typical page is logged)", providerUsageOf(caught) === null);
   t(
     "the provider body never reaches the customer",
     !err.includes("rate limited") && !err.includes("429"),
@@ -1253,13 +1370,86 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
     "the attempt ceiling is checked before the claim",
     runItem.indexOf("attemptsExhausted(row.attempts)") < claim,
   );
-  t(
-    "the daily cap is re-checked per item, excluding the item's own slot",
-    runItem.indexOf("countConsumedLast24h(workspaceId, { excludeItemId: row.id })") < claim,
+  // The daily cap is a reservation PER ATTEMPT now (one row per provider
+  // call), not the pending item row: an item row can be re-armed, a
+  // reservation cannot be taken back once its provider call is marked.
+  const attemptIdAt = runItem.indexOf("const attemptId = await batchAttemptRequestId(row);");
+  const reserveAt = runItem.indexOf(
+    "slot = await reserveGenerationSlot(workspaceId, attemptId, settings.dailyCap);",
   );
   t(
-    "the batch reservation is documented as the pending item row itself",
-    /reservation is this item's own row/.test(runItem) && /excludes only itself/.test(runItem),
+    "each attempt reserves its own daily-cap slot, under its attempt id, BEFORE the claim",
+    attemptIdAt > 0 && reserveAt > attemptIdAt && reserveAt < claim,
+    `${attemptIdAt} ${reserveAt} ${claim}`,
+  );
+  t(
+    "the batch no longer counts the cap in TypeScript per item",
+    !runItem.includes("countConsumedLast24h(") && !runItem.includes("excludeItemId"),
+  );
+  t(
+    "a settlement-only retry (the draft exists) takes no slot",
+    /let slotId: string \| null = null;\s*if \(!row\.page_id\) \{\s*const attemptId = await batchAttemptRequestId\(row\);/.test(
+      runItem,
+    ),
+  );
+  t(
+    "a full cap refuses the item without consuming an attempt (before the claim, through refuse)",
+    /if \(slot === "cap_reached"\) return refuse\(dailyCapMessage\(settings\.dailyCap, 0\)\);/.test(runItem) &&
+      runItem.indexOf('if (slot === "cap_reached")') < claim,
+  );
+  t(
+    "an attempt another driver holds or spent is left alone (no claim, no write)",
+    /if \(slot !== "reserved"\) \{[\s\S]*?return \{ item: await freshItem\(row\.id\), changed: false \};\s*\}/.test(runItem),
+  );
+  t(
+    "a failed reservation read refuses the item (never generates uncapped)",
+    /slot = await reserveGenerationSlot\(workspaceId, attemptId, settings\.dailyCap\);\s*\} catch \(e\) \{\s*return refuse\(customerMessage\(e, GENERATION_UNAVAILABLE_MESSAGE\)\.slice\(0, 300\)\);/.test(
+      runItem,
+    ),
+  );
+  t(
+    "the batch reservation is documented as one slot per attempt",
+    /daily cap is a RESERVATION per attempt/.test(fns) &&
+      /The daily-cap reservation for THIS attempt, before the claim/.test(runItem),
+  );
+  // The slot goes back ONLY on a way out that never reached the provider.
+  t(
+    "a billing refusal releases the attempt's slot before refusing",
+    /\} catch \(e\) \{[\s\S]{0,200}?await releaseSlot\(\);\s*return refuse\(customerMessage\(e, GENERATION_UNAVAILABLE_MESSAGE\)/.test(
+      runItem,
+    ),
+  );
+  t(
+    "a claim error or a lost claim releases the slot",
+    /if \(claimErr\) \{\s*await releaseSlot\(\);\s*throw new Error\(claimErr\.message\);/.test(runItem) &&
+      /if \(!claimed\) \{[\s\S]*?await releaseSlot\(\);\s*return \{ item: await freshItem\(row\.id\), changed: false \};/.test(runItem),
+  );
+  t(
+    "linking an existing page instead of generating releases the slot",
+    /billing_status: "free",\s*error: null,\s*\}\);[\s\S]{0,120}?await releaseSlot\(\);/.test(runItem),
+  );
+  const markAt = runItem.indexOf("await markGenerationProviderCalled(workspaceId, slotId);");
+  t(
+    "the attempt's reservation is marked spent in beforeProviderCall, then providerCalled is set",
+    markAt > 0 &&
+      /beforeProviderCall: async \(\) => \{[\s\S]*?await markGenerationProviderCalled\(workspaceId, slotId\);\s*providerCalled = true;/.test(
+        runItem,
+      ),
+  );
+  t(
+    "after the provider call the slot is never released; a failure with no page logs the spend",
+    /\} catch \(e\) \{\s*if \(!providerCalled\) \{[\s\S]*?await releaseSlot\(\);\s*\} else if \(!pageLinked\) \{[\s\S]*?await recordFailedGeneration\(\{[\s\S]*?feature: "batch_generation",/.test(
+      runItem,
+    ),
+  );
+  t(
+    "pageLinked is set only once the item knows its page",
+    runItem.indexOf("pageLinked = true;") > runItem.indexOf("page_id: page.id") &&
+      runItem.indexOf("pageLinked = true;") < runItem.indexOf("const settled = await settleGeneration({\n          workspaceId,\n          userId,\n          keySource: gen.keySource"),
+  );
+  t(
+    "releaseSlot touches only this run's own reservation",
+    /const releaseSlot = async \(\) => \{\s*if \(slotId\) await releaseGenerationSlot\(workspaceId, slotId\);\s*\};/.test(runItem),
   );
   t(
     "who pays is resolved before the claim (no attempt burned on no-credits)",
@@ -1416,10 +1606,28 @@ console.log("\n=== quick page pipeline (source guards) ===");
     ),
   );
   t(
-    "a refused reservation is a customer-facing daily-cap refusal",
-    /if \(!reserved\) throw new CustomerFacingError\(dailyCapMessage\(settings\.dailyCap, 0\)\);/.test(
+    "a full cap is a customer-facing daily-cap refusal",
+    /if \(slot === "cap_reached"\) \{\s*throw new CustomerFacingError\(dailyCapMessage\(settings\.dailyCap, 0\)\);/.test(
       handler,
     ),
+  );
+  t(
+    "an id another request holds right now is refused as still being generated (no second provider call)",
+    /if \(slot === "in_progress"\) throw new CustomerFacingError\(GENERATION_IN_PROGRESS_MESSAGE\);/.test(handler),
+  );
+  t(
+    "a spent id returns its page if it still exists, and is refused otherwise (a deleted draft is not regenerated for free)",
+    /if \(slot === "consumed"\) \{[\s\S]*?const existing = await findPageByRequestId\(data\.workspaceId, generationRequestId\);\s*if \(existing\) \{\s*return replayResult\([\s\S]*?throw new CustomerFacingError\(GENERATION_ALREADY_USED_MESSAGE\);/.test(
+      handler,
+    ),
+  );
+  const validateAt = handler.indexOf("validatePageRequest({ title: data.title, slug: data.slug });");
+  t(
+    "the title and slug are validated BEFORE the pause read, the reservation and the provider call",
+    validateAt > 0 &&
+      validateAt < handler.indexOf("readPlatformSettings()") &&
+      validateAt < reserve &&
+      validateAt < gen,
   );
   t(
     "the pause refusal is customer-facing",
@@ -1429,10 +1637,25 @@ console.log("\n=== quick page pipeline (source guards) ===");
   t("resolves who pays after reserving (a refusal releases the slot)", handler.indexOf("resolveBillingMode(") > reserve);
   const release = handler.indexOf("releaseGenerationSlot(");
   t(
-    "a generation or persist failure releases the reservation and rethrows",
+    "a failure BEFORE the provider call releases the reservation; one after it never does — it logs the spend — and both rethrow",
     release > reserve &&
       release < handler.indexOf("settleGeneration(") &&
-      /await releaseGenerationSlot\(data\.workspaceId, generationRequestId\);\s*throw e;/.test(handler),
+      /\} catch \(e\) \{\s*if \(!providerCalled\) \{[\s\S]*?await releaseGenerationSlot\(data\.workspaceId, generationRequestId\);\s*\} else \{[\s\S]*?await recordFailedGeneration\(\{[\s\S]*?feature: "quick_page",[\s\S]*?\}\);\s*\}\s*throw e;/.test(
+        handler,
+      ) &&
+      (handler.match(/releaseGenerationSlot\(/g) ?? []).length === 1,
+  );
+  t(
+    "the reservation is marked spent immediately before the provider request, then providerCalled is set",
+    /beforeProviderCall: async \(\) => \{\s*await markGenerationProviderCalled\(data\.workspaceId, generationRequestId\);\s*providerCalled = true;\s*\}/.test(
+      handler,
+    ),
+  );
+  t(
+    "the failed-spend row uses the provider's usage when known (gen, or the refusal's), a typical page otherwise",
+    /usage: gen\s*\?\s*\{ promptTokens: gen\.promptTokens, completionTokens: gen\.completionTokens \}\s*:\s*providerUsageOf\(e\),/.test(
+      handler,
+    ),
   );
   t(
     "persists with the request id",
@@ -1474,9 +1697,9 @@ console.log("\n=== quick page pipeline (source guards) ===");
     /let creditsCharged = 0;\s*let billing: ItemBillingStatus = "free";/.test(replay),
   );
   t(
-    "both replay paths (step 0 and post-persist) go through replayResult",
+    "all three replay paths (step 0, a spent id with its page, post-persist) go through replayResult",
     (handler.match(/return replayResult\(existing, \{ workspaceId: data\.workspaceId, userId, model: data\.model \}\);/g) ?? [])
-      .length === 2,
+      .length === 3,
   );
   const server = read("src/lib/generation.server.ts");
   t(
@@ -1602,6 +1825,15 @@ console.log("\n=== UI copy and wiring ===");
   t(
     "the idempotency key rotates only after a response",
     qpb.indexOf("requestIdRef.current = newRequestId()") > qpb.indexOf("await create("),
+  );
+  // A key buys at most one provider call, so a request the server answered
+  // (even with an error) is finished: the next click needs a fresh key.
+  // A lost response (fetch TypeError) and "still being generated" keep it.
+  t(
+    "a server-answered failure rotates the key; a lost response or 'still being generated' keeps it",
+    /\} catch \(err: any\) \{[\s\S]*?if \(!\(err instanceof TypeError\) && !\/still being generated\/i\.test\(message\)\) \{\s*requestIdRef\.current = newRequestId\(\);\s*\}/.test(
+      qpb,
+    ) && /still being generated/i.test(GENERATION_IN_PROGRESS_MESSAGE),
   );
   t("the preview link is /s/{workspace}/{slug}", qpb.includes("`/s/${ws.slug}/${result.slug}`"));
   const genUi = read("src/routes/_authenticated/app.content.generate.tsx");
@@ -1807,18 +2039,30 @@ console.log("\n=== migration text (000600: settlement + reservations) ===");
   );
   t(
     "generation_consumed_last_24h is SQL, STABLE, SECURITY DEFINER with a pinned search_path",
-    /\(\s*_workspace_id uuid,\s*_exclude_item_id uuid DEFAULT NULL\s*\)\s*RETURNS int\s+LANGUAGE sql\s+STABLE\s+SECURITY DEFINER\s+SET search_path = public/.test(
+    /\(\s*_workspace_id uuid\s*\)\s*RETURNS int\s+LANGUAGE sql\s+STABLE\s+SECURITY DEFINER\s+SET search_path = public/.test(
       consumedFn,
     ),
   );
   t(
     "generation_consumed_last_24h is service-role only",
     sql.includes(
-      "REVOKE EXECUTE ON FUNCTION public.generation_consumed_last_24h(uuid, uuid) FROM PUBLIC, anon, authenticated;",
+      "REVOKE EXECUTE ON FUNCTION public.generation_consumed_last_24h(uuid) FROM PUBLIC, anon, authenticated;",
     ) &&
       sql.includes(
-        "GRANT EXECUTE ON FUNCTION public.generation_consumed_last_24h(uuid, uuid) TO service_role;",
+        "GRANT EXECUTE ON FUNCTION public.generation_consumed_last_24h(uuid) TO service_role;",
       ),
+  );
+  t(
+    "the earlier (uuid, uuid) signature is dropped before the new one is created (no ambiguous overload on a re-run)",
+    sql.indexOf("DROP FUNCTION IF EXISTS public.generation_consumed_last_24h(uuid, uuid);") > 0 &&
+      sql.indexOf("DROP FUNCTION IF EXISTS public.generation_consumed_last_24h(uuid, uuid);") <
+        sql.indexOf("CREATE OR REPLACE FUNCTION public.generation_consumed_last_24h"),
+  );
+  t(
+    "generation_reservations gains provider_called_at (idempotent) — NULL until the provider is called",
+    sql.includes(
+      "ALTER TABLE public.generation_reservations ADD COLUMN IF NOT EXISTS provider_called_at timestamptz;",
+    ),
   );
 
   const reserveFn = sql.slice(
@@ -1826,25 +2070,109 @@ console.log("\n=== migration text (000600: settlement + reservations) ===");
     sql.indexOf("REVOKE EXECUTE ON FUNCTION public.reserve_generation_slot"),
   );
   t(
-    "reserve_generation_slot is (workspace uuid, request uuid, cap int) returning boolean, plpgsql SECURITY DEFINER",
-    /\(\s*_workspace_id uuid,\s*_request_id uuid,\s*_cap int\s*\)\s*RETURNS boolean\s+LANGUAGE plpgsql\s+SECURITY DEFINER\s+SET search_path = public/.test(
+    "reserve_generation_slot is (workspace uuid, request uuid, cap int) returning text, plpgsql SECURITY DEFINER",
+    /\(\s*_workspace_id uuid,\s*_request_id uuid,\s*_cap int\s*\)\s*RETURNS text\s+LANGUAGE plpgsql\s+SECURITY DEFINER\s+SET search_path = public/.test(
       reserveFn,
     ),
+  );
+  t(
+    "the boolean version is dropped first (CREATE OR REPLACE cannot change a return type)",
+    sql.indexOf("DROP FUNCTION IF EXISTS public.reserve_generation_slot(uuid, uuid, int);") > 0 &&
+      sql.indexOf("DROP FUNCTION IF EXISTS public.reserve_generation_slot(uuid, uuid, int);") <
+        sql.indexOf("CREATE OR REPLACE FUNCTION public.reserve_generation_slot"),
   );
   const lockAt = reserveFn.indexOf(
     "PERFORM pg_advisory_xact_lock(hashtext('generation_cap:' || _workspace_id::text));",
   );
-  const existsAt = reserveFn.indexOf("IF EXISTS (SELECT 1 FROM public.generation_reservations");
-  const countAt = reserveFn.indexOf("public.generation_consumed_last_24h(_workspace_id, NULL)");
+  const pageAt = reserveFn.indexOf("AND p.generation_request_id = _request_id");
+  const rowAt = reserveFn.indexOf("FROM public.generation_reservations r");
+  const countAt = reserveFn.indexOf("v_consumed := public.generation_consumed_last_24h(_workspace_id);");
   const insertAt = reserveFn.indexOf("INSERT INTO public.generation_reservations (workspace_id, request_id)");
   t(
-    "it takes the per-workspace advisory lock first, then checks for its own reservation, then counts, then inserts",
-    lockAt > 0 && lockAt < existsAt && existsAt < countAt && countAt < insertAt,
+    "it takes the per-workspace advisory lock first, then looks for a page, then for its own row, then counts, then inserts",
+    lockAt > 0 && lockAt < pageAt && pageAt < rowAt && rowAt < countAt && countAt < insertAt,
+    `${lockAt} ${pageAt} ${rowAt} ${countAt} ${insertAt}`,
   );
-  t("a replay keeps its slot (returns true before counting)", /IF EXISTS \(SELECT 1 FROM public\.generation_reservations\s+WHERE workspace_id = _workspace_id AND request_id = _request_id\) THEN\s+RETURN true;/.test(reserveFn));
+  t(
+    "a page carrying the id is 'consumed' (the work is done)",
+    /AND p\.generation_request_id = _request_id\) THEN\s+RETURN 'consumed';/.test(reserveFn),
+  );
+  t(
+    "an existing row never hands out a second slot: young → 'in_progress', spent → 'consumed' (the old replay shortcut returned true)",
+    /IF FOUND THEN\s+IF v_created_at > now\(\) - interval '15 minutes' THEN\s+RETURN 'in_progress';\s+END IF;\s+IF v_provider_called_at IS NOT NULL THEN\s+RETURN 'consumed';/.test(
+      reserveFn,
+    ) && !/RETURN true;/.test(reserveFn),
+  );
+  t(
+    "only a stale row whose provider was never called is retaken, against the cap, with a fresh created_at",
+    /SET created_at = now\(\)/.test(reserveFn) &&
+      /- CASE WHEN v_created_at >= now\(\) - interval '24 hours' THEN 1 ELSE 0 END;/.test(reserveFn),
+  );
   t(
     "the cap comparison never goes negative and refuses at the cap",
-    /IF v_consumed >= GREATEST\(COALESCE\(_cap, 0\), 0\) THEN\s+RETURN false;/.test(reserveFn),
+    (reserveFn.match(/IF v_consumed >= GREATEST\(COALESCE\(_cap, 0\), 0\) THEN\s+RETURN 'cap_reached';/g) ?? []).length === 2,
+  );
+  const markFn = sql.slice(
+    sql.indexOf("CREATE OR REPLACE FUNCTION public.mark_generation_provider_called"),
+    sql.indexOf("REVOKE EXECUTE ON FUNCTION public.mark_generation_provider_called"),
+  );
+  t(
+    "mark_generation_provider_called(uuid, uuid) returns boolean, SECURITY DEFINER, membership-guarded",
+    /\(\s*_workspace_id uuid,\s*_request_id uuid\s*\)\s*RETURNS boolean\s+LANGUAGE plpgsql\s+SECURITY DEFINER\s+SET search_path = public/.test(
+      markFn,
+    ) && markFn.includes("IF auth.uid() IS NOT NULL AND NOT public.is_workspace_member(_workspace_id, auth.uid()) THEN"),
+  );
+  t(
+    "marking flips provider_called_at from NULL only, once (true only for the call that flipped it)",
+    /SET provider_called_at = now\(\)[\s\S]*?AND provider_called_at IS NULL;\s*GET DIAGNOSTICS v_marked = ROW_COUNT;\s*RETURN v_marked = 1;/.test(
+      markFn,
+    ),
+  );
+  const releaseFn = sql.slice(
+    sql.indexOf("CREATE OR REPLACE FUNCTION public.release_generation_slot"),
+    sql.indexOf("REVOKE EXECUTE ON FUNCTION public.release_generation_slot"),
+  );
+  t(
+    "release_generation_slot(uuid, uuid) deletes a row ONLY while provider_called_at is NULL",
+    /\(\s*_workspace_id uuid,\s*_request_id uuid\s*\)\s*RETURNS boolean\s+LANGUAGE plpgsql\s+SECURITY DEFINER\s+SET search_path = public/.test(
+      releaseFn,
+    ) &&
+      /DELETE FROM public\.generation_reservations\s+WHERE workspace_id = _workspace_id\s+AND request_id = _request_id\s+AND provider_called_at IS NULL;/.test(
+        releaseFn,
+      ),
+  );
+  for (const sig of [
+    "mark_generation_provider_called(uuid, uuid)",
+    "release_generation_slot(uuid, uuid)",
+    "tenant_pages_pin_generation_columns()",
+  ]) {
+    t(
+      `${sig} is service-role only`,
+      sql.includes(`REVOKE EXECUTE ON FUNCTION public.${sig} FROM PUBLIC, anon, authenticated;`) &&
+        sql.includes(`GRANT EXECUTE ON FUNCTION public.${sig} TO service_role;`),
+    );
+  }
+  const pinFn = sql.slice(
+    sql.indexOf("CREATE OR REPLACE FUNCTION public.tenant_pages_pin_generation_columns"),
+    sql.indexOf("REVOKE EXECUTE ON FUNCTION public.tenant_pages_pin_generation_columns"),
+  );
+  t(
+    "the pin trigger function keeps OLD created_at, generation_request_id and generation_billing_mode unless the caller is the service role",
+    /RETURNS trigger\s+LANGUAGE plpgsql\s+SECURITY DEFINER\s+SET search_path = public/.test(pinFn) &&
+      /IF auth\.role\(\) IS DISTINCT FROM 'service_role' THEN\s+NEW\.created_at := OLD\.created_at;\s+NEW\.generation_request_id := OLD\.generation_request_id;\s+NEW\.generation_billing_mode := OLD\.generation_billing_mode;\s+END IF;\s+RETURN NEW;/.test(
+        pinFn,
+      ),
+  );
+  t(
+    "the pin trigger is BEFORE UPDATE on tenant_pages, re-creatable",
+    /DROP TRIGGER IF EXISTS tenant_pages_pin_generation_columns ON public\.tenant_pages;\s*CREATE TRIGGER tenant_pages_pin_generation_columns\s+BEFORE UPDATE ON public\.tenant_pages\s+FOR EACH ROW EXECUTE FUNCTION public\.tenant_pages_pin_generation_columns\(\);/.test(
+      sql,
+    ),
+  );
+  t(
+    "every function in 000600 is SECURITY DEFINER with a pinned search_path",
+    (sql.match(/CREATE OR REPLACE FUNCTION/g) ?? []).length === 6 &&
+      (sql.match(/SECURITY DEFINER\s+SET search_path = public/g) ?? []).length === 6,
   );
   t(
     "reserve_generation_slot is service-role only",
@@ -1866,19 +2194,27 @@ console.log("\n=== migration text (000600: settlement + reservations) ===");
       /CHECK \(generation_billing_mode IN \('byok','granted','platform'\)\)/.test(sql),
   );
   t(
-    "verification covers the index, the ordering inside the settle function, the lock, the sources, the grants and the column",
+    "verification covers the index, the ordering inside the settle function, the lock, the source, the state machine, the grants, the column and the pin trigger",
     [
       "'settlement index present with the generation predicate'",
       "'settle_generation_free_quota: service_role only'",
       "'settle_generation_free_quota: membership guard present'",
       "'settle_generation_free_quota: ledger row inserted before the quota update'",
       "'generation_reservations: RLS on, no policies'",
+      "'generation_reservations.provider_called_at present'",
       "'generation_consumed_last_24h: service_role only'",
-      "'generation_consumed_last_24h: counts items, quick pages and held reservations'",
+      "'generation_consumed_last_24h: counts reservations only, never pages or items'",
+      "'generation_consumed_last_24h: the old (uuid, uuid) overload is gone'",
       "'reserve_generation_slot: service_role only'",
+      "'reserve_generation_slot: returns text (reserved / cap_reached / in_progress / consumed)'",
       "'reserve_generation_slot: takes the per-workspace advisory lock before counting'",
+      "'mark_generation_provider_called: service_role only'",
+      "'release_generation_slot: service_role only'",
+      "'release_generation_slot: frees only a row whose provider was never called'",
       "'tenant_pages.generation_billing_mode present'",
       "'tenant_pages.generation_billing_mode constrained to byok / granted / platform'",
+      "'tenant_pages_pin_generation_columns: service_role only'",
+      "'tenant_pages_pin_generation_columns: BEFORE UPDATE trigger on tenant_pages'",
     ].every((s) => sql.includes(s)),
   );
   t(
@@ -1921,6 +2257,19 @@ console.log("\n=== rollback text ===");
       rb.includes("DROP INDEX IF EXISTS public.credit_ledger_generation_settlement_uidx;") &&
       rb.includes("ALTER TABLE public.tenant_pages DROP COLUMN IF EXISTS generation_billing_mode;"),
   );
+  t(
+    "000600 rollback drops the new RPCs, the one-argument count and the pin trigger by full signature",
+    rb.includes("DROP FUNCTION IF EXISTS public.mark_generation_provider_called(uuid, uuid);") &&
+      rb.includes("DROP FUNCTION IF EXISTS public.release_generation_slot(uuid, uuid);") &&
+      rb.includes("DROP FUNCTION IF EXISTS public.generation_consumed_last_24h(uuid);") &&
+      rb.includes("DROP TRIGGER IF EXISTS tenant_pages_pin_generation_columns ON public.tenant_pages;") &&
+      rb.includes("DROP FUNCTION IF EXISTS public.tenant_pages_pin_generation_columns();"),
+  );
+  t(
+    "000600 rollback drops the pin trigger BEFORE the billing-mode column it reads",
+    rb.indexOf("DROP TRIGGER IF EXISTS tenant_pages_pin_generation_columns") <
+      rb.indexOf("ALTER TABLE public.tenant_pages DROP COLUMN IF EXISTS generation_billing_mode;"),
+  );
   t("000600 rollback says it must be paired with a code rollback", /PAIR THIS WITH A CODE ROLLBACK/.test(rb));
   t(
     "000600 rollback says it forgets free-quota settlement records (a retry could re-settle)",
@@ -1934,19 +2283,26 @@ console.log("\n=== rollback text ===");
       /table_name='generation_reservations'/.test(rb) &&
       /indexname='credit_ledger_generation_settlement_uidx'/.test(rb) &&
       /column_name='generation_billing_mode'/.test(rb) &&
-      /'settle_generation_free_quota','reserve_generation_slot','generation_consumed_last_24h'/.test(rb),
+      /'settle_generation_free_quota','reserve_generation_slot','generation_consumed_last_24h'/.test(rb) &&
+      /'mark_generation_provider_called','release_generation_slot'/.test(rb) &&
+      /tgname = 'tenant_pages_pin_generation_columns'/.test(rb),
   );
   const readme = read("supabase/rollback/README.md");
   t("rollback README lists 000600 in the apply order", /000500 → 000600/.test(readme));
   t(
-    "rollback README verifies 000600 (index, grants, table, column)",
+    "rollback README verifies 000600 (index, grants, table, columns, trigger)",
     readme.includes("-- 000600:") &&
       readme.includes("credit_ledger_generation_settlement_uidx") &&
       readme.includes("'public.settle_generation_free_quota(uuid,text,text,text)'") &&
       readme.includes("'public.reserve_generation_slot(uuid,uuid,int)'") &&
-      readme.includes("'public.generation_consumed_last_24h(uuid,uuid)'") &&
+      readme.includes("'public.mark_generation_provider_called(uuid,uuid)'") &&
+      readme.includes("'public.release_generation_slot(uuid,uuid)'") &&
+      readme.includes("'public.generation_consumed_last_24h(uuid)'") &&
+      readme.includes("'public.tenant_pages_pin_generation_columns()'") &&
       readme.includes("public.generation_reservations") &&
-      readme.includes("column_name='generation_billing_mode'"),
+      readme.includes("column_name='provider_called_at'") &&
+      readme.includes("column_name='generation_billing_mode'") &&
+      readme.includes("tgname = 'tenant_pages_pin_generation_columns'"),
   );
 }
 

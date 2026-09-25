@@ -25,6 +25,13 @@ import { checkPageBeforePublish, type ContractCheck } from "@/lib/seo/page-contr
  *      merely hold a positive balance.
  *   1. generatePageContent  — the AI call. Nothing is charged here. A failed
  *      generation costs the customer nothing and a retry does not pay twice.
+ *      Every caller first holds a daily-cap reservation (reserveGenerationSlot,
+ *      one per provider call) and marks it spent immediately before the
+ *      provider request (beforeProviderCall → markGenerationProviderCalled).
+ *      Only a failure BEFORE that mark may release the slot; after it the
+ *      slot stays counted for 24 hours and the failure is logged
+ *      (recordFailedGeneration), so a failing request can never loop the
+ *      platform key for free.
  *   2. persistGeneratedPage — the draft row. Never auto-publishes.
  *   3. settleGeneration     — charges the platform quota/credits ONLY now,
  *      and reports honestly: a deduction that did not happen is recorded as
@@ -168,20 +175,6 @@ export function dailyCapRemaining(cap: number, consumedLast24h: number): number 
 export const DAILY_CAP_WINDOW_MS = 24 * 3600_000;
 
 /**
- * The daily cap is a RESERVATION, not a tally of finished pages: an item that
- * is queued or being written has already been promised a slot, so it counts
- * the moment it exists. Otherwise two browser tabs could each start a job
- * that fits the cap and together overrun it. Failed and skipped items release
- * their slot; done items hold it for the rest of the window.
- *
- * The count itself lives in the database — generation_consumed_last_24h in
- * migration 20260924000600 — so the app and the reservation RPC can never
- * disagree; this list documents the statuses that SQL counts, and the test
- * suite holds the two together.
- */
-export const DAILY_CAP_COUNTED_STATUSES = ["done", "running", "pending"] as const;
-
-/**
  * An error whose message was written for the customer. Everything else that
  * escapes the pipeline — PostgREST text, constraint and column names, half a
  * stack trace — is replaced by a generic sentence at the boundary, see
@@ -197,6 +190,73 @@ export class CustomerFacingError extends Error {
 
 export const GENERATION_UNAVAILABLE_MESSAGE =
   "Generation is temporarily unavailable. Please try again in a few minutes.";
+
+/** reserve_generation_slot said 'in_progress': another request holds this id right now. */
+export const GENERATION_IN_PROGRESS_MESSAGE =
+  "This page is still being generated. Refresh in a minute.";
+
+/** reserve_generation_slot said 'consumed' and no page carries the id (deleted, or the call failed). */
+export const GENERATION_ALREADY_USED_MESSAGE =
+  "This request already generated a page. Start a new one from the Page Builder.";
+
+export const PAGE_TITLE_INVALID_MESSAGE = "A page title needs 3 to 140 characters.";
+
+export const PAGE_SLUG_UNDERIVABLE_MESSAGE =
+  "Could not derive a page address from that slug or title: use letters or numbers (for example boat-rentals-austin).";
+
+/**
+ * The base slug a generated page is stored under: the requested slug, else
+ * the title, through slugifyPage. THE one derivation — persistGeneratedPage
+ * stores under it and runQuickPage refuses an empty one before anything is
+ * reserved or spent, so the two can never disagree. "" when nothing usable is
+ * left (e.g. a slug of "---").
+ */
+export function generatedPageBaseSlug(
+  slug: string | null | undefined,
+  title: string | null | undefined,
+): string {
+  return slugifyPage(String(slug || title || ""));
+}
+
+/**
+ * Every check on a page request that needs neither the database nor the
+ * provider. runQuickPage runs it BEFORE the pause read, the reservation and
+ * the provider call: a request that can only fail after generating (an
+ * underivable slug used to fail in persistGeneratedPage, after the paid call,
+ * and release its slot) must fail here, for free and without a slot. Returns
+ * the base slug; throws CustomerFacingError otherwise.
+ */
+export function validatePageRequest(input: {
+  title: string | null | undefined;
+  slug?: string | null;
+}): { baseSlug: string } {
+  const title = typeof input.title === "string" ? input.title.trim() : "";
+  if (title.length < 3 || title.length > 140) {
+    throw new CustomerFacingError(PAGE_TITLE_INVALID_MESSAGE);
+  }
+  const baseSlug = generatedPageBaseSlug(input.slug, title);
+  if (!baseSlug) throw new CustomerFacingError(PAGE_SLUG_UNDERIVABLE_MESSAGE);
+  return { baseSlug };
+}
+
+/**
+ * The deterministic reservation id of ONE batch item attempt. Seeded by the
+ * item, its job and the attempt number the claim will write (attempts + 1):
+ * two drivers racing for the same attempt compute the same id, so only one
+ * of them is granted the slot; every later attempt, and every new life of
+ * the item (a deleted-draft re-attach resets attempts to 0 but always moves
+ * the item to a new job), gets an id of its own — so it takes a new slot
+ * instead of colliding with a spent one.
+ */
+export function batchAttemptRequestId(item: {
+  id: string;
+  job_id: string;
+  attempts: number;
+}): Promise<string> {
+  return deterministicRequestId(
+    `item:${item.id}:${item.job_id}:${(Number(item.attempts) || 0) + 1}`,
+  );
+}
 
 /**
  * The one place a thrown error becomes something a tenant may read: a
@@ -655,30 +715,59 @@ export async function callOpenRouterWritePage(opts: {
   }
   const promptTokens = Number(json?.usage?.prompt_tokens ?? 0) || 0;
   const completionTokens = Number(json?.usage?.completion_tokens ?? 0) || 0;
-  const tc = json?.choices?.[0]?.message?.tool_calls?.[0];
-  if (!tc?.function?.arguments) throw new CustomerFacingError("AI response missing tool call");
-  let gen: Partial<WritePageOutput>;
   try {
-    gen =
-      typeof tc.function.arguments === "string"
-        ? JSON.parse(tc.function.arguments)
-        : tc.function.arguments;
-  } catch {
-    throw new CustomerFacingError("AI response was not valid JSON");
+    const tc = json?.choices?.[0]?.message?.tool_calls?.[0];
+    if (!tc?.function?.arguments) throw new CustomerFacingError("AI response missing tool call");
+    let gen: Partial<WritePageOutput>;
+    try {
+      gen =
+        typeof tc.function.arguments === "string"
+          ? JSON.parse(tc.function.arguments)
+          : tc.function.arguments;
+    } catch {
+      throw new CustomerFacingError("AI response was not valid JSON");
+    }
+    if (!gen.body_markdown || gen.body_markdown.length < MIN_BODY_CHARS) {
+      throw new CustomerFacingError(
+        `Generated body too short (${gen.body_markdown?.length ?? 0} chars)`,
+      );
+    }
+    return {
+      title: String(gen.title ?? ""),
+      seo_title: String(gen.seo_title ?? ""),
+      seo_description: String(gen.seo_description ?? ""),
+      body_markdown: gen.body_markdown,
+      promptTokens,
+      completionTokens,
+    };
+  } catch (e) {
+    // The provider answered and billed the key for this: the refusal keeps
+    // the usage it reported, so the caller can log real spend for ops.
+    throw withProviderUsage(e, { promptTokens, completionTokens });
   }
-  if (!gen.body_markdown || gen.body_markdown.length < MIN_BODY_CHARS) {
-    throw new CustomerFacingError(
-      `Generated body too short (${gen.body_markdown?.length ?? 0} chars)`,
-    );
+}
+
+export type ProviderUsage = { promptTokens: number; completionTokens: number };
+
+const PROVIDER_USAGE = Symbol.for("generation.providerUsage");
+
+/** Attach the usage a provider reported to the error thrown over its response. */
+export function withProviderUsage(e: unknown, usage: ProviderUsage): unknown {
+  if (e && typeof e === "object") {
+    Object.defineProperty(e, PROVIDER_USAGE, {
+      value: usage,
+      enumerable: false,
+      configurable: true,
+    });
   }
-  return {
-    title: String(gen.title ?? ""),
-    seo_title: String(gen.seo_title ?? ""),
-    seo_description: String(gen.seo_description ?? ""),
-    body_markdown: gen.body_markdown,
-    promptTokens,
-    completionTokens,
-  };
+  return e;
+}
+
+/** The usage a failed provider response reported, if the error carries it. */
+export function providerUsageOf(e: unknown): ProviderUsage | null {
+  if (!e || typeof e !== "object") return null;
+  const u = (e as Record<symbol, unknown>)[PROVIDER_USAGE] as ProviderUsage | undefined;
+  return u && typeof u === "object" ? u : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -794,6 +883,13 @@ export type GenerateInput = {
   model?: string | null;
   /** Pre-resolved by the caller (resolveBillingMode); resolved here otherwise. */
   billing?: ResolvedBilling;
+  /**
+   * Awaited IMMEDIATELY before the provider request, after every other step
+   * that can fail. Callers holding a daily-cap reservation mark it here
+   * (markGenerationProviderCalled): from then on the slot is spent and must
+   * never be released. A throw here aborts before the provider is called.
+   */
+  beforeProviderCall?: () => Promise<void>;
   fetchImpl?: FetchLike;
 };
 
@@ -828,6 +924,7 @@ export async function generatePageContent(input: GenerateInput): Promise<Generat
     inventoryFacts = formatInventoryFacts(city, (cityListings ?? []) as InventoryRow[]);
   }
 
+  await input.beforeProviderCall?.();
   const gen = await callOpenRouterWritePage({
     apiKey: billing.key,
     model,
@@ -927,7 +1024,11 @@ export async function findExistingCityPage(
  * unique index): a concurrent duplicate request loses the race, reads the
  * winner's row and returns it flagged `replayed`, so the caller knows NOT to
  * settle — the winner does. Batch items never pass one; they are keyed by
- * generation_items instead, which is what keeps the daily-cap ledger honest.
+ * generation_items instead. (The daily cap does not read pages at all: it
+ * counts generation_reservations, one per provider call.)
+ *
+ * The slug comes from generatedPageBaseSlug, the same derivation
+ * validatePageRequest checks before a quick page reserves anything.
  *
  * The row records who paid (generation_billing_mode) so a later replay can
  * tell a platform page that may still owe its charge from one that never did.
@@ -943,7 +1044,7 @@ export async function persistGeneratedPage(input: {
   categoryPlural?: string | null;
   generationRequestId?: string | null;
 }): Promise<PersistedPage> {
-  const baseSlug = slugifyPage(input.slug || input.requestedTitle);
+  const baseSlug = generatedPageBaseSlug(input.slug, input.requestedTitle);
   if (!baseSlug) throw new CustomerFacingError("Could not derive slug from title");
   let slug = await findUniqueTenantSlug(input.workspaceId, baseSlug);
   const templateId = await getActiveTemplateId("city_hub");
@@ -1215,6 +1316,62 @@ export async function settleGeneration(opts: {
   return { creditsCharged, billing, billingStatus: billingStatusFor(billing, creditsCharged) };
 }
 
+/**
+ * A generation that failed AFTER the provider was called: the key was billed
+ * for tokens and no page came of it. Nothing is charged to the customer — no
+ * page, no settlement — but ops must be able to see the spend, so it is
+ * logged in ai_usage_log with status 'failed': the usage the provider
+ * reported when it is known (a persist failure, a thin or malformed
+ * response), a typical page otherwise (a timeout or an error status reports
+ * none). The error column is shown to workspace members (Settings → AI), so
+ * only a customer-written message goes there; anything else stays in the
+ * server log. Best effort: never throws over the error being recorded.
+ */
+export async function recordFailedGeneration(opts: {
+  workspaceId: string;
+  userId?: string | null;
+  keySource: KeySource;
+  model: string;
+  feature: string;
+  usage?: ProviderUsage | null;
+  error: unknown;
+}): Promise<void> {
+  const usage = billableUsage(opts.usage?.promptTokens ?? 0, opts.usage?.completionTokens ?? 0);
+  const reason =
+    opts.error instanceof CustomerFacingError
+      ? opts.error.message
+      : "Failed after the AI provider was called.";
+  const note = usage.assumed ? " (usage estimated as a typical page)" : "";
+  try {
+    const { error } = await supabaseAdmin.from("ai_usage_log").insert({
+      workspace_id: opts.workspaceId,
+      user_id: opts.userId ?? undefined,
+      provider: opts.keySource === "byok" ? "openrouter" : "platform",
+      model: opts.model,
+      feature: opts.feature,
+      prompt_tokens: usage.promptTokens,
+      completion_tokens: usage.completionTokens,
+      total_tokens: usage.promptTokens + usage.completionTokens,
+      used_byok: opts.keySource === "byok",
+      status: "failed",
+      error: `${reason}${note}`.slice(0, 300),
+    });
+    if (error) throw new Error(error.message);
+  } catch (e) {
+    console.error(
+      "[generation] could not log a failed generation's spend",
+      JSON.stringify({
+        workspaceId: opts.workspaceId,
+        feature: opts.feature,
+        model: opts.model,
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        error: e instanceof Error ? e.message : String(e),
+      }),
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Platform-wide knobs and the daily-cap ledger (shared by batch + quick page)
 // ---------------------------------------------------------------------------
@@ -1242,69 +1399,116 @@ export async function readPlatformSettings(): Promise<{ paused: boolean; dailyCa
 }
 
 /**
- * Pages this workspace has consumed from its daily cap in the last 24 hours,
- * across BOTH generators, so neither can be used to get around the other.
- * ONE definition, in the database (generation_consumed_last_24h, migration
- * 20260924000600), shared with reserve_generation_slot so the app and the
- * reservation RPC can never disagree:
- *   batch  = generation_items done/running/pending in the window (a reservation
- *            — see DAILY_CAP_COUNTED_STATUSES); `excludeItemId` leaves out the
- *            item asking, which already holds its own slot;
- *   quick  = tenant_pages created in the window that carry a
- *            generation_request_id (every Quick Page / Opportunity Engine /
- *            coach page does; batch pages never do, so nothing is counted twice);
- *   held   = generation_reservations in the window whose request produced no
- *            page yet (a materialised reservation counts once, as its page).
- * Throws on an RPC error; callers treat that as "cannot generate".
+ * Provider calls this workspace has made against its daily cap in the last
+ * 24 hours — generation_reservations created in the window, one row per
+ * provider call, from EVERY generator (quick page, coach city page,
+ * Opportunity Engine, each batch item attempt). ONE definition, in the
+ * database (generation_consumed_last_24h, migration 20260924000600), shared
+ * with reserve_generation_slot so the app and the reservation RPC can never
+ * disagree. Pages and batch items are deliberately not read: deleting a
+ * draft, editing a page or re-arming an item frees nothing. Used for the
+ * "N left today" figure and to size a batch job; the cap itself is enforced
+ * by reserveGenerationSlot before every provider call. Throws on an RPC
+ * error; callers treat that as "cannot generate".
  */
-export async function countConsumedLast24h(
-  workspaceId: string,
-  opts: { excludeItemId?: string } = {},
-): Promise<number> {
+export async function countConsumedLast24h(workspaceId: string): Promise<number> {
   const { data, error } = await sb().rpc("generation_consumed_last_24h", {
     _workspace_id: workspaceId,
-    _exclude_item_id: opts.excludeItemId ?? null,
   });
   if (error) throw new Error(error.message);
   return Number(data) || 0;
 }
 
 /**
- * Take one of today's generation slots for this request, atomically. The RPC
- * serialises per workspace (an advisory lock), counts what the last 24 hours
- * consumed with the same definition as countConsumedLast24h, and inserts the
- * reservation only when a slot is free — so N concurrent requests at
- * remaining = 1 admit exactly one. A replay of a request that already holds
- * a slot keeps it. The batch generator does not call this: its reservation
- * is its pending item row, claimed before generation. Throws on an RPC
- * error; the caller treats that as "cannot generate" (never uncapped).
+ * What reserve_generation_slot answered for a request id:
+ *   reserved     — a slot is now held for this id (new row, or a stale row
+ *                  whose provider was never called, retaken): go ahead.
+ *   cap_reached  — today's cap is used up: refuse.
+ *   in_progress  — this id holds a row younger than 15 minutes and no page
+ *                  yet: another request has it RIGHT NOW. Never a second
+ *                  provider call for it.
+ *   consumed     — this id already spent its provider call (older than 15
+ *                  minutes), or a page carries it. The page, if it still
+ *                  exists, is the answer; otherwise the id is finished.
+ */
+export type GenerationSlot = "reserved" | "cap_reached" | "in_progress" | "consumed";
+
+const GENERATION_SLOTS: readonly GenerationSlot[] = [
+  "reserved",
+  "cap_reached",
+  "in_progress",
+  "consumed",
+];
+
+/** Parse the RPC's answer. Anything unexpected is an error — never "reserved". */
+export function parseGenerationSlot(data: unknown): GenerationSlot {
+  if (typeof data === "string" && (GENERATION_SLOTS as readonly string[]).includes(data)) {
+    return data as GenerationSlot;
+  }
+  throw new Error(`reserve_generation_slot returned an unexpected value: ${JSON.stringify(data)}`);
+}
+
+/**
+ * Ask for one of today's generation slots for this request id, atomically.
+ * The RPC serialises per workspace (an advisory lock), counts what the last
+ * 24 hours consumed with the same definition as countConsumedLast24h, and
+ * inserts the reservation only when a slot is free — so N concurrent
+ * requests at remaining = 1 admit exactly one, and N concurrent requests
+ * with the SAME id admit exactly one ('in_progress' for the rest). Every
+ * generator calls this before its provider call; a batch item uses one id
+ * per attempt (batchAttemptRequestId). Throws on an RPC error or an
+ * unexpected answer; the caller treats that as "cannot generate" (never
+ * uncapped).
  */
 export async function reserveGenerationSlot(
   workspaceId: string,
   requestId: string,
   cap: number,
-): Promise<boolean> {
+): Promise<GenerationSlot> {
   const { data, error } = await sb().rpc("reserve_generation_slot", {
     _workspace_id: workspaceId,
     _request_id: requestId,
     _cap: Number.isFinite(cap) ? Math.max(0, Math.floor(cap)) : 0,
   });
   if (error) throw new Error(`reserve_generation_slot failed: ${error.message}`);
-  return data === true;
+  return parseGenerationSlot(data);
 }
 
 /**
- * Give a slot back when no page came of it. Best effort: a reservation that
- * survives here still ages out of the cap after 24 hours, and one whose page
- * does exist is neutralised by the page row, so a failure is logged, never
- * thrown over the error that caused the release.
+ * Record, IMMEDIATELY before the provider request, that this reservation's
+ * provider call is happening. From then on the slot is spent for good:
+ * release_generation_slot refuses a marked row, and the id can never buy a
+ * second call. The RPC answers false when the row is gone or already marked
+ * — another request got there — and the caller must then NOT call the
+ * provider: this throws the in-progress refusal. A failed RPC throws too
+ * (the provider is not called either way).
+ */
+export async function markGenerationProviderCalled(
+  workspaceId: string,
+  requestId: string,
+): Promise<void> {
+  const { data, error } = await sb().rpc("mark_generation_provider_called", {
+    _workspace_id: workspaceId,
+    _request_id: requestId,
+  });
+  if (error) throw new Error(`mark_generation_provider_called failed: ${error.message}`);
+  if (data !== true) throw new CustomerFacingError(GENERATION_IN_PROGRESS_MESSAGE);
+}
+
+/**
+ * Give a slot back when the provider was never called. ONLY the request that
+ * was granted the reservation ('reserved') calls this, and only on a path
+ * that ended before its provider call; the RPC itself deletes the row only
+ * while provider_called_at is NULL, so a spent slot can never be freed, even
+ * by mistake. Best effort: a reservation that survives here ages out of the
+ * cap after 24 hours, so a failure is logged, never thrown over the error
+ * that caused the release.
  */
 export async function releaseGenerationSlot(workspaceId: string, requestId: string): Promise<void> {
-  const { error } = await sb()
-    .from("generation_reservations")
-    .delete()
-    .eq("workspace_id", workspaceId)
-    .eq("request_id", requestId);
+  const { error } = await sb().rpc("release_generation_slot", {
+    _workspace_id: workspaceId,
+    _request_id: requestId,
+  });
   if (error) {
     console.error(
       "[generation] could not release the daily-cap reservation",

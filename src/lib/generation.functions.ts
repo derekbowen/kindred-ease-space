@@ -17,6 +17,7 @@ import {
   TYPICAL_PAGE_TOKENS,
   UNBILLED_ITEM_MESSAGE,
   attemptsExhausted,
+  batchAttemptRequestId,
   buildCityBrief,
   checkStoredPageContract,
   contractFailureMessage,
@@ -28,14 +29,21 @@ import {
   generatePageContent,
   initialBillingStatus,
   isStaleRunning,
+  markGenerationProviderCalled,
   persistGeneratedPage,
   planJobItems,
+  providerUsageOf,
   readPlatformSettings,
+  recordFailedGeneration,
+  releaseGenerationSlot,
+  reserveGenerationSlot,
   resolveBillingMode,
   resolvePlatformSettlementMode,
   selectTargets,
   settleGeneration,
   type BillingMode,
+  type GeneratedContent,
+  type GenerationSlot,
   type GenerationTarget,
   type ItemBillingStatus,
   type ResolvedBilling,
@@ -366,8 +374,11 @@ export const startGenerationJob = createServerFn({ method: "POST" })
       throw new Error("Every city you picked already has a generated draft. Nothing to do.");
     }
 
-    // The cap counts queued and in-flight items too (a reservation), so this
-    // job's own rows count against it the moment they are created.
+    // Sizing only: the job may not ask for more pages than today's cap has
+    // left. The cap itself is enforced per item ATTEMPT — each one reserves
+    // its own slot right before its claim (reserve_generation_slot) — so two
+    // tabs starting jobs at once cannot overrun it: the items beyond the cap
+    // are refused when they run, without consuming an attempt.
     const consumed24h = await countConsumedLast24h(data.workspaceId);
     const remaining = dailyCapRemaining(settings.dailyCap, consumed24h);
     if (newWork > remaining) {
@@ -476,7 +487,8 @@ export const getGenerationJob = createServerFn({ method: "POST" })
 
 /**
  * "Stop after this one". The job is marked cancelled and every item still
- * waiting its turn is skipped (releasing its daily-cap slot). The item being
+ * waiting its turn is skipped (a waiting item holds no daily-cap slot: slots
+ * are taken per attempt, right before the claim). The item being
  * written right now finishes normally — its page is already paid for by the
  * time this lands — and settleJobStatus leaves a cancelled job alone.
  */
@@ -518,6 +530,14 @@ export const cancelGenerationJob = createServerFn({ method: "POST" })
  * Policy gates (pause, attempt ceiling, daily cap, funds) run BEFORE the
  * claim and never consume an attempt: they cost nothing and clear on their
  * own. The attempt counter is reserved for work that actually ran.
+ *
+ * The daily cap is a RESERVATION per attempt: an attempt that can reach the
+ * provider first takes a slot through reserve_generation_slot under an id
+ * unique to that attempt (batchAttemptRequestId), so the slot is counted for
+ * 24 hours no matter what later happens to the item or its page. The slot
+ * is given back only when this run ends without calling the provider (a
+ * refusal, a lost claim, an existing page linked instead, a failure before
+ * the call); a settlement-only retry generates nothing and takes no slot.
  */
 async function runItem(
   workspaceId: string,
@@ -572,19 +592,39 @@ async function runItem(
   const owesSettlement =
     !!row.page_id && (row.billing_status === "pending" || row.billing_status === "unbilled");
 
+  // ---- The daily-cap reservation for THIS attempt, before the claim. ----
+  // One slot per provider call, under an id unique to the attempt the claim
+  // below will make: two drivers racing for the same attempt compute the same
+  // id and only one is granted it. A settlement-only retry (the draft exists)
+  // generates nothing and takes no slot.
+  let slotId: string | null = null;
+  if (!row.page_id) {
+    const attemptId = await batchAttemptRequestId(row);
+    let slot: GenerationSlot;
+    try {
+      slot = await reserveGenerationSlot(workspaceId, attemptId, settings.dailyCap);
+    } catch (e) {
+      return refuse(customerMessage(e, GENERATION_UNAVAILABLE_MESSAGE).slice(0, 300));
+    }
+    if (slot === "cap_reached") return refuse(dailyCapMessage(settings.dailyCap, 0));
+    if (slot !== "reserved") {
+      // 'in_progress' / 'consumed': another driver holds (or already spent)
+      // this very attempt. It records the outcome; this run touches nothing.
+      return { item: await freshItem(row.id), changed: false };
+    }
+    slotId = attemptId;
+  }
+  // Only this run was granted the slot, and it gives it back only on a way
+  // out that never reached the provider. release_generation_slot frees an
+  // unmarked row only, so a spent slot cannot come back even by mistake.
+  const releaseSlot = async () => {
+    if (slotId) await releaseGenerationSlot(workspaceId, slotId);
+  };
+
   let billing: ResolvedBilling | null = null;
   let settlementMode: BillingMode | null = null;
   try {
     if (!row.page_id) {
-      // The batch path's reservation is this item's own row: it was claimed
-      // as pending (before anything was generated) and counts from the moment
-      // it exists, which is what stops two tabs from each fitting under the
-      // cap. So the re-check here excludes only itself — its slot must not
-      // read as "one over the cap". Quick pages reserve a row in
-      // generation_reservations instead (reserveGenerationSlot).
-      const consumed = await countConsumedLast24h(workspaceId, { excludeItemId: row.id });
-      const remaining = dailyCapRemaining(settings.dailyCap, consumed);
-      if (remaining === 0) return refuse(dailyCapMessage(settings.dailyCap, 0));
       billing = await resolveBillingMode(workspaceId, model);
     } else if (owesSettlement) {
       // A 'pending'/'unbilled' record means the page was written on the
@@ -594,7 +634,8 @@ async function runItem(
     }
   } catch (e) {
     // Only a customer-written refusal (no key, out of funds) is stored on the
-    // item; a database error is logged and replaced.
+    // item; a database error is logged and replaced. Nothing was spent.
+    await releaseSlot();
     return refuse(customerMessage(e, GENERATION_UNAVAILABLE_MESSAGE).slice(0, 300));
   }
 
@@ -607,8 +648,16 @@ async function runItem(
     .eq("attempts", row.attempts)
     .select("*")
     .maybeSingle();
-  if (claimErr) throw new Error(claimErr.message);
-  if (!claimed) return { item: await freshItem(row.id), changed: false };
+  if (claimErr) {
+    await releaseSlot();
+    throw new Error(claimErr.message);
+  }
+  if (!claimed) {
+    // The item moved on since it was read (cancelled, re-attached, claimed):
+    // this run generates nothing, so its slot goes back.
+    await releaseSlot();
+    return { item: await freshItem(row.id), changed: false };
+  }
   const token = (claimed as GenerationItemRow).attempts;
 
   if (job?.status === "queued") {
@@ -616,6 +665,9 @@ async function runItem(
   }
 
   const target = row.target;
+  let providerCalled = false;
+  let pageLinked = false;
+  let gen: GeneratedContent | null = null;
   try {
     if (row.page_id) {
       // The draft exists (a previous run died between persisting and
@@ -649,13 +701,15 @@ async function runItem(
           billing_status: "free",
           error: null,
         });
+        // No provider call came of this attempt: its slot goes back.
+        await releaseSlot();
       } else {
         const brief = buildCityBrief({
           city: target.city,
           state: target.state,
           categoryPlural: target.categoryPlural,
         });
-        const gen = await generatePageContent({
+        gen = await generatePageContent({
           workspaceId,
           title: brief.title,
           description: brief.description,
@@ -665,6 +719,13 @@ async function runItem(
           categoryPlural: target.categoryPlural,
           model,
           billing: billing ?? undefined,
+          // Marked immediately before the provider request: from here this
+          // attempt's slot is spent and stays counted whatever happens next.
+          beforeProviderCall: async () => {
+            if (!slotId) throw new Error("batch attempt reached the provider without a slot");
+            await markGenerationProviderCalled(workspaceId, slotId);
+            providerCalled = true;
+          },
         });
         const page = await persistGeneratedPage({
           workspaceId,
@@ -685,6 +746,9 @@ async function runItem(
           completion_tokens: gen.completionTokens,
           billing_status: initialBillingStatus(gen.billingMode),
         });
+        // The item knows its page: from here a failure is a settlement to
+        // retry (without generating), not spend with nothing to show.
+        pageLinked = true;
         const settled = await settleGeneration({
           workspaceId,
           userId,
@@ -700,6 +764,24 @@ async function runItem(
       }
     }
   } catch (e) {
+    if (!providerCalled) {
+      // Failed before the provider was called: nothing was spent.
+      await releaseSlot();
+    } else if (!pageLinked) {
+      // The provider was paid and this item got no page out of it. The slot
+      // stays counted; the customer is charged nothing; ops see the spend.
+      await recordFailedGeneration({
+        workspaceId,
+        userId,
+        keySource: billing?.source ?? "platform",
+        model: gen?.model ?? model,
+        feature: "batch_generation",
+        usage: gen
+          ? { promptTokens: gen.promptTokens, completionTokens: gen.completionTokens }
+          : providerUsageOf(e),
+        error: e,
+      });
+    }
     if (e instanceof LostClaimError) {
       // The row belongs to another run now; it will record its own outcome.
       console.error("[generation] claim lost", row.id);

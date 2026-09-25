@@ -4,7 +4,9 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
 import {
   CustomerFacingError,
+  GENERATION_ALREADY_USED_MESSAGE,
   GENERATION_DEFAULT_MODEL,
+  GENERATION_IN_PROGRESS_MESSAGE,
   GENERATION_MODEL_IDS,
   GENERATION_UNAVAILABLE_MESSAGE,
   TYPICAL_PAGE_TOKENS,
@@ -14,16 +16,21 @@ import {
   dailyCapMessage,
   findPageByRequestId,
   generatePageContent,
+  markGenerationProviderCalled,
   persistGeneratedPage,
+  providerUsageOf,
   readPlatformSettings,
+  recordFailedGeneration,
   releaseGenerationSlot,
   reserveGenerationSlot,
   resolveBillingMode,
   settleGeneration,
+  validatePageRequest,
   type ExistingPage,
   type GeneratedContent,
   type ItemBillingStatus,
   type PersistedPage,
+  type ResolvedBilling,
 } from "@/lib/generation.server";
 
 /**
@@ -31,16 +38,23 @@ import {
  * through the shared generation core (src/lib/generation.server.ts) and,
  * when asked, publishes to tenant_pages so /a/{slug} serves the page.
  *
- * Order of operations is deliberate: policy gates (pause, a daily-cap
- * RESERVATION, who pays) → generate → write the draft row → settle credits →
+ * Order of operations is deliberate: every check that needs neither the
+ * database nor the provider (title, slug) → policy gates (pause, a daily-cap
+ * RESERVATION, who pays) → generate (the reservation is marked spent right
+ * before the provider request) → write the draft row → settle credits →
  * (optionally) contract check + entitlement gate. A failed generation is never
  * charged, BYOK keys and beta grants are never metered, and nothing goes live
- * without passing the published-page contract.
+ * without passing the published-page contract. A failure after the provider
+ * call keeps its slot counted for 24 hours and logs the spend as 'failed':
+ * the platform key is never looped for free.
  *
  * Idempotency: the browser sends a generationRequestId it keeps across
  * retries until it gets a response. A replay (lost response + resubmit)
  * returns the page that request already made — no generation, and the charge
  * it reports is the one on the ledger (or the one still owed, settled then).
+ * An id buys at most ONE provider call: a second request with it is told the
+ * first is still running, or — once that call is spent and its page gone —
+ * that the id is finished.
  *
  * runQuickPage is the pipeline; createQuickPage is its server-function
  * boundary. Server code that generates a page (the coach's create_city_page,
@@ -165,31 +179,55 @@ export async function runQuickPage(data: QuickPageInput, userId: string): Promis
   }
   const generationRequestId = data.generationRequestId ?? crypto.randomUUID();
 
-  // 1. The same platform gates the batch generator applies: the pause switch
+  // 1. Everything decidable without the database or the provider, BEFORE a
+  //    slot is reserved or a token is spent. An underivable slug ("---") used
+  //    to fail in persistGeneratedPage — after the paid call — and give its
+  //    slot back, so a loop of such requests was unlimited free generation.
+  validatePageRequest({ title: data.title, slug: data.slug });
+
+  // 2. The same platform gates the batch generator applies: the pause switch
   //    (fails closed on a read error) and the per-workspace daily cap. The cap
-  //    is a RESERVATION taken atomically for this request (reserve_generation_slot
-  //    counts batch items, quick pages and live reservations under a
-  //    per-workspace lock), so N requests at remaining = 1 admit exactly one.
+  //    is a RESERVATION taken atomically for this request id
+  //    (reserve_generation_slot counts every provider call of the last 24
+  //    hours under a per-workspace lock), so N requests at remaining = 1 admit
+  //    exactly one, and N requests with the same id admit exactly one.
   const settings = await readPlatformSettings();
   if (settings.paused) {
     throw new CustomerFacingError("Generation is paused platform-wide right now.");
   }
-  const reserved = await reserveGenerationSlot(
+  const slot = await reserveGenerationSlot(
     data.workspaceId,
     generationRequestId,
     settings.dailyCap,
   );
-  if (!reserved) throw new CustomerFacingError(dailyCapMessage(settings.dailyCap, 0));
+  if (slot === "cap_reached") {
+    throw new CustomerFacingError(dailyCapMessage(settings.dailyCap, 0));
+  }
+  if (slot === "in_progress") throw new CustomerFacingError(GENERATION_IN_PROGRESS_MESSAGE);
+  if (slot === "consumed") {
+    // This id already spent its provider call. Its page, if it still exists,
+    // is the answer; a deleted draft is NOT regenerated for free.
+    const existing = await findPageByRequestId(data.workspaceId, generationRequestId);
+    if (existing) {
+      return replayResult(existing, { workspaceId: data.workspaceId, userId, model: data.model });
+    }
+    throw new CustomerFacingError(GENERATION_ALREADY_USED_MESSAGE);
+  }
 
-  let gen: GeneratedContent;
+  // From here this request holds the slot ('reserved'). It is given back only
+  // if the provider is never called; once the call is marked it stays counted.
+  let providerCalled = false;
+  let billing: ResolvedBilling | null = null;
+  let gen: GeneratedContent | null = null;
   let page: PersistedPage;
   try {
-    // 2. Who pays — BYOK, a beta grant, or a platform key with the funds for
+    // 3. Who pays — BYOK, a beta grant, or a platform key with the funds for
     //    a whole page. Refused here before anything is spent.
-    const billing = await resolveBillingMode(data.workspaceId, data.model);
+    billing = await resolveBillingMode(data.workspaceId, data.model);
 
-    // 3. Generate. Nothing is charged here; a provider error or thin output
-    //    throws and the customer keeps their credits.
+    // 4. Generate. Nothing is charged here; a provider error or thin output
+    //    throws and the customer keeps their credits. The reservation is
+    //    marked spent immediately before the provider request.
     gen = await generatePageContent({
       workspaceId: data.workspaceId,
       title: data.title,
@@ -200,9 +238,13 @@ export async function runQuickPage(data: QuickPageInput, userId: string): Promis
       categoryPlural: data.categoryPlural,
       model: data.model,
       billing,
+      beforeProviderCall: async () => {
+        await markGenerationProviderCalled(data.workspaceId, generationRequestId);
+        providerCalled = true;
+      },
     });
 
-    // 4. Draft row, idempotent per request id. If a concurrent duplicate got
+    // 5. Draft row, idempotent per request id. If a concurrent duplicate got
     //    there first this returns ITS page and we settle nothing — it does.
     page = await persistGeneratedPage({
       workspaceId: data.workspaceId,
@@ -216,11 +258,25 @@ export async function runQuickPage(data: QuickPageInput, userId: string): Promis
       generationRequestId,
     });
   } catch (e) {
-    // No page came of this reservation: give the slot back so a refused or
-    // failed generation never burns a day's capacity. Once a page row exists
-    // the reservation is neutralised by the row itself, so nothing here can
-    // release a slot a page is holding.
-    await releaseGenerationSlot(data.workspaceId, generationRequestId);
+    if (!providerCalled) {
+      // Refused or failed before the provider was called: nothing was spent,
+      // so the slot goes back (the RPC frees an unmarked row only).
+      await releaseGenerationSlot(data.workspaceId, generationRequestId);
+    } else {
+      // The provider was paid and no page came of it. The slot stays counted
+      // for 24 hours; the customer is charged nothing; ops see the spend.
+      await recordFailedGeneration({
+        workspaceId: data.workspaceId,
+        userId,
+        keySource: billing?.source ?? "platform",
+        model: gen?.model ?? data.model,
+        feature: "quick_page",
+        usage: gen
+          ? { promptTokens: gen.promptTokens, completionTokens: gen.completionTokens }
+          : providerUsageOf(e),
+        error: e,
+      });
+    }
     throw e;
   }
   if (page.replayed) {
@@ -230,7 +286,7 @@ export async function runQuickPage(data: QuickPageInput, userId: string): Promis
     }
   }
 
-  // 5. Settle AFTER the page exists. Platform key only; BYOK and grants are
+  // 6. Settle AFTER the page exists. Platform key only; BYOK and grants are
   //    unmetered. A deduction that fails is reported as such, never as a
   //    charge — and the draft is kept, unpublished, so the customer sees why.
   const settled = await settleGeneration({
@@ -245,7 +301,7 @@ export async function runQuickPage(data: QuickPageInput, userId: string): Promis
     refId: page.id,
   });
 
-  // 6. Optional publish: contract first, then the atomic entitlement gate.
+  // 7. Optional publish: contract first, then the atomic entitlement gate.
   //    Either failure KEEPS the draft (the AI work isn't wasted) and tells
   //    the caller why in plain language.
   let published = false;
