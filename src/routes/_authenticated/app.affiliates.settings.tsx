@@ -10,6 +10,7 @@ import { userMessage } from "@/lib/user-message";
 import { getMe } from "@/lib/auth.functions";
 import { getAffiliateSettings, updateAffiliateSettings } from "@/lib/affiliates.functions";
 import { runAffiliateSync } from "@/lib/affiliate-sync.functions";
+import { AFFILIATE_REQUIREMENT_NOTE } from "@/lib/affiliate-requirements";
 
 const AFFILIATE_SYNC_FAILED =
   "Couldn't sync affiliate sales from your marketplace. Try again in a few minutes, or contact support if it keeps happening.";
@@ -162,9 +163,7 @@ function AffiliateSettings() {
           >
             {syncing ? "Syncing…" : "Run sync now"}
           </Button>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Requires the Sharetribe integration to be connected under Settings → Sharetribe.
-          </p>
+          <p className="mt-2 text-xs text-muted-foreground">{AFFILIATE_REQUIREMENT_NOTE}</p>
         </CardContent>
       </Card>
     </div>
