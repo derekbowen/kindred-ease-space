@@ -35,6 +35,52 @@ export function securityHeadersFor(url: URL): Record<string, string> {
   return headers;
 }
 
+/** The one origin the platform answers on; everything else 301s here. */
+export const PLATFORM_CANONICAL_HOST = "www.founders.click";
+
+/** Machine callbacks (pg_cron sync fan-out, Supabase auth hook, ops probes). */
+const NEVER_REDIRECT_PREFIXES = ["/api/public/hooks/"];
+
+/**
+ * Where a platform request must go instead, or null to serve it as is.
+ *
+ * Production served http://www.founders.click with a 200 and no redirect, and
+ * the apex answered with a 302. For the PLATFORM hosts only, this makes both a
+ * single permanent 301 to https://www.founders.click with the path and query
+ * kept:
+ *   http://www.founders.click/x?y   → https://www.founders.click/x?y
+ *   http(s)://founders.click/x?y    → https://www.founders.click/x?y
+ *
+ * Never redirected:
+ *  - any other hostname: customers' custom domains, the edge's
+ *    proxy.founders.click, previews, localhost;
+ *  - a request the edge Worker forwarded for a customer domain
+ *    (x-forwarded-host names a non-platform host) — it already arrives as
+ *    https://www.founders.click, this is belt and braces;
+ *  - /api/public/hooks/* — cron and auth callbacks are POSTs from machines;
+ *  - any method but GET/HEAD: a 301 turns a POST into a GET in most clients,
+ *    which would silently drop the body.
+ *
+ * The scheme is read from the request URL only (the Worker sees the visitor's
+ * scheme there). Trusting a client-supplied header could produce a redirect to
+ * the URL being requested — a loop.
+ */
+export function platformRedirectFor(
+  url: URL,
+  method: string,
+  headers?: Pick<Headers, "get">,
+): string | null {
+  const host = url.hostname.toLowerCase().replace(/\.$/, "");
+  if (!PLATFORM_HOSTS.has(host)) return null;
+  const verb = method.toUpperCase();
+  if (verb !== "GET" && verb !== "HEAD") return null;
+  if (NEVER_REDIRECT_PREFIXES.some((p) => url.pathname.startsWith(p))) return null;
+  const forwarded = headers?.get("x-forwarded-host")?.trim().toLowerCase();
+  if (forwarded && !PLATFORM_HOSTS.has(forwarded)) return null;
+  if (url.protocol === "https:" && host === PLATFORM_CANONICAL_HOST) return null;
+  return `https://${PLATFORM_CANONICAL_HOST}${url.pathname}${url.search}`;
+}
+
 /** Adds the policy headers without overriding any the app already set. */
 export function withSecurityHeaders(response: Response, url: URL): Response {
   if (response.status === 101) return response;

@@ -95,7 +95,8 @@ function BetaPage() {
             ))}
             <li>
               <strong>Extra capacity</strong> — ${PAGE_ADDON.monthlyPrice}/month per{" "}
-              {PAGE_ADDON.pagesPerUnit.toLocaleString()} pages, on top of any plan.
+              {PAGE_ADDON.pagesPerUnit.toLocaleString()} pages, on top of any paid plan. Add it
+              under Billing &amp; Plans in the app once your plan is active.
             </li>
             <li>
               <strong>Add-ons</strong> — Affiliate Programs and DM Champ are optional monthly add-ons,

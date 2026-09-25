@@ -28,6 +28,7 @@ import { PageLivePreview } from "@/components/pages/PageLivePreview";
 import { PageSeoPreview } from "@/components/pages/PageSeoPreview";
 import { slugifyPageTitle } from "@/components/pages/page-builder-utils";
 import { cn } from "@/lib/utils";
+import { pageStatusLabel } from "@/components/pages/page-status";
 
 const PAGE_SAVE_FAILED =
   "Couldn't save this page. Check the fields and try again, or contact support if it keeps happening.";
@@ -225,7 +226,9 @@ function EditPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant={status === "published" ? "default" : "secondary"}>{status}</Badge>
+            <Badge variant={status === "published" ? "default" : "secondary"}>
+              {pageStatusLabel(status)}
+            </Badge>
             <InlineCoach
               workspaceId={workspaceId}
               context={{ page_id: isNew ? undefined : id, route: `/app/pages/${id}/edit` }}

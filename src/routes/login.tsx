@@ -81,7 +81,9 @@ function LoginPage() {
           <Link to="/" className="text-xl font-bold tracking-tight">
             founders<span className="text-orange-500">.click</span>
           </Link>
-          <p className="mt-2 text-sm text-muted-foreground">Welcome back.</p>
+          {/* The page's one heading. The page stays noindex (see head). */}
+          <h1 className="mt-4 text-2xl font-semibold tracking-tight">Sign in</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Welcome back.</p>
         </div>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">

@@ -21,6 +21,7 @@ import { getMe } from "@/lib/auth.functions";
 import { listTenantPages, deleteTenantPage } from "@/lib/tenant-pages.functions";
 import { getPageBuilderContext } from "@/lib/page-builder.functions";
 import { cn } from "@/lib/utils";
+import { pageStatusLabel } from "@/components/pages/page-status";
 
 export const Route = createFileRoute("/_authenticated/app/pages")({
   head: () => ({ meta: [{ title: "Pages — founders.click" }] }),
@@ -153,8 +154,8 @@ function PagesList() {
             <p className="max-w-lg text-sm text-muted-foreground">
               Programmatic landing pages wired to your Sharetribe listings. Every published page
               lives at{" "}
-              <code className="rounded bg-muted px-1 font-mono text-xs">/a/{"{slug}"}</code> on your
-              domain.
+              <code className="rounded bg-muted px-1 font-mono text-xs">/a/your-page</code> on
+              your domain.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -265,7 +266,7 @@ function PagesList() {
                       variant={r.status === "published" ? "default" : "secondary"}
                       className="shrink-0"
                     >
-                      {r.status}
+                      {pageStatusLabel(r.status)}
                     </Badge>
                     <span className="text-[10px] text-muted-foreground">
                       {new Date(r.updated_at).toLocaleDateString()}

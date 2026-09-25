@@ -11,6 +11,7 @@ import { getBetaStatus } from "@/lib/entitlements.functions";
 import { DailyBriefing } from "@/components/coach/DailyBriefing";
 import { useCoachEnabled } from "@/components/coach/coach-availability";
 import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
+import { describePlanStatus, formatPlanDate } from "@/components/billing/plan-status";
 
 export const Route = createFileRoute("/_authenticated/app/")({
   head: () => ({ meta: [{ title: "Dashboard — founders.click" }] }),
@@ -81,10 +82,21 @@ function DashboardPage() {
   const ws = data?.workspace;
   const balance = data?.balance;
   const stats = data?.stats;
-  const trialEnd = ws?.trial_ends_at ? new Date(ws.trial_ends_at) : null;
-  const daysLeft = trialEnd
-    ? Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
-    : null;
+  // Trial wording shared with the billing page and the shell badge. An ended
+  // trial still reads subscription_status 'trialing'; it used to show here as
+  // "Trial — 0 days left".
+  const planStatus = describePlanStatus({
+    subscriptionStatus: ws?.subscription_status,
+    trialEndsAt: ws?.trial_ends_at,
+    currentPeriodEnd: ws?.current_period_end ?? null,
+    planKey: ws?.plan,
+    inBeta: Boolean(beta?.beta),
+    betaExpiresAt: beta?.expiresAt ?? null,
+  });
+  const trialEnded = planStatus.kind === "trial_ended";
+  const trialRunning =
+    (planStatus.kind === "trial" || planStatus.kind === "trial_ends_today") &&
+    planStatus.daysLeft !== null;
 
   const setupStatus = {
     sharetribeConnected: stats?.sharetribeConnected ?? false,
@@ -116,7 +128,7 @@ function DashboardPage() {
                 {/* No sentence promising a notice: nothing sends one when a
                     grant ends. The end date itself is the honest signal. */}
                 {beta.expiresAt
-                  ? `Beta access runs until ${new Date(beta.expiresAt).toLocaleDateString()}.`
+                  ? `Beta access runs until ${formatPlanDate(beta.expiresAt)}.`
                   : "No end date set."}
               </div>
             </div>
@@ -126,16 +138,21 @@ function DashboardPage() {
           </CardContent>
         </Card>
       ) : (
-        ws?.subscription_status === "trialing" &&
-        daysLeft !== null && (
-          <Card className="border-orange-500/30 bg-orange-500/5">
+        (trialRunning || trialEnded) && (
+          <Card
+            className={
+              trialEnded
+                ? "border-destructive/40 bg-destructive/5"
+                : "border-orange-500/30 bg-orange-500/5"
+            }
+          >
             <CardContent className="py-4 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="font-medium">
-                  Trial — {daysLeft} day{daysLeft === 1 ? "" : "s"} left
-                </div>
+                <div className="font-medium">{planStatus.trialHeadline}</div>
                 <div className="text-xs text-muted-foreground">
-                  When it ends, your published pages pause until you pick a plan; drafts are kept.
+                  {trialEnded
+                    ? "Your published pages are paused until you pick a plan; drafts are kept."
+                    : `${planStatus.dateLine}. When it ends, your published pages pause until you pick a plan; drafts are kept.`}
                 </div>
               </div>
               <Button asChild>
@@ -199,7 +216,7 @@ function DashboardPage() {
               <>
                 From Sharetribe
                 {stats?.lastSharetribeSync
-                  ? ` · last sync ${new Date(stats.lastSharetribeSync).toLocaleDateString()}`
+                  ? ` · last sync ${formatPlanDate(stats.lastSharetribeSync)}`
                   : ""}
                 {" · "}
                 <Link to="/app/settings/integrations/sharetribe" className="hover:text-foreground">
