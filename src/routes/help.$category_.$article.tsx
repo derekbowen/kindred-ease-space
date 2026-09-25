@@ -1,4 +1,4 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound, redirect } from "@tanstack/react-router";
 import { getHelpArticle } from "@/lib/help.functions";
 import { safeJsonLd } from "@/lib/json-ld";
 import { Breadcrumb } from "@/components/help/Breadcrumb";
@@ -22,11 +22,18 @@ import { Clock, Calendar, MessageCircle } from "lucide-react";
 // with only the article's <title>, and a 404 category above a found article
 // hydrated differently on the client than on the server (React #418).
 export const Route = createFileRoute("/help/$category_/$article")({
+  // An article renders only at its own category's URL, and only while that
+  // category is a published platform category (src/lib/help.server.ts). A URL
+  // naming another category is sent to the article's canonical URL with a
+  // 301 when the article is public there; anything else is a 404.
   loader: async ({ params }) => {
     const data = await getHelpArticle({
       data: { categorySlug: params.category, articleSlug: params.article },
     });
-    if (!data.article) throw notFound();
+    if (!data.article) {
+      if (data.redirectTo) throw redirect({ href: data.redirectTo, statusCode: 301 });
+      throw notFound();
+    }
     return data;
   },
   head: ({ loaderData }) => {
@@ -154,7 +161,7 @@ function ArticlePage() {
         <div className="flex-1">
           <h3 className="text-sm font-semibold">Still need help?</h3>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Our team replies within 1 business day.
+            Our team usually replies within 1 business day.
           </p>
         </div>
         <Link

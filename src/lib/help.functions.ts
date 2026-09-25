@@ -6,6 +6,7 @@ import {
   getCategoryBySlug,
   listArticlesByCategory,
   getArticleBySlug,
+  articleRedirectFor,
   getRelatedArticles,
   listPopularArticles,
   listRecentArticles,
@@ -83,6 +84,12 @@ export type HelpArticleData = {
   article: HelpArticleFull | null;
   category: HelpCategory | null;
   related: HelpArticleListItem[];
+  /**
+   * Set only when `article` is null: the article exists and is public, but
+   * under another category than the URL's — the route answers with a 301 to
+   * this canonical path. Null → the route answers 404.
+   */
+  redirectTo?: string | null;
 };
 
 export const getHelpArticle = createServerFn({ method: "GET" })
@@ -90,7 +97,10 @@ export const getHelpArticle = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<HelpArticleData> => {
     try {
       const article = await getArticleBySlug(data.categorySlug, data.articleSlug);
-      if (!article) return { article: null, category: null, related: [] };
+      if (!article) {
+        const redirectTo = await articleRedirectFor(data.categorySlug, data.articleSlug);
+        return { article: null, category: null, related: [], redirectTo };
+      }
       const [category, related] = await Promise.all([
         getCategoryBySlug(data.categorySlug),
         article.related_article_ids?.length
