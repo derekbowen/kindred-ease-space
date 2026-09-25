@@ -22,16 +22,23 @@ import { getSettingsContext } from "@/lib/settings.functions";
 import { SettingsNav } from "@/components/settings/SettingsNav";
 import { OwnerOnlyBanner } from "@/components/settings/OwnerOnlyBanner";
 import { userMessage } from "@/lib/user-message";
+import {
+  DOMAIN_MODE_NAME,
+  describeDomainStatus,
+  domainModeLabel,
+} from "@/components/settings/domain-status";
 
 export const Route = createFileRoute("/_authenticated/app/settings/domains")({
   head: () => ({ meta: [{ title: "Custom Domains — founders.click" }] }),
   component: DomainsPage,
 });
 
+// Mode picker only: generic examples to choose by. A connected domain's row
+// describes its own mode with its own hostname (domainModeLabel).
 const MODE_LABEL: Record<DomainConnectionType, string> = {
-  full_proxy: "Root domain (yourdomain.com/a/*)",
-  subdomain: "Subdomain (seo.yourdomain.com)",
-  customer_proxy: "My own proxy/CDN",
+  full_proxy: `${DOMAIN_MODE_NAME.full_proxy} (yourdomain.com/a/*)`,
+  subdomain: `${DOMAIN_MODE_NAME.subdomain} (seo.yourdomain.com)`,
+  customer_proxy: DOMAIN_MODE_NAME.customer_proxy,
 };
 
 // Stored setup errors and failed connection checks carry the server's raw
@@ -51,20 +58,11 @@ function checkFallback(name: string): string {
     : DOMAIN_TEST_FAILED;
 }
 
-const STATUS_LABEL: Record<string, { label: string; tone: "ok" | "warn" | "muted" }> = {
-  verification_required: { label: "Verify ownership", tone: "warn" },
-  pending: { label: "Verify ownership", tone: "warn" },
-  verified: { label: "Verified", tone: "ok" },
-  dns_configuration_required: { label: "Point your DNS", tone: "warn" },
-  provisioning: { label: "Provisioning", tone: "warn" },
-  ssl_pending: { label: "Issuing SSL", tone: "warn" },
-  active: { label: "Connected", tone: "ok" },
-  error: { label: "Needs attention", tone: "warn" },
-  disconnected: { label: "Disconnected", tone: "muted" },
-};
-
-function StatusChip({ status }: { status: string }) {
-  const s = STATUS_LABEL[status] ?? { label: status, tone: "muted" as const };
+// Two facts, worded the same here and on Workspace Settings: ownership
+// (verified or not) and the certificate. One screen naming only ownership and
+// the other only the certificate, for one hostname, read as a contradiction.
+function StatusChip({ status, verified }: { status: string; verified: boolean }) {
+  const s = describeDomainStatus(status, verified);
   const cls =
     s.tone === "ok"
       ? "bg-emerald-500/10 text-emerald-600"
@@ -318,9 +316,9 @@ function DomainsPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <Globe className="h-4 w-4 text-muted-foreground" />
                 <CardTitle className="text-lg">{d.hostname}</CardTitle>
-                <StatusChip status={d.status} />
+                <StatusChip status={d.status} verified={d.verified} />
                 <span className="text-xs text-muted-foreground">
-                  {MODE_LABEL[d.connection_type]}
+                  {domainModeLabel(d.connection_type, d.hostname)}
                 </span>
               </div>
               <Button

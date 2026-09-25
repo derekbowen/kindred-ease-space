@@ -32,7 +32,7 @@ import { Route as ASlugRouteImport } from './routes/a.$slug'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
 import { Route as SWsSlugRouteImport } from './routes/s.$ws.$slug'
-import { Route as HelpCategoryArticleRouteImport } from './routes/help.$category.$article'
+import { Route as HelpCategoryArticleRouteImport } from './routes/help.$category_.$article'
 import { Route as ApiPublicVersionRouteImport } from './routes/api/public/version'
 import { Route as ApiPublicSitemapByHostRouteImport } from './routes/api/public/sitemap-by-host'
 import { Route as ApiPublicPageLookupRouteImport } from './routes/api/public/page-lookup'
@@ -224,9 +224,9 @@ const SWsSlugRoute = SWsSlugRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const HelpCategoryArticleRoute = HelpCategoryArticleRouteImport.update({
-  id: '/$article',
-  path: '/$article',
-  getParentRoute: () => HelpCategoryRoute,
+  id: '/$category_/$article',
+  path: '/$category/$article',
+  getParentRoute: () => HelpRoute,
 } as any)
 const ApiPublicVersionRoute = ApiPublicVersionRouteImport.update({
   id: '/api/public/version',
@@ -682,7 +682,7 @@ export interface FileRoutesByFullPath {
   '/a/founders-domain-test': typeof AFoundersDomainTestRoute
   '/a/sitemap.xml': typeof ASitemapDotxmlRoute
   '/apply/$slug': typeof ApplySlugRoute
-  '/help/$category': typeof HelpCategoryRouteWithChildren
+  '/help/$category': typeof HelpCategoryRoute
   '/help/contact': typeof HelpContactRoute
   '/help/search': typeof HelpSearchRoute
   '/help/sitemap.xml': typeof HelpSitemapDotxmlRoute
@@ -780,7 +780,7 @@ export interface FileRoutesByTo {
   '/a/founders-domain-test': typeof AFoundersDomainTestRoute
   '/a/sitemap.xml': typeof ASitemapDotxmlRoute
   '/apply/$slug': typeof ApplySlugRoute
-  '/help/$category': typeof HelpCategoryRouteWithChildren
+  '/help/$category': typeof HelpCategoryRoute
   '/help/contact': typeof HelpContactRoute
   '/help/search': typeof HelpSearchRoute
   '/help/sitemap.xml': typeof HelpSitemapDotxmlRoute
@@ -882,7 +882,7 @@ export interface FileRoutesById {
   '/a/founders-domain-test': typeof AFoundersDomainTestRoute
   '/a/sitemap.xml': typeof ASitemapDotxmlRoute
   '/apply/$slug': typeof ApplySlugRoute
-  '/help/$category': typeof HelpCategoryRouteWithChildren
+  '/help/$category': typeof HelpCategoryRoute
   '/help/contact': typeof HelpContactRoute
   '/help/search': typeof HelpSearchRoute
   '/help/sitemap.xml': typeof HelpSitemapDotxmlRoute
@@ -903,7 +903,7 @@ export interface FileRoutesById {
   '/api/public/page-lookup': typeof ApiPublicPageLookupRoute
   '/api/public/sitemap-by-host': typeof ApiPublicSitemapByHostRoute
   '/api/public/version': typeof ApiPublicVersionRoute
-  '/help/$category/$article': typeof HelpCategoryArticleRoute
+  '/help/$category_/$article': typeof HelpCategoryArticleRoute
   '/s/$ws/$slug': typeof SWsSlugRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
   '/_authenticated/app/admin/email-templates': typeof AuthenticatedAppAdminEmailTemplatesRoute
@@ -1204,7 +1204,7 @@ export interface FileRouteTypes {
     | '/api/public/page-lookup'
     | '/api/public/sitemap-by-host'
     | '/api/public/version'
-    | '/help/$category/$article'
+    | '/help/$category_/$article'
     | '/s/$ws/$slug'
     | '/_authenticated/app/'
     | '/_authenticated/app/admin/email-templates'
@@ -1462,12 +1462,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SWsSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/help/$category/$article': {
-      id: '/help/$category/$article'
-      path: '/$article'
+    '/help/$category_/$article': {
+      id: '/help/$category_/$article'
+      path: '/$category/$article'
       fullPath: '/help/$category/$article'
       preLoaderRoute: typeof HelpCategoryArticleRouteImport
-      parentRoute: typeof HelpCategoryRoute
+      parentRoute: typeof HelpRoute
     }
     '/api/public/version': {
       id: '/api/public/version'
@@ -2231,32 +2231,22 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
   AuthenticatedRouteChildren,
 )
 
-interface HelpCategoryRouteChildren {
-  HelpCategoryArticleRoute: typeof HelpCategoryArticleRoute
-}
-
-const HelpCategoryRouteChildren: HelpCategoryRouteChildren = {
-  HelpCategoryArticleRoute: HelpCategoryArticleRoute,
-}
-
-const HelpCategoryRouteWithChildren = HelpCategoryRoute._addFileChildren(
-  HelpCategoryRouteChildren,
-)
-
 interface HelpRouteChildren {
-  HelpCategoryRoute: typeof HelpCategoryRouteWithChildren
+  HelpCategoryRoute: typeof HelpCategoryRoute
   HelpContactRoute: typeof HelpContactRoute
   HelpSearchRoute: typeof HelpSearchRoute
   HelpSitemapDotxmlRoute: typeof HelpSitemapDotxmlRoute
   HelpIndexRoute: typeof HelpIndexRoute
+  HelpCategoryArticleRoute: typeof HelpCategoryArticleRoute
 }
 
 const HelpRouteChildren: HelpRouteChildren = {
-  HelpCategoryRoute: HelpCategoryRouteWithChildren,
+  HelpCategoryRoute: HelpCategoryRoute,
   HelpContactRoute: HelpContactRoute,
   HelpSearchRoute: HelpSearchRoute,
   HelpSitemapDotxmlRoute: HelpSitemapDotxmlRoute,
   HelpIndexRoute: HelpIndexRoute,
+  HelpCategoryArticleRoute: HelpCategoryArticleRoute,
 }
 
 const HelpRouteWithChildren = HelpRoute._addFileChildren(HelpRouteChildren)

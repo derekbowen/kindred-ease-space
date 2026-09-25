@@ -17,6 +17,7 @@ import {
 import { PAGE_PLANS, PAGE_ADDON, EVERY_PLAN_INCLUDES, TRIAL_PAGE_LIMIT } from "@/lib/plan-catalog";
 import { toast } from "sonner";
 import { userMessage } from "@/lib/user-message";
+import { describePlanStatus, formatPlanDate } from "@/components/billing/plan-status";
 
 const billingSearchSchema = z.object({
   success: z.coerce.string().optional(),
@@ -152,6 +153,20 @@ function BillingPage() {
   // "Free beta" only when the grant IS the entitlement. A paying customer with a
   // promotional grant on top is not in a free beta and must not be told so.
   const inBeta = Boolean(beta?.beta && ent && ent.billingState === "granted");
+  // Plan/trial wording from the server's own verdict (billingState): an
+  // expired trial still reads subscription_status 'trialing', so the raw
+  // status and "Trial ends <date>" are never printed for it.
+  const planStatus = ent
+    ? describePlanStatus({
+        subscriptionStatus: ent.subscriptionStatus,
+        trialEndsAt: ent.trialEndsAt,
+        currentPeriodEnd: ent.currentPeriodEnd,
+        planKey: ent.planKey,
+        inBeta,
+        betaExpiresAt: beta?.expiresAt ?? null,
+        billingState: ent.billingState,
+      })
+    : null;
   const cheapest = PAGE_PLANS[0];
   const dearest = PAGE_PLANS[PAGE_PLANS.length - 1];
   const usagePct = ent && ent.pageLimit > 0 ? (ent.publishedPages / ent.pageLimit) * 100 : 0;
@@ -208,9 +223,12 @@ function BillingPage() {
 
       {ent && ent.suspendedPages > 0 && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
-          {ent.suspendedPages.toLocaleString()} of your pages are unpublished because the
-          subscription is inactive. Your content is safe — reactivate your plan and every page
-          returns at its original URL.
+          {/* An ended trial never had a plan to "reactivate". */}
+          {ent.suspendedPages.toLocaleString()} of your pages{" "}
+          {ent.suspendedPages === 1 ? "is" : "are"} unpublished because{" "}
+          {planStatus?.kind === "trial_ended"
+            ? "the free trial ended. Your content is safe — choose a plan and every page returns at its original URL."
+            : "the subscription is inactive. Your content is safe — reactivate your plan and every page returns at its original URL."}
         </div>
       )}
 
@@ -220,41 +238,26 @@ function BillingPage() {
             <CardTitle>Current plan</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {inBeta ? "Free beta" : ent?.isTrial ? "Free trial" : (ent?.planName ?? "—")}
-            </div>
-            <div className="text-xs text-muted-foreground capitalize">
+            <div className="text-2xl font-bold">{planStatus?.planLabel ?? "—"}</div>
+            <div className="text-xs text-muted-foreground">
               {/* A trial has no price. `plan` is written as 'starter' at
                   provisioning, so showing its price here told every trial
                   user they were already paying $29/month. */}
-              {!ent?.isTrial && ent?.monthlyPrice ? `$${ent.monthlyPrice}/month · ` : ""}
-              {inBeta ? "no charge" : (ent?.subscriptionStatus ?? "")}
+              {planStatus?.kind === "paid" && ent?.monthlyPrice ? `$${ent.monthlyPrice}/month · ` : ""}
+              {planStatus?.statusLine ?? ""}
             </div>
-            {/* A beta tenant's trial date is irrelevant — the grant is what
-                keeps their pages up, so that is the date worth showing. */}
-            {inBeta && (
-              <div className="text-xs mt-1">
-                {beta?.expiresAt
-                  ? `Beta access until ${new Date(beta.expiresAt).toLocaleDateString()}`
-                  : "Beta access with no end date set"}
-              </div>
-            )}
-            {!inBeta && ent?.isTrial && ent?.trialEndsAt && (
-              <div className="text-xs mt-1">
-                Trial ends {new Date(ent.trialEndsAt).toLocaleDateString()}
-              </div>
-            )}
-            {!ent?.isTrial && ent?.currentPeriodEnd && (
-              <div className="text-xs mt-1">
-                Renews {new Date(ent.currentPeriodEnd).toLocaleDateString()}
-              </div>
-            )}
+            {/* The date that matters for this state: a beta tenant's grant end
+                (their trial date is irrelevant), a running trial's end, a live
+                plan's renewal. An ended trial's date is in the line above. */}
+            {planStatus?.dateLine && <div className="text-xs mt-1">{planStatus.dateLine}</div>}
             {/* When pages have stopped serving, the billing page is where the
                 customer comes to find out why. Say it plainly rather than
                 leaving them to infer it from a dead site. */}
             {ent && !ent.pagesServe && (
               <div className="text-xs mt-2 rounded border border-destructive/40 bg-destructive/5 p-2 text-destructive">
-                Your published pages are not being served. {ent.billingReason}
+                {planStatus?.kind === "trial_ended"
+                  ? "Your published pages are paused, not deleted. Choose a plan below and every page comes back at its original URL."
+                  : `Your published pages are not being served. ${ent.billingReason}`}
               </div>
             )}
             {ent && ent.pagesServe && !ent.canPublish && (
@@ -366,7 +369,7 @@ function BillingPage() {
                     beta!.pageLimit === 1 ? "" : "s"
                   } at no charge, ${
                     beta!.expiresAt
-                      ? `until ${new Date(beta!.expiresAt).toLocaleDateString()}`
+                      ? `until ${formatPlanDate(beta!.expiresAt)}`
                       : "with no end date set"
                   }.`
                 : `The trial: up to ${TRIAL_PAGE_LIMIT} published pages, no card required.`}{" "}
