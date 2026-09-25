@@ -420,9 +420,6 @@ function GenerateContentPage() {
                     {overview.tiers.find((t) => t.tier === quality)?.hint ??
                       "Standard is the default. Premium writes stronger pages and uses more of your included AI."}
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    Using your workspace's own OpenAI key? Then pages are billed to that key instead.
-                  </p>
                 </div>
 
                 {overCap && (

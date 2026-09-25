@@ -289,7 +289,8 @@ const FEATURES = [
   {
     icon: PenLine,
     title: "Quick Page Builder",
-    description: "Draft a single city or category page in minutes, then publish when it's ready.",
+    description:
+      "Write a single city or category page in minutes and publish it in one step. It is kept as a draft only if it can't go live yet.",
   },
   {
     icon: Globe,
@@ -311,7 +312,7 @@ const FEATURES = [
     icon: Share2,
     title: "Affiliate Programs",
     description:
-      "Run referral programs that pay out on real transactions. Available as an add-on, priced separately.",
+      "Run referral programs that pay out on real transactions. Available as an add-on, priced separately; it needs your marketplace connected through Sharetribe's Integration API.",
     // The one card here that is NOT included with a plan. Say so on the card,
     // and never under a heading that claims everything is.
     badge: "Optional add-on",
@@ -481,7 +482,7 @@ function Pricing() {
             </p>
 
             <p className="mt-3 font-mono text-sm text-orange-500">
-              {tier.includedPages.toLocaleString()} published pages
+              {tier.includedPages.toLocaleString("en-US")} published pages
             </p>
 
             <div className="mt-6 flex-1 space-y-3">
@@ -529,8 +530,8 @@ function Pricing() {
             shown once a paid plan is active (create-checkout refuses a
             page_addon without a base subscription). */}
         Need more pages without changing plans? On any paid plan, add capacity in blocks of{" "}
-        {PAGE_ADDON.pagesPerUnit.toLocaleString()} pages (${PAGE_ADDON.monthlyPrice}/month per
-        block) under Billing &amp; Plans in the app.
+        {PAGE_ADDON.pagesPerUnit.toLocaleString("en-US")} pages (${PAGE_ADDON.monthlyPrice}/month
+        per block) under Billing &amp; Plans in the app.
       </p>
     </section>
   );

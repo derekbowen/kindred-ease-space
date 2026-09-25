@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Sparkles, FileText, Store, BarChart3 } from "lucide-react";
+import { Sparkles, FileText, Store } from "lucide-react";
 import { formatAllowanceCount, useAiAllowance } from "@/components/ai/use-ai-allowance";
 import { getMe } from "@/lib/auth.functions";
 import { getWorkspaceOverview } from "@/lib/workspace.functions";
@@ -172,12 +172,12 @@ function DashboardPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4" /> AI pages today
+              <Sparkles className="h-4 w-4" /> AI pages (last 24 hours)
             </CardDescription>
             <CardTitle className="text-3xl tabular-nums">{formatAllowanceCount(allowance)}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            {allowance ? allowance.summary : (allowanceError ?? "Included with your plan")}
+            {allowance ? allowance.summary : (allowanceError ?? "Checking your AI allowance…")}
             {" · "}
             <Link to="/app/billing" className="hover:text-foreground">
               Billing →
@@ -233,33 +233,30 @@ function DashboardPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <BarChart3 className="h-4 w-4" /> Search performance
-          </CardTitle>
-          <CardDescription>
-            Import Google Search Console data to track clicks and impressions here.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/app/seo/gsc-import">Import GSC data</Link>
-          </Button>
-          {/* The click report is still a stub (nothing writes city_link_clicks);
-              the dashboard must not link a customer to a "coming soon" page.
-              The Coach is off for launch, so its link follows the same switch
-              as its sidebar entry (coach-availability). */}
-          {coachEnabled && (
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/app/coach">
-                <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-                Ask Coach
-              </Link>
-            </Button>
-          )}
-        </CardContent>
-      </Card>
+      {/* The GSC import is not a launch feature (launch: false in app-nav),
+          so the dashboard no longer promises "track clicks and impressions
+          here" and links a customer to it (round-4 release review L7). The
+          Coach, off for launch, keeps its own card behind its switch. */}
+      {coachEnabled && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Sparkles className="h-4 w-4" /> Coach
+            </CardTitle>
+            <CardDescription>Ask what to fix next on your site.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-2">
+            {coachEnabled && (
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/app/coach">
+                  <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                  Ask Coach
+                </Link>
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -113,9 +113,12 @@ function ResetPasswordPage() {
           <Link to="/" className="text-xl font-bold tracking-tight">
             founders<span className="text-orange-500">.click</span>
           </Link>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {mode === "update" ? "Set a new password" : "We'll email you a reset link"}
-          </p>
+          <h1 className="mt-4 text-2xl font-bold tracking-tight">
+            {mode === "update" ? "Set a new password" : "Reset your password"}
+          </h1>
+          {mode === "request" && (
+            <p className="mt-2 text-sm text-muted-foreground">We'll email you a reset link.</p>
+          )}
         </div>
         {mode === "request" ? (
           <form onSubmit={onRequest} className="space-y-4">

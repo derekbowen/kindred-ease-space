@@ -29,6 +29,13 @@ type Insight = {
 
 type ActionKey = "fix_thin_page" | "add_meta" | "create_city_page" | "add_internal_links";
 
+// Every "Do it" that rewrites a page says so plainly: nothing keeps the old
+// text (coach_action_log records the page and the credits, not the body), so
+// there is no history to restore from. Round-4 release review M2: this dialog
+// used to promise a revert from "the page editor's history", which does not
+// exist. Customer words only — no column names (release review L3).
+const PAGE_TEXT_IS_REPLACED = "This replaces the page text and can't be undone.";
+
 const ACTION_META: Record<
   ActionKey,
   {
@@ -42,17 +49,17 @@ const ACTION_META: Record<
     label: "Do it",
     icon: Wrench,
     confirmTitle: "Apply fix to this page?",
-    confirmBody: () =>
-      "We'll expand the page body using AI and overwrite the existing markdown. This action is logged and can be reverted from the page editor's history.",
+    confirmBody: () => `We'll expand this page's text using AI. ${PAGE_TEXT_IS_REPLACED}`,
   },
   add_meta: {
     label: "Do it",
     icon: Wrench,
-    confirmTitle: "Generate SEO meta?",
+    confirmTitle: "Write page titles and descriptions?",
     confirmBody: (ins) => {
       const ids = (ins.action_payload?.page_ids as unknown[] | undefined) ?? [];
       const count = Array.isArray(ids) ? ids.length : 1;
-      return `We'll generate seo_title and seo_description for ${count} page${count === 1 ? "" : "s"} and overwrite any existing meta.`;
+      const pages = `${count} page${count === 1 ? "" : "s"}`;
+      return `We'll write a page title and meta description for ${pages}, replacing the ones already there. This can't be undone.`;
     },
   },
   create_city_page: {
@@ -67,7 +74,7 @@ const ACTION_META: Record<
     icon: Link2,
     confirmTitle: "Add internal links to this page?",
     confirmBody: () =>
-      "We'll add 3-6 contextual internal links to other published pages and overwrite the page body.",
+      `We'll add 3–6 links to your other published pages into this page's text. ${PAGE_TEXT_IS_REPLACED}`,
   },
 };
 

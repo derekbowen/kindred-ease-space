@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { SiteFooter } from "@/components/site/SiteFooter";
+import { ARTICLE_BODY_CLASS } from "@/components/help-article-content";
 
 export function LegalLayout({
   title,
@@ -17,9 +18,10 @@ export function LegalLayout({
       <main className="mx-auto max-w-3xl px-6 py-12 flex-1 w-full">
         <h1 className="text-4xl font-bold tracking-tight">{title}</h1>
         <p className="mt-2 text-sm text-muted-foreground">Effective date: {effectiveDate}</p>
-        <article className="prose prose-neutral dark:prose-invert mt-8 max-w-none prose-headings:scroll-mt-20 prose-headings:tracking-tight prose-h2:mt-10 prose-h2:text-2xl prose-h3:text-lg prose-a:text-brand prose-a:no-underline hover:prose-a:underline">
-          {children}
-        </article>
+        {/* The help center's typography: `prose` needs @tailwindcss/typography,
+            which is not installed, so those classes styled nothing (round-4
+            release review L2). */}
+        <article className={`mt-8 ${ARTICLE_BODY_CLASS}`}>{children}</article>
       </main>
       <SiteFooter />
     </div>

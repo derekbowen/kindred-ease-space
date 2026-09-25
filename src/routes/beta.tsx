@@ -3,6 +3,7 @@ import { GENERATION_DAILY_CAP } from "@/lib/generation-limits";
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { SiteFooter } from "@/components/site/SiteFooter";
 import { canonicalUrl } from "@/lib/canonical";
+import { ARTICLE_BODY_CLASS } from "@/components/help-article-content";
 import { PAGE_PLANS, PAGE_ADDON, TRIAL_PAGE_LIMIT } from "@/lib/plan-catalog";
 
 const LAST_UPDATED = "September 22, 2026";
@@ -45,7 +46,8 @@ function BetaPage() {
         <h1 className="mt-3 text-4xl font-bold tracking-tight">What the beta includes</h1>
         <p className="mt-2 text-sm text-muted-foreground">Last updated: {LAST_UPDATED}</p>
 
-        <article className="prose prose-neutral dark:prose-invert mt-8 max-w-none prose-headings:scroll-mt-20 prose-headings:tracking-tight prose-h2:mt-10 prose-h2:text-2xl prose-a:text-brand prose-a:no-underline hover:prose-a:underline">
+        {/* The help center's typography; `prose` styled nothing (no typography plugin). */}
+        <article className={`mt-8 ${ARTICLE_BODY_CLASS}`}>
           <p>
             founders.click is in beta. We are working with a small number of Sharetribe marketplaces
             to publish SEO landing pages generated from their real listings, hosted on their own
@@ -90,18 +92,20 @@ function BetaPage() {
             {PAGE_PLANS.map((p) => (
               <li key={p.key}>
                 <strong>{p.name}</strong> — ${p.monthlyPrice}/month for{" "}
-                {p.includedPages.toLocaleString()} published pages.
+                {p.includedPages.toLocaleString("en-US")} published pages.
               </li>
             ))}
             <li>
               <strong>Extra capacity</strong> — ${PAGE_ADDON.monthlyPrice}/month per{" "}
-              {PAGE_ADDON.pagesPerUnit.toLocaleString()} pages, on top of any paid plan. Add it
+              {PAGE_ADDON.pagesPerUnit.toLocaleString("en-US")} pages, on top of any paid plan. Add it
               under Billing &amp; Plans in the app once your plan is active.
             </li>
             <li>
               <strong>Add-ons</strong> — Affiliate Programs and DM Champ are optional monthly add-ons,
               priced separately on the Add-ons page in the app. They only start after a checkout you
-              complete.
+              complete. Affiliate Programs tracks referrals through Sharetribe&apos;s Integration API,
+              so it needs your marketplace connected that way, not through the default read-only
+              Marketplace API.
             </li>
           </ul>
           <p>

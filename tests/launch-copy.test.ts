@@ -344,8 +344,10 @@ t("JSON-LD lowPrice renders the catalog's cheapest plan", !!lowExpr && String(ev
 t("JSON-LD highPrice renders the catalog's dearest plan", !!highExpr && String(evalWithCatalog(highExpr)) === String(catalogHigh) && homeSrc.includes("highPrice: String(PRICE_HIGH)"), highExpr ?? "no PRICE_HIGH");
 t("no price literal remains in the structured data", !/(lowPrice|highPrice): "\d/.test(homeSrc));
 t("the catalog bounds are the first and last plans, as /beta and billing assume", catalogLow === PAGE_PLANS[0]!.monthlyPrice && catalogHigh === PAGE_PLANS[PAGE_PLANS.length - 1]!.monthlyPrice);
-const blockExpr = homeSrc.match(/blocks of\{" "\}\s*\{(PAGE_ADDON\.pagesPerUnit\.toLocaleString\(\))\}/)?.[1];
-t("add-on block size renders the catalog's pagesPerUnit", !!blockExpr && evalWithCatalog(blockExpr) === PAGE_ADDON.pagesPerUnit.toLocaleString() && !/blocks of 1,000/.test(homeSrc), blockExpr ?? "no PAGE_ADDON expression");
+// Formatted with a pinned locale: a visitor's own locale ("1.000" in de-DE)
+// made the SSR and client renders differ (round-4 release review L1).
+const blockExpr = homeSrc.match(/blocks of\{" "\}\s*\{(PAGE_ADDON\.pagesPerUnit\.toLocaleString\("en-US"\))\}/)?.[1];
+t("add-on block size renders the catalog's pagesPerUnit", !!blockExpr && evalWithCatalog(blockExpr) === PAGE_ADDON.pagesPerUnit.toLocaleString("en-US") && !/blocks of 1,000/.test(homeSrc), blockExpr ?? "no PAGE_ADDON expression");
 
 // ---------------------------------------------------------------------------
 console.log(`\n${pass} passed, ${fail} failed`);
