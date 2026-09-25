@@ -17,6 +17,7 @@ import { Sparkles, RefreshCw, X, Loader2, Wrench, FileText, Link2 } from "lucide
 import { toast } from "sonner";
 import { getTodayBriefing, generateBriefingNow, dismissInsight } from "@/lib/coach.functions";
 import { runCoachAction } from "@/lib/coach-actions.functions";
+import { userMessage } from "@/lib/user-message";
 
 type Insight = {
   title?: string;
@@ -97,7 +98,7 @@ export function DailyBriefing({ workspaceId }: { workspaceId: string }) {
         | { ok?: boolean; error?: string }
         | undefined;
       if (r && r.ok === false) {
-        toast.error(r.error || "Couldn't generate the briefing. Try again in a moment.");
+        toast.error(userMessage(r.error, "Couldn't generate the briefing. Try again in a moment."));
       }
       await qc.invalidateQueries({ queryKey: ["coach-briefing", workspaceId] });
     } finally {
@@ -138,7 +139,10 @@ export function DailyBriefing({ workspaceId }: { workspaceId: string }) {
     } catch (e) {
       toast.error("Action failed", {
         id: t,
-        description: e instanceof Error ? e.message : String(e),
+        description: userMessage(
+          e,
+          "The action didn't finish. Try again in a moment, or contact support if it keeps happening.",
+        ),
       });
     } finally {
       setRunning(false);

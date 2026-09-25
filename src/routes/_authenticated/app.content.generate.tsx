@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
+import { userMessage } from "@/lib/user-message";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -99,7 +100,7 @@ function GenerateContentPage() {
         return new Set([...prev].filter((k) => eligible.has(k)));
       });
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : String(e));
+      setLoadError(userMessage(e, "Couldn't load your cities. Refresh the page to try again."));
     } finally {
       setLoading(false);
     }
@@ -150,7 +151,12 @@ function GenerateContentPage() {
       setJob(fresh.job);
       setItems(fresh.items);
     } catch (e) {
-      setRunError(e instanceof Error ? e.message : String(e));
+      setRunError(
+        userMessage(
+          e,
+          "Generation stopped before it finished. Retry the failed cities, or contact support if it keeps happening.",
+        ),
+      );
     } finally {
       setRunning(false);
       load();
@@ -187,7 +193,12 @@ function GenerateContentPage() {
       setNotice(notes.length ? notes.join(" ") : null);
       await drive(created.job.id, created.items);
     } catch (e) {
-      setRunError(e instanceof Error ? e.message : String(e));
+      setRunError(
+        userMessage(
+          e,
+          "Couldn't start generating. Try again, or contact support if it keeps happening.",
+        ),
+      );
     }
   }
 
@@ -204,7 +215,9 @@ function GenerateContentPage() {
       setJob(r.job);
       setItems(r.items);
     } catch (e) {
-      setRunError(e instanceof Error ? e.message : String(e));
+      setRunError(
+        userMessage(e, "Couldn't stop the batch. Refresh the page to see where it got to."),
+      );
     }
   }
 
@@ -217,7 +230,7 @@ function GenerateContentPage() {
       const r = await retryItem({ data: { workspaceId, itemId: item.id } });
       replaceItem(r.item);
     } catch (e) {
-      setRunError(e instanceof Error ? e.message : String(e));
+      setRunError(userMessage(e, "Couldn't retry this city. Try again in a moment."));
       replaceItem(item);
     } finally {
       setRunning(false);
@@ -232,7 +245,12 @@ function GenerateContentPage() {
       const r = await publishAll({ data: { workspaceId, jobId: job.id } });
       setPublishResults(r.results);
     } catch (e) {
-      setPublishError(e instanceof Error ? e.message : String(e));
+      setPublishError(
+        userMessage(
+          e,
+          "Couldn't publish your drafts. Try again, or contact support if it keeps happening.",
+        ),
+      );
     } finally {
       setPublishing(false);
     }
@@ -565,7 +583,12 @@ function ItemRow({
         <div className="min-w-0 flex-1">
           <div className="truncate font-medium">{place}</div>
           {item.status === "failed" && item.error && (
-            <p className="text-xs text-destructive">{item.error}</p>
+            <p className="text-xs text-destructive">
+              {userMessage(
+                item.error,
+                "This city couldn't be generated. Retry it, or contact support if it keeps happening.",
+              )}
+            </p>
           )}
           {item.status === "done" && item.slug && (
             <p className="truncate text-xs text-muted-foreground">
@@ -603,7 +626,12 @@ function ItemRow({
                 : "text-amber-600"
           }`}
         >
-          {publishResult.message}
+          {publishResult.outcome === "error"
+            ? userMessage(
+                publishResult.message,
+                "Couldn't publish this page. Try again, or contact support if it keeps happening.",
+              )
+            : publishResult.message}
           {publishResult.outcome === "limit" && (
             <>
               {" "}

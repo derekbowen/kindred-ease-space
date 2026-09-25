@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
+import { userMessage } from "@/lib/user-message";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,7 +103,9 @@ function AiSettingsPage() {
       setRows(r.rows);
       setUsage(u);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to load");
+      toast.error(
+        userMessage(e, "Couldn't load your AI provider keys. Refresh the page to try again."),
+      );
     }
   }
 
@@ -125,7 +128,7 @@ function AiSettingsPage() {
         setModel("");
         await refresh(workspaceId);
       } else {
-        toast.error(r.error);
+        toast.error(userMessage(r.error, "Couldn't save that key. Check it and try again."));
       }
     } finally {
       setBusy(null);
@@ -138,7 +141,13 @@ function AiSettingsPage() {
     try {
       const r = await test({ data: { workspaceId, provider: p } });
       if (r.ok) toast.success(`${PROVIDER_META[p].label} key is valid.`);
-      else toast.error(`${PROVIDER_META[p].label}: ${r.error}`);
+      else
+        toast.error(
+          userMessage(
+            r.error,
+            `${PROVIDER_META[p].label} didn't accept that key. Check it and try again.`,
+          ),
+        );
       await refresh(workspaceId);
     } finally {
       setBusy(null);
@@ -154,7 +163,7 @@ function AiSettingsPage() {
       if (r.ok) {
         toast.success("Deleted.");
         await refresh(workspaceId);
-      } else toast.error(r.error);
+      } else toast.error(userMessage(r.error, "Couldn't delete that key. Try again in a moment."));
     } finally {
       setBusy(null);
     }
@@ -252,7 +261,12 @@ function AiSettingsPage() {
                   </div>
                   <div className="flex-1 text-xs text-muted-foreground">
                     {r.last_error ? (
-                      <span className="text-destructive">{r.last_error}</span>
+                      <span className="text-destructive">
+                        {userMessage(
+                          r.last_error,
+                          "The last test of this key failed. Check the key and test it again.",
+                        )}
+                      </span>
                     ) : r.last_tested_at ? (
                       `Tested ${new Date(r.last_tested_at).toLocaleString()}`
                     ) : (
@@ -388,7 +402,10 @@ function AiSettingsPage() {
                         {r.status === "ok" ? (
                           <span className="text-emerald-600">ok</span>
                         ) : (
-                          <span className="text-destructive" title={r.error ?? ""}>
+                          <span
+                            className="text-destructive"
+                            title={r.error ? userMessage(r.error, "This request failed.") : ""}
+                          >
                             {r.status}
                           </span>
                         )}

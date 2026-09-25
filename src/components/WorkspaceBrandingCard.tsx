@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-message";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,7 +75,12 @@ export function WorkspaceBrandingCard({ workspaceId, initial, onSaved }: Props) 
       toast.success("Branding updated");
       onSaved?.();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save");
+      toast.error(
+        userMessage(
+          err,
+          "Couldn't save your branding. Try again, or contact support if it keeps happening.",
+        ),
+      );
     } finally {
       setSaving(false);
     }

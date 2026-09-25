@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { userMessage } from "@/lib/user-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -190,8 +191,7 @@ function CoachPage() {
           setDraftMessages([]);
         }
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Something went wrong";
-        setError(msg);
+        setError(userMessage(e, "The coach couldn't answer that. Try again in a moment."));
         setDraftMessages((prev) => prev.filter((m) => m.id !== asstMsg.id));
       } finally {
         setStreaming(false);

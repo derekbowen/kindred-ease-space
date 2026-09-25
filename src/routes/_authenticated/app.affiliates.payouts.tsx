@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-message";
 import { getMe } from "@/lib/auth.functions";
 import { listPayouts, setPayoutStatus } from "@/lib/affiliates.functions";
 
@@ -41,7 +42,12 @@ function PayoutsPage() {
       await setStatus({ data: { workspaceId: workspaceId!, id, status } });
       await qc.invalidateQueries({ queryKey: ["affiliate-payouts", workspaceId] });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed");
+      toast.error(
+        userMessage(
+          err,
+          "Couldn't update this payout. Try again, or contact support if it keeps happening.",
+        ),
+      );
     }
   };
 

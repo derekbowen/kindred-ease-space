@@ -11,6 +11,10 @@ import { Loader2, Upload, Table2, ArrowLeft } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { bulkCreatePages, listPageTemplates } from "@/lib/tenant-pages.functions";
 import { parseDelimitedRecords } from "@/lib/csv";
+import { userMessage } from "@/lib/user-message";
+
+const BULK_FAILED =
+  "Couldn't create these pages. Check the CSV and try again, or contact support if it keeps happening.";
 
 export const Route = createFileRoute("/_authenticated/app/pages/bulk")({
   head: () => ({ meta: [{ title: "Bulk pages — founders.click" }] }),
@@ -105,8 +109,11 @@ function BulkPage() {
           skippedNote || limitNote || contractNote ? 6000 : 900,
         );
       } else {
-        setErr(r.error);
+        setErr(userMessage(r.error, BULK_FAILED));
       }
+    } catch (e) {
+      // A rejected row (e.g. a slug with spaces) used to vanish silently.
+      setErr(userMessage(e, BULK_FAILED));
     } finally {
       setBusy(false);
     }

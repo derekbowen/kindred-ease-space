@@ -29,6 +29,7 @@ import { InlineCoach } from "@/components/coach/InlineCoach";
 import { getSettingsContext } from "@/lib/settings.functions";
 import { SettingsNav } from "@/components/settings/SettingsNav";
 import { OwnerOnlyBanner } from "@/components/settings/OwnerOnlyBanner";
+import { userMessage } from "@/lib/user-message";
 
 export const Route = createFileRoute("/_authenticated/app/settings/integrations/sharetribe")({
   head: () => ({ meta: [{ title: "Sharetribe Integration — founders.click" }] }),
@@ -50,6 +51,13 @@ type IntegrationRow = {
   last_sync_error: string | null;
   listings_count: number | null;
 };
+
+const CONNECT_FAILED =
+  "Couldn't save your marketplace connection. Try again, or contact support if it keeps happening.";
+const SYNC_FAILED =
+  "Couldn't sync your listings. Try again in a minute, or contact support if it keeps happening.";
+const DISCONNECT_FAILED =
+  "Couldn't disconnect Sharetribe. Try again, or contact support if it keeps happening.";
 
 const MODE_LABEL: Record<AuthMode, string> = {
   marketplace: "Marketplace API (read-only)",
@@ -148,11 +156,11 @@ function SharetribeIntegrationPage() {
         setClientSecret("");
         await reload();
       } else {
-        setErr(r.error);
+        setErr(userMessage(r.error, CONNECT_FAILED));
       }
     } catch (e) {
       console.error("[sharetribe] connect failed", e);
-      setErr("Something went wrong while connecting. Please try again.");
+      setErr(userMessage(e, CONNECT_FAILED));
     } finally {
       setBusy(false);
     }
@@ -171,12 +179,12 @@ function SharetribeIntegrationPage() {
             (r.removed ? ` and removed ${r.removed} that are no longer published.` : "."),
         );
       } else {
-        setErr(r.error);
+        setErr(userMessage(r.error, SYNC_FAILED));
       }
       await reload();
     } catch (e) {
       console.error("[sharetribe] sync failed", e);
-      setErr("Something went wrong while syncing. Please try again.");
+      setErr(userMessage(e, SYNC_FAILED));
     } finally {
       setSyncing(false);
     }
@@ -194,12 +202,12 @@ function SharetribeIntegrationPage() {
         setIntegration(null);
         setMsg("Disconnected. Your listings have been removed from founders.click.");
       } else {
-        setErr(r.error);
+        setErr(userMessage(r.error, DISCONNECT_FAILED));
         await reload();
       }
     } catch (e) {
       console.error("[sharetribe] disconnect failed", e);
-      setErr("Something went wrong while disconnecting. Please try again.");
+      setErr(userMessage(e, DISCONNECT_FAILED));
     } finally {
       setBusy(false);
     }
@@ -304,7 +312,12 @@ function SharetribeIntegrationPage() {
             {integration.last_sync_error && (
               <div className="rounded border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-200 flex items-start gap-2">
                 <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                <span>{integration.last_sync_error}</span>
+                <span>
+                  {userMessage(
+                    integration.last_sync_error,
+                    "The last sync didn't finish. Run a sync again, or contact support if it keeps happening.",
+                  )}
+                </span>
               </div>
             )}
             <p className="text-xs text-muted-foreground">

@@ -16,6 +16,7 @@ import {
 } from "@/lib/entitlements.functions";
 import { PAGE_PLANS, PAGE_ADDON, EVERY_PLAN_INCLUDES, TRIAL_PAGE_LIMIT } from "@/lib/plan-catalog";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-message";
 
 const billingSearchSchema = z.object({
   success: z.coerce.string().optional(),
@@ -62,7 +63,10 @@ function BillingPage() {
         setWorkspaceId(wsId);
         await loadBilling(wsId);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Failed to load billing";
+        const msg = userMessage(
+          e,
+          "Couldn't load your billing details. Refresh the page to try again.",
+        );
         setLoadError(msg);
         toast.error(msg);
       }
@@ -111,7 +115,12 @@ function BillingPage() {
       else if (data?.message) throw new Error(data.message);
       else throw new Error("No checkout URL returned");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Checkout failed");
+      toast.error(
+        userMessage(
+          e,
+          "Couldn't start checkout. Try again, or contact support if it keeps happening.",
+        ),
+      );
     } finally {
       setLoading(false);
     }
@@ -128,7 +137,12 @@ function BillingPage() {
       if (data?.url) window.location.href = data.url;
       else throw new Error("Couldn't open the billing portal");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't open the billing portal");
+      toast.error(
+        userMessage(
+          e,
+          "Couldn't open the billing portal. Try again, or contact support if it keeps happening.",
+        ),
+      );
     } finally {
       setLoading(false);
     }

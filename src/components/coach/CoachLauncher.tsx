@@ -2,8 +2,19 @@ import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CoachPanel } from "./CoachPanel";
+import { useCoachEnabled } from "./coach-availability";
 
+/**
+ * The floating Coach button on every app page (and its ⌘J shortcut). Hidden
+ * — no button, no shortcut — unless the Coach is enabled (coach-availability).
+ */
 export function CoachLauncher({ workspaceId }: { workspaceId: string | null }) {
+  const enabled = useCoachEnabled();
+  if (!enabled || !workspaceId) return null;
+  return <CoachLauncherButton workspaceId={workspaceId} />;
+}
+
+function CoachLauncherButton({ workspaceId }: { workspaceId: string }) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -16,8 +27,6 @@ export function CoachLauncher({ workspaceId }: { workspaceId: string | null }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-
-  if (!workspaceId) return null;
 
   return (
     <>

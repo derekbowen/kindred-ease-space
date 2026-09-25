@@ -8,6 +8,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { userMessage } from "@/lib/user-message";
+
+const APPLY_FAILED = "Your application didn't send. Please try again.";
 
 export const Route = createFileRoute("/apply/$slug")({
   loader: async ({ params }) => {
@@ -50,9 +53,9 @@ function ApplyPage() {
     try {
       const r = await submit({ data: { slug, programId, name, email } });
       if (r.ok) setDone(true);
-      else setError(r.error);
-    } catch {
-      setError("Something went wrong. Please try again.");
+      else setError(userMessage(r.error, APPLY_FAILED));
+    } catch (e) {
+      setError(userMessage(e, APPLY_FAILED));
     } finally {
       setSubmitting(false);
     }

@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-message";
 import { CheckCircle2, Plug, Sparkles, KeyRound } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { updateWorkspaceProfile } from "@/lib/workspace.functions";
@@ -81,7 +82,12 @@ function SettingsPage() {
       toast.success("Workspace saved.");
       setReloadKey((k) => k + 1);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not save");
+      toast.error(
+        userMessage(
+          err,
+          "Couldn't save your workspace settings. Try again, or contact support if it keeps happening.",
+        ),
+      );
     } finally {
       setSaving(false);
     }

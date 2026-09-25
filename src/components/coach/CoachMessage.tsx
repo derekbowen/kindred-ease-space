@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import { Badge } from "@/components/ui/badge";
 import { Wrench, ChevronDown, ChevronRight, ExternalLink, Quote } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { userMessage } from "@/lib/user-message";
 
 export type ToolCallShape = {
   name: string;
@@ -195,7 +196,7 @@ function ToolCallCard({ tc }: { tc: ToolCallShape }) {
             <div>
               <div className="px-2 pt-1 text-[10px] uppercase text-destructive">Error</div>
               <pre className="px-2 pb-1 text-[10px] overflow-x-auto max-h-32 text-destructive">
-                {tc.error}
+                {userMessage(tc.error, "This step didn't finish.")}
               </pre>
             </div>
           )}

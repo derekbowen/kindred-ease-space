@@ -21,6 +21,7 @@ import {
 import { getSettingsContext } from "@/lib/settings.functions";
 import { SettingsNav } from "@/components/settings/SettingsNav";
 import { OwnerOnlyBanner } from "@/components/settings/OwnerOnlyBanner";
+import { userMessage } from "@/lib/user-message";
 
 export const Route = createFileRoute("/_authenticated/app/settings/domains")({
   head: () => ({ meta: [{ title: "Custom Domains — founders.click" }] }),
@@ -32,6 +33,23 @@ const MODE_LABEL: Record<DomainConnectionType, string> = {
   subdomain: "Subdomain (seo.yourdomain.com)",
   customer_proxy: "My own proxy/CDN",
 };
+
+// Stored setup errors and failed connection checks carry the server's raw
+// diagnostics (HTTP statuses, fetch errors, env var names): customers read
+// these sentences instead. The setup one keeps the one instruction that
+// matters while routing may not be live: leave DNS as it is.
+const DOMAIN_SETUP_STALLED =
+  "This domain's setup didn't finish. Leave your DNS as it is for now, retry setup below, or contact support if it keeps happening.";
+const DOMAIN_VERIFY_FAILED =
+  "We couldn't verify this domain yet. Check the verification record, give DNS a few minutes, and try again.";
+const DOMAIN_TEST_FAILED =
+  "Your domain isn't serving founders.click pages yet. Check the DNS record above, give it a few minutes, and test again.";
+
+function checkFallback(name: string): string {
+  return name === "customer_site"
+    ? "Your existing site didn't answer through the edge. Check the origin setting, then test again."
+    : DOMAIN_TEST_FAILED;
+}
 
 const STATUS_LABEL: Record<string, { label: string; tone: "ok" | "warn" | "muted" }> = {
   verification_required: { label: "Verify ownership", tone: "warn" },
@@ -104,7 +122,7 @@ function DomainsPage() {
         setDomainLimit(r.domainLimit);
         setEdgeHostname(r.edgeHostname);
       } catch (e) {
-        setMsg(e instanceof Error ? e.message : "Failed to load");
+        setMsg(userMessage(e, "Couldn't load your domains. Refresh the page to try again."));
       }
     },
     [list],
@@ -160,7 +178,7 @@ function DomainsPage() {
         setHostname("");
         await reload(workspaceId);
       } else {
-        setMsg(r.error);
+        setMsg(userMessage(r.error, "Couldn't add that domain. Check the hostname and try again."));
       }
     } finally {
       setBusy(false);
@@ -174,7 +192,7 @@ function DomainsPage() {
     try {
       const r = await verify({ data: { workspaceId, id } });
       if (r.ok) await reload(workspaceId);
-      else setErrors((e) => ({ ...e, [id]: r.error }));
+      else setErrors((e) => ({ ...e, [id]: userMessage(r.error, DOMAIN_VERIFY_FAILED) }));
     } finally {
       setWorkingId(null);
     }
@@ -189,7 +207,7 @@ function DomainsPage() {
       setChecks((c) => ({ ...c, [id]: r.checks ?? [] }));
       if (r.ok) await reload(workspaceId);
     } catch (e) {
-      setErrors((er) => ({ ...er, [id]: e instanceof Error ? e.message : "activation failed" }));
+      setErrors((er) => ({ ...er, [id]: userMessage(e, DOMAIN_TEST_FAILED) }));
     } finally {
       setWorkingId(null);
     }
@@ -205,8 +223,12 @@ function DomainsPage() {
   async function onSaveOrigin(id: string, origin: string) {
     if (!workspaceId) return;
     const r = await updateConn({ data: { workspaceId, id, customerOrigin: origin || null } });
-    if (!r.ok) setErrors((e) => ({ ...e, [id]: r.error ?? "failed" }));
-    else await reload(workspaceId);
+    if (!r.ok) {
+      setErrors((e) => ({
+        ...e,
+        [id]: userMessage(r.error, "Couldn't save that origin. Check the address and try again."),
+      }));
+    } else await reload(workspaceId);
   }
 
   const activeCount = rows.filter((r) => r.status !== "disconnected").length;
@@ -331,7 +353,11 @@ function DomainsPage() {
               {d.status === "error" && (
                 <div className="space-y-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
                   <p className="font-medium">Setup didn't finish</p>
-                  {d.last_error && <p className="text-xs text-amber-700">{d.last_error}</p>}
+                  {d.last_error && (
+                    <p className="text-xs text-amber-700">
+                      {userMessage(d.last_error, DOMAIN_SETUP_STALLED)}
+                    </p>
+                  )}
                   <div className="flex items-center gap-3">
                     <Button
                       size="sm"
@@ -429,11 +455,14 @@ Value: ${edgeHostname}`}
                       key={c.name}
                       className={`text-xs ${c.ok ? "text-emerald-600" : "text-amber-600"}`}
                     >
-                      {c.ok ? "✓" : "✗"} {c.detail}
+                      {c.ok ? "✓" : "✗"}{" "}
+                      {c.ok ? c.detail : userMessage(c.detail, checkFallback(c.name))}
                     </p>
                   ))}
                   {d.last_error && !(checks[d.id] ?? []).length && (
-                    <p className="text-xs text-amber-600">{d.last_error}</p>
+                    <p className="text-xs text-amber-600">
+                      {userMessage(d.last_error, DOMAIN_TEST_FAILED)}
+                    </p>
                   )}
                 </div>
               )}

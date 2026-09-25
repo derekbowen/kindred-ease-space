@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { auditPage, listRecentAudits, type PageAuditRow } from "@/lib/admin-page-auditor.functions";
+import { userMessage } from "@/lib/user-message";
 
 export const Route = createFileRoute("/_authenticated/app/seo/page-auditor")({
   head: () => ({ meta: [{ title: "Page Auditor — founders.click" }] }),
@@ -51,7 +52,7 @@ function PageAuditorPage() {
         setAudit(r.audit);
         await reload(workspaceId);
       } else {
-        setError(r.error);
+        setError(userMessage(r.error, "Couldn't audit that page. Check the path and try again."));
         if ("suggestions" in r && r.suggestions) setSuggestions(r.suggestions);
       }
     } finally {

@@ -23,10 +23,14 @@ import { getMe } from "@/lib/auth.functions";
 import { listPageTemplates, getTenantPage, upsertTenantPage } from "@/lib/tenant-pages.functions";
 import { getPageBuilderContext } from "@/lib/page-builder.functions";
 import { InlineCoach } from "@/components/coach/InlineCoach";
+import { userMessage } from "@/lib/user-message";
 import { PageLivePreview } from "@/components/pages/PageLivePreview";
 import { PageSeoPreview } from "@/components/pages/PageSeoPreview";
 import { slugifyPageTitle } from "@/components/pages/page-builder-utils";
 import { cn } from "@/lib/utils";
+
+const PAGE_SAVE_FAILED =
+  "Couldn't save this page. Check the fields and try again, or contact support if it keeps happening.";
 
 export const Route = createFileRoute("/_authenticated/app/pages/$id/edit")({
   head: () => ({ meta: [{ title: "Edit page — founders.click" }] }),
@@ -190,8 +194,11 @@ function EditPage() {
       if (r.ok) {
         navigate({ to: "/app/pages" });
       } else {
-        setErr(r.error);
+        setErr(userMessage(r.error, PAGE_SAVE_FAILED));
       }
+    } catch (e) {
+      // A rejected input (e.g. a slug with spaces) used to vanish silently.
+      setErr(userMessage(e, PAGE_SAVE_FAILED));
     } finally {
       setSaving(false);
     }
