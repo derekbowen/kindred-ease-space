@@ -1,10 +1,10 @@
 # Rollback and verification for the 2026-09-23 launch migrations
 
-Apply order: 000100 → 000200 → 000300 → 000400 → 000500 → 000600 → 000700. Roll back in reverse
-order. Each rollback file ends with a VERIFY query and states what it will not
+Apply order: 000100 → 000200 → 000300 → 000400 → 000500 → 000600 → 000700 → 20260925000800.
+Roll back in reverse order. Each rollback file ends with a VERIFY query and states what it will not
 restore.
 
-## Post-migration verification (run after applying all seven)
+## Post-migration verification (run after applying all eight)
 
 ```sql
 -- 000100: columns + constraints present, secret column nullable
@@ -83,6 +83,35 @@ SELECT prosrc LIKE '%IF v_granted > 0 AND (NOT v_stripe_pub OR v_state = ''trial
          AND has_function_privilege('service_role', oid, 'EXECUTE') AS service_role_only
   FROM pg_proc WHERE oid = 'public.workspace_capacity(uuid)'::regprocedure;
 -- expect true, true, true (the rollback's VERIFY expects false, false, true)
+
+-- 20260925000800: one AI spend architecture (reservations, kill switch, ceiling, reaper, briefing claim)
+SELECT platform_ai_enabled, daily_budget_micros, workspace_reservations_per_minute
+  FROM public.ai_platform_settings;
+-- expect one row: true, 10000000 ($10.00/day), 30
+SELECT f, has_function_privilege('anon', to_regprocedure(f), 'EXECUTE') AS anon_exec,
+       has_function_privilege('authenticated', to_regprocedure(f), 'EXECUTE') AS auth_exec,
+       has_function_privilege('service_role', to_regprocedure(f), 'EXECUTE') AS service_exec
+FROM unnest(ARRAY[
+ 'public.ai_reserve(uuid,uuid,uuid,text,text,text,int,int,bigint,int,text)',
+ 'public.ai_mark_called(uuid,uuid)',
+ 'public.ai_settle(uuid,uuid,int,int,int,int,bigint,int,text,text)',
+ 'public.ai_release(uuid,uuid)',
+ 'public.ai_reap_stale_reservations()',
+ 'public.coach_briefing_claim(uuid,date,uuid)',
+ 'public.coach_briefing_store(uuid,date,uuid,jsonb)']) AS f;
+-- expect anon_exec = false, auth_exec = false, service_exec = true for every row
+SELECT jobname, schedule, active FROM cron.job WHERE jobname = 'ai-reap-stale-reservations';
+-- expect one row: */5 * * * *, active
+SELECT to_regprocedure('public.settle_generation_free_quota(uuid,text,text,text)') AS superseded;
+-- expect NULL (000800 settles generation itself; the rollback restores this function)
+SELECT count(*) FROM public.ai_spend_reservations;   -- 0 before first use
+```
+
+The kill switch (service role / SQL editor only):
+```sql
+UPDATE public.ai_platform_settings SET platform_ai_enabled = false, updated_at = now();  -- stop
+UPDATE public.ai_platform_settings SET platform_ai_enabled = true,  updated_at = now();  -- resume
+UPDATE public.ai_platform_settings SET daily_budget_micros = 10000000, updated_at = now(); -- ceiling
 ```
 
 ## Forward repair instead of rollback
@@ -99,3 +128,4 @@ call goes through the service role. 000500 changes only which of two matching
 workspaces the resolver returns for one hostname; a previous build calls the
 same function and is unaffected.
 20260924000700 replaces one function body that is evaluated at read time and stores nothing, so no data changes either way. A code-only rollback (previous Worker) leaves the two halves disagreeing for a trialing workspace with an active grant — the DB says 'granted' / grant-only limit, the old app says 'trialing' / trial base + grant — so roll the SQL back with the app if the app is rolled back. Harmless today: 0 such workspaces (verified 2026-09-24).
+20260925000800 is additive except for one function it supersedes (settle_generation_free_quota, 000600, never applied in production before it) and the settlement index that went with it. It must be rolled back WITH the code: the build shipped with it reserves every AI call through ai_reserve, and the previous build settles generation through settle_generation_free_quota, which only the rollback restores. The rollback first closes every open hold (held → refunded, called → settled at the full hold) so no customer money stays locked, then drops the tables; the ai_hold / ai_refund ledger rows and ai_usage_log stay as history.
