@@ -14,12 +14,28 @@
  */
 export const THIN_PAGE_MIN_BODY_CHARS = 300;
 
+/** A body's length as the rule counts it: surrounding whitespace excluded. */
+export function thinPageBodyChars(bodyMarkdown: string | null | undefined): number {
+  return (bodyMarkdown ?? "").trim().length;
+}
+
+/**
+ * The rule on an already-measured body. The sitemap measures each body as its
+ * chunk arrives and keeps only the length (thinPageBodyChars), so a catalogue
+ * of thousands of pages never holds every body in memory at once.
+ */
+export function isThinPageMeasured(page: { listingCount: number; bodyChars: number }): boolean {
+  return page.listingCount === 0 && page.bodyChars < THIN_PAGE_MIN_BODY_CHARS;
+}
+
 export function isThinPage(page: {
   listingCount: number;
   bodyMarkdown: string | null | undefined;
 }): boolean {
-  const bodyChars = (page.bodyMarkdown ?? "").trim().length;
-  return page.listingCount === 0 && bodyChars < THIN_PAGE_MIN_BODY_CHARS;
+  return isThinPageMeasured({
+    listingCount: page.listingCount,
+    bodyChars: thinPageBodyChars(page.bodyMarkdown),
+  });
 }
 
 /** The shape of tenant_pages.listing_filter that getPublicTenantPage honours. */

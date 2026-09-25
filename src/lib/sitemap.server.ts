@@ -1,7 +1,13 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { decideCapacity } from "@/lib/billing-capacity";
 import { readGrantedPagesOrNull } from "@/lib/entitlement-grants.server";
-import { buildListingCounter, isThinPage, type ListingLocation } from "@/lib/thin-page";
+import {
+  buildListingCounter,
+  isThinPageMeasured,
+  thinPageBodyChars,
+  type ListingFilter,
+  type ListingLocation,
+} from "@/lib/thin-page";
 import { isPublicPageSlug } from "@/lib/public-page-slug";
 
 const sb = () => supabaseAdmin as any;
@@ -149,11 +155,20 @@ export type ChunkRead<T> = {
   count: number | null;
 };
 
-export async function readInChunks<T>(
+/**
+ * `map`, when given, turns each row into what the caller keeps as its chunk
+ * arrives (one row in, one row out — offsets stay exact), so the chunk's raw
+ * rows can be dropped before the next one is read.
+ */
+export async function readInChunks<T, U = T>(
   fetchChunk: (from: number, to: number) => Promise<ChunkRead<T>>,
-  { chunkSize = LISTING_CHUNK_SIZE, maxChunks = LISTING_MAX_CHUNKS } = {},
-): Promise<ChunkRead<T>> {
-  const rows: T[] = [];
+  {
+    chunkSize = LISTING_CHUNK_SIZE,
+    maxChunks = LISTING_MAX_CHUNKS,
+    map,
+  }: { chunkSize?: number; maxChunks?: number; map?: (row: T) => U } = {},
+): Promise<ChunkRead<U>> {
+  const rows: U[] = [];
   let count: number | null = null;
   for (let chunk = 0; chunk < maxChunks; chunk++) {
     // From where the rows actually stopped, not where the chunk was meant to
@@ -163,7 +178,7 @@ export async function readInChunks<T>(
     if (res.count != null) count = res.count;
     if (res.error) return { data: rows, error: res.error, count };
     const got = res.data ?? [];
-    rows.push(...got);
+    for (const row of got) rows.push(map ? map(row) : (row as unknown as U));
     if (got.length === 0) break;
     // Done when the count says so; without one, a short chunk is the end.
     if (count != null ? rows.length >= count : got.length < chunkSize) break;
@@ -172,11 +187,110 @@ export async function readInChunks<T>(
 }
 
 /**
- * Tenant page sitemap XML for a host. Returns null when the host is not a
- * verified tenant host (caller should fall back to the platform sitemap), or an
- * (possibly empty) <urlset> string when it is.
+ * The sitemaps protocol allows 50,000 URLs (and 50 MB) per file. Above that,
+ * the tenant sitemap is a <sitemapindex> of /a/sitemap.xml?page=1…N, each a
+ * <urlset> of at most this many URLs. Under /a/ because on a root-domain
+ * connection the Founders edge forwards only /a/* (query string included).
  */
-export async function tenantSitemapXml(hostname: string): Promise<string | null> {
+export const SITEMAP_MAX_URLS = 50_000;
+
+/**
+ * Page reads come in LISTING_CHUNK_SIZE-row chunks too. 200 chunks cover
+ * 200,000 pages — well past any plan's capacity (Agency 5,000 plus ten
+ * 1,000-page add-ons) — while bounding one request's work.
+ */
+export const PAGE_MAX_CHUNKS = 200;
+
+export type SitemapEntry = { loc: string; lastmod: string };
+
+const SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9";
+
+function urlsetXml(entries: readonly SitemapEntry[]): string {
+  const urls = entries
+    .map((e) => `  <url><loc>${e.loc}</loc><lastmod>${e.lastmod}</lastmod></url>`)
+    .join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="${SITEMAP_NS}">\n${urls}\n</urlset>`;
+}
+
+/**
+ * The document for a tenant's URL entries (already escaped, in order): one
+ * <urlset> up to `maxUrls`; above that, with no `page`, a <sitemapindex>
+ * naming https://<host>/a/sitemap.xml?page=1…N (each child's lastmod is the
+ * newest in its slice); with `page` = k, the k-th slice as a <urlset> — empty
+ * when k is past the end, so a stale child URL is still a valid sitemap.
+ */
+export function sitemapDocument(
+  entries: readonly SitemapEntry[],
+  { host, page, maxUrls = SITEMAP_MAX_URLS }: { host: string; page?: number; maxUrls?: number },
+): string {
+  if (page !== undefined) return urlsetXml(entries.slice((page - 1) * maxUrls, page * maxUrls));
+  if (entries.length <= maxUrls) return urlsetXml(entries);
+  const children: string[] = [];
+  for (let i = 0; i * maxUrls < entries.length; i++) {
+    const slice = entries.slice(i * maxUrls, (i + 1) * maxUrls);
+    const lastmod = slice.reduce((max, e) => (e.lastmod > max ? e.lastmod : max), slice[0]!.lastmod);
+    children.push(
+      `  <sitemap><loc>https://${host}/a/sitemap.xml?page=${i + 1}</loc><lastmod>${lastmod}</lastmod></sitemap>`,
+    );
+  }
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="${SITEMAP_NS}">\n${children.join("\n")}\n</sitemapindex>`;
+}
+
+/**
+ * The `page` query parameter of a sitemap request: undefined when absent, a
+ * page number 1–9999, or null when present but not one (the route answers 404).
+ */
+export function sitemapPageParam(requestUrl: string): number | undefined | null {
+  const raw = new URL(requestUrl).searchParams.get("page");
+  if (raw === null) return undefined;
+  return /^[1-9]\d{0,3}$/.test(raw) ? Number(raw) : null;
+}
+
+/** One page as the sitemap keeps it: the body measured for the thin-page rule, then dropped. */
+type SitemapPage = {
+  slug: string | null;
+  updated_at: string | null;
+  listing_filter: ListingFilter | null;
+  body_chars: number;
+  legacy: boolean;
+};
+
+function toSitemapPage(row: any, legacy: boolean): SitemapPage {
+  return {
+    slug: row.slug ?? null,
+    updated_at: row.updated_at ?? null,
+    listing_filter: legacy ? null : (row.listing_filter ?? null),
+    body_chars: thinPageBodyChars(row.body_markdown),
+    legacy,
+  };
+}
+
+/** Newest first (then by slug), the order the sitemap listed pages in before its reads were chunked. */
+function newestFirst(a: SitemapPage, b: SitemapPage): number {
+  // Missing or unparseable dates sort last, so the comparator stays consistent.
+  const at = (p: SitemapPage) => {
+    const t = p.updated_at ? Date.parse(p.updated_at) : NaN;
+    return Number.isFinite(t) ? t : Number.NEGATIVE_INFINITY;
+  };
+  const ta = at(a);
+  const tb = at(b);
+  if (ta !== tb) return tb > ta ? 1 : -1;
+  const sa = String(a.slug ?? "");
+  const sb = String(b.slug ?? "");
+  return sa < sb ? -1 : sa > sb ? 1 : 0;
+}
+
+/**
+ * Tenant page sitemap XML for a host. Returns null when the host is not a
+ * verified tenant host (caller should fall back to the platform sitemap), or,
+ * when it is, a (possibly empty) <urlset> — or, above SITEMAP_MAX_URLS, a
+ * <sitemapindex> of /a/sitemap.xml?page=N, whose `page` then selects one
+ * <urlset> (see sitemapDocument).
+ */
+export async function tenantSitemapXml(
+  hostname: string,
+  opts: { page?: number } = {},
+): Promise<string | null> {
   const workspaceId = await workspaceIdForHost(hostname);
   if (!workspaceId) return null;
 
@@ -220,28 +334,44 @@ export async function tenantSitemapXml(hostname: string): Promise<string | null>
   // sitemap URL would fail to resolve.
   const h = requestHost(hostname);
 
+  // Every read comes in as many 1,000-row chunks as it needs (readInChunks),
+  // over a fixed order (id), so chunks neither overlap nor skip. The page
+  // reads used to be one read each asking for up to 50,000 rows, which
+  // PostgREST's max-rows (~1,000 by default) capped silently: a workspace past
+  // 1,000 pages had the rest left out of its sitemap (round-4 release review
+  // M4).
+  //
   // body_markdown and listing_filter ride along with each page, and the
-  // workspace's published listings come in as many 1000-row reads as the
-  // catalogue needs (readInChunks): together they let the sitemap apply the
-  // page's own thin-page rule (below) without a count query per page. Bodies
-  // are the largest part of the payload; page counts are bounded by plan
-  // capacity, and this response is cached for an hour.
-  const [{ data: tenantPages }, { data: legacyPages }, listingsRead] = await Promise.all([
-    sb()
-      .from("tenant_pages")
-      .select("slug, updated_at, body_markdown, listing_filter")
-      .eq("workspace_id", workspaceId)
-      .eq("status", "published")
-      .order("updated_at", { ascending: false })
-      .limit(50_000),
-    sb()
-      .from("content_pages")
-      .select("slug, updated_at, body_markdown")
-      .eq("workspace_id", workspaceId)
-      .eq("status", "published")
-      .eq("in_sitemap", true)
-      .order("updated_at", { ascending: false })
-      .limit(50_000),
+  // workspace's published listings come in too: together they let the
+  // sitemap apply the page's own thin-page rule (below) without a count query
+  // per page. Bodies are the largest part of the payload, so each one is
+  // measured as its chunk arrives and dropped (toSitemapPage): memory holds
+  // one chunk of bodies, not the whole catalogue. This response is cached for
+  // an hour.
+  const [tenantRead, legacyRead, listingsRead] = await Promise.all([
+    readInChunks<unknown, SitemapPage>(
+      (from, to) =>
+        sb()
+          .from("tenant_pages")
+          .select("id, slug, updated_at, body_markdown, listing_filter", { count: "exact" })
+          .eq("workspace_id", workspaceId)
+          .eq("status", "published")
+          .order("id", { ascending: true })
+          .range(from, to),
+      { maxChunks: PAGE_MAX_CHUNKS, map: (row) => toSitemapPage(row, false) },
+    ),
+    readInChunks<unknown, SitemapPage>(
+      (from, to) =>
+        sb()
+          .from("content_pages")
+          .select("id, slug, updated_at, body_markdown", { count: "exact" })
+          .eq("workspace_id", workspaceId)
+          .eq("status", "published")
+          .eq("in_sitemap", true)
+          .order("id", { ascending: true })
+          .range(from, to),
+      { maxChunks: PAGE_MAX_CHUNKS, map: (row) => toSitemapPage(row, true) },
+    ),
     readInChunks<ListingLocation>((from, to) =>
       sb()
         .from("tenant_listings")
@@ -276,13 +406,29 @@ export async function tenantSitemapXml(hostname: string): Promise<string | null>
   }
   const countListings = listingsComplete ? buildListingCounter(listingRows) : null;
 
+  // A page read that errored or stopped short of its count lists what it
+  // read, as a single capped read used to; it is logged, never silent.
+  for (const [table, read] of [
+    ["tenant_pages", tenantRead],
+    ["content_pages", legacyRead],
+  ] as const) {
+    const got = read.data?.length ?? 0;
+    if (read.error || (read.count != null && read.count > got)) {
+      console.error(
+        `[tenantSitemapXml] ${table} read incomplete, listing the rows read:`,
+        read.error?.message ?? `${got} of ${read.count} rows`,
+      );
+    }
+  }
+
   const seen = new Set<string>();
   const rows = [
-    ...(tenantPages || []).map((p: any) => ({ ...p, legacy: false })),
+    // Newest first within each source, as before the reads were chunked.
+    ...[...(tenantRead.data ?? [])].sort(newestFirst),
     // Legacy content_pages render with no listings at all (see
     // getPublicTenantPage), so only their body decides.
-    ...(legacyPages || []).map((p: any) => ({ ...p, legacy: true })),
-  ].filter((p: any) => {
+    ...[...(legacyRead.data ?? [])].sort(newestFirst),
+  ].filter((p) => {
     const slug = String(p.slug || "").replace(/^\/+/, "");
     // A slug the page route refuses (isPublicPageSlug) would only ever 404;
     // never advertise it.
@@ -292,21 +438,20 @@ export async function tenantSitemapXml(hostname: string): Promise<string | null>
     seen.add(slug);
     if (countListings) {
       const listingCount = p.legacy ? 0 : countListings(p.listing_filter ?? {});
-      if (isThinPage({ listingCount, bodyMarkdown: p.body_markdown })) return false;
+      if (isThinPageMeasured({ listingCount, bodyChars: p.body_chars })) return false;
     }
     return true;
   });
 
-  const urls = rows
-    .map((p: any) => {
-      const slug = String(p.slug || "").replace(/^\/+/, "");
-      const loc = `https://${h}/a/${escapeXml(slug)}`;
-      const lastmod = p.updated_at
-        ? new Date(p.updated_at).toISOString()
-        : new Date().toISOString();
-      return `  <url><loc>${loc}</loc><lastmod>${lastmod}</lastmod></url>`;
-    })
-    .join("\n");
+  const now = new Date().toISOString();
+  const entries: SitemapEntry[] = rows.map((p) => {
+    const slug = String(p.slug || "").replace(/^\/+/, "");
+    const updated = p.updated_at ? Date.parse(p.updated_at) : NaN;
+    return {
+      loc: `https://${h}/a/${escapeXml(slug)}`,
+      lastmod: Number.isFinite(updated) ? new Date(updated).toISOString() : now,
+    };
+  });
 
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>`;
+  return sitemapDocument(entries, { host: h, page: opts.page });
 }
