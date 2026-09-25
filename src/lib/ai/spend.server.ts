@@ -34,7 +34,8 @@ import { getWorkspaceSecretWithSource } from "@/lib/workspace-secrets.server";
  *   5. mark           — ai_mark_called immediately before the request; the
  *                       provider is called only on a definite true;
  *   6. call           — callOpenAI (openai.server.ts), typed result;
- *   7. record         — cost from the usage OpenAI reported;
+ *   7. deliver        — the route writes its result (page, audit, edit);
+ *                       cost from the usage OpenAI reported;
  *   8. settle         — ai_settle, on two separate books (settleInputFor):
  *                       the CUSTOMER pays only for a delivered result (the
  *                       actual cost capped at the hold; the whole hold when
@@ -374,6 +375,15 @@ export type MeteredAiCall<T> = {
    */
   check?: OutputCheck<T>;
   /**
+   * Hands the result to the customer — writes the page, the audit, the edit —
+   * BEFORE the settlement, because the customer is charged only for a
+   * delivered result. A throw here settles the call as 'failed'
+   * (not_delivered: the customer is refunded, the platform budget keeps what
+   * OpenAI reported) and is rethrown. Routes whose answer goes straight back
+   * to the browser (the SEO coach) have nothing to deliver here.
+   */
+  deliver?: (output: OpenAiSuccess<T>, ctx: { billing: SpendBilling; model: AiModelId }) => Promise<void>;
+  /**
    * Awaited after the hold is granted and immediately before the mark and the
    * provider call (page generation marks its daily-cap slot here). A throw
    * releases the hold and aborts.
@@ -406,8 +416,8 @@ export const REJECTED_BEFORE_GENERATION: ReadonlySet<number> = new Set([400, 401
  *   - the customer is charged only when a result is delivered (outcome
  *     'ok'); every failure — provider 4xx/5xx, timeout, network error,
  *     refusal, incomplete, malformed or schema-invalid output, a result the
- *     route rejects (check) — is outcome 'failed' and refunds the customer
- *     in full;
+ *     route rejects (check), a result that could not be saved (deliver) — is
+ *     outcome 'failed' and refunds the customer in full;
  *   - the platform budget records what the provider may have been paid:
  *     the reported usage's cost when known, 0 for a request that never left
  *     or was rejected before generation, the full hold (cost null) when
@@ -514,13 +524,26 @@ export async function runMeteredAiCall<T = unknown>(call: MeteredAiCall<T>): Pro
 
   const checked = result.ok && call.check ? call.check(result) : null;
 
-  // 7–8. Record what it cost and settle.
-  const settlement = await settleSafely(db, call, model, billing, settleInputFor(model, result, checked?.code ?? null));
+  // 7. Deliver before settling: the customer pays only for a result that
+  //    reached them. A failed delivery settles as not_delivered (refunded).
+  let undelivered: { error: unknown } | null = null;
+  if (result.ok && !checked && call.deliver) {
+    try {
+      await call.deliver(result, { billing, model });
+    } catch (e) {
+      undelivered = { error: e };
+    }
+  }
+
+  // 8. Record what it cost and settle.
+  const failCode = checked?.code ?? (undelivered ? "not_delivered" : null);
+  const settlement = await settleSafely(db, call, model, billing, settleInputFor(model, result, failCode));
 
   if (!result.ok) {
     throw new CustomerFacingError(failureMessage(result.kind), result.kind);
   }
   if (checked) throw new CustomerFacingError(checked.message, checked.code);
+  if (undelivered) throw undelivered.error;
   return { output: result, model, billing, settlement };
 }
 

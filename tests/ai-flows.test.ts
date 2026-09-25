@@ -210,6 +210,15 @@ try {
   }
   backend.reset();
   backend.rest["GET tenant_pages"] = (h) => (h.query.get("slug") === "eq.boats-austin" ? [pageRow] : []);
+  backend.rest["POST page_audits"] = () => ({ status: 500, body: { message: "insert exploded" } });
+  backend.openai = () => okJson(auditOk);
+  {
+    const r = await runPageAudit({ workspaceId: WS, url_path: "/a/boats-austin" }, USER);
+    t("an audit that could not be stored is the generic sentence, never the database text", r.ok === false && r.error === AI_MESSAGES.unavailable, JSON.stringify(r));
+    t("…settled as not_delivered: the customer refunded", settle()?._outcome === "failed" && settle()?._error === "not_delivered" && settle()?._credits === 0);
+  }
+  backend.reset();
+  backend.rest["GET tenant_pages"] = (h) => (h.query.get("slug") === "eq.boats-austin" ? [pageRow] : []);
   backend.openai = () => okJson({ score: "high" });
   {
     const r = await runPageAudit({ workspaceId: WS, url_path: "/a/boats-austin" }, USER);
@@ -251,6 +260,20 @@ try {
   }
   backend.reset();
   backend.rest["GET tenant_pages"] = (h) => (h.query.get("id") === `eq.${PAGE_ID}` ? [thinPage] : []);
+  backend.rest["PATCH tenant_pages"] = () => ({ status: 500, body: { message: "update exploded" } });
+  backend.openai = () => okText("## Expanded\n\n" + "Real words about boats. ".repeat(40));
+  {
+    const r = await run(action("fix_thin_page", { page_id: PAGE_ID }));
+    t("an expansion that could not be saved fails the action", r.err !== null && r.ok === null);
+    t(
+      "…and is settled AFTER the failed save as not_delivered: the customer refunded, the reported cost on the platform budget",
+      settle()?._outcome === "failed" && settle()?._error === "not_delivered" && settle()?._credits === 0 && settle()?._input_tokens === 812 &&
+        backend.rpcAt("ai_settle") > backend.indexOf((h) => h.kind === "rest" && h.method === "PATCH" && h.name === "tenant_pages"),
+      JSON.stringify(settle()),
+    );
+  }
+  backend.reset();
+  backend.rest["GET tenant_pages"] = (h) => (h.query.get("id") === `eq.${PAGE_ID}` ? [thinPage] : []);
   backend.openai = () => okText("Too short.", { input: 300, output: 5 });
   {
     const r = await run(action("fix_thin_page", { page_id: PAGE_ID }));
@@ -284,6 +307,20 @@ try {
         new Set(backend.rpcHits("ai_reserve").map((h) => h.body._request_id)).size === 20,
     );
     t("Structured Outputs: page_meta, strict", sent()?.text?.format?.name === "page_meta" && sent()?.text?.format?.strict === true);
+  }
+  backend.reset();
+  backend.rest["GET tenant_pages"] = () => ids.slice(0, 3).map((id) => ({ id, title: "P", body_markdown: "B", meta_description: null }));
+  let metaWrites = 0;
+  backend.rest["PATCH tenant_pages"] = () => (++metaWrites === 2 ? { status: 500, body: { message: "update exploded" } } : [{ id: "x" }]);
+  backend.openai = () => okJson({ seo_title: "Title", seo_description: "A description." });
+  {
+    const r = await run(action("add_meta", { page_ids: ids.slice(0, 3) }));
+    const outcomes = backend.rpcHits("ai_settle").map((h) => `${h.body._outcome}/${h.body._error ?? "-"}`);
+    t(
+      "a page whose meta could not be saved is skipped and refunded; the others are charged",
+      /Updated meta on 2 of 3 pages/.test(r.ok?.summary ?? "") && outcomes.join() === "ok/-,failed/not_delivered,ok/-",
+      `${r.ok?.summary} ${outcomes.join()}`,
+    );
   }
   backend.reset();
   backend.rest["GET tenant_pages"] = () => ids.slice(0, 3).map((id) => ({ id, title: "P", body_markdown: "B", meta_description: null }));

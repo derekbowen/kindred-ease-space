@@ -40,6 +40,7 @@ import {
   type GenerationSlot,
   type GenerationTarget,
   type ItemBillingStatus,
+  type PersistedPage,
   type ResolvedBilling,
 } from "@/lib/generation.server";
 
@@ -645,6 +646,7 @@ async function runItem(
   const target = row.target;
   let slotMarked = false;
   let gen: GeneratedContent | null = null;
+  let saved: PersistedPage | null = null;
   try {
     if (row.page_id) {
       // The draft exists (a previous run died between linking and finishing).
@@ -694,16 +696,22 @@ async function runItem(
             await markGenerationProviderCalled(workspaceId, attemptSlot);
             slotMarked = true;
           },
+          // The draft is saved before the call is settled: the customer is
+          // charged only for a page that exists.
+          deliver: async (draft) => {
+            saved = await persistGeneratedPage({
+              workspaceId,
+              generated: draft,
+              requestedTitle: brief.title,
+              requestedDescription: brief.description,
+              city: target.city,
+              state: target.state,
+              categoryPlural: target.categoryPlural,
+            });
+          },
         });
-        const page = await persistGeneratedPage({
-          workspaceId,
-          generated: gen,
-          requestedTitle: brief.title,
-          requestedDescription: brief.description,
-          city: target.city,
-          state: target.state,
-          categoryPlural: target.categoryPlural,
-        });
+        const page = saved as PersistedPage | null;
+        if (!page) throw new Error("batch item: generation returned without a saved page");
         // Link the page with what the settlement charged, and insist the
         // write landed. If the request dies after this line the item still
         // knows its page, so a re-claim finishes it instead of writing a

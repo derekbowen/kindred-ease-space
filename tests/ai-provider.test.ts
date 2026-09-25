@@ -340,6 +340,7 @@ console.log("\n=== who pays: every provider outcome onto the two books (settleIn
     { label: "malformed JSON with usage", run: () => { reset(() => jsonResponse(200, responseObject([text("{not json")]))); return callOpenAI({ ...base, format }); }, outcome: "failed", cost: "priced" },
     { label: "schema-invalid with usage", run: () => { reset(() => jsonResponse(200, responseObject([text('{"title":"x"}')]))); return callOpenAI({ ...base, format }); }, outcome: "failed", cost: "priced" },
     { label: "delivered but rejected by the route's check", run: () => { reset(() => jsonResponse(200, responseObject([text("short")]))); return callOpenAI({ ...base }); }, check: "thin_output", outcome: "failed", cost: "priced" },
+    { label: "answered but the result could not be saved (not_delivered)", run: () => { reset(() => jsonResponse(200, responseObject([text("fine")]))); return callOpenAI({ ...base }); }, check: "not_delivered", outcome: "failed", cost: "priced" },
   ];
   for (const row of rows) {
     const r = await row.run();

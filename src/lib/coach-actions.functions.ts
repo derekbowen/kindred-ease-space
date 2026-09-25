@@ -131,16 +131,19 @@ async function fixThinPage(ctx: ActionCtx, pageId: string): Promise<ActionResult
       out.text.trim().length < 300
         ? { code: "thin_output", message: "The AI could not expand this page. Try again in a minute." }
         : null,
+    // Saved before the call is settled: the customer pays only for an edit
+    // that landed.
+    deliver: async (out) => {
+      const { error: upErr } = await supabaseAdmin
+        .from("tenant_pages")
+        .update({ body_markdown: out.text.trim() })
+        .eq("id", pageId)
+        .eq("workspace_id", ctx.workspaceId);
+      if (upErr) throw new Error(upErr.message);
+    },
     deps: ctx.deps,
   });
   const expanded = res.output.text.trim();
-
-  const { error: upErr } = await supabaseAdmin
-    .from("tenant_pages")
-    .update({ body_markdown: expanded })
-    .eq("id", pageId)
-    .eq("workspace_id", ctx.workspaceId);
-  if (upErr) throw new Error(upErr.message);
 
   return {
     ok: true,
@@ -213,17 +216,20 @@ async function addMeta(
           "You write SEO meta for one page: seo_title of at most 60 characters and seo_description of at most 155 characters. No prose.",
         input: `Page title: "${p.title}". Body excerpt:\n${(p.body_markdown ?? p.meta_description ?? "").slice(0, 1200)}`,
         format: META_FORMAT,
+        // Saved before the call is settled: a page whose update fails is
+        // refunded (not_delivered) and skipped.
+        deliver: async (out) => {
+          const { error: upErr } = await supabaseAdmin
+            .from("tenant_pages")
+            .update({ meta_description: out.data!.seo_description.slice(0, 320) })
+            .eq("id", p.id)
+            .eq("workspace_id", ctx.workspaceId);
+          if (upErr) throw new Error(`page update failed: ${upErr.message}`);
+        },
         deps: ctx.deps,
       });
       creditsCharged += res.settlement.creditsCharged;
-      const meta = res.output.data!;
-      const { error: upErr } = await supabaseAdmin
-        .from("tenant_pages")
-        .update({ meta_description: meta.seo_description.slice(0, 320) })
-        .eq("id", p.id)
-        .eq("workspace_id", ctx.workspaceId);
-      if (!upErr) updated += 1;
-      else console.error("[coach add_meta] page update failed", p.id, upErr.message);
+      updated += 1;
     } catch (e) {
       const code = e instanceof CustomerFacingError ? e.code : undefined;
       if (code && STOP_CODES.has(code)) {
@@ -386,17 +392,20 @@ async function addInternalLinks(ctx: ActionCtx, pageId: string): Promise<ActionR
       }
       return null;
     },
+    // Saved before the call is settled: the customer pays only for links
+    // that landed on the page.
+    deliver: async (out) => {
+      const { error: upErr } = await supabaseAdmin
+        .from("tenant_pages")
+        .update({ body_markdown: out.text.trim() })
+        .eq("id", pageId)
+        .eq("workspace_id", ctx.workspaceId);
+      if (upErr) throw new Error(upErr.message);
+    },
     deps: ctx.deps,
   });
   const updated = res.output.text.trim();
   const added = countLinks(updated) - before;
-
-  const { error: upErr } = await supabaseAdmin
-    .from("tenant_pages")
-    .update({ body_markdown: updated })
-    .eq("id", pageId)
-    .eq("workspace_id", ctx.workspaceId);
-  if (upErr) throw new Error(upErr.message);
 
   return {
     ok: true,

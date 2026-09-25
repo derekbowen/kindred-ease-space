@@ -44,8 +44,9 @@ export { CustomerFacingError, customerMessage } from "@/lib/ai/customer-error";
  *   → the daily-cap slot (reserveGenerationSlot, one per provider call)
  *   → the spend hold (runMeteredAiCall → ai_reserve; a refusal releases the
  *     slot) → mark both (the slot in beforeProviderCall, then ai_mark_called)
- *   → the OpenAI call → settle (ai_settle, the actual cost capped at the hold)
- *   → the draft row (persistGeneratedPage, never auto-published).
+ *   → the OpenAI call → the draft row (persistGeneratedPage, never
+ *     auto-published) → settle (ai_settle: the customer is charged only for
+ *     a saved page, the actual cost capped at the hold).
  * The slot and the hold share ONE request id. Only a failure BEFORE the marks
  * releases anything; after them the slot stays counted for 24 hours (and the
  * reservation counts toward the per-minute rate limit), so a failing request
@@ -53,7 +54,7 @@ export { CustomerFacingError, customerMessage } from "@/lib/ai/customer-error";
  * books: the customer pays only for a delivered page and is refunded in full
  * for any failure; the platform budget keeps what OpenAI may have been paid.
  * There is exactly one settlement per request, and it happens in the
- * database before the page is written.
+ * database right after the page is written (or failed to be).
  *
  * The pure helpers at the top have no I/O so tests can import this file
  * without a database or network (supabaseAdmin is a lazy proxy).
@@ -646,8 +647,17 @@ export type GenerateInput = {
    * never be released. A throw here releases the hold and aborts.
    */
   beforeProviderCall?: () => Promise<void>;
+  /**
+   * Saves the page (persistGeneratedPage) BEFORE the call is settled: the
+   * customer is charged only for a page that was delivered. A throw here
+   * settles the call as not_delivered (refunded) and is rethrown.
+   */
+  deliver?: (draft: PageDraft) => Promise<void>;
   deps?: { db?: AiDb; transport?: OpenAiTransport };
 };
+
+/** What the model wrote, with who paid for it: what persistGeneratedPage stores. */
+export type PageDraft = WritePageOutput & { billingMode: BillingMode };
 
 export type GeneratedContent = WritePageOutput & {
   usage: AiUsage | null;
@@ -661,9 +671,10 @@ export type GeneratedContent = WritePageOutput & {
  * Produce a page's content through the one spend flow. The inventory facts
  * are read first, so the hold covers the real prompt; then runMeteredAiCall
  * reserves, calls beforeProviderCall, marks, calls OpenAI with the write_page
- * format and settles. Throws CustomerFacingError with a customer sentence on
- * every refusal and failure; a failure after the call has already been
- * settled with the usage OpenAI reported.
+ * format, delivers (the caller's `deliver` saves the page) and settles —
+ * charging the customer only when the page was saved. Throws
+ * CustomerFacingError with a customer sentence on every refusal and failure;
+ * a failure after the call has already been settled (the customer refunded).
  */
 export async function generatePageContent(input: GenerateInput): Promise<GeneratedContent> {
   // Ground generation in the tenant's real inventory when a city is targeted.
@@ -706,6 +717,18 @@ export async function generatePageContent(input: GenerateInput): Promise<Generat
         : null;
     },
     beforeCall: input.beforeProviderCall,
+    deliver: input.deliver
+      ? async (out, ctx) => {
+          const page = out.data!;
+          await input.deliver!({
+            title: String(page.title ?? ""),
+            seo_title: String(page.seo_title ?? ""),
+            seo_description: String(page.seo_description ?? ""),
+            body_markdown: page.body_markdown,
+            billingMode: billingModeFor(ctx.billing),
+          });
+        }
+      : undefined,
     refusalMessages: {
       in_progress: GENERATION_IN_PROGRESS_MESSAGE,
       done: GENERATION_ALREADY_USED_MESSAGE,

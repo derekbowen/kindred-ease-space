@@ -221,7 +221,13 @@ for (const route of AI_ROUTES) {
     /maxOutputTokens: limits\.maxOutputTokens,\s*timeoutMs: limits\.timeoutMs,/.test(spend) && /const limits = AI_ROUTE_LIMITS\[call\.route\];/.test(spend),
   );
   const callType = spend.slice(spend.indexOf("export type MeteredAiCall<T> = {"), spend.indexOf("export type MeteredAiResult<T>"));
-  t("a metered call cannot even carry a model, a token limit or a timeout", callType.length > 0 && !/\bmodel\??:|maxOutputTokens|timeoutMs|temperature/.test(callType), callType.slice(0, 80));
+  // Top-level fields only (two-space indent): deliver's ctx hands the model
+  // the server chose TO the callback, which is the opposite direction.
+  t(
+    "a metered call cannot even carry a model, a token limit or a timeout",
+    callType.length > 0 && !/^ {2}(model|maxOutputTokens|max_output_tokens|timeoutMs|temperature|reasoning)\??:/m.test(callType),
+    callType.slice(0, 80),
+  );
   const tierPassers = srcFiles.filter((f) => meteredCalls(read(f)).some((args) => /\btier:/.test(args)));
   t("only the generation core passes a tier into the spend flow", same(tierPassers, ["src/lib/generation.server.ts"]), tierPassers.join(", "));
   const allCalls = srcFiles.flatMap((f) => meteredCalls(read(f)).map((args) => ({ f, args })));

@@ -298,9 +298,9 @@ try {
     const settleAt = rpcAt("ai_settle");
     const insertAt = indexOf((h) => h.kind === "rest" && h.method === "POST" && h.name === "tenant_pages");
     t(
-      "order: slot → hold → slot mark → hold mark → provider → settle → draft row",
-      slotAt >= 0 && slotAt < holdAt && holdAt < slotMarkAt && slotMarkAt < holdMarkAt && holdMarkAt < providerAt && providerAt < settleAt && settleAt < insertAt,
-      `${slotAt} ${holdAt} ${slotMarkAt} ${holdMarkAt} ${providerAt} ${settleAt} ${insertAt}`,
+      "order: slot → hold → slot mark → hold mark → provider → draft row → settle (the customer pays only for a saved page)",
+      slotAt >= 0 && slotAt < holdAt && holdAt < slotMarkAt && slotMarkAt < holdMarkAt && holdMarkAt < providerAt && providerAt < insertAt && insertAt < settleAt,
+      `${slotAt} ${holdAt} ${slotMarkAt} ${holdMarkAt} ${providerAt} ${insertAt} ${settleAt}`,
     );
     t(
       "the slot, the hold, both marks and the settlement all carry the request id",
@@ -394,12 +394,13 @@ try {
     t("a draft-row failure after generation fails the request", r.err !== null && r.ok === null);
     const s = settles()[0];
     t(
-      "…the call was already settled with its real usage (the tokens were spent), without the database text",
-      s?._outcome === "ok" && s?._input_tokens === 812 && s?._output_tokens === 1204 && !/exploded/.test(JSON.stringify(s)) &&
-        rpcAt("ai_settle") < indexOf((h) => h.kind === "rest" && h.method === "POST" && h.name === "tenant_pages"),
+      "…settled AFTER the failed save as not_delivered: the customer refunded, the platform budget keeps the reported cost",
+      s?._outcome === "failed" && s?._error === "not_delivered" && s?._credits === 0 && s?._input_tokens === 812 && typeof s?._cost_micros === "number" && s?._cost_micros > 0 &&
+        rpcAt("ai_settle") > indexOf((h) => h.kind === "rest" && h.method === "POST" && h.name === "tenant_pages"),
       JSON.stringify(s),
     );
-    t("…and neither the slot nor the hold is released", rpcHits("release_generation_slot").length === 0 && rpcHits("ai_release").length === 0);
+    t("…without the database text", !/exploded/.test(JSON.stringify(s)));
+    t("…and neither the slot nor the hold is released (the slot stays counted)", rpcHits("release_generation_slot").length === 0 && rpcHits("ai_release").length === 0);
   }
 
   // -------------------------------------------------------------------------
@@ -597,6 +598,10 @@ try {
         rpcHits("ai_release").length === 0,
     );
     t("the claim wrote attempts + 1", claimPatch()?.body?.attempts === 2);
+    t(
+      "the draft is saved before the settlement",
+      indexOf((h) => h.kind === "rest" && h.method === "POST" && h.name === "tenant_pages") < rpcAt("ai_settle"),
+    );
     const done = patches().find((h) => h.body?.status === "done");
     t(
       "the item records its page and what the settlement charged, in one write",

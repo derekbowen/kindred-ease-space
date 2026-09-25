@@ -216,10 +216,12 @@ export async function runQuickPage(
   // call) it stays counted.
   let slotMarked = false;
   let gen: GeneratedContent;
-  let page: PersistedPage;
+  let saved: PersistedPage | null = null;
   try {
-    // 5–9. The spend hold, the marks, the call and the settlement. A refused
-    //      hold throws before beforeProviderCall runs.
+    // 5–10. The spend hold, the marks, the call, the draft row and the
+    //       settlement. A refused hold throws before beforeProviderCall runs;
+    //       the draft row is written before the settlement, so the customer
+    //       is charged only for a page that was saved.
     gen = await generatePageContent({
       workspaceId: data.workspaceId,
       userId,
@@ -237,20 +239,21 @@ export async function runQuickPage(
         await markGenerationProviderCalled(data.workspaceId, generationRequestId);
         slotMarked = true;
       },
+      // 10. Draft row, idempotent per request id.
+      deliver: async (draft) => {
+        saved = await persistGeneratedPage({
+          workspaceId: data.workspaceId,
+          generated: draft,
+          requestedTitle: data.title,
+          requestedDescription: data.description,
+          slug: data.slug,
+          city: data.city,
+          state: data.state,
+          categoryPlural: data.categoryPlural,
+          generationRequestId,
+        });
+      },
       deps: { db: deps.db, transport: deps.transport },
-    });
-
-    // 10. Draft row, idempotent per request id.
-    page = await persistGeneratedPage({
-      workspaceId: data.workspaceId,
-      generated: gen,
-      requestedTitle: data.title,
-      requestedDescription: data.description,
-      slug: data.slug,
-      city: data.city,
-      state: data.state,
-      categoryPlural: data.categoryPlural,
-      generationRequestId,
     });
   } catch (e) {
     if (!slotMarked) {
@@ -261,6 +264,9 @@ export async function runQuickPage(
     }
     throw e;
   }
+  // Assigned inside deliver, which runs before generatePageContent returns.
+  const page = saved as PersistedPage | null;
+  if (!page) throw new Error("quick page: generation returned without a saved page");
   if (page.replayed) {
     const existing = await findPageByRequestId(data.workspaceId, generationRequestId);
     if (existing) {

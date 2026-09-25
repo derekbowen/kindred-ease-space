@@ -511,6 +511,7 @@ console.log("\n=== who pays when a call fails after it reached the provider: two
     { label: "refusal, usage reported", outcome: "failed", cost: 900, error: "refusal", charged: 0, budget: "cost" },
     { label: "malformed / schema-invalid, usage reported", outcome: "failed", cost: 1800, error: "schema_mismatch", charged: 0, budget: "cost" },
     { label: "rejected by the route's own check, usage reported", outcome: "failed", cost: 1700, error: "thin_output", charged: 0, budget: "cost" },
+    { label: "answered but the result could not be saved, usage reported", outcome: "failed", cost: 1600, error: "not_delivered", charged: 0, budget: "cost" },
     { label: "5xx, usage unknown", outcome: "failed", cost: null, error: "server_error", charged: 0, budget: "hold" },
     { label: "timeout after sending", outcome: "failed", cost: null, error: "timeout", charged: 0, budget: "hold" },
     { label: "network error after sending", outcome: "failed", cost: null, error: "network", charged: 0, budget: "hold" },

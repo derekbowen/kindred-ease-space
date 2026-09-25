@@ -23,8 +23,8 @@
 --                   (the full hold when usage is unknown), or the free-quota
 --                   unit. Every failure — a provider 4xx/5xx, a timeout or
 --                   network error, a refusal, an incomplete answer, malformed
---                   or schema-invalid output, a result the app rejects —
---                   refunds the customer in full.
+--                   or schema-invalid output, a result the app rejects or
+--                   could not save — refunds the customer in full.
 --                   THE PLATFORM BUDGET records what the platform may
 --                   actually have paid the provider: the reported cost when
 --                   usage is known (delivered or not), 0 for an explicit

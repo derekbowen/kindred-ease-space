@@ -194,6 +194,8 @@ ${compSummary}`;
 
     const { resolveAiKey, billingClassFor, runMeteredAiCall } =
       await import("@/lib/ai/spend.server");
+    const auditedPage = page;
+    let stored: PageAuditRow | null = null;
     const key = await resolveAiKey(data.workspaceId, deps.db);
     const res = await runMeteredAiCall({
       workspaceId: data.workspaceId,
@@ -207,25 +209,31 @@ ${compSummary}`;
         "You are an SEO auditor. Score the page 0-100 against the top-ranking competitors, summarise in one sentence, and list concrete strengths, weaknesses and recommendations.",
       input: prompt,
       format: AUDIT_FORMAT,
+      // Stored before the call is settled: the customer pays only for an
+      // audit that was saved.
+      deliver: async (out) => {
+        const audit = out.data!;
+        const { data: row, error } = await sb()
+          .from("page_audits")
+          .insert({
+            workspace_id: data.workspaceId,
+            url_path: auditedPage.url_path || path,
+            score: Math.max(0, Math.min(100, Math.round(Number(audit.score) || 0))),
+            summary: String(audit.summary || "").slice(0, 1000),
+            strengths: audit.strengths.slice(0, 20),
+            weaknesses: audit.weaknesses.slice(0, 20),
+            recommendations: audit.recommendations.slice(0, 20),
+          })
+          .select("*")
+          .maybeSingle();
+        if (error || !row) throw new Error(`page_audits insert failed: ${error?.message ?? "no row"}`);
+        stored = row as PageAuditRow;
+      },
       deps,
     });
-    const audit = res.output.data!;
-
-    const { data: row, error } = await sb()
-      .from("page_audits")
-      .insert({
-        workspace_id: data.workspaceId,
-        url_path: page.url_path || path,
-        score: Math.max(0, Math.min(100, Math.round(Number(audit.score) || 0))),
-        summary: String(audit.summary || "").slice(0, 1000),
-        strengths: audit.strengths.slice(0, 20),
-        weaknesses: audit.weaknesses.slice(0, 20),
-        recommendations: audit.recommendations.slice(0, 20),
-      })
-      .select("*")
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    return { ok: true as const, audit: row as PageAuditRow };
+    const audit = stored as PageAuditRow | null;
+    if (!audit || !res) throw new Error("page audit: generation returned without a stored audit");
+    return { ok: true as const, audit };
   } catch (e) {
     return { ok: false as const, error: customerMessage(e, AI_MESSAGES.unavailable) };
   }

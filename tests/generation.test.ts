@@ -1301,11 +1301,15 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
     runItem.indexOf("findExistingCityPage(") < runItem.indexOf("generatePageContent("),
   );
   const genAt = runItem.indexOf("gen = await generatePageContent(");
-  const persist = runItem.indexOf("const page = await persistGeneratedPage(");
+  const persist = runItem.indexOf("saved = await persistGeneratedPage(");
   const link = runItem.indexOf("page_id: page.id", persist);
   t(
-    "the call is settled (inside generatePageContent) before the draft is written, and the page is linked after",
-    genAt > 0 && persist > genAt && link > persist,
+    "the draft is written inside the spend flow's deliver step (before the settlement), and linked to the item after",
+    genAt > 0 &&
+      persist > genAt &&
+      /deliver: async \(draft\) => \{\s*saved = await persistGeneratedPage\(\{\s*workspaceId,\s*generated: draft,/.test(runItem) &&
+      /const page = saved as PersistedPage \| null;\s*if \(!page\) throw new Error/.test(runItem) &&
+      link > persist,
   );
   t(
     "the page link and what the settlement charged land in ONE fenced write",
@@ -1507,8 +1511,10 @@ console.log("\n=== quick page pipeline (source guards) ===");
     !/recordFailedGeneration|providerUsageOf|settleGeneration/.test(quick),
   );
   t(
-    "persists with the request id",
-    handler.includes("generationRequestId,") && quick.includes("generation_request_id") === false,
+    "persists with the request id, inside the spend flow's deliver step (the customer pays only for a saved page)",
+    handler.includes("generationRequestId,") &&
+      quick.includes("generation_request_id") === false &&
+      /deliver: async \(draft\) => \{\s*saved = await persistGeneratedPage\(\{\s*workspaceId: data\.workspaceId,\s*generated: draft,/.test(handler),
   );
   t(
     "a replayed persist returns the stored page (the charge the database recorded)",
