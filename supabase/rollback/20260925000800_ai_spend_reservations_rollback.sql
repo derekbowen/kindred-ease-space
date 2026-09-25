@@ -10,8 +10,9 @@
 -- What it does, in order:
 --   1. Ends every open hold so no customer money stays locked: a held
 --      reservation (provider never called) is released with a full refund; a
---      called one is settled at the full hold (the provider may have been
---      paid). Same functions the reaper uses.
+--      called one is settled at the full hold on the platform budget (the
+--      provider may have been paid) with the customer refunded. Same
+--      functions the reaper uses.
 --   2. Unschedules the reaper and drops the ai_* functions, the reservation,
 --      budget, settings and briefing-claim tables, and the ledger index.
 --   3. Restores what 000800 superseded and the previous build calls:

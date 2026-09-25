@@ -347,17 +347,33 @@ console.log("\n=== the money: free quota, credits, the cap at the hold ===");
   await rpc("ai_reserve", c);
   await mark(WS, String(c._request_id));
   const full = await settle(WS, String(c._request_id), { _cost_micros: null, _credits: null, _outcome: "failed", _error: "timeout" });
-  t("unknown usage → the full hold is charged (3), nothing refunded", full.full_hold === true && full.credits_charged === 3 && (await balance(WS)) === 3, JSON.stringify(full));
-  const failedLog = await one<any>("SELECT status, error FROM public.ai_usage_log WHERE workspace_id = $1 ORDER BY id DESC LIMIT 1", [WS]);
-  t("…logged as failed with the failure code only", failedLog.status === "failed" && failedLog.error === "timeout");
+  t(
+    "a failed call with unknown usage: the customer gets all 3 back, the platform budget keeps the full hold",
+    full.full_hold === true && full.credits_charged === 0 && (await balance(WS)) === 6 &&
+      Number((await row(WS, String(c._request_id))).budget_micros) === Number(c._max_cost_micros) && (await budgetConsistent()),
+    JSON.stringify(full),
+  );
+  const failedLog = await one<any>("SELECT status, error, cost_usd_micros FROM public.ai_usage_log WHERE workspace_id = $1 ORDER BY id DESC LIMIT 1", [WS]);
+  t("…logged as failed with the failure code only, at the platform's cost", failedLog.status === "failed" && failedLog.error === "timeout" && Number(failedLog.cost_usd_micros) === Number(c._max_cost_micros));
+
+  const e = reserveArgs({ _max_credits: 3 });
+  await rpc("ai_reserve", e);
+  await mark(WS, String(e._request_id));
+  const blind = await settle(WS, String(e._request_id), { _cost_micros: null, _credits: null, _outcome: "ok", _error: "usage_missing" });
+  t("a DELIVERED result with unknown usage is charged the whole hold (3), never free", blind.full_hold === true && blind.credits_charged === 3 && (await balance(WS)) === 3, JSON.stringify(blind));
 
   const d = reserveArgs({ _max_credits: 3 });
   await rpc("ai_reserve", d);
-  t("release refunds the whole hold (3 → back to 3 after 0)", (await balance(WS)) === 0 && (await release(WS, String(d._request_id))) === true && (await balance(WS)) === 3);
+  t("release refunds the whole hold (3 → 0 → 3)", (await balance(WS)) === 0 && (await release(WS, String(d._request_id))) === true && (await balance(WS)) === 3);
 
   await db.query("UPDATE public.credit_balances SET balance = 2 WHERE workspace_id = $1", [WS]);
   const poor = await reserve({ _max_credits: 3 });
   t("no quota and a balance below the hold → insufficient, nothing moved", poor.status === "insufficient" && (await balance(WS)) === 2 && (await quota(WS)) === 0, JSON.stringify(poor));
+  await db.query("UPDATE public.credit_balances SET balance = 3 WHERE workspace_id = $1", [WS]);
+  const exactArgs = reserveArgs({ _max_credits: 3 });
+  const exact = await rpc("ai_reserve", exactArgs);
+  t("a balance of exactly the hold → reserved, balance 0 (a page must be affordable, not balance > 0)", exact.status === "reserved" && exact.billing === "credits" && (await balance(WS)) === 0, JSON.stringify(exact));
+  t("…and its release puts the whole hold back", (await release(WS, String(exactArgs._request_id))) === true && (await balance(WS)) === 3);
 
   await resetMoney({ quota: 1 });
   const q = reserveArgs();
@@ -480,6 +496,65 @@ console.log("\n=== the per-workspace rate limit ===");
 }
 
 // ---------------------------------------------------------------------------
+console.log("\n=== who pays when a call fails after it reached the provider: two books ===");
+{
+  // One row per case of the table in the report (section 6). The Worker's
+  // settleInputFor (tests/ai-provider.test.ts) maps each provider outcome to
+  // these (outcome, cost) inputs; here the database applies them.
+  type Case = { label: string; outcome: "ok" | "failed"; cost: number | null; error: string | null; charged: number; budget: "cost" | "zero" | "hold" };
+  const CASES: Case[] = [
+    { label: "delivered, usage reported", outcome: "ok", cost: 1500, error: null, charged: 1, budget: "cost" },
+    { label: "delivered, usage missing", outcome: "ok", cost: null, error: "usage_missing", charged: 3, budget: "hold" },
+    { label: "rejected before generation (400-429)", outcome: "failed", cost: 0, error: "rate_limited", charged: 0, budget: "zero" },
+    { label: "never sent", outcome: "failed", cost: 0, error: "not_sent", charged: 0, budget: "zero" },
+    { label: "incomplete, usage reported", outcome: "failed", cost: 2200, error: "incomplete", charged: 0, budget: "cost" },
+    { label: "refusal, usage reported", outcome: "failed", cost: 900, error: "refusal", charged: 0, budget: "cost" },
+    { label: "malformed / schema-invalid, usage reported", outcome: "failed", cost: 1800, error: "schema_mismatch", charged: 0, budget: "cost" },
+    { label: "rejected by the route's own check, usage reported", outcome: "failed", cost: 1700, error: "thin_output", charged: 0, budget: "cost" },
+    { label: "5xx, usage unknown", outcome: "failed", cost: null, error: "server_error", charged: 0, budget: "hold" },
+    { label: "timeout after sending", outcome: "failed", cost: null, error: "timeout", charged: 0, budget: "hold" },
+    { label: "network error after sending", outcome: "failed", cost: null, error: "network", charged: 0, budget: "hold" },
+  ];
+  for (const billing of ["credits", "free_quota"] as const) {
+    for (const c of CASES) {
+      await resetMoney(billing === "credits" ? { quota: 0, balance: 10 } : { quota: 5, balance: 0 });
+      const args = reserveArgs({ _max_credits: 3, _max_cost_micros: 3000 });
+      const id = String(args._request_id);
+      const r = await rpc("ai_reserve", args);
+      await mark(WS, id);
+      const s = await settle(WS, id, {
+        _cost_micros: c.cost,
+        _credits: c.cost === null ? null : c.outcome === "ok" ? 1 : 0,
+        _outcome: c.outcome,
+        _error: c.error,
+      });
+      const after = await row(WS, id);
+      const expectBudget = c.budget === "cost" ? c.cost : c.budget === "zero" ? 0 : 3000;
+      const customerOk =
+        billing === "credits"
+          ? s.credits_charged === c.charged && (await balance(WS)) === 10 - c.charged
+          : (await quota(WS)) === (c.outcome === "ok" ? 4 : 5) && s.credits_charged === 0;
+      t(
+        `${billing} — ${c.label}: customer ${c.outcome === "ok" ? "charged" : "refunded in full"}, platform budget ${c.budget}`,
+        r.billing === billing && s.status === "settled" && customerOk && Number(after.budget_micros) === expectBudget && (await spent()) === expectBudget && (await budgetConsistent()),
+        JSON.stringify({ s, budget: after.budget_micros, balance: await balance(WS), quota: await quota(WS) }),
+      );
+    }
+  }
+  // Anti-abuse is not refunded: every reservation counts toward the
+  // per-minute rate limit, whatever became of it.
+  await resetMoney({ quota: 0, balance: 50 });
+  await setSettings({ rate: 3 });
+  for (let i = 0; i < 3; i++) {
+    const a = reserveArgs({ _max_credits: 1 });
+    await rpc("ai_reserve", a);
+    await mark(WS, String(a._request_id));
+    await settle(WS, String(a._request_id), { _cost_micros: null, _credits: null, _outcome: "failed", _error: "timeout" });
+  }
+  t("three refunded failures still count: the fourth reservation this minute is rate_limited", (await reserve({ _max_credits: 1 })).status === "rate_limited" && (await balance(WS)) === 50);
+  await setSettings({ rate: 1000 });
+}
+
 console.log("\n=== lazy expiry inside ai_reserve ===");
 {
   await resetMoney({ quota: 0, balance: 10 });
@@ -495,7 +570,11 @@ console.log("\n=== lazy expiry inside ai_reserve ===");
   await age(WS, String(zombie._request_id), "provider_called_at", "31 minutes");
   await reserve({ _max_credits: 1 });
   const z = await row(WS, String(zombie._request_id));
-  t("a call left unsettled for 31 minutes is settled at the full hold", z.status === "settled" && z.credits_charged === 2 && z.close_reason === "expired_full_hold", JSON.stringify(z));
+  t(
+    "a call left unsettled for 31 minutes is settled: the full hold on the budget, the customer refunded (9 − 1 + 2 − 2 = 8)",
+    z.status === "settled" && z.credits_charged === 0 && Number(z.budget_micros) === Number(zombie._max_cost_micros ?? z.max_cost_micros) && z.close_reason === "expired_full_hold" && (await balance(WS)) === 8,
+    JSON.stringify(z),
+  );
   const stale = reserveArgs({ _max_credits: 1 });
   await rpc("ai_reserve", stale);
   await age(WS, String(stale._request_id), "reserved_at", "11 minutes");
@@ -531,17 +610,21 @@ console.log("\n=== the reaper: a dead worker's money comes back without any traf
   const reaped = await rpc("ai_reap_stale_reservations", {});
   t("the reaper released 2 dead holds and settled 1 dead call", reaped.released === 2 && reaped.settled === 1 && reaped.skipped === false, JSON.stringify(reaped));
   t("death after reserve (quota): the unit is back", (await quota(WS)) === 1 && (await row(WS, String(d1._request_id))).status === "released");
-  t("death after reserve (credits): the 4 credits are back", (await row(WS, String(d2._request_id))).status === "released" && (await balance(WS)) === 7);
+  t("death after reserve (credits): the 4 credits are back", (await row(WS, String(d2._request_id))).status === "released");
   const s3 = await row(WS, String(d3._request_id));
-  t("death after mark-called: settled at the full hold (3 credits kept, nothing refunded)", s3.status === "settled" && s3.credits_charged === 3 && s3.close_reason === "expired_full_hold");
-  t("…its budget stays at the full hold", Number(s3.budget_micros) === 5000 && (await budgetConsistent()));
+  t(
+    "death after mark-called: settled, the customer refunded (3 back: 10 in total), nothing recorded as delivered",
+    s3.status === "settled" && s3.credits_charged === 0 && s3.close_reason === "expired_full_hold" && (await balance(WS)) === 10,
+    JSON.stringify({ status: s3.status, charged: s3.credits_charged, balance: await balance(WS) }),
+  );
+  t("…while its platform budget stays at the full hold (the provider may have been paid)", Number(s3.budget_micros) === 5000 && (await budgetConsistent()));
   t("the ceiling got back exactly the two released holds (3000 + 3000)", spentBefore - (await spent()) === 6000, `${spentBefore} → ${await spent()}`);
   t("the live request in the other workspace is untouched", (await row(WS2, String(live._request_id))).status === "held");
   const expiredLog = await one<any>("SELECT status, error FROM public.ai_usage_log WHERE workspace_id = $1 ORDER BY id DESC LIMIT 1", [WS]);
   t("the expired call is in ai_usage_log as failed / expired", expiredLog.status === "failed" && expiredLog.error === "expired");
   const again = await rpc("ai_reap_stale_reservations", {});
   t("a second run finds nothing (terminal states)", again.released === 0 && again.settled === 0);
-  t("an expired row is terminal: a late settle from the dead worker moves nothing", (await settle(WS, String(d3._request_id), { _cost_micros: 10, _credits: 1 })).status === "already_settled" && (await balance(WS)) === 7);
+  t("an expired row is terminal: a late settle from the dead worker moves nothing", (await settle(WS, String(d3._request_id), { _cost_micros: 10, _credits: 1 })).status === "already_settled" && (await balance(WS)) === 10);
   t("…and a late mark of the released hold cannot call", (await mark(WS, String(d2._request_id))) === false);
 }
 
@@ -596,9 +679,9 @@ console.log("\n=== the rollback with open holds, then a re-apply ===");
     verify.length === 2 && verify.every((r) => /^restored /.test(r.item)),
     JSON.stringify(verify),
   );
-  t("the open hold was refunded and the in-flight call settled at its hold: 4 + 4 = 8", (await balance(WS)) === 8);
+  t("the open hold and the in-flight call were both refunded to the customer: 4 + 4 + 2 = 10", (await balance(WS)) === 10);
   const ledger = await db.query<any>("SELECT reason, delta FROM public.credit_ledger WHERE workspace_id = $1 ORDER BY created_at", [WS]);
-  t("the ledger keeps its history (holds and the refund)", ledger.rows.filter((r: any) => r.reason === "ai_hold").length === 2 && ledger.rows.filter((r: any) => r.reason === "ai_refund").length === 1);
+  t("the ledger keeps its history (two holds, two refunds)", ledger.rows.filter((r: any) => r.reason === "ai_hold").length === 2 && ledger.rows.filter((r: any) => r.reason === "ai_refund").length === 2);
   const fn = await one<{ ok: boolean }>("SELECT to_regprocedure('public.settle_generation_free_quota(uuid,text,text,text)') IS NOT NULL AS ok");
   t("settle_generation_free_quota is back for the previous build", fn.ok === true);
   const again = await applyScript(MIGRATION_800);

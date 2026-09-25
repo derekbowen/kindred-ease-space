@@ -17,10 +17,21 @@
 --                   The caller must not call the provider unless this says
 --                   true. It re-checks the kill switch, so flipping it stops
 --                   holds that have not reached the provider yet.
---   ai_settle       called → settled with the usage the provider reported
---                   (or the full hold when usage is unknown): charge the
---                   actual cost, capped at the hold; refund the rest; return
---                   unused budget; write the one ai_usage_log row.
+--   ai_settle       called → settled. Two separate books:
+--                   THE CUSTOMER is charged only when a result was delivered
+--                   (_outcome 'ok'): the actual credits capped at the hold
+--                   (the full hold when usage is unknown), or the free-quota
+--                   unit. Every failure — a provider 4xx/5xx, a timeout or
+--                   network error, a refusal, an incomplete answer, malformed
+--                   or schema-invalid output, a result the app rejects —
+--                   refunds the customer in full.
+--                   THE PLATFORM BUDGET records what the platform may
+--                   actually have paid the provider: the reported cost when
+--                   usage is known (delivered or not), 0 for an explicit
+--                   rejection before generation (the caller passes cost 0),
+--                   the full hold when unknown (_cost_micros NULL: a timeout
+--                   or network error after sending, a 5xx). Writes the one
+--                   ai_usage_log row.
 --   ai_release      held → released (the provider was never called): full
 --                   refund of the quota unit / credits and of the budget.
 --
@@ -28,7 +39,14 @@
 -- every abandoned hold within bounded time whether or not the workspace ever
 -- makes another request: held and never called for 10 minutes → released
 -- with a full refund; called and unsettled for 30 minutes → settled at the
--- full hold. ai_reserve does the same for its own workspace on the way in.
+-- full hold on the platform budget (the provider may have been paid) with the
+-- customer refunded (no result was recorded as delivered). ai_reserve does
+-- the same for its own workspace on the way in.
+--
+-- Anti-abuse is unaffected by refunds: every reservation counts toward the
+-- per-workspace rate limit for its minute whatever its outcome, and page
+-- generation's daily-cap slot (generation_reservations, 000600) stays
+-- consumed once its provider call was marked.
 --
 -- The platform settings row is an EMERGENCY CEILING and kill switch, not
 -- customer accounting: platform_ai_enabled = false refuses every reservation
@@ -251,12 +269,16 @@ BEGIN
 END;
 $$;
 
--- called → settled. _cost_micros NULL = the provider's usage is unknown, so
--- the full hold is charged and kept against the ceiling. Otherwise the
--- tenant is charged the actual credits capped at the hold (the rest is
--- refunded) and the ceiling records the actual cost. A call that provably
--- cost nothing (cost 0) gives its free-quota unit back. Writes the one
--- ai_usage_log row for the call; _error is a short failure code, never text.
+-- called → settled, on two separate books.
+--   The customer: charged only when _outcome = 'ok' (a result was
+--   delivered) — the actual credits capped at the hold, or the whole hold
+--   when the usage is unknown; the free-quota unit stays used. Any other
+--   outcome refunds the customer in full: every held credit and the unit.
+--   The platform budget (the ceiling): what the platform may have paid —
+--   _cost_micros when given (the reported cost, or 0 for a request the
+--   provider rejected before doing any work), the full hold when NULL.
+-- Writes the one ai_usage_log row for the call (cost_usd_micros = the
+-- platform cost); _error is a short failure code, never text.
 CREATE OR REPLACE FUNCTION public._ai_settle_row(
   _workspace_id uuid,
   _request_id uuid,
@@ -278,6 +300,7 @@ AS $$
 DECLARE
   r public.ai_spend_reservations%ROWTYPE;
   v_full boolean := _cost_micros IS NULL;
+  v_delivered boolean := COALESCE(_outcome, 'failed') = 'ok';
   v_cost bigint;
   v_charge int := 0;
   v_refund int := 0;
@@ -303,11 +326,12 @@ BEGIN
 
   v_cost := COALESCE(_cost_micros, r.max_cost_micros);
   IF r.billing = 'credits' THEN
-    v_charge := CASE WHEN v_full THEN r.max_credits
+    v_charge := CASE WHEN NOT v_delivered THEN 0
+                     WHEN v_full THEN r.max_credits
                      ELSE LEAST(GREATEST(COALESCE(_credits, r.max_credits), 0), r.max_credits) END;
     v_refund := r.max_credits - v_charge;
   END IF;
-  v_quota := CASE WHEN r.quota_units > 0 AND NOT v_full AND v_cost = 0 THEN 0 ELSE r.quota_units END;
+  v_quota := CASE WHEN v_delivered THEN r.quota_units ELSE 0 END;
   IF r.billing <> 'byok' THEN
     v_budget := v_cost;
   END IF;
@@ -715,7 +739,8 @@ $$;
 
 -- The reaper. Independent of traffic: pg_cron runs it every 5 minutes, so a
 -- hold whose worker died ends within 15 minutes (release, full refund) and a
--- call that was never settled within 35 minutes (full hold). It takes every
+-- call that was never settled within 35 minutes (the full hold on the
+-- platform budget, the customer refunded: nothing was recorded as delivered). It takes every
 -- affected workspace's lock (sorted, before touching any row), so it cannot
 -- deadlock with ai_reserve / ai_settle; one reaper at a time.
 CREATE OR REPLACE FUNCTION public.ai_reap_stale_reservations()
