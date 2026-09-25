@@ -6,9 +6,21 @@ import { MarkdownRenderer } from "@/components/help/MarkdownRenderer";
 import { HelpfulFeedback } from "@/components/help/HelpfulFeedback";
 import { ArticleCard } from "@/components/help/ArticleCard";
 import { canonicalUrl } from "@/lib/canonical";
+import {
+  formatHelpDate,
+  helpArticlePath,
+  stripLeadingTitle,
+} from "@/components/help-article-content";
 import { Clock, Calendar, MessageCircle } from "lucide-react";
 
-export const Route = createFileRoute("/help/$category/$article")({
+// NOT NESTED under /help/$category. The trailing underscore on `$category_`
+// is TanStack Router's non-nested marker: this route's parent is the /help
+// layout (src/routes/help.tsx, which renders the <Outlet/>), and its URL is
+// still /help/$category/$article. Nested under the category route — whose
+// component renders no <Outlet/> — every article URL showed the category page
+// with only the article's <title>, and a 404 category above a found article
+// hydrated differently on the client than on the server (React #418).
+export const Route = createFileRoute("/help/$category_/$article")({
   loader: async ({ params }) => {
     const data = await getHelpArticle({
       data: { categorySlug: params.category, articleSlug: params.article },
@@ -16,10 +28,20 @@ export const Route = createFileRoute("/help/$category/$article")({
     if (!data.article) throw notFound();
     return data;
   },
-  head: ({ loaderData, params }) => {
+  head: ({ loaderData }) => {
     const a = loaderData?.article;
-    if (!a) return {};
-    const url = canonicalUrl(`/help/${params.category}/${params.article}`);
+    if (!a) {
+      return {
+        meta: [
+          { title: "Article not found — founders.click Help" },
+          { name: "robots", content: "noindex" },
+        ],
+      };
+    }
+    // The article's own URL, from the row — the one canonical, og:url and
+    // JSON-LD all name. Nothing from a parent route is merged in any more.
+    const url = canonicalUrl(helpArticlePath(a.category_slug, a.slug));
+    const categoryName = loaderData?.category?.name ?? a.category_slug;
     return {
       meta: [
         { title: `${a.title} — founders.click Help` },
@@ -56,8 +78,8 @@ export const Route = createFileRoute("/help/$category/$article")({
               {
                 "@type": "ListItem",
                 position: 2,
-                name: params.category,
-                item: canonicalUrl(`/help/${params.category}`),
+                name: categoryName,
+                item: canonicalUrl(`/help/${a.category_slug}`),
               },
               { "@type": "ListItem", position: 3, name: a.title, item: url },
             ],
@@ -97,12 +119,7 @@ function ArticlePage() {
           {article.author_name && <span>By {article.author_name}</span>}
           <span className="inline-flex items-center gap-1.5">
             <Calendar className="h-3 w-3" />
-            Updated{" "}
-            {new Date(article.updated_at).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })}
+            Updated {formatHelpDate(article.updated_at)}
           </span>
           {article.reading_time_minutes && (
             <span className="inline-flex items-center gap-1.5">
@@ -113,7 +130,9 @@ function ArticlePage() {
       </header>
 
       <article>
-        <MarkdownRenderer content={article.content} />
+        {/* The title above is the page's one <h1>; a leading "# Title" in the
+            stored markdown would render a second. */}
+        <MarkdownRenderer content={stripLeadingTitle(article.content)} />
       </article>
 
       <HelpfulFeedback articleId={article.id} />
