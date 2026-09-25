@@ -48,5 +48,21 @@ for (const file of ["src/routes/__root.tsx", "src/routes/login.tsx", "src/routes
   t(`${file}: no "lead inbox"`, !/lead inbox/i.test(read(file)));
 }
 
+console.log("\none AI allowance figure on every screen");
+const dash = read("src/routes/_authenticated/app.index.tsx");
+const billing = read("src/routes/_authenticated/app.billing.tsx");
+const aiPage = read("src/routes/_authenticated/app.settings.ai.tsx");
+for (const [name, src, count] of [
+  ["Dashboard", dash, /formatAllowanceCount\(allowance\)/],
+  ["Billing", billing, /formatAiToday\(aiToday\)/],
+] as const) {
+  t(`${name}: reads the one allowance (useAiAllowance)`, /useAiAllowance\(workspaceId\)/.test(src));
+  t(`${name}: shows pages today against the cap`, count.test(src));
+  t(`${name}: no credit balance on screen`, !/aiBalance|balance\?\.balance|generation credits (available|remaining)|AI generation credits/.test(src.replace(/\{\/\*[\s\S]*?\*\/\}/g, "")));
+}
+t("AI page: uses the same allowance endpoint", /getAiAllowance/.test(aiPage));
+const hook = read("src/components/ai/use-ai-allowance.ts");
+t("allowance hook: a load failure is a plain sentence via userMessage", /setError\(userMessage\(e, AI_ALLOWANCE_LOAD_FAILED\)\)/.test(hook));
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

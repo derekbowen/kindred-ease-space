@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Sparkles, FileText, Store, Coins, BarChart3 } from "lucide-react";
+import { Sparkles, FileText, Store, BarChart3 } from "lucide-react";
+import { formatAllowanceCount, useAiAllowance } from "@/components/ai/use-ai-allowance";
 import { getMe } from "@/lib/auth.functions";
 import { getWorkspaceOverview } from "@/lib/workspace.functions";
 import { getBetaStatus } from "@/lib/entitlements.functions";
@@ -22,6 +23,7 @@ function DashboardPage() {
   const navigate = useNavigate();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const coachEnabled = useCoachEnabled();
+  const { allowance, error: allowanceError } = useAiAllowance(workspaceId);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,7 +82,6 @@ function DashboardPage() {
   }
 
   const ws = data?.workspace;
-  const balance = data?.balance;
   const stats = data?.stats;
   // Trial wording shared with the billing page and the shell badge. An ended
   // trial still reads subscription_status 'trialing'; it used to show here as
@@ -171,12 +172,12 @@ function DashboardPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
-              <Coins className="h-4 w-4" /> AI generation credits
+              <Sparkles className="h-4 w-4" /> AI pages today
             </CardDescription>
-            <CardTitle className="text-3xl">{balance?.balance?.toLocaleString() ?? 0}</CardTitle>
+            <CardTitle className="text-3xl tabular-nums">{formatAllowanceCount(allowance)}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            Included with your plan
+            {allowance ? allowance.summary : (allowanceError ?? "Included with your plan")}
             {" · "}
             <Link to="/app/billing" className="hover:text-foreground">
               Billing →

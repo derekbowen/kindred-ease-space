@@ -18,6 +18,7 @@ import { PAGE_PLANS, PAGE_ADDON, EVERY_PLAN_INCLUDES, TRIAL_PAGE_LIMIT } from "@
 import { toast } from "sonner";
 import { userMessage } from "@/lib/user-message";
 import { describePlanStatus, formatPlanDate } from "@/components/billing/plan-status";
+import { formatAllowanceCount as formatAiToday, useAiAllowance } from "@/components/ai/use-ai-allowance";
 
 const billingSearchSchema = z.object({
   success: z.coerce.string().optional(),
@@ -35,6 +36,9 @@ function BillingPage() {
   const navigate = useNavigate();
   const search = useSearch({ from: "/_authenticated/app/billing" });
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  // Named for what the card shows (today's AI pages), not "allowance":
+  // nothing about AI generation resets on a calendar or is a monthly quota.
+  const { allowance: aiToday, error: aiTodayError } = useAiAllowance(workspaceId);
   const [ent, setEnt] = useState<PageEntitlement | null>(null);
   const [beta, setBeta] = useState<BetaStatus | null>(null);
   const [addonQty, setAddonQty] = useState(1);
@@ -329,17 +333,20 @@ function BillingPage() {
               </>
             ) : (
               <>
-                <div className="text-2xl font-bold tabular-nums">
-                  {ent?.aiBalance.toLocaleString() ?? "—"}
+                <div className="text-2xl font-bold tabular-nums">{formatAiToday(aiToday)}</div>
+                <div className="text-xs text-muted-foreground">
+                  AI pages generated today (fair-use cap)
                 </div>
-                <div className="text-xs text-muted-foreground">generation credits available</div>
+                {aiToday && <div className="text-xs">{aiToday.summary}</div>}
+                {aiTodayError && <div className="text-xs text-muted-foreground">{aiTodayError}</div>}
               </>
             )}
-            {/* Credits are INTERNAL metering, not a SKU. Selling them here
-                contradicted the product decision that capacity is what the
-                customer buys (docs/SOURCE_OF_TRUTH.md), and gave the billing
-                page two competing units. The balance is still worth showing
-                — it is what the plan includes — but it is not for sale.
+            {/* Credits are INTERNAL metering, not a SKU, and not a number a
+                customer should reason about: the same workspace used to read
+                "0 generation credits" here, "0 AI generation credits" on the
+                dashboard and "19 free generations" on the AI page. Every
+                screen now shows the one AI figure (the shared AI hook): pages
+                today against the fair-use cap, plus a plain state sentence.
                 More capacity is bought as pages, below. */}
             <div className="text-xs text-muted-foreground pt-1">
               Included with your plan. Need more pages? Upgrade below.

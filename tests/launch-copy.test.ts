@@ -303,7 +303,11 @@ const aiCardAt = billing.indexOf("<CardTitle>AI generation</CardTitle>");
 const aiCard = aiCardAt > 0 ? billing.slice(aiCardAt, billing.indexOf("</Card>", aiCardAt)) : "";
 t("billing AI generation card exists", aiCardAt > 0);
 t('billing AI card never says "this month", "monthly" or "allowance"', aiCard.length > 0 && !/this month|monthly|allowance/i.test(aiCard), aiCard);
-t('billing AI card shows the balance as "generation credits available"', aiCard.includes("generation credits available"));
+// The card used to show the internal credit balance ("generation credits
+// available"); every AI screen now shows one figure — pages generated today
+// against the fair-use cap — from getAiAllowance (tests/launch-followups).
+t("billing AI card shows today's AI pages against the fair-use cap, not a credit balance",
+  aiCard.includes("AI pages generated today (fair-use cap)") && /formatAiToday\(aiToday\)/.test(aiCard) && !aiCard.includes("generation credits available"));
 t("billing AI card tells a beta tenant generation is in the grant, not a credit count", /inBeta \? "Included in your beta grant"/.test(aiCard) && /inBeta \? \(/.test(aiCard) && /part of your beta grant/.test(aiCard));
 t("billing AI card quotes the fair-use cap as the current value", /fair-use cap \(currently\{" "\}\s*\{GENERATION_DAILY_CAP\}/.test(aiCard));
 
