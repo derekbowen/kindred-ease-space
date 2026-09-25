@@ -26,6 +26,7 @@ import { NAV_SECTIONS, isNavItemVisible } from "@/lib/app-nav";
 import { getBetaStatus } from "@/lib/entitlements.functions";
 import { CoachLauncher } from "@/components/coach/CoachLauncher";
 import { userMessage } from "@/lib/user-message";
+import { describePlanStatus } from "@/components/billing/plan-status";
 
 export const Route = createFileRoute("/_authenticated/app")({
   component: AppShell,
@@ -116,6 +117,16 @@ function AppShell() {
     staleTime: 60_000,
   });
   const inBeta = Boolean(beta?.beta);
+  // Same wording as the dashboard and billing page: an expired trial (still
+  // 'trialing' in the database) reads "Trial ended", never "Trial".
+  const planStatus = activeWorkspace
+    ? describePlanStatus({
+        subscriptionStatus: activeWorkspace.subscription_status,
+        trialEndsAt: activeWorkspace.trial_ends_at,
+        planKey: activeWorkspace.plan,
+        inBeta,
+      })
+    : null;
 
   return (
     <SidebarProvider>
@@ -219,13 +230,14 @@ function AppShell() {
         <SidebarInset className="min-w-0 overflow-x-hidden">
           <header className="h-14 flex items-center gap-3 border-b border-border px-4">
             <SidebarTrigger />
-            {activeWorkspace?.plan && (
-              <Badge variant="outline" className="capitalize">
-                {inBeta
-                  ? "Beta"
-                  : activeWorkspace.subscription_status === "trialing"
-                    ? "Trial"
-                    : activeWorkspace.plan}
+            {activeWorkspace?.plan && planStatus && (
+              <Badge
+                variant="outline"
+                className={
+                  planStatus.kind === "trial_ended" ? "border-destructive/50 text-destructive" : ""
+                }
+              >
+                {planStatus.badge}
               </Badge>
             )}
             {activeWorkspace?.marketplace_domain && (
