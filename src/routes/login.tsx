@@ -19,7 +19,7 @@ export const Route = createFileRoute("/login")({
       {
         name: "description",
         content:
-          "Sign in to your founders.click workspace to manage SEO, content generation, lead inbox, and marketplace ops in one dashboard.",
+          "Sign in to your founders.click workspace to manage your marketplace's SEO pages, listings sync and billing.",
       },
     ],
   }),

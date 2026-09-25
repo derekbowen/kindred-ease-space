@@ -1,6 +1,7 @@
 # Rollback and verification for the 2026-09-23 launch migrations
 
-Apply order: 000100 → 000200 → 000300 → 000400 → 000500 → 000600 → 000700 → 20260925000800.
+Apply order: 000100 → 000200 → 000300 → 000400 → 000500 → 000600 → 000700 → 20260925000800 →
+20260925000900 → 20260925000910. The last two change help-center rows only (see their sections below).
 Roll back in reverse order. Each rollback file ends with a VERIFY query and states what it will not
 restore.
 
@@ -186,3 +187,24 @@ PostgreSQL 16 copy of the help tables seeded by the repo's own seed
 migrations: first run changes exactly the rows above, a second run changes
 nothing, no PRNM row changes, and the rollback returns every row to its prior
 values except `updated_at`.
+
+## 20260925000910 — help center claims fix (data only)
+
+`supabase/migrations/20260925000910_help_center_claims_fix.sql` changes rows, not schema, and only rows with
+`workspace_id IS NULL` (the public founders.click help center). Apply it after 000900 (it rewrites
+`creating-your-first-seo-page`, which 000900 moved into `start-here`). No Pool Rental Near Me row is written.
+
+| Table | Row | Change |
+|---|---|---|
+| help_articles | `understanding-page-limits` | `content` → the real plans (Starter 100 … Agency 5,000; 1,000-page add-ons on paid plans) — only from its exact seeded text |
+| help_articles | `submitting-your-sitemap` | `content` → sitemap at `https://<domain>/a/sitemap.xml` — only from its exact seeded text |
+| help_articles | `handling-multiple-marketplaces` | `title`, `excerpt`, `content` → one marketplace per workspace — only from its exact seeded text |
+| help_articles | `creating-your-first-seo-page` | `content` → Quick Page Builder → Generate & publish — only from its exact seeded text |
+| help_articles | `mapping-custom-fields-to-page-variables`, `using-the-matrix-builder`, `writing-seo-content-with-ai`, `understanding-page-templates` | `status` published → draft, `is_published` true → false |
+| help_categories | `page-builder` | `is_published` true → false, only when it has no published platform article left |
+
+The file ends with a SELECT of the eight articles; expect the four rewrites to start with their new first lines and the
+four others to read `is_published = false, status = draft`.
+
+Rollback: `supabase/rollback/20260925000910_help_center_claims_fix_rollback.sql` (restores the 2026-09-25 values verbatim;
+each content restore only while the row still holds the migration's text).
