@@ -81,6 +81,15 @@ jobs:
         with:
           bun-version: latest
 
+      # Every package must come from the public npm registry. bun.lock used to
+      # resolve 181 packages from Lovable's private npm cache, so this step —
+      # and every release, hotfix and redeploy — depended on a registry we do
+      # not control. Refuse a foreign source before anything is fetched
+      # (exit 1 = a finding, 2 = the check could not run; both fail).
+      # tests/dependency-registry.test.ts runs the same check in `bun run test`.
+      - name: Guard — dependencies resolve from registry.npmjs.org only
+        run: bun scripts/check-dependency-registry.mjs
+
       - name: Install (frozen lockfile)
         run: bun install --frozen-lockfile
 
@@ -132,10 +141,13 @@ jobs:
           set -o pipefail
           if ! bunx --bun wrangler@4 secret list --format json > /tmp/secrets.json 2>/tmp/secret-err; then
             # A brand-new Worker has no script to list secrets against; that is
-            # expected on a first deploy. ANY OTHER failure — an unscoped
-            # token, a rate limit, an API outage — is this check not running,
-            # and must not read as "all required secrets present".
-            if grep -qiE "script_not_found|10007|could not find|not found" /tmp/secret-err; then
+            # expected on a first deploy, and Cloudflare answers it with API
+            # code 10007 (script_not_found). ANY OTHER failure — an unscoped
+            # token, a rate limit, an API outage, a registry or bunx "not
+            # found" — is this check not running, and must not read as "all
+            # required secrets present". Match the code only: a bare
+            # "not found" also matched `bunx` failing to fetch wrangler.
+            if grep -qiE "script_not_found|\b10007\b" /tmp/secret-err; then
               echo "::warning::Worker does not exist yet (first deploy) — no secrets to verify."
               exit 0
             fi

@@ -32,7 +32,37 @@ release; the other is a decision.
 
 ## Remaining Lovable dependencies, and why
 
-Two remain. Only one is in the deployment chain, and it is build-only.
+One remains, and it is build-only: an npm package installed from the public
+registry like every other dependency.
+
+### The package registry — every dependency from registry.npmjs.org (2026-09-25)
+
+Until 2026-09-25, `bun.lock` resolved 181 of its 804 packages from Lovable's
+private npm cache (`europe-west{1,4}-npm.pkg.dev/lovable-core-prod/sandbox-npm-cache`)
+— among them `@supabase/supabase-js`, `h3`, `marked`, `nitro`, the rolldown
+and oxc native bindings, and the Vite config wrapper below. Their sha512
+integrity values protected the content, not the availability: had Lovable
+restricted or deleted that registry, `bun install --frozen-lockfile` would
+have failed on every CI run, and no release, hotfix or revert-and-redeploy
+could have shipped (only `wrangler rollback`, which needs no build, would
+still have worked). This document used to claim the pinned version would keep
+building if Lovable disappeared; it would not have.
+
+Those entries now resolve from `registry.npmjs.org`, with the same versions
+and the same integrity values: all 180 distinct name@version were checked
+against the public registry's published sha512 (identical, tarball paths
+identical), and a `bun install --frozen-lockfile` from an empty cache, with
+every host except registry.npmjs.org unreachable, installs the tree and builds.
+
+Kept that way by `scripts/check-dependency-registry.mjs`, which
+`deploy-app.yml` runs before the install and `tests/dependency-registry.test.ts`
+runs in `bun run test`: a `bun.lock` entry, `package.json` spec, `.npmrc`,
+`bunfig.toml` or workflow setting that points anywhere but registry.npmjs.org
+fails the build. When you add or upgrade a dependency, run `bun install` with
+no registry override in effect (no `.npmrc`, `bunfig.toml` or
+`NPM_CONFIG_REGISTRY` pointing at a mirror): bun writes a mirror's tarball URL
+into `bun.lock` for anything it fetched from one — that is how the 181 got
+there — and the guard will refuse the commit.
 
 ### `@lovable.dev/vite-tanstack-config` — build tooling, retained
 
@@ -48,8 +78,12 @@ is not bundled into the output.
 chain it configures — the file itself warns that adding those plugins manually
 produces duplicates that break the app. Doing that during launch recovery would
 risk a build regression to remove a dependency that has no production presence.
-It is an ordinary npm package pinned in `bun.lock`; if Lovable vanished
-tomorrow, the pinned version keeps building.
+It is a public npm package (`@lovable.dev/vite-tanstack-config@2.13.1` on
+registry.npmjs.org), pinned by version and sha512 in `bun.lock` and installed
+from the public registry like everything else — nothing of Lovable's own
+infrastructure is in the install path any more. The remaining dependency is on
+its publisher: if that version were ever unpublished from npm, a fresh install
+would fail until the wrapper is inlined (a deprecation would not stop installs).
 
 *Post-launch:* inline the plugin list and drop the wrapper, verifying the
 built output is byte-identical first.
@@ -62,10 +96,15 @@ Daily Briefing actions, the SEO coach, the page auditor and the daily briefing
 itself — now calls OpenAI through the official SDK (`src/lib/ai/openai.server.ts`)
 and ONE metered path (`src/lib/ai/spend.server.ts`): an atomic reservation of the
 maximum cost before every call, settlement after it (migration
-`20260925000800_ai_spend_reservations.sql`). The Lovable AI gateway, OpenRouter,
-the `ai-proxy` / `coach-chat` / `help-assistant-*` functions and
-`LOVABLE_API_KEY` / `OPENROUTER_API_KEY` in the Worker are gone
-(`tests/ai-source-guards.test.ts`).
+`20260925000800_ai_spend_reservations.sql`). The Lovable AI gateway and
+OpenRouter are gone from the code, as are the `ai-proxy` / `coach-chat` /
+`help-assistant-chat` / `help-assistant-embed` functions, and the Worker reads
+neither `LOVABLE_API_KEY` nor `OPENROUTER_API_KEY`
+(`tests/ai-source-guards.test.ts`). Production is a separate matter until the
+release is done: those four functions stay deployed and callable until they
+are deleted with `supabase functions delete` (each followed by a 404 check),
+and the Worker's `OPENROUTER_API_KEY` secret is removed only after the burn-in
+— both are steps in `docs/RELEASE_CHECKLIST.md`.
 
 Two deployed-only PRNM functions on the same Supabase project
 (`generate-content-batch`, `drive-content-generation`) still use
@@ -86,6 +125,15 @@ operator probe: `scripts/probe-prnm-isolation.ts`). Leave that secret in place.
   SQL: an abandoned hold is released within 15 minutes, an unsettled call
   settled within 35.
 - **Page generation pause** — unchanged: `platform_settings.generation_paused`.
+
+## Releasing
+
+The ordered release-day steps — secrets (and how to prove CRON_SECRET is the
+same in the Worker, Vault and the briefing function without printing it),
+every migration before the Worker deploy, the edge functions with the right
+`verify_jwt`, the deploy, smoke checks, the kill-switch drill, the legacy
+function deletes and the burn-in cleanup — are in
+[`docs/RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md). Follow it in order.
 
 ## First-time setup
 

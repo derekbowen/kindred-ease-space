@@ -48,7 +48,7 @@ The app uses Vite dev server + Supabase (remote or local via supabase CLI).
 ### Required env vars (see .env.example)
 
 - Supabase connection (client + server)
-- OPENAI_API_KEY (or a workspace's own key under Settings → API Keys)
+- OPENAI_API_KEY — the platform key every AI feature runs on (a workspace's own key is managed under Settings → AI Providers, which is hidden at launch)
 - Stripe keys + webhook secret (for billing flows)
 - CRON_SECRET (for scheduled edge functions like briefings)
 
@@ -67,12 +67,11 @@ Many features gracefully degrade without keys.
 
 Configured for Cloudflare (wrangler.jsonc + Cloudflare Vite plugin).
 
-Typical flow (Lovable or manual):
-
-1. `npm run build`
-2. `npx wrangler deploy` (or platform deploy)
-
-Update `wrangler.jsonc` "name" and any routes/domains as needed.
+Production ships through `.github/workflows/deploy-app.yml` on every push to
+`main` — not through Lovable. See `docs/DEPLOYMENT.md` for how, and
+`docs/RELEASE_CHECKLIST.md` for the ordered release-day steps (secrets,
+migrations, edge functions, deploy, smoke, cleanup). Every dependency installs
+from registry.npmjs.org (`scripts/check-dependency-registry.mjs`).
 
 Secrets are managed in the platform (Supabase Edge Function env, Cloudflare, etc.).
 

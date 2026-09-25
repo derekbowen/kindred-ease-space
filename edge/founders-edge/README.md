@@ -94,19 +94,14 @@ Two independent pipelines. They must stay independent — the app and the Worker
 fail in different ways, and a single deploy path would couple a routine app
 release to the request path of every connected customer domain.
 
-**The application** (`www.founders.click`) ships through Lovable:
-
-```
-push to github.com/derekbowen/kindred-ease-space (main)
-  → Lovable pulls on the push webhook
-  → deploy (Lovable "Publish", or deploy_project over MCP)
-```
-
-The pull is webhook-driven, not polled. Reconnecting the GitHub integration
-re-arms the webhook but does **not** backfill commits pushed while it was
-disconnected — push something after reconnecting, or the workspace stays behind
-main with no error anywhere. Verify a deploy actually carried your code by
-hitting a route the release added rather than trusting a green publish.
+**The application** (`www.founders.click`) ships through
+`.github/workflows/deploy-app.yml` on every push to `main`: install (frozen
+lockfile, packages from registry.npmjs.org only), typecheck, the full test
+chain, build, a Worker-secrets preflight, `wrangler deploy`, then an identity
+check and the production smoke. Publishing from Lovable is not a release (see
+`docs/DEPLOYMENT.md`; the ordered release-day steps are in
+`docs/RELEASE_CHECKLIST.md`). Verify a deploy actually carried your code with
+`/api/public/edge-health`, which names the commit the running build came from.
 
 **The Worker** ships through `.github/workflows/deploy-edge-worker.yml`,
 manual dispatch, confirm input `deploy`. It never deploys on merge: this code
@@ -118,12 +113,12 @@ Three Cloudflare credentials exist and none of them substitute for another:
 
 | name | lives in | scope | used by |
 | --- | --- | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | Lovable secrets | custom hostnames, SSL, routes | the app, for customer provisioning |
+| `CLOUDFLARE_API_TOKEN` | a Worker secret on `founders-click` (`wrangler secret put`) | custom hostnames, SSL, routes | the app, for customer provisioning |
 | `CLOUDFLARE_WORKER_DEPLOY_TOKEN` | GitHub Actions secrets | Workers Scripts:Edit, Workers Routes:Edit | the deploy workflow only |
 | `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_ZONE_ID` | GitHub Actions secrets | not secret | the deploy workflow |
 
-GitHub Actions cannot read Lovable secrets. A token set in Lovable is invisible
-to CI, and vice versa — the workflow preflights for exactly this because the
+CI never reads the app's Worker secrets, and the Worker cannot read GitHub
+Actions secrets — the workflow preflights for its own credentials because the
 failure otherwise surfaces as an opaque wrangler auth error.
 
 The provisioning token deliberately has **no** Workers permission, so it cannot
