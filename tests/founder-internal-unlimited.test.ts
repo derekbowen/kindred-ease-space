@@ -51,7 +51,7 @@ const { isInternalUnlimited, isInternalUnlimitedOrFalse, affiliateAddonUsable, G
   "../src/lib/entitlement-grants.server"
 );
 const { INTERNAL_UNLIMITED_PAGE_LIMIT, INTERNAL_UNLIMITED_PLAN_LABEL } = await import("../src/lib/billing-capacity");
-const { GrantInputSchema, GRANT_TYPE_OPTIONS, grantPageLimit, INTERNAL_GRANT_PAGE_LIMIT } = await import(
+const { GrantInputSchema, GRANT_TYPE_OPTIONS, grantPageLimit, INTERNAL_GRANT_PAGE_LIMIT, assertGrantTypeWritableHere } = await import(
   "../src/lib/admin-entitlement-grants.functions"
 );
 
@@ -147,8 +147,8 @@ try {
   // The founder workspace: an ended trial, 25-page base (it must still work).
   await db.exec(`
     INSERT INTO auth.users (id) VALUES ('${OWNER}'), ('${GRANTER}'), ('${STRANGER}'), ('${TEAMMATE}');
-    INSERT INTO public.workspaces (id, name, subscription_status, trial_ends_at)
-      VALUES ('${FOUNDER_WS}', 'My Marketplace', 'trialing', now() - interval '10 days');
+    INSERT INTO public.workspaces (id, name, subscription_status, trial_ends_at, marketplace_domain)
+      VALUES ('${FOUNDER_WS}', 'My Marketplace', 'trialing', now() - interval '10 days', 'test.poolrentalnearme.com');
   `);
   // --- guard 2: the owner is someone else ----------------------------------
   await db.exec(`
@@ -193,6 +193,24 @@ try {
       ('${ADMIN_WS}', '${GRANTER}', 'owner'),
       ('${TEAMMATE_WS}', '${TEAMMATE}', 'owner'),
       ('${FOUNDER_WS}', '${TEAMMATE}', 'member');
+  `);
+
+  // --- guard 1b: every other guard met, but the id is not the domain the owner named
+  await db.exec(`UPDATE public.workspaces SET marketplace_domain = 'someone-else.example.org' WHERE id = '${FOUNDER_WS}'`);
+  await apply();
+  t("guard: the workspace id exists but its domain is not test.poolrentalnearme.com → nothing written", (await internalRows()).length === 0);
+  await db.exec(`UPDATE public.workspaces SET marketplace_domain = 'test.poolrentalnearme.com' WHERE id = '${FOUNDER_WS}'`);
+  // --- guard 3b: has_role answers NULL (not false) for the granter ----------
+  await db.exec(`
+    ALTER FUNCTION public.has_role(uuid, public.app_role) RENAME TO has_role_real;
+    CREATE FUNCTION public.has_role(_user_id uuid, _role public.app_role)
+      RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT NULL::boolean $$;
+  `);
+  await apply();
+  t("guard: a NULL from has_role stops the grant (IS NOT TRUE, not NOT)", (await internalRows()).length === 0);
+  await db.exec(`
+    DROP FUNCTION public.has_role(uuid, public.app_role);
+    ALTER FUNCTION public.has_role_real(uuid, public.app_role) RENAME TO has_role;
   `);
 
   // --- every guard met: exactly one row -----------------------------------
@@ -625,9 +643,29 @@ try {
   }
   {
     t("the grant types include 'internal'", (GRANT_TYPES as readonly string[]).includes("internal") && GRANT_TYPES.length === 5);
+    // Round-5 security review M2: the most powerful grant is migration-only.
     t(
-      "the admin picker labels it 'Founder / Internal Unlimited'",
-      GRANT_TYPE_OPTIONS.find((o) => o.type === "internal")?.label === "Founder / Internal Unlimited" && GRANT_TYPE_OPTIONS.length === 5,
+      "the admin picker does NOT offer the internal grant (migration-only)",
+      !GRANT_TYPE_OPTIONS.some((o) => (o.type as string) === "internal") && GRANT_TYPE_OPTIONS.length === 4,
+    );
+    t(
+      "…and the server refuses it on both write paths, before any write",
+      (() => {
+        try {
+          assertGrantTypeWritableHere("internal");
+          return false;
+        } catch (e) {
+          return /reviewed database migration only/.test(String((e as Error).message));
+        }
+      })() &&
+        (() => {
+          try {
+            assertGrantTypeWritableHere("beta");
+            return true;
+          } catch {
+            return false;
+          }
+        })(),
     );
     const base = { workspaceId: WS, pageLimit: 50, noExpiry: true, reason: "founder testing" };
     t("the admin grant input accepts grantType 'internal'", GrantInputSchema.safeParse({ ...base, grantType: "internal" }).success);
@@ -645,6 +683,16 @@ try {
     t(
       "the admin check is has_role 'admin' and fails closed",
       /const \{ data, error \} = await sb\(\)\.rpc\("has_role", \{ _user_id: userId, _role: "admin" \}\);\s*if \(error\) \{[\s\S]*?throw new Error\("forbidden"\);\s*\}\s*if \(!data\) throw new Error\("forbidden"\);/.test(admin),
+    );
+    t(
+      "create and replace refuse the internal type right after the admin check (migration-only)",
+      (admin.match(/await assertAdmin\(context\.userId\);\s*assertGrantTypeWritableHere\(data\.grantType\);/g) ?? []).length === 2,
+    );
+    const ops = read("src/routes/_authenticated/app.ops.plan-requests.tsx");
+    t(
+      "the grant screen resets its form when the workspace changes (no stale type, allowance or no-expiry)",
+      /<Select value=\{selected\} onValueChange=\{selectWorkspace\}>/.test(ops) &&
+        /function selectWorkspace\(id: string\) \{\s*setSelected\(id\);\s*setGrantType\(DEFAULT_BETA_GRANT\.grantType\);\s*setPageLimit\(String\(DEFAULT_BETA_GRANT\.pageLimit\)\);[\s\S]{0,160}setNoExpiry\(false\);/.test(ops),
     );
     t(
       "create and replace write the page limit through grantPageLimit",

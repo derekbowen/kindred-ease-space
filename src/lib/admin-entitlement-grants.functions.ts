@@ -19,9 +19,13 @@
  *
  * The 'internal' type is the founder / internal unlimited entitlement: no
  * page, publishing, generation or AI usage limits for that ONE workspace
- * (workspace_is_internal_unlimited, 20260924000700). Created and revoked
- * here like any grant — platform admins only, append-only, reason required —
- * and always recorded with page_limit 1000000 (the schema requires it).
+ * (workspace_is_internal_unlimited, 20260924000700), always recorded with
+ * page_limit 1000000 (the schema requires it). It is the most powerful grant
+ * there is, so it is written ONLY by a reviewed, guarded migration (e.g.
+ * 20260925000930) or SQL — never from this screen, where one stale click on
+ * the wrong "My Marketplace" would make a customer unlimited for good
+ * (round-5 security review M2). grantEntitlement and replaceGrant refuse it;
+ * revokeGrant still revokes it like any grant.
  */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -45,14 +49,24 @@ export const DEFAULT_BETA_GRANT = {
   durationDays: 30,
 };
 
-/** The admin picker's grant types, in display order. */
+/**
+ * The admin picker's grant types, in display order. 'internal' is not one:
+ * it is migration-only (see above).
+ */
 export const GRANT_TYPE_OPTIONS: ReadonlyArray<{ type: GrantType; label: string }> = [
   { type: "beta", label: "Beta" },
   { type: "trial", label: "Trial" },
   { type: "promotional", label: "Promotional" },
   { type: "manual", label: "Manual" },
-  { type: "internal", label: INTERNAL_UNLIMITED_PLAN_LABEL },
 ];
+
+/** What the grant screen says if an internal grant is ever attempted through it. */
+export const INTERNAL_GRANT_MIGRATION_ONLY = `${INTERNAL_UNLIMITED_PLAN_LABEL} is granted by a reviewed database migration only, never from this screen.`;
+
+/** Refuses the migration-only grant type on every write path of this module. */
+export function assertGrantTypeWritableHere(grantType: GrantType): void {
+  if (grantType === "internal") throw new Error(INTERNAL_GRANT_MIGRATION_ONLY);
+}
 
 /** Every internal grant is recorded as the maximum page grant (the schema's CHECK). */
 export const INTERNAL_GRANT_PAGE_LIMIT = 1_000_000;
@@ -205,6 +219,7 @@ export const grantEntitlement = createServerFn({ method: "POST" })
   .inputValidator((d) => GrantInputSchema.parse(d))
   .handler(async ({ data, context }) => {
     await assertAdmin(context.userId);
+    assertGrantTypeWritableHere(data.grantType);
 
     const expiresAt = data.noExpiry ? null : (data.expiresAt ?? null);
     if (!data.noExpiry && expiresAt === null) {
@@ -284,6 +299,7 @@ export const replaceGrant = createServerFn({ method: "POST" })
   .inputValidator((d) => GrantInputSchema.extend({ replacesGrantId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertAdmin(context.userId);
+    assertGrantTypeWritableHere(data.grantType);
 
     const { data: before, error: readErr } = await sb()
       .from("workspace_entitlement_grants")

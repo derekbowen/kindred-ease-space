@@ -101,6 +101,8 @@ export const SUPABASE_STUBS = `
   ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS page_limit_addon int NOT NULL DEFAULT 0;
   ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS page_limit_bonus int NOT NULL DEFAULT 0;
   ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS page_bonus_expires_at timestamptz;
+  -- The founder migration's (20260925000930) cross-check reads it.
+  ALTER TABLE public.workspaces ADD COLUMN IF NOT EXISTS marketplace_domain text;
   CREATE TABLE IF NOT EXISTS public.workspace_members (
     workspace_id uuid NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
     user_id uuid NOT NULL,

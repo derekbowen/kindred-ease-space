@@ -15,11 +15,12 @@
 -- GUARDED. The row is written only when ALL of these hold, and otherwise
 -- nothing is written (a NOTICE says which guard stopped it and the
 -- verification row below reads false):
---   1. the workspace exists;
+--   1. the workspace exists and its marketplace domain is
+--      test.poolrentalnearme.com;
 --   2. its owner in workspace_members is exactly that user — the only
 --      owner row of the workspace;
 --   3. the granting account exists and holds the platform 'admin' role
---      (has_role — the same check the admin grant screen enforces);
+--      (has_role IS TRUE — a NULL answer stops it too);
 --   4. the workspace holds no active internal grant yet (idempotent: a
 --      second run writes nothing).
 -- Every other workspace — including any other workspace owned by an admin —
@@ -36,9 +37,13 @@ DECLARE
   c_workspace CONSTANT uuid := '509e5a42-7eb9-4bdb-8b6c-981a15b69dce';
   c_owner     CONSTANT uuid := '7b3618d3-4d54-4974-8daf-2845777ccc28';
   c_granter   CONSTANT uuid := '26c3147d-89eb-4491-9882-f7da344657fc';
+  c_domain    CONSTANT text := 'test.poolrentalnearme.com';
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM public.workspaces WHERE id = c_workspace) THEN
-    RAISE NOTICE 'founder grant NOT written: workspace % does not exist', c_workspace;
+  -- The id AND the marketplace domain the owner named: a mistyped id that
+  -- happens to exist cannot pass.
+  IF NOT EXISTS (SELECT 1 FROM public.workspaces
+                  WHERE id = c_workspace AND marketplace_domain = c_domain) THEN
+    RAISE NOTICE 'founder grant NOT written: workspace % (%) does not exist', c_workspace, c_domain;
     RETURN;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM public.workspace_members
@@ -48,8 +53,9 @@ BEGIN
     RAISE NOTICE 'founder grant NOT written: the owner of % is not (only) %', c_workspace, c_owner;
     RETURN;
   END IF;
+  -- IS NOT TRUE, not NOT: a NULL from has_role must stop the grant too.
   IF NOT EXISTS (SELECT 1 FROM auth.users WHERE id = c_granter)
-     OR NOT public.has_role(c_granter, 'admin') THEN
+     OR public.has_role(c_granter, 'admin') IS NOT TRUE THEN
     RAISE NOTICE 'founder grant NOT written: % is not a platform admin', c_granter;
     RETURN;
   END IF;

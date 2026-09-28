@@ -39,7 +39,6 @@ import {
   revokeGrant,
   DEFAULT_BETA_GRANT,
   GRANT_TYPE_OPTIONS,
-  INTERNAL_GRANT_PAGE_LIMIT,
 } from "@/lib/admin-entitlement-grants.functions";
 import { toast } from "sonner";
 
@@ -119,6 +118,19 @@ function EntitlementGrantsPage() {
   }, [selected, refresh]);
 
   const ws = useMemo(() => workspaces.find((w) => w.id === selected), [workspaces, selected]);
+
+  // A grant form never carries over to another workspace: switching resets it
+  // to the product default, so the previous workspace's type, allowance or
+  // "No expiration" cannot be granted to the next one by a stale click
+  // (round-5 security review M2).
+  function selectWorkspace(id: string) {
+    setSelected(id);
+    setGrantType(DEFAULT_BETA_GRANT.grantType);
+    setPageLimit(String(DEFAULT_BETA_GRANT.pageLimit));
+    setExpiresOn(dateInputValue(isoDaysFromNow(DEFAULT_BETA_GRANT.durationDays)));
+    setNoExpiry(false);
+    setReason("");
+  }
   const ent = summary?.entitlement;
 
   async function onGrant() {
@@ -206,7 +218,7 @@ function EntitlementGrantsPage() {
       <Card className="p-4">
         <Label htmlFor="ws-select">Workspace</Label>
         <div className="mt-2 flex gap-2">
-          <Select value={selected} onValueChange={setSelected}>
+          <Select value={selected} onValueChange={selectWorkspace}>
             <SelectTrigger id="ws-select" className="max-w-xl">
               <SelectValue placeholder="Select a workspace…" />
             </SelectTrigger>
@@ -214,7 +226,8 @@ function EntitlementGrantsPage() {
               {workspaces.map((w) => (
                 <SelectItem key={w.id} value={w.id}>
                   {w.name}
-                  {w.is_internal ? " (internal)" : ""} — {w.subscription_status ?? "no status"}
+                  {w.is_internal ? " (internal)" : ""} — {w.subscription_status ?? "no status"} ·{" "}
+                  {w.slug ?? w.id.slice(0, 8)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -289,14 +302,7 @@ function EntitlementGrantsPage() {
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <Label htmlFor="grant-type">Grant type</Label>
-                <Select
-                  value={grantType}
-                  onValueChange={(v) => {
-                    setGrantType(v as GrantTypeOption);
-                    // An internal grant is always the maximum page grant.
-                    if (v === "internal") setPageLimit(String(INTERNAL_GRANT_PAGE_LIMIT));
-                  }}
-                >
+                <Select value={grantType} onValueChange={(v) => setGrantType(v as GrantTypeOption)}>
                   <SelectTrigger id="grant-type" className="mt-1">
                     <SelectValue />
                   </SelectTrigger>
@@ -316,7 +322,6 @@ function EntitlementGrantsPage() {
                   className="mt-1"
                   inputMode="numeric"
                   value={pageLimit}
-                  disabled={grantType === "internal"}
                   onChange={(e) => setPageLimit(e.target.value)}
                 />
               </div>
