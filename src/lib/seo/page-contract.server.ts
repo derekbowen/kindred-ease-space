@@ -6,6 +6,8 @@
  * and only this file touches the database.
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { resolveFilter } from "@/lib/coverage/target";
+import { countMatchingListings, readAll } from "@/lib/coverage/inventory.server";
 import {
   validatePageContract,
   normalizeForCompare,
@@ -75,23 +77,20 @@ export async function countListingsForFilter(
   workspaceId: string,
   filter: Record<string, any> | null | undefined,
 ): Promise<number> {
-  const f = filter ?? {};
-  let q = sb()
-    .from("tenant_listings")
-    .select("id", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .eq("state_published", true);
-  if (f.city) q = q.ilike("city", String(f.city));
-  if (f.state) q = q.ilike("state", String(f.state));
-  if (f.category) q = q.eq("category", String(f.category));
-  const { count, error } = await q;
-  if (error) {
-    // Fail CLOSED: reporting 0 would block a good page, reporting a fake
-    // number would let a thin one through. Neither is acceptable silently, so
-    // surface it and let the caller refuse the publish with a real reason.
-    throw new Error(`could not count listings for this page: ${error.message}`);
+  // THE inventory query (src/lib/coverage/inventory.server.ts) through the
+  // page's filter, v1 or v2 — the same set the public page renders. A filter
+  // that can't be read renders no listings, so it counts none. A read error
+  // throws (fail CLOSED): reporting 0 would block a good page, a fake number
+  // would let a thin one through.
+  const resolved = resolveFilter(filter ?? {});
+  if (!resolved) return 0;
+  try {
+    return await countMatchingListings(workspaceId, resolved);
+  } catch (e) {
+    throw new Error(
+      `could not count listings for this page: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
-  return count ?? 0;
 }
 
 /**
@@ -102,16 +101,10 @@ export async function loadSiblingContext(
   workspaceId: string,
   excludePageId?: string,
 ): Promise<ValidationContext & { publishedCount: number }> {
-  let q = sb()
-    .from("tenant_pages")
-    .select("id, slug, title, meta_description, h1, variables, listing_filter")
-    .eq("workspace_id", workspaceId)
-    .eq("status", "published");
-  if (excludePageId) q = q.neq("id", excludePageId);
-  const { data, error } = await q;
-  if (error) throw new Error(`could not read existing pages: ${error.message}`);
-
-  const rows = (data ?? []) as Array<{
+  // Every published page, in ordered ranges: PostgREST answers at most 1,000
+  // rows per request, and a duplicate hiding past the first thousand is
+  // still a duplicate.
+  let rows: Array<{
     slug: string;
     title: string | null;
     meta_description: string | null;
@@ -119,6 +112,23 @@ export async function loadSiblingContext(
     variables: Record<string, any> | null;
     listing_filter: Record<string, any> | null;
   }>;
+  try {
+    const read = await readAll<(typeof rows)[number]>(() => {
+      let q = sb()
+        .from("tenant_pages")
+        .select("id, slug, title, meta_description, h1, variables, listing_filter")
+        .eq("workspace_id", workspaceId)
+        .eq("status", "published")
+        .order("id", { ascending: true });
+      if (excludePageId) q = q.neq("id", excludePageId);
+      return q;
+    }, 100_000);
+    if (!read.complete) throw new Error("too many published pages to compare");
+    rows = read.rows;
+  } catch (e) {
+    throw new Error(`could not read existing pages: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
   const siblingTitles = new Set<string>();
   const siblingDescriptions = new Set<string>();
   const siblingH1s = new Set<string>();
@@ -180,7 +190,10 @@ export async function checkPageBeforePublish(
   };
 
   const intent = intentForPage(page.title, page.variables, page.listingFilter);
-  const { ok, violations } = validatePageContract(candidate, { ...ctx, intent: intent ?? undefined });
+  const { ok, violations } = validatePageContract(candidate, {
+    ...ctx,
+    intent: intent ?? undefined,
+  });
   return { ok, violations, blocking: violations.filter((v) => v.severity === "BLOCKING") };
 }
 
@@ -256,7 +269,11 @@ export async function checkBatchBeforePublish(
       internalLinkCount: Math.min(base.publishedCount + results.size, RELATED_PAGES_RENDERED),
     };
     const { ok, violations } = validatePageContract(candidate, ctx);
-    results.set(p.id, { ok, violations, blocking: violations.filter((v) => v.severity === "BLOCKING") });
+    results.set(p.id, {
+      ok,
+      violations,
+      blocking: violations.filter((v) => v.severity === "BLOCKING"),
+    });
 
     if (ok) {
       const t = normalizeForCompare(p.title);
