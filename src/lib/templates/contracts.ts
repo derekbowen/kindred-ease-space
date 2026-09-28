@@ -99,7 +99,12 @@ export function checkFilterForTemplate(kind: PageKind, rawFilter: unknown): Cont
   const c = TEMPLATE_CONTRACTS[kind];
   const filter: ResolvedFilter | null = resolveFilter(rawFilter ?? {});
   if (!filter) {
-    return [{ code: "filter_invalid", message: "This page's listing filter isn't valid. Pick the location or category again." }];
+    return [
+      {
+        code: "filter_invalid",
+        message: "This page's listing filter isn't valid. Pick the location or category again.",
+      },
+    ];
   }
   const problems: ContractProblem[] = [];
   const scoped = new Set(Object.keys(filter.constraints) as TargetField[]);
@@ -115,10 +120,16 @@ export function checkFilterForTemplate(kind: PageKind, rawFilter: unknown): Cont
     }
   }
   if (field_required(c, "city") && filter.constraints.city === null) {
-    problems.push({ code: "city_unknown", message: `A ${c.name} needs a city — these listings don't have one.` });
+    problems.push({
+      code: "city_unknown",
+      message: `A ${c.name} needs a city — these listings don't have one.`,
+    });
   }
   if (field_required(c, "category") && filter.constraints.category === null) {
-    problems.push({ code: "category_unknown", message: `A ${c.name} needs a category — these listings don't have one.` });
+    problems.push({
+      code: "category_unknown",
+      message: `A ${c.name} needs a category — these listings don't have one.`,
+    });
   }
   // A place is named whole or not at all: "Portland" alone is ambiguous.
   if (c.wholePlace && filter.version === 2) {
@@ -126,7 +137,8 @@ export function checkFilterForTemplate(kind: PageKind, rawFilter: unknown): Cont
     if (inScope.length > 0 && inScope.length < PLACE.length) {
       problems.push({
         code: "partial_place",
-        message: "A location must include its city, region and country (as your listings record them), so two places with the same name never mix.",
+        message:
+          "A location must include its city, region and country (as your listings record them), so two places with the same name never mix.",
       });
     }
   }

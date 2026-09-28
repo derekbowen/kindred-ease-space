@@ -58,7 +58,10 @@ export function matchingListingsQuery(
 }
 
 /** Exact number of published listings matching the filter. Throws on error. */
-export async function countMatchingListings(workspaceId: string, filter: ResolvedFilter): Promise<number> {
+export async function countMatchingListings(
+  workspaceId: string,
+  filter: ResolvedFilter,
+): Promise<number> {
   const { count, error } = await matchingListingsQuery(workspaceId, filter, "id", {
     count: "exact",
     head: true,
@@ -124,12 +127,17 @@ export type PriceSummary = {
 };
 
 export function summarizePrices(
-  rows: Array<{ price_amount: number | null; price_currency: string | null; price_unit: string | null }>,
+  rows: Array<{
+    price_amount: number | null;
+    price_currency: string | null;
+    price_unit: string | null;
+  }>,
 ): Omit<PriceSummary, "complete"> {
   const groups = new Map<string, PriceGroup>();
   let unpriced = 0;
   for (const r of rows) {
-    const amount = typeof r.price_amount === "number" && Number.isFinite(r.price_amount) ? r.price_amount : null;
+    const amount =
+      typeof r.price_amount === "number" && Number.isFinite(r.price_amount) ? r.price_amount : null;
     const currency = (r.price_currency ?? "").trim().toUpperCase();
     if (amount === null || !currency) {
       unpriced++;
@@ -147,19 +155,28 @@ export function summarizePrices(
     }
   }
   return {
-    groups: [...groups.values()].sort((a, b) => b.count - a.count || a.currency.localeCompare(b.currency)),
+    groups: [...groups.values()].sort(
+      (a, b) => b.count - a.count || a.currency.localeCompare(b.currency),
+    ),
     unpriced,
   };
 }
 
 /** Price facts over ALL matching published listings (bounded). Throws on error. */
-export async function priceSummary(workspaceId: string, filter: ResolvedFilter): Promise<PriceSummary> {
+export async function priceSummary(
+  workspaceId: string,
+  filter: ResolvedFilter,
+): Promise<PriceSummary> {
   const { rows, complete } = await readAll<{
     price_amount: number | null;
     price_currency: string | null;
     price_unit: string | null;
   }>(() =>
-    matchingListingsQuery(workspaceId, filter, "id, price_amount, price_currency, price_unit").order("id", {
+    matchingListingsQuery(
+      workspaceId,
+      filter,
+      "id, price_amount, price_currency, price_unit",
+    ).order("id", {
       ascending: true,
     }),
   );
@@ -169,8 +186,10 @@ export async function priceSummary(workspaceId: string, filter: ResolvedFilter):
 /** Digits after the decimal point for a currency's minor unit (JPY 0, USD 2, KWD 3). */
 export function currencyMinorDigits(currency: string): number {
   try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency }).resolvedOptions()
-      .maximumFractionDigits ?? 2;
+    return (
+      new Intl.NumberFormat("en-US", { style: "currency", currency }).resolvedOptions()
+        .maximumFractionDigits ?? 2
+    );
   } catch {
     return 2;
   }
