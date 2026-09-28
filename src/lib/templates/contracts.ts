@@ -68,6 +68,17 @@ export const TEMPLATE_CONTRACTS: Record<PageKind, TemplateContract> = {
   },
 };
 
+/**
+ * Kinds with a registered public renderer (src/components/templates/
+ * registry.tsx; tests/templates-contract.test.ts keeps the two lists equal).
+ * A kind missing here is never offered and never rendered as another.
+ */
+export const RENDERABLE_PAGE_KINDS: readonly PageKind[] = [
+  "city_hub",
+  "category_page",
+  "resource_article",
+];
+
 export function isPageKind(v: unknown): v is PageKind {
   return typeof v === "string" && (PAGE_KINDS as readonly string[]).includes(v);
 }

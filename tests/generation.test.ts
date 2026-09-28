@@ -70,7 +70,6 @@ import {
   dailyCapRemaining,
   deterministicRequestId,
   estimatedCreditsPerPage,
-  formatInventoryFacts,
   generatePageContent,
   generatedPageBaseSlug,
   isGenerationPaused,
@@ -939,18 +938,17 @@ console.log("\n=== brief + inventory grounding ===");
     /listings/i.test(buildCityBrief({ city: "Austin" }).title.toLowerCase()),
   );
 
-  const facts = formatInventoryFacts("Austin", [
-    { title: "Pontoon", price_amount: 15000, price_currency: "USD" },
-    { title: "Kayak", price_amount: 2500, price_currency: "USD" },
-    { title: "Untitled", price_amount: null, price_currency: null },
-  ]);
-  t("keeps the ONLY-numbers grounding rule", facts.includes("the ONLY numbers you may use"));
-  t("states the real listing count", facts.includes("3 published listings"));
-  t("price range in whole currency units", facts.includes("Price range 25–150 USD"));
-  t("lists example listings", facts.includes("- Pontoon") && facts.includes("- Kayak"));
-  const none = formatInventoryFacts("Nowhere", []);
-  t("no prices → forbids estimating", none.includes("do not state or estimate prices"));
-  t("no listings → says so", none.includes("No example listings yet"));
+  // The legacy callers' grounding goes through the builder's inventory query
+  // (tests/page-grounding.test.ts drives the block itself): never the old
+  // capped city-only read that reported a 100-row sample as the total.
+  const genSrc = read("src/lib/generation.server.ts");
+  t(
+    "legacy grounding reads through readGroundingFacts with a v1 filter",
+    genSrc.includes('await import("@/lib/page-grounding.server")') &&
+      /resolveFilter\(\{\s*city,/.test(genSrc) &&
+      !/\.ilike\("city", city\)/.test(genSrc) &&
+      !/\.limit\(100\)/.test(genSrc),
+  );
 }
 
 console.log("\n=== OpenAI page writer (stubbed fetch, through the spend flow) ===");

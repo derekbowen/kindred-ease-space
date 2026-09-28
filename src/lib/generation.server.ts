@@ -75,7 +75,11 @@ export const TYPICAL_PAGE_TOKENS = { prompt: 1500, completion: 1500 };
 
 /** Credits one page is likely to cost on the platform key at a quality tier, for the cost hint. */
 export function estimatedCreditsPerPage(tier: AiQualityTier): number {
-  return creditsForUsage(modelForTier(tier), TYPICAL_PAGE_TOKENS.prompt, TYPICAL_PAGE_TOKENS.completion);
+  return creditsForUsage(
+    modelForTier(tier),
+    TYPICAL_PAGE_TOKENS.prompt,
+    TYPICAL_PAGE_TOKENS.completion,
+  );
 }
 
 /**
@@ -98,7 +102,11 @@ export const GENERATION_TIER_OPTIONS: Array<{ tier: AiQualityTier; label: string
   });
 
 /** The source label a generation is logged under (ai_usage_log.feature). */
-export type GenerationSource = "quick_page" | "batch_generation" | "coach_city_page" | "opportunity";
+export type GenerationSource =
+  | "quick_page"
+  | "batch_generation"
+  | "coach_city_page"
+  | "opportunity";
 
 /**
  * Stable identity for a batch target. Batch items are idempotent by THIS key,
@@ -402,7 +410,6 @@ export function isStaleRunning(updatedAt: string | null | undefined, now = Date.
   return now - t > STALE_RUNNING_MS;
 }
 
-
 /** Customer-facing wording. Provider bodies never reach these strings. */
 export const PROVIDER_ERROR_MESSAGE = AI_MESSAGES.providerError;
 export const PROVIDER_TIMEOUT_MESSAGE = AI_MESSAGES.timeout;
@@ -446,7 +453,9 @@ export function billingModeFor(billing: SpendBilling): BillingMode {
  * end up unbilled; a settle that could not be recorded stays 'pending' (the
  * hold covers it and the reaper settles it within 35 minutes).
  */
-export function billingStatusFor(s: Pick<AiSettlement, "settled" | "billing" | "creditsCharged">): ItemBillingStatus {
+export function billingStatusFor(
+  s: Pick<AiSettlement, "settled" | "billing" | "creditsCharged">,
+): ItemBillingStatus {
   if (!s.settled) return "pending";
   if (s.billing === "credits" && s.creditsCharged > 0) return "charged";
   return "free";
@@ -467,39 +476,6 @@ export function buildCityBrief(t: {
     description: `Browse ${cat} in ${place} and find the right option for you.`,
     topic: `City hub page for ${place}. Cover: who uses ${cat} here, popular local use cases, what to look for when booking, and a strong CTA to browse the live listings shown on the page. Use only real facts — do not invent pricing or availability.`,
   };
-}
-
-export type InventoryRow = {
-  title: string | null;
-  price_amount: number | null;
-  price_currency: string | null;
-};
-
-/**
- * The grounding block. "The ONLY numbers you may use" is what separates a
- * factual per-city page from the templated filler Google's scaled-content
- * policy demotes — keep that wording.
- */
-export function formatInventoryFacts(city: string, rows: InventoryRow[]): string {
-  const prices = rows
-    .map((r) => r.price_amount)
-    .filter((n): n is number => typeof n === "number")
-    .sort((a, b) => a - b);
-  const currency = rows.find((r) => r.price_currency)?.price_currency ?? "USD";
-  const sample = rows
-    .slice(0, 5)
-    .map((r) => `- ${r.title}`)
-    .join("\n");
-  return `
-
-Live inventory facts for ${city} — the ONLY numbers you may use; never invent pricing, counts, or listings:
-- ${rows.length} published listings
-- ${
-    prices.length
-      ? `Price range ${(prices[0]! / 100).toFixed(0)}–${(prices[prices.length - 1]! / 100).toFixed(0)} ${currency}`
-      : "No price data — do not state or estimate prices"
-  }
-${sample ? `- Example listings:\n${sample}` : "- No example listings yet."}`;
 }
 
 export const GENERATION_SYSTEM_PROMPT = `
@@ -627,7 +603,8 @@ export async function resolveBillingMode(workspaceId: string, db?: AiDb): Promis
   const key = await resolveAiKey(workspaceId, db);
   const granted = key.source === "platform" ? await isGenerationGranted(workspaceId) : false;
   const billingClass = billingClassFor(key, { route: "page_generation", granted });
-  const mode: BillingMode = billingClass === "byok" ? "byok" : billingClass === "granted" ? "granted" : "platform";
+  const mode: BillingMode =
+    billingClass === "byok" ? "byok" : billingClass === "granted" ? "granted" : "platform";
   return { key, keySource: key.source, billingClass, mode };
 }
 
@@ -647,6 +624,14 @@ export type GenerateInput = {
   categoryPlural?: string | null;
   /** Category used to narrow the inventory grounding query, if known. */
   category?: string | null;
+  /**
+   * The page builder's own prompt (src/lib/page-grounding.ts): system
+   * instructions, the user prompt with its grounding block already built
+   * from the page's filter, and the template's shortest acceptable body.
+   * When set, city/state/category are not read. The legacy callers (the
+   * gated Quick Page and batch paths) leave it unset.
+   */
+  prompt?: { instructions: string; input: string; minBodyChars: number };
   billing: ResolvedBilling;
   /**
    * Awaited after the spend hold is granted AND marked, IMMEDIATELY before
@@ -686,19 +671,38 @@ export type GeneratedContent = WritePageOutput & {
  * a failure after the call has already been settled (the customer refunded).
  */
 export async function generatePageContent(input: GenerateInput): Promise<GeneratedContent> {
-  // Ground generation in the tenant's real inventory when a city is targeted.
-  let inventoryFacts = "";
-  const city = input.city?.trim();
-  if (city) {
-    let q = supabaseAdmin
-      .from("tenant_listings")
-      .select("title, price_amount, price_currency")
-      .eq("workspace_id", input.workspaceId)
-      .ilike("city", city)
-      .eq("state_published", true);
-    if (input.category) q = q.eq("category", input.category);
-    const { data: cityListings } = await q.limit(100);
-    inventoryFacts = formatInventoryFacts(city, (cityListings ?? []) as InventoryRow[]);
+  let instructions = GENERATION_SYSTEM_PROMPT;
+  let userPrompt: string;
+  let minBodyChars = MIN_BODY_CHARS;
+  if (input.prompt) {
+    instructions = input.prompt.instructions;
+    userPrompt = input.prompt.input;
+    minBodyChars = Math.max(MIN_BODY_CHARS, input.prompt.minBodyChars);
+  } else {
+    // Legacy callers name a city: ground them through the SAME inventory
+    // query as the builder (a v1 filter — exact count, prices per currency
+    // and unit, a bounded sample), never a capped city-only read.
+    let inventoryFacts = "";
+    const city = input.city?.trim();
+    if (city) {
+      const { resolveFilter } = await import("@/lib/coverage/target");
+      const { readGroundingFacts } = await import("@/lib/page-grounding.server");
+      const { formatGroundingBlock } = await import("@/lib/page-grounding");
+      const filter = resolveFilter({
+        city,
+        ...(input.state?.trim() ? { state: input.state.trim() } : {}),
+        ...(input.category?.trim() ? { category: input.category.trim() } : {}),
+      });
+      if (filter) {
+        inventoryFacts = `\n\n${formatGroundingBlock(await readGroundingFacts(input.workspaceId, "city_hub", filter))}`;
+      }
+    }
+    userPrompt = buildUserPrompt({
+      title: input.title,
+      description: input.description,
+      topic: input.topic,
+      inventoryFacts,
+    });
   }
 
   const { runMeteredAiCall } = await import("@/lib/ai/spend.server");
@@ -711,17 +715,12 @@ export async function generatePageContent(input: GenerateInput): Promise<Generat
     tier: input.tier,
     key: input.billing.key,
     billingClass: input.billing.billingClass,
-    instructions: GENERATION_SYSTEM_PROMPT,
-    input: buildUserPrompt({
-      title: input.title,
-      description: input.description,
-      topic: input.topic,
-      inventoryFacts,
-    }),
+    instructions,
+    input: userPrompt,
     format: WRITE_PAGE_FORMAT,
     check: (out) => {
-      const n = out.data?.body_markdown?.length ?? 0;
-      return n < MIN_BODY_CHARS
+      const n = out.data?.body_markdown?.trim().length ?? 0;
+      return n < minBodyChars
         ? { code: "thin_output", message: `Generated body too short (${n} chars)` }
         : null;
     },

@@ -276,8 +276,8 @@ console.log("\n=== one provider module, one spend path ===");
   );
   const generators = srcFiles.filter((f) => f !== "src/lib/generation.server.ts" && /generatePageContent\(/.test(read(f)));
   t(
-    "page generation is started only by the quick page and the batch item",
-    same(generators, ["src/lib/admin-quick-page.functions.ts", "src/lib/generation.functions.ts"]),
+    "page generation is started only by the page builder's draft pipeline and the (gated) quick page and batch paths",
+    same(generators, ["src/lib/admin-quick-page.functions.ts", "src/lib/generation.functions.ts", "src/lib/page-drafts.server.ts"]),
     generators.join(", "),
   );
   const quickCallers = srcFiles.filter((f) => f !== "src/lib/admin-quick-page.functions.ts" && /runQuickPage\(/.test(read(f)));

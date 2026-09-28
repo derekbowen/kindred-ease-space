@@ -108,6 +108,8 @@ export class FakeBackend {
       ai_workspace_spent_micros: () => 0,
       check_rate_limit: () => true,
       coach_briefing_refresh_allowed: () => true,
+      // The grounding aggregate (src/lib/page-grounding.server.ts): no listings.
+      inventory_coverage_groups: () => [],
     };
     this.rest = {
       "GET workspace_members": () => [{ role: "owner" }],

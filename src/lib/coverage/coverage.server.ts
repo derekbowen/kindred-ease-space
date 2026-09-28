@@ -112,7 +112,7 @@ export const STALE_AFTER_MS = 24 * 3600_000;
 export const COVERAGE_SCOPE_NOTE =
   "Opportunities come from your published Sharetribe listings and the pages you created in Founders.click. Pages that live elsewhere on your website were not checked, and nothing here is search-volume data.";
 
-type GroupRow = {
+export type GroupRow = {
   country_key: string | null;
   region_key: string | null;
   city_key: string | null;
@@ -452,10 +452,31 @@ function reasonFor(kind: CoverageItem["kind"], state: CoverageState, acc: Acc): 
   }
 }
 
+/**
+ * Every row of inventory_coverage_groups. PostgREST caps a set-returning RPC
+ * at max-rows (1,000) like a table read, so the groups are read in ordered
+ * ranges until the last short page — a marketplace with 600 cities in three
+ * categories must not lose its tail. The four keys are the GROUP BY, so
+ * ordering by them is total. Throws on any read error or an incomplete read.
+ */
+export async function readCoverageGroups(workspaceId: string): Promise<GroupRow[]> {
+  const { rows, complete } = await readAll<GroupRow>(
+    () =>
+      sb()
+        .rpc("inventory_coverage_groups", { _workspace_id: workspaceId })
+        .order("country_key", { ascending: true, nullsFirst: true })
+        .order("region_key", { ascending: true, nullsFirst: true })
+        .order("city_key", { ascending: true, nullsFirst: true })
+        .order("category_key", { ascending: true, nullsFirst: true }),
+    200_000,
+  );
+  if (!complete) throw new Error("coverage: too many listing groups to read completely");
+  return rows;
+}
+
 /** Read everything and build the report. Throws on any read error. */
 export async function loadCoverage(workspaceId: string): Promise<CoverageReport> {
-  const groupsRes = await sb().rpc("inventory_coverage_groups", { _workspace_id: workspaceId });
-  if (groupsRes.error) throw new Error(`coverage groups failed: ${groupsRes.error.message}`);
+  const groups = await readCoverageGroups(workspaceId);
 
   const { rows: pages, complete: pagesComplete } = await readAll<PageRow>(
     () =>
@@ -470,28 +491,33 @@ export async function loadCoverage(workspaceId: string): Promise<CoverageReport>
   );
   if (!pagesComplete) throw new Error("coverage: too many pages to read completely");
 
-  const [{ data: dismissals, error: dErr }, { data: integration, error: iErr }] = await Promise.all(
-    [
-      sb().from("coverage_dismissals").select("target_key").eq("workspace_id", workspaceId),
+  const { rows: dismissals, complete: dismissalsComplete } = await readAll<{ target_key: string }>(
+    () =>
       sb()
-        .from("tenant_integrations")
-        .select(
-          "status, last_success_at, last_sync_at, last_sync_status, listings_count, upstream_total",
-        )
+        .from("coverage_dismissals")
+        .select("target_key")
         .eq("workspace_id", workspaceId)
-        .eq("provider", "sharetribe")
-        .maybeSingle(),
-    ],
+        .order("target_key", { ascending: true }),
+    200_000,
   );
-  if (dErr) throw new Error(`coverage dismissals failed: ${dErr.message}`);
+  if (!dismissalsComplete) throw new Error("coverage: too many dismissals to read completely");
+
+  const [{ data: integration, error: iErr }] = await Promise.all([
+    sb()
+      .from("tenant_integrations")
+      .select(
+        "status, last_success_at, last_sync_at, last_sync_status, listings_count, upstream_total",
+      )
+      .eq("workspace_id", workspaceId)
+      .eq("provider", "sharetribe")
+      .maybeSingle(),
+  ]);
   if (iErr) throw new Error(`coverage sync state failed: ${iErr.message}`);
 
   return buildCoverageReport({
-    groups: (groupsRes.data ?? []) as GroupRow[],
+    groups,
     pages,
-    dismissedKeys: new Set(
-      ((dismissals ?? []) as Array<{ target_key: string }>).map((d) => d.target_key),
-    ),
+    dismissedKeys: new Set(dismissals.map((d) => d.target_key)),
     integration: (integration as any) ?? null,
   });
 }
