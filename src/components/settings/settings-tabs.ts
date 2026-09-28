@@ -9,7 +9,9 @@ import { NAV_SECTIONS, isNavItemVisible, type NavItem } from "@/lib/app-nav";
  * which put bring-your-own-key screens for tools that are not in this launch
  * one click from Workspace Settings. A tab with no sidebar entry of its own
  * (Domains) is part of settings proper and always shows. `?showStubs=1`
- * reveals everything for internal testing, exactly as it does the sidebar.
+ * reveals everything for internal testing, exactly as it does the sidebar,
+ * and the founder / internal unlimited account's server-computed
+ * revealLaunchHiddenFeatures shows the launch:false tabs, as it does there.
  */
 export const SETTINGS_TABS = [
   { to: "/app/settings", label: "Workspace", exact: true },
@@ -29,8 +31,15 @@ function sidebarItemFor(to: string): NavItem | undefined {
   return undefined;
 }
 
-export function isSettingsTabVisible(to: string, opts: { showStubs: boolean }): boolean {
+export function isSettingsTabVisible(
+  to: string,
+  opts: { showStubs: boolean; revealLaunchHidden?: boolean },
+): boolean {
   const item = sidebarItemFor(to);
   if (!item) return true;
-  return isNavItemVisible(item, { showStubs: opts.showStubs, isInternal: false });
+  return isNavItemVisible(item, {
+    showStubs: opts.showStubs,
+    isInternal: false,
+    revealLaunchHidden: opts.revealLaunchHidden === true,
+  });
 }

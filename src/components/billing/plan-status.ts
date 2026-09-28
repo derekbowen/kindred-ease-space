@@ -13,10 +13,24 @@
  * Pure and clock-injectable: tests/plan-status.test.ts covers an active trial,
  * one ending today, an ended one, a paid plan and the beta.
  */
-import { decideCapacity, type BillingState } from "@/lib/billing-capacity";
+import {
+  decideCapacity,
+  INTERNAL_UNLIMITED_PLAN_LABEL,
+  type BillingState,
+} from "@/lib/billing-capacity";
 import { planByKey } from "@/lib/plan-catalog";
 
-export type PlanStatusKind = "beta" | "trial" | "trial_ends_today" | "trial_ended" | "paid";
+export type PlanStatusKind =
+  | "internal"
+  | "beta"
+  | "trial"
+  | "trial_ends_today"
+  | "trial_ended"
+  | "paid";
+
+/** What every screen calls the founder / internal unlimited entitlement (the server's planLabel). */
+export const INTERNAL_PLAN_LABEL = INTERNAL_UNLIMITED_PLAN_LABEL;
+export const INTERNAL_STATUS_LINE = "No usage limits · Internal account";
 
 export type PlanStatusInput = {
   subscriptionStatus: string | null | undefined;
@@ -24,6 +38,12 @@ export type PlanStatusInput = {
   currentPeriodEnd?: string | null;
   /** The plan key stored on the workspace ('starter', 'growth', …). */
   planKey?: string | null;
+  /**
+   * The server-computed internalUnlimited (getBetaStatus / getPageEntitlement):
+   * the founder / internal unlimited grant. Wins over everything else, as it
+   * does in decideCapacity (billingState 'internal').
+   */
+  internalUnlimited?: boolean;
   /** A free-beta grant is the entitlement (see readBetaStatus / the billing page's inBeta). */
   inBeta?: boolean;
   betaExpiresAt?: string | null;
@@ -122,6 +142,20 @@ export function describePlanStatus(input: PlanStatusInput, opts: WordingOptions 
   const now = opts.now ?? Date.now();
   const tz = opts.timeZone;
   const planName = planDisplayName(input.planKey);
+
+  // The founder / internal unlimited grant: no plan, no trial, no limits, so
+  // no trial countdown and no price. Only ever from the server's own flag.
+  if (input.internalUnlimited === true || input.billingState === "internal") {
+    return {
+      kind: "internal",
+      badge: INTERNAL_PLAN_LABEL,
+      planLabel: INTERNAL_PLAN_LABEL,
+      statusLine: INTERNAL_STATUS_LINE,
+      dateLine: null,
+      trialHeadline: null,
+      daysLeft: null,
+    };
+  }
 
   // Same rule as every other beta surface: "Free beta" only when the caller
   // established that the grant IS the entitlement.

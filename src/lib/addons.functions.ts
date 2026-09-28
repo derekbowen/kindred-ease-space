@@ -74,6 +74,11 @@ export const getAddons = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => z.object({ workspaceId: workspaceIdSchema }).parse(d))
   .handler(async ({ data, context }) => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
+    // The founder / internal unlimited entitlement (read fresh on the server;
+    // a failed read is "no"): the self-serve add-on is included, so nothing
+    // here offers it a checkout or a trial. Every other workspace is unchanged.
+    const { isInternalUnlimitedOrFalse } = await import("@/lib/entitlement-grants.server");
+    const internalUnlimited = await isInternalUnlimitedOrFalse(data.workspaceId);
     const [{ data: reqs }, { data: affSettings }] = await Promise.all([
       sb()
         .from("addon_requests")
@@ -91,7 +96,7 @@ export const getAddons = createServerFn({ method: "GET" })
       if (!statusByKey.has(r.addon_key)) statusByKey.set(r.addon_key, r.status);
     }
     const affStatus = (affSettings as { addon_status?: string } | null)?.addon_status;
-    if (affStatus === "active" || affStatus === "trialing") {
+    if (affStatus === "active" || affStatus === "trialing" || internalUnlimited) {
       statusByKey.set("affiliate-standard", "active");
     }
     // Why the Affiliate add-on cannot be started on this workspace's
@@ -107,10 +112,14 @@ export const getAddons = createServerFn({ method: "GET" })
       affiliateBlocked = null;
     }
     return {
+      internalUnlimited,
       catalog: ADDON_CATALOG.map((a) => ({
         ...a,
         requestStatus: statusByKey.get(a.key) ?? null,
         blockedReason: a.key === "affiliate-standard" ? affiliateBlocked : null,
+        // Self-serve add-ons are part of the internal account; a managed
+        // (done-for-you) one is arranged by hand, never through checkout.
+        includedInternal: internalUnlimited && a.fulfilment === "self_serve",
       })),
     };
   });

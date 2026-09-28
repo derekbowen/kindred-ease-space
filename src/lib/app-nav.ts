@@ -71,8 +71,10 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: "/app", label: "Dashboard", icon: LayoutDashboard, exact: true, launch: true },
       // The Coach chat is not part of launch: its backend is removed and
       // /app/coach is a static notice (the dashboard's daily briefing is
-      // separate and unaffected), so it stays off the sidebar.
-      { to: "/app/coach", label: "Coach", icon: MessagesSquare, launch: false },
+      // separate and unaffected), so it stays off the sidebar. A stub, so the
+      // internal account's reveal (below) does not list a page with nothing
+      // behind it either.
+      { to: "/app/coach", label: "Coach", icon: MessagesSquare, stub: true },
       { to: "/app/seo-coach", label: "SEO Coach", icon: Sparkles, launch: false },
     ],
   },
@@ -289,12 +291,18 @@ export const NAV_SECTIONS: NavSection[] = [
  * `showStubs` (from ?showStubs=1) reveals everything for internal testing;
  * otherwise only launch items that are not stubs are shown. internalOnly is
  * orthogonal: those items need the internal dogfood workspace regardless.
+ *
+ * `revealLaunchHidden` is the server-computed revealLaunchHiddenFeatures of
+ * the founder / internal unlimited entitlement (getBetaStatus). It shows the
+ * finished-but-not-launched (`launch: false`) tools too, never a stub and
+ * never an internalOnly tool. Every other workspace reads false.
  */
 export function isNavItemVisible(
   item: NavItem,
-  opts: { showStubs: boolean; isInternal: boolean },
+  opts: { showStubs: boolean; isInternal: boolean; revealLaunchHidden?: boolean },
 ): boolean {
   if (item.internalOnly && !opts.isInternal) return false;
   if (opts.showStubs) return true;
-  return Boolean(item.launch) && !item.stub;
+  if (item.stub) return false;
+  return Boolean(item.launch) || opts.revealLaunchHidden === true;
 }

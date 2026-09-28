@@ -102,6 +102,11 @@ function AddonsPage() {
           {(data?.catalog ?? []).map((a) => {
             const isAffiliate = a.key === "affiliate-standard";
             const active = a.requestStatus === "active";
+            // Included by the internal account entitlement (server-computed):
+            // no price, no checkout, no trial.
+            const included = a.includedInternal === true;
+            // The internal account arranges a managed add-on by hand.
+            const internalManaged = data?.internalUnlimited === true && a.fulfilment === "managed";
             // Server-computed: the add-on cannot work on this workspace's
             // connection, and the trial and checkout would refuse it.
             const blocked = !active && a.blockedReason ? a.blockedReason : null;
@@ -142,31 +147,44 @@ function AddonsPage() {
                     </div>
                   )}
                   <div className="mt-auto pt-2">
-                    <div className="mb-3 text-2xl font-bold">
-                      ${(a.priceCents / 100).toFixed(0)}
-                      <span className="text-sm font-normal text-muted-foreground">
-                        /{a.cadence}
-                      </span>
-                    </div>
-                    {active ? (
+                    {included ? (
                       <Button disabled className="w-full" variant="outline">
-                        Active
+                        Included with your internal account
                       </Button>
+                    ) : internalManaged ? (
+                      <p className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+                        Done-for-you service. For the internal account it's arranged directly, not
+                        through checkout.
+                      </p>
                     ) : (
-                      <Button
-                        className="w-full"
-                        disabled={busy === a.key || !!blocked}
-                        onClick={() => checkout(a.key)}
-                      >
-                        {busy === a.key
-                          ? "Redirecting…"
-                          : `Get it — $${(a.priceCents / 100).toFixed(0)}/${a.cadence}`}
-                      </Button>
-                    )}
-                    {isAffiliate && !blocked && (
-                      <Button asChild variant="ghost" size="sm" className="mt-2 w-full">
-                        <Link to="/app/affiliates">Or start a free trial →</Link>
-                      </Button>
+                      <>
+                        <div className="mb-3 text-2xl font-bold">
+                          ${(a.priceCents / 100).toFixed(0)}
+                          <span className="text-sm font-normal text-muted-foreground">
+                            /{a.cadence}
+                          </span>
+                        </div>
+                        {active ? (
+                          <Button disabled className="w-full" variant="outline">
+                            Active
+                          </Button>
+                        ) : (
+                          <Button
+                            className="w-full"
+                            disabled={busy === a.key || !!blocked}
+                            onClick={() => checkout(a.key)}
+                          >
+                            {busy === a.key
+                              ? "Redirecting…"
+                              : `Get it — $${(a.priceCents / 100).toFixed(0)}/${a.cadence}`}
+                          </Button>
+                        )}
+                        {isAffiliate && !blocked && (
+                          <Button asChild variant="ghost" size="sm" className="mt-2 w-full">
+                            <Link to="/app/affiliates">Or start a free trial →</Link>
+                          </Button>
+                        )}
+                      </>
                     )}
                   </div>
                 </CardContent>

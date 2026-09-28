@@ -3,6 +3,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import { Settings, Sparkles, Plug, Globe, KeyRound } from "lucide-react";
 import { showStubsInUrl } from "@/components/coach/coach-availability";
+import { useInternalAccess } from "@/components/billing/use-internal-access";
 import { SETTINGS_TABS, isSettingsTabVisible, type SettingsTabPath } from "./settings-tabs";
 
 const ICONS: Record<SettingsTabPath, typeof Settings> = {
@@ -22,10 +23,13 @@ export function SettingsNav() {
   useEffect(() => {
     setShowStubs(showStubsInUrl());
   }, []);
+  const { revealLaunchHiddenFeatures: revealLaunchHidden } = useInternalAccess();
 
   return (
     <nav className="flex flex-wrap gap-1 rounded-lg border border-border/60 bg-muted/30 p-1">
-      {SETTINGS_TABS.filter((tab) => isSettingsTabVisible(tab.to, { showStubs })).map((tab) => {
+      {SETTINGS_TABS.filter((tab) =>
+        isSettingsTabVisible(tab.to, { showStubs, revealLaunchHidden }),
+      ).map((tab) => {
         const Icon = ICONS[tab.to];
         const exact = "exact" in tab && tab.exact;
         const active = exact ? pathname === tab.to : pathname.startsWith(tab.to);

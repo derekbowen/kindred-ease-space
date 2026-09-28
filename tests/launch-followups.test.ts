@@ -39,7 +39,11 @@ const stubs = SETTINGS_TABS.filter((tab) => isSettingsTabVisible(tab.to, { showS
 t("?showStubs=1 reveals every tab for internal testing", stubs.length === SETTINGS_TABS.length);
 
 const nav = read("src/components/settings/SettingsNav.tsx");
-t("SettingsNav filters through isSettingsTabVisible", /SETTINGS_TABS\.filter\(\(tab\) => isSettingsTabVisible\(tab\.to, \{ showStubs \}\)\)/.test(nav));
+t(
+  "SettingsNav filters through isSettingsTabVisible (showStubs, and the server's founder reveal)",
+  /SETTINGS_TABS\.filter\(\(tab\) =>\s*isSettingsTabVisible\(tab\.to, \{ showStubs, revealLaunchHidden \}\),?\s*\)/.test(nav) &&
+    /const \{ revealLaunchHiddenFeatures: revealLaunchHidden \} = useInternalAccess\(\);/.test(nav),
+);
 t("SettingsNav decides showStubs after mount (no hydration mismatch)", /useState\(false\)/.test(nav) && /useEffect\(\(\) => \{\s*setShowStubs\(showStubsInUrl\(\)\);/.test(nav));
 t("SettingsNav keeps no private copy of the tab list", !/const LINKS = \[/.test(nav));
 

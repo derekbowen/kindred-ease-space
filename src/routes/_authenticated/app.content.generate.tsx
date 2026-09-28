@@ -8,13 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   AlertTriangle,
   CheckCircle2,
   Circle,
@@ -41,6 +34,8 @@ import {
   type PublishResult,
   type TargetListing,
 } from "@/lib/generation.functions";
+import { AiModelSelect } from "@/components/ai/AiModelSelect";
+import { qualityForRequest } from "@/components/ai/model-choice";
 
 export const Route = createFileRoute("/_authenticated/app/content/generate")({
   head: () => ({ meta: [{ title: "Generate Content — founders.click" }] }),
@@ -63,7 +58,9 @@ function GenerateContentPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  // The quality tier the job runs at (the server maps it to a model).
+  // The AI model picker's choice, as its tier (AiModelSelect: only what
+  // getAvailableAiModels offers). The job runs at this tier; the server maps
+  // it to the model.
   const [quality, setQuality] = useState<string>("");
   const [job, setJob] = useState<GenerationJobRow | null>(null);
   const [items, setItems] = useState<GenerationItemRow[]>([]);
@@ -94,7 +91,6 @@ function GenerateContentPage() {
     try {
       const r = await fetchTargets({ data: { workspaceId } });
       setOverview(r);
-      setQuality((q) => q || r.defaultTier);
       // Drop selections that are no longer eligible.
       setSelected((prev) => {
         const eligible = new Set(r.targets.filter(isSelectable).map((t) => t.targetKey));
@@ -175,7 +171,7 @@ function GenerateContentPage() {
         data: {
           workspaceId,
           targetKeys: [...selected],
-          quality: quality === "premium" ? "premium" : "standard",
+          quality: qualityForRequest(quality),
         },
       });
       setJob(created.job);
@@ -314,12 +310,18 @@ function GenerateContentPage() {
             {overview.syncedListings.toLocaleString()} listings synced
           </Badge>
           <Badge variant="outline">{eligible.length} cities ready</Badge>
-          <Badge
-            variant="outline"
-            className={remaining === 0 ? "border-amber-500/40 text-amber-600" : ""}
-          >
-            {remaining} of {overview.dailyCap} pages left today
-          </Badge>
+          {overview.internalUnlimited ? (
+            // The founder / internal unlimited entitlement has no daily cap
+            // (the server's own flag); never print its sentinel number.
+            <Badge variant="outline">No daily page limit · internal account</Badge>
+          ) : (
+            <Badge
+              variant="outline"
+              className={remaining === 0 ? "border-amber-500/40 text-amber-600" : ""}
+            >
+              {remaining} of {overview.dailyCap} pages left today
+            </Badge>
+          )}
         </div>
       )}
 
@@ -399,28 +401,15 @@ function GenerateContentPage() {
           <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Writing quality</CardTitle>
+                <CardTitle className="text-base">AI model</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="quality">Quality</Label>
-                  <Select value={quality} onValueChange={setQuality} disabled={running}>
-                    <SelectTrigger id="quality">
-                      <SelectValue placeholder="Choose a quality" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {overview.tiers.map((t) => (
-                        <SelectItem key={t.tier} value={t.tier}>
-                          {t.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    {overview.tiers.find((t) => t.tier === quality)?.hint ??
-                      "Standard is the default. Premium writes stronger pages and uses more of your included AI."}
-                  </p>
-                </div>
+                <AiModelSelect
+                  workspaceId={workspaceId}
+                  value={quality}
+                  onChange={setQuality}
+                  disabled={running}
+                />
 
                 {overCap && (
                   <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">

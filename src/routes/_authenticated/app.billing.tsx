@@ -18,8 +18,17 @@ import { PAGE_PLANS, PAGE_ADDON, EVERY_PLAN_INCLUDES, TRIAL_PAGE_LIMIT } from "@
 import { toast } from "sonner";
 import { userMessage } from "@/lib/user-message";
 import { edgeFunctionError } from "@/lib/edge-function-error";
-import { describePlanStatus, formatPlanDate } from "@/components/billing/plan-status";
-import { formatAllowanceCount as formatAiToday, useAiAllowance } from "@/components/ai/use-ai-allowance";
+import {
+  describePlanStatus,
+  formatPlanDate,
+  INTERNAL_PLAN_LABEL,
+  INTERNAL_STATUS_LINE,
+} from "@/components/billing/plan-status";
+import {
+  allowanceSentence as aiTodaySentence,
+  formatAllowanceCount as formatAiToday,
+  useAiAllowance,
+} from "@/components/ai/use-ai-allowance";
 
 const billingSearchSchema = z.object({
   success: z.coerce.string().optional(),
@@ -156,7 +165,13 @@ function BillingPage() {
     }
   }
 
-  const hasPlan = Boolean(ent && !ent.isTrial && ent.planKey);
+  // The founder / internal unlimited grant, exactly as the server computed it
+  // (getPageEntitlement: internalUnlimited / billingState 'internal'). Nothing
+  // here lifts a limit — the server already did, for this workspace only. It
+  // only stops this page offering plans, trials and checkouts that do not
+  // apply. Every other workspace renders exactly as before.
+  const internal = Boolean(ent && (ent.internalUnlimited || ent.billingState === "internal"));
+  const hasPlan = Boolean(ent && !internal && !ent.isTrial && ent.planKey);
   // "Free beta" only when the grant IS the entitlement. A paying customer with a
   // promotional grant on top is not in a free beta and must not be told so.
   const inBeta = Boolean(beta?.beta && ent && ent.billingState === "granted");
@@ -169,6 +184,7 @@ function BillingPage() {
         trialEndsAt: ent.trialEndsAt,
         currentPeriodEnd: ent.currentPeriodEnd,
         planKey: ent.planKey,
+        internalUnlimited: internal,
         inBeta,
         betaExpiresAt: beta?.expiresAt ?? null,
         billingState: ent.billingState,
@@ -176,7 +192,8 @@ function BillingPage() {
     : null;
   const cheapest = PAGE_PLANS[0];
   const dearest = PAGE_PLANS[PAGE_PLANS.length - 1];
-  const usagePct = ent && ent.pageLimit > 0 ? (ent.publishedPages / ent.pageLimit) * 100 : 0;
+  const usagePct =
+    ent && !internal && ent.pageLimit > 0 ? (ent.publishedPages / ent.pageLimit) * 100 : 0;
   const usageTone =
     usagePct >= 100 ? "text-red-500" : usagePct >= 90 ? "text-amber-500" : "text-emerald-500";
   const barTone = usagePct >= 100 ? "bg-red-500" : usagePct >= 90 ? "bg-amber-500" : "bg-primary";
@@ -187,7 +204,7 @@ function BillingPage() {
   // not have — the same mistake, in the UI, that this release fixed in the gate.
   // `pageLimit` is the one number that decides anything; this only explains it.
   const capacityParts: string[] = [];
-  if (ent?.canPublish) {
+  if (ent?.canPublish && !internal) {
     if (ent.billingState !== "granted") {
       // 'granted' means Stripe refused and the grant is the whole allowance, so
       // the paid columns contribute nothing and must not be listed.
@@ -209,7 +226,9 @@ function BillingPage() {
       <div>
         <h1 className="text-2xl font-bold">Billing</h1>
         <p className="text-sm text-muted-foreground">
-          Your plan is publishing capacity — pages stay live while your subscription is active.
+          {internal
+            ? "This is an internal account: plans, trials and payments don't apply to it."
+            : "Your plan is publishing capacity — pages stay live while your subscription is active."}
         </p>
         {loadError && <p className="text-sm text-destructive mt-2">{loadError}</p>}
       </div>
@@ -228,7 +247,7 @@ function BillingPage() {
         </div>
       )}
 
-      {ent && ent.suspendedPages > 0 && (
+      {ent && !internal && ent.suspendedPages > 0 && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-400">
           {/* An ended trial never had a plan to "reactivate". */}
           {ent.suspendedPages.toLocaleString()} of your pages{" "}
@@ -250,7 +269,9 @@ function BillingPage() {
               {/* A trial has no price. `plan` is written as 'starter' at
                   provisioning, so showing its price here told every trial
                   user they were already paying $29/month. */}
-              {planStatus?.kind === "paid" && ent?.monthlyPrice ? `$${ent.monthlyPrice}/month · ` : ""}
+              {planStatus?.kind === "paid" && ent?.monthlyPrice
+                ? `$${ent.monthlyPrice}/month · `
+                : ""}
               {planStatus?.statusLine ?? ""}
             </div>
             {/* The date that matters for this state: a beta tenant's grant end
@@ -272,15 +293,17 @@ function BillingPage() {
                 {ent.billingReason}
               </div>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              className="mt-3"
-              onClick={openPortal}
-              disabled={loading || !hasPlan}
-            >
-              Manage billing
-            </Button>
+            {!internal && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-3"
+                onClick={openPortal}
+                disabled={loading || !hasPlan}
+              >
+                Manage billing
+              </Button>
+            )}
           </CardContent>
         </Card>
 
@@ -289,24 +312,45 @@ function BillingPage() {
             <CardTitle>Page usage</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex items-baseline gap-1">
-              <span className={`text-2xl font-bold tabular-nums ${usageTone}`}>
-                {ent?.publishedPages.toLocaleString() ?? "—"}
-              </span>
-              <span className="text-sm text-muted-foreground">
-                / {ent?.pageLimit.toLocaleString() ?? "—"} pages published
-              </span>
-            </div>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className={`h-full rounded-full transition-all ${barTone}`}
-                style={{ width: `${Math.min(usagePct, 100)}%` }}
-              />
-            </div>
-            <div className="mt-2 text-xs text-muted-foreground">
-              {ent ? `${ent.remaining.toLocaleString()} publishing slots remaining` : ""}
-              {ent && ent.draftPages > 0 && ` · ${ent.draftPages.toLocaleString()} drafts (free)`}
-            </div>
+            {internal && ent ? (
+              // No page limit: the internal account's limit is a sentinel,
+              // never a number to print or a bar to fill.
+              <>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-2xl font-bold tabular-nums">
+                    {ent.publishedPages.toLocaleString()}
+                  </span>
+                  <span className="text-sm text-muted-foreground">pages published</span>
+                </div>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  No page limit
+                  {ent.draftPages > 0 && ` · ${ent.draftPages.toLocaleString()} drafts`}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-baseline gap-1">
+                  <span className={`text-2xl font-bold tabular-nums ${usageTone}`}>
+                    {ent?.publishedPages.toLocaleString() ?? "—"}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    / {ent?.pageLimit.toLocaleString() ?? "—"} pages published
+                  </span>
+                </div>
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={`h-full rounded-full transition-all ${barTone}`}
+                    style={{ width: `${Math.min(usagePct, 100)}%` }}
+                  />
+                </div>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  {ent ? `${ent.remaining.toLocaleString()} publishing slots remaining` : ""}
+                  {ent &&
+                    ent.draftPages > 0 &&
+                    ` · ${ent.draftPages.toLocaleString()} drafts (free)`}
+                </div>
+              </>
+            )}
             {capacityParts.length > 0 && (
               <div className="mt-1 text-xs text-muted-foreground">{capacityParts.join(" + ")}</div>
             )}
@@ -317,7 +361,11 @@ function BillingPage() {
           <CardHeader>
             <CardTitle>AI generation</CardTitle>
             <CardDescription>
-              {inBeta ? "Included in your beta grant" : "Included with every plan"}
+              {internal
+                ? "No daily limit on this internal account"
+                : inBeta
+                  ? "Included in your beta grant"
+                  : "Included with every plan"}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -326,7 +374,16 @@ function BillingPage() {
                 grant on each invoice — so this card names no billing period.
                 A beta tenant is bounded by the fair-use cap, not a balance,
                 and the cap is a platform_settings knob, hence "currently". */}
-            {inBeta ? (
+            {internal ? (
+              <>
+                <div className="text-2xl font-bold tabular-nums">{formatAiToday(aiToday)}</div>
+                <div className="text-xs text-muted-foreground">AI pages generated today</div>
+                {aiToday && <div className="text-xs">{aiTodaySentence(aiToday)}</div>}
+                {aiTodayError && (
+                  <div className="text-xs text-muted-foreground">{aiTodayError}</div>
+                )}
+              </>
+            ) : inBeta ? (
               <>
                 <div className="text-2xl font-bold">Included</div>
                 <div className="text-xs text-muted-foreground">
@@ -341,7 +398,9 @@ function BillingPage() {
                   AI pages generated today (fair-use cap)
                 </div>
                 {aiToday && <div className="text-xs">{aiToday.summary}</div>}
-                {aiTodayError && <div className="text-xs text-muted-foreground">{aiTodayError}</div>}
+                {aiTodayError && (
+                  <div className="text-xs text-muted-foreground">{aiTodayError}</div>
+                )}
               </>
             )}
             {/* Credits are INTERNAL metering, not a SKU, and not a number a
@@ -351,118 +410,145 @@ function BillingPage() {
                 screen now shows the one AI figure (the shared AI hook): pages
                 today against the fair-use cap, plus a plain state sentence.
                 More capacity is bought as pages, below. */}
-            <div className="text-xs text-muted-foreground pt-1">
-              Included with your plan. Need more pages? Upgrade below.
-            </div>
+            {!internal && (
+              <div className="text-xs text-muted-foreground pt-1">
+                Included with your plan. Need more pages? Upgrade below.
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
 
-      {/* The numbers here come from plan-catalog and the live grant, never
-          from prose, so this section cannot drift from what checkout charges. */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">What's free, what costs money</CardTitle>
-          <CardDescription>
-            Plain answers, so nothing about your bill is a surprise.{" "}
-            <Link to="/beta" className="underline underline-offset-2 hover:text-foreground">
-              Full beta terms
-            </Link>
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 text-sm md:grid-cols-3">
-          <div>
-            <div className="font-medium">What's free</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {inBeta
-                ? `Your beta grant: ${beta!.pageLimit.toLocaleString()} published page${
-                    beta!.pageLimit === 1 ? "" : "s"
-                  } at no charge, ${
-                    beta!.expiresAt
-                      ? `until ${formatPlanDate(beta!.expiresAt)}`
-                      : "with no end date set"
-                  }.`
-                : `The trial: up to ${TRIAL_PAGE_LIMIT} published pages, no card required.`}{" "}
-              Drafts are always free and unlimited.{" "}
-              {inBeta
-                ? `AI page generation is included with your beta grant, within a fair-use cap (currently ${GENERATION_DAILY_CAP} generated pages per workspace per day).`
-                : `AI page generation is included with every plan, within a fair-use cap (currently ${GENERATION_DAILY_CAP} generated pages per workspace per day); the trial starts with a starter allowance.`}
+      {internal && (
+        <Card className="border-sky-500/30 bg-sky-500/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">{INTERNAL_PLAN_LABEL}</CardTitle>
+            <CardDescription>{INTERNAL_STATUS_LINE}</CardDescription>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground space-y-1">
+            <p>
+              This workspace holds the internal account entitlement: no page limit, no daily AI page
+              cap, no trial end and no subscription. Every paid feature is on.
             </p>
-          </div>
-          <div>
-            <div className="font-medium">What costs money</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Only a paid plan, and only if you choose one: ${cheapest.monthlyPrice} to $
-              {dearest.monthlyPrice} per month for {cheapest.includedPages.toLocaleString()} to{" "}
-              {dearest.includedPages.toLocaleString()} published pages, plus optional extra capacity
-              at ${PAGE_ADDON.monthlyPrice}/month per {PAGE_ADDON.pagesPerUnit.toLocaleString()}{" "}
-              pages. Optional add-ons (Affiliate Programs, DM Champ) are priced separately on the
-              Add-ons page and only start after a checkout you complete. Nothing is charged
-              without a checkout you complete yourself.
+            <p>
+              The platform-wide AI safety switches still apply: if AI is paused for everyone, it's
+              paused here too.
             </p>
-          </div>
-          <div>
-            <div className="font-medium">When access ends</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {inBeta
-                ? "If your beta grant ends without a plan, "
-                : "When the trial ends without a plan, "}
-              published pages pause (they stop being served) — nothing is deleted. Drafts and
-              settings are kept, you can export your data at any time, and picking a plan later
-              brings every page back at its original URL.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
-      <div>
-        <h2 className="text-lg font-semibold mb-1">Plans</h2>
-        <p className="text-sm text-muted-foreground mb-4">
-          Every plan unlocks every core feature — pick one for how many pages you publish. Add-ons
-          are priced separately.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          {PAGE_PLANS.map((p) => {
-            const isCurrent = hasPlan && ent?.planKey === p.key;
-            return (
-              <Card key={p.key} className={p.featured ? "border-orange-500/50" : ""}>
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">{p.name}</CardTitle>
-                    {p.featured && <Badge className="bg-orange-500">Popular</Badge>}
-                  </div>
-                  <div className="pt-1">
-                    <span className="text-2xl font-bold">${p.monthlyPrice}</span>
-                    <span className="text-xs text-muted-foreground">/mo</span>
-                  </div>
-                  <CardDescription className="text-orange-500 font-medium">
-                    {p.includedPages.toLocaleString()} published pages
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-xs text-muted-foreground min-h-8">{p.blurb}</p>
-                  <Button
-                    className="w-full mt-3"
-                    size="sm"
-                    variant={p.featured ? "default" : "outline"}
-                    disabled={loading || isCurrent}
-                    onClick={() => (hasPlan ? openPortal() : checkout("subscription", 1, p.key))}
-                  >
-                    {isCurrent
-                      ? "Current plan"
-                      : hasPlan
-                        ? "Switch via portal"
-                        : `Choose ${p.name}`}
-                  </Button>
-                </CardContent>
-              </Card>
-            );
-          })}
+      {/* The numbers here come from plan-catalog and the live grant, never
+          from prose, so this section cannot drift from what checkout charges.
+          None of it (the trial, plans, checkout) applies to the internal
+          account, so it is not offered there. */}
+      {!internal && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">What's free, what costs money</CardTitle>
+            <CardDescription>
+              Plain answers, so nothing about your bill is a surprise.{" "}
+              <Link to="/beta" className="underline underline-offset-2 hover:text-foreground">
+                Full beta terms
+              </Link>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 text-sm md:grid-cols-3">
+            <div>
+              <div className="font-medium">What's free</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {inBeta
+                  ? `Your beta grant: ${beta!.pageLimit.toLocaleString()} published page${
+                      beta!.pageLimit === 1 ? "" : "s"
+                    } at no charge, ${
+                      beta!.expiresAt
+                        ? `until ${formatPlanDate(beta!.expiresAt)}`
+                        : "with no end date set"
+                    }.`
+                  : `The trial: up to ${TRIAL_PAGE_LIMIT} published pages, no card required.`}{" "}
+                Drafts are always free and unlimited.{" "}
+                {inBeta
+                  ? `AI page generation is included with your beta grant, within a fair-use cap (currently ${GENERATION_DAILY_CAP} generated pages per workspace per day).`
+                  : `AI page generation is included with every plan, within a fair-use cap (currently ${GENERATION_DAILY_CAP} generated pages per workspace per day); the trial starts with a starter allowance.`}
+              </p>
+            </div>
+            <div>
+              <div className="font-medium">What costs money</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Only a paid plan, and only if you choose one: ${cheapest.monthlyPrice} to $
+                {dearest.monthlyPrice} per month for {cheapest.includedPages.toLocaleString()} to{" "}
+                {dearest.includedPages.toLocaleString()} published pages, plus optional extra
+                capacity at ${PAGE_ADDON.monthlyPrice}/month per{" "}
+                {PAGE_ADDON.pagesPerUnit.toLocaleString()} pages. Optional add-ons (Affiliate
+                Programs, DM Champ) are priced separately on the Add-ons page and only start after a
+                checkout you complete. Nothing is charged without a checkout you complete yourself.
+              </p>
+            </div>
+            <div>
+              <div className="font-medium">When access ends</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {inBeta
+                  ? "If your beta grant ends without a plan, "
+                  : "When the trial ends without a plan, "}
+                published pages pause (they stop being served) — nothing is deleted. Drafts and
+                settings are kept, you can export your data at any time, and picking a plan later
+                brings every page back at its original URL.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {!internal && (
+        <div>
+          <h2 className="text-lg font-semibold mb-1">Plans</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Every plan unlocks every core feature — pick one for how many pages you publish. Add-ons
+            are priced separately.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {PAGE_PLANS.map((p) => {
+              const isCurrent = hasPlan && ent?.planKey === p.key;
+              return (
+                <Card key={p.key} className={p.featured ? "border-orange-500/50" : ""}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base">{p.name}</CardTitle>
+                      {p.featured && <Badge className="bg-orange-500">Popular</Badge>}
+                    </div>
+                    <div className="pt-1">
+                      <span className="text-2xl font-bold">${p.monthlyPrice}</span>
+                      <span className="text-xs text-muted-foreground">/mo</span>
+                    </div>
+                    <CardDescription className="text-orange-500 font-medium">
+                      {p.includedPages.toLocaleString()} published pages
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-xs text-muted-foreground min-h-8">{p.blurb}</p>
+                    <Button
+                      className="w-full mt-3"
+                      size="sm"
+                      variant={p.featured ? "default" : "outline"}
+                      disabled={loading || isCurrent}
+                      onClick={() => (hasPlan ? openPortal() : checkout("subscription", 1, p.key))}
+                    >
+                      {isCurrent
+                        ? "Current plan"
+                        : hasPlan
+                          ? "Switch via portal"
+                          : `Choose ${p.name}`}
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground mt-3">
+            Every plan includes: {EVERY_PLAN_INCLUDES.join(" · ")}
+          </p>
         </div>
-        <p className="text-xs text-muted-foreground mt-3">
-          Every plan includes: {EVERY_PLAN_INCLUDES.join(" · ")}
-        </p>
-      </div>
+      )}
 
       {hasPlan && (
         <Card>

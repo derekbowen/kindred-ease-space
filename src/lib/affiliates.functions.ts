@@ -61,12 +61,13 @@ async function ensureSettings(workspaceId: string) {
  * holds the founder / internal unlimited entitlement (read fresh on the
  * server by workspace id, never from the client; a failed read is "no"),
  * which includes every add-on at its top tier whatever its own add-on row
- * says.
+ * says, with no program limit (internal_unlimited).
  */
 async function assertAddon(workspaceId: string) {
   const s = await ensureSettings(workspaceId);
   const { isInternalUnlimitedOrFalse } = await import("@/lib/entitlement-grants.server");
-  if (await isInternalUnlimitedOrFalse(workspaceId)) return { ...s, addon_tier: "pro" };
+  if (await isInternalUnlimitedOrFalse(workspaceId))
+    return { ...s, addon_tier: "pro", internal_unlimited: true };
   if (s.addon_status !== "active" && s.addon_status !== "trialing") {
     throw new Error(
       "The Affiliate add-on isn't active. Start the free trial or subscribe on the Add-ons page.",
@@ -236,8 +237,12 @@ export const upsertProgram = createServerFn({ method: "POST" })
       return { ok: true as const, id: data.id };
     }
 
-    // New program — enforce the tier's program limit.
-    const limit = PROGRAM_LIMIT[settings.addon_tier ?? "lite"] ?? 1;
+    // New program — enforce the tier's program limit (none for the founder /
+    // internal unlimited entitlement, which assertAddon read on the server).
+    const limit =
+      (settings as { internal_unlimited?: boolean }).internal_unlimited === true
+        ? Number.POSITIVE_INFINITY
+        : (PROGRAM_LIMIT[settings.addon_tier ?? "lite"] ?? 1);
     const { count } = await sb()
       .from("affiliate_programs")
       .select("*", { count: "exact", head: true })
@@ -506,6 +511,11 @@ export const getAffiliateDashboard = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const settings = await ensureSettings(data.workspaceId);
+    // The founder / internal unlimited entitlement includes the add-on (the
+    // same server-side read assertAddon makes; a failed read is "no"), so its
+    // dashboard never offers a trial it does not need.
+    const { isInternalUnlimitedOrFalse } = await import("@/lib/entitlement-grants.server");
+    const internal = await isInternalUnlimitedOrFalse(data.workspaceId);
 
     const [
       { data: txns },
@@ -559,8 +569,10 @@ export const getAffiliateDashboard = createServerFn({ method: "GET" })
 
     return {
       addon: {
-        status: settings.addon_status as string,
-        tier: settings.addon_tier as string | null,
+        status: internal ? "active" : (settings.addon_status as string),
+        tier: internal ? "pro" : (settings.addon_tier as string | null),
+        /** Included by the internal account entitlement, not bought. */
+        includedInternal: internal,
       },
       currency: settings.currency as string,
       kpis: {

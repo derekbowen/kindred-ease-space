@@ -22,6 +22,7 @@ import { getSettingsContext } from "@/lib/settings.functions";
 import { SettingsNav } from "@/components/settings/SettingsNav";
 import { OwnerOnlyBanner } from "@/components/settings/OwnerOnlyBanner";
 import { userMessage } from "@/lib/user-message";
+import { INTERNAL_UNLIMITED_COUNT } from "@/lib/billing-capacity";
 import {
   DOMAIN_MODE_NAME,
   describeDomainStatus,
@@ -137,9 +138,13 @@ function DomainsPage() {
   useEffect(() => {
     if (!workspaceId || !isOwner) return;
     const pending = rows.filter((r) =>
-      ["verification_required", "pending", "dns_configuration_required", "provisioning", "ssl_pending"].includes(
-        r.status,
-      ),
+      [
+        "verification_required",
+        "pending",
+        "dns_configuration_required",
+        "provisioning",
+        "ssl_pending",
+      ].includes(r.status),
     );
     if (pending.length === 0) return;
     const t = setInterval(async () => {
@@ -248,9 +253,13 @@ function DomainsPage() {
         <CardHeader>
           <CardTitle>Connect a domain</CardTitle>
           <CardDescription>
-            {activeCount >= domainLimit
-              ? `Your plan includes ${domainLimit} connected domain${domainLimit === 1 ? "" : "s"} (${activeCount} in use). Upgrade to connect more.`
-              : `Enter the bare hostname, like example.com. Your plan includes ${domainLimit} connected domain${domainLimit === 1 ? "" : "s"}.`}
+            {/* The internal account's allowance is a sentinel from the
+                server (domainAllowance), never a number to print. */}
+            {domainLimit >= INTERNAL_UNLIMITED_COUNT
+              ? "Enter the bare hostname, like example.com. This internal account has no limit on connected domains."
+              : activeCount >= domainLimit
+                ? `Your plan includes ${domainLimit} connected domain${domainLimit === 1 ? "" : "s"} (${activeCount} in use). Upgrade to connect more.`
+                : `Enter the bare hostname, like example.com. Your plan includes ${domainLimit} connected domain${domainLimit === 1 ? "" : "s"}.`}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

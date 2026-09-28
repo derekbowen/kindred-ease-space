@@ -254,7 +254,8 @@ t("import allowlist did not widen to listings", /const TABLES = \["content_plan"
 const billing = read("src/routes/_authenticated/app.billing.tsx");
 const betaPage = read("src/routes/beta.tsx");
 const homeSrc = read("src/routes/index.tsx");
-t("billing discloses add-ons as separately priced", /add-ons \(Affiliate Programs, DM Champ\) are priced separately/i.test(billing));
+// Whitespace-tolerant: JSX text wraps across source lines and renders as one.
+t("billing discloses add-ons as separately priced", /add-ons \(Affiliate\s+Programs,\s+DM\s+Champ\)\s+are\s+priced\s+separately/i.test(billing));
 t("/beta discloses add-ons as separately priced", /<strong>Add-ons<\/strong>/.test(betaPage) && /priced separately/.test(betaPage));
 t("billing discloses the daily generation cap", billing.includes("GENERATION_DAILY_CAP") && /fair-use cap/.test(billing));
 t("/beta discloses the daily generation cap", betaPage.includes("GENERATION_DAILY_CAP") && /fair-use cap/.test(betaPage));
@@ -308,7 +309,7 @@ t('billing AI card never says "this month", "monthly" or "allowance"', aiCard.le
 // against the fair-use cap — from getAiAllowance (tests/launch-followups).
 t("billing AI card shows today's AI pages against the fair-use cap, not a credit balance",
   aiCard.includes("AI pages generated today (fair-use cap)") && /formatAiToday\(aiToday\)/.test(aiCard) && !aiCard.includes("generation credits available"));
-t("billing AI card tells a beta tenant generation is in the grant, not a credit count", /inBeta \? "Included in your beta grant"/.test(aiCard) && /inBeta \? \(/.test(aiCard) && /part of your beta grant/.test(aiCard));
+t("billing AI card tells a beta tenant generation is in the grant, not a credit count", /inBeta\s*\?\s*"Included in your beta grant"/.test(aiCard) && /inBeta \? \(/.test(aiCard) && /part of your beta grant/.test(aiCard));
 t("billing AI card quotes the fair-use cap as the current value", /fair-use cap \(currently\{" "\}\s*\{GENERATION_DAILY_CAP\}/.test(aiCard));
 
 // C4 — nothing sends a grant-end notice, so the dashboard must not promise one.

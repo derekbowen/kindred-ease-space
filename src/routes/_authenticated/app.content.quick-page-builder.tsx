@@ -7,13 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import {
   Sparkles,
@@ -33,6 +26,8 @@ import { GenerationProgress } from "@/components/pages/GenerationProgress";
 import { PageLivePreview } from "@/components/pages/PageLivePreview";
 import { PageSeoPreview } from "@/components/pages/PageSeoPreview";
 import { PAGE_PRESETS, slugifyPageTitle } from "@/components/pages/page-builder-utils";
+import { AiModelSelect } from "@/components/ai/AiModelSelect";
+import { qualityForRequest } from "@/components/ai/model-choice";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/app/content/quick-page-builder")({
@@ -46,9 +41,6 @@ type BuilderCtx = {
   gaps: BuilderCity[];
   stats: { cityGaps: number; publishedPages: number };
   dominantCategory: string | null;
-  /** The quality picker — same tiers and same default as batch. Tiers, never model names. */
-  tiers: Array<{ tier: string; label: string; hint: string }>;
-  defaultTier: string;
 };
 
 /**
@@ -80,8 +72,9 @@ function QuickPageBuilder() {
   const [topic, setTopic] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
-  // Filled from the server's default tier once the context loads. The
-  // request carries only this tier; the server maps it to a model.
+  // The AI model picker's choice, as its tier (AiModelSelect: only what
+  // getAvailableAiModels offers, the default picked automatically). The
+  // request carries only this tier; the server maps it to the model.
   const [quality, setQuality] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -125,10 +118,7 @@ function QuickPageBuilder() {
       gaps: r.gaps,
       stats: r.stats,
       dominantCategory: r.dominantCategory ?? null,
-      tiers: r.tiers ?? [],
-      defaultTier: r.defaultTier ?? "",
     });
-    setQuality((q) => q || r.defaultTier || "");
   }, []);
 
   useEffect(() => {
@@ -180,7 +170,7 @@ function QuickPageBuilder() {
           title,
           description,
           topic,
-          quality: quality === "premium" ? "premium" : "standard",
+          quality: qualityForRequest(quality),
           city: city || undefined,
           state: state || undefined,
           categoryPlural: ctx?.dominantCategory || "listings",
@@ -416,25 +406,12 @@ function QuickPageBuilder() {
                   <p className="text-xs text-muted-foreground">{topic.length} chars · min 10</p>
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="quality">Writing quality</Label>
-                  <Select value={quality} onValueChange={setQuality} disabled={!ctx}>
-                    <SelectTrigger id="quality">
-                      <SelectValue placeholder="Loading…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(ctx?.tiers ?? []).map((t) => (
-                        <SelectItem key={t.tier} value={t.tier}>
-                          {t.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    {ctx?.tiers.find((t) => t.tier === quality)?.hint ??
-                      "Standard is the default. Premium writes stronger pages and uses more of your included AI."}
-                  </p>
-                </div>
+                <AiModelSelect
+                  workspaceId={workspaceId}
+                  value={quality}
+                  onChange={setQuality}
+                  disabled={busy}
+                />
 
                 {error && (
                   <p className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
@@ -566,7 +543,10 @@ function QuickPageBuilder() {
                   CSV import
                 </Link>{" "}
                 or{" "}
-                <Link to="/app/content/generate" className="font-medium text-primary hover:underline">
+                <Link
+                  to="/app/content/generate"
+                  className="font-medium text-primary hover:underline"
+                >
                   Generate Content
                 </Link>{" "}
                 for many cities at once.

@@ -5,14 +5,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Sparkles, FileText, Store } from "lucide-react";
-import { formatAllowanceCount, useAiAllowance } from "@/components/ai/use-ai-allowance";
+import {
+  allowanceSentence,
+  formatAllowanceCount,
+  useAiAllowance,
+} from "@/components/ai/use-ai-allowance";
 import { getMe } from "@/lib/auth.functions";
 import { getWorkspaceOverview } from "@/lib/workspace.functions";
 import { getBetaStatus } from "@/lib/entitlements.functions";
 import { DailyBriefing } from "@/components/coach/DailyBriefing";
 import { useCoachEnabled } from "@/components/coach/coach-availability";
 import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
-import { describePlanStatus, formatPlanDate } from "@/components/billing/plan-status";
+import {
+  describePlanStatus,
+  formatPlanDate,
+  INTERNAL_PLAN_LABEL,
+  INTERNAL_STATUS_LINE,
+} from "@/components/billing/plan-status";
 
 export const Route = createFileRoute("/_authenticated/app/")({
   head: () => ({ meta: [{ title: "Dashboard — founders.click" }] }),
@@ -91,6 +100,9 @@ function DashboardPage() {
     trialEndsAt: ws?.trial_ends_at,
     currentPeriodEnd: ws?.current_period_end ?? null,
     planKey: ws?.plan,
+    // The founder / internal unlimited grant, as the server computed it: no
+    // trial card, no "Choose a plan" (the server lifts the limits themselves).
+    internalUnlimited: beta?.internalUnlimited === true,
     inBeta: Boolean(beta?.beta),
     betaExpiresAt: beta?.expiresAt ?? null,
   });
@@ -115,7 +127,19 @@ function DashboardPage() {
         </p>
       </div>
 
-      {beta?.beta ? (
+      {planStatus.kind === "internal" ? (
+        <Card className="border-sky-500/30 bg-sky-500/5">
+          <CardContent className="py-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="font-medium">{INTERNAL_PLAN_LABEL}</div>
+              <div className="text-xs text-muted-foreground">{INTERNAL_STATUS_LINE}</div>
+            </div>
+            <Button asChild variant="outline">
+              <Link to="/app/billing">Billing &amp; Plans</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : beta?.beta ? (
         // Never nag a beta tenant: their access is a grant, not a countdown
         // to a credit card. Say what they have and when (if ever) it ends.
         <Card className="border-emerald-500/30 bg-emerald-500/5">
@@ -174,10 +198,14 @@ function DashboardPage() {
             <CardDescription className="flex items-center gap-2">
               <Sparkles className="h-4 w-4" /> AI pages (last 24 hours)
             </CardDescription>
-            <CardTitle className="text-3xl tabular-nums">{formatAllowanceCount(allowance)}</CardTitle>
+            <CardTitle className="text-3xl tabular-nums">
+              {formatAllowanceCount(allowance)}
+            </CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            {allowance ? allowance.summary : (allowanceError ?? "Checking your AI allowance…")}
+            {allowance
+              ? allowanceSentence(allowance)
+              : (allowanceError ?? "Checking your AI allowance…")}
             {" · "}
             <Link to="/app/billing" className="hover:text-foreground">
               Billing →

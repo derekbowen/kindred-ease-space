@@ -118,6 +118,11 @@ function AppShell() {
     staleTime: 60_000,
   });
   const inBeta = Boolean(beta?.beta);
+  // The founder / internal unlimited entitlement, as the server computed it
+  // (getBetaStatus). It words the badge and reveals the finished tools that
+  // are not launched yet; it lifts no limit here — the server does that.
+  const internalUnlimited = beta?.internalUnlimited === true;
+  const revealLaunchHidden = beta?.revealLaunchHiddenFeatures === true;
   // Same wording as the dashboard and billing page: an expired trial (still
   // 'trialing' in the database) reads "Trial ended", never "Trial".
   const planStatus = activeWorkspace
@@ -125,6 +130,7 @@ function AppShell() {
         subscriptionStatus: activeWorkspace.subscription_status,
         trialEndsAt: activeWorkspace.trial_ends_at,
         planKey: activeWorkspace.plan,
+        internalUnlimited,
         inBeta,
       })
     : null;
@@ -176,7 +182,7 @@ function AppShell() {
                 (activeWorkspace as { is_internal?: boolean } | undefined)?.is_internal,
               );
               const items = section.items.filter((i) =>
-                isNavItemVisible(i, { showStubs, isInternal }),
+                isNavItemVisible(i, { showStubs, isInternal, revealLaunchHidden }),
               );
               if (items.length === 0) return null;
               return (
@@ -229,7 +235,7 @@ function AppShell() {
         <SidebarInset className="min-w-0 overflow-x-hidden">
           <header className="h-14 flex items-center gap-3 border-b border-border px-4">
             <SidebarTrigger />
-            {activeWorkspace?.plan && planStatus && (
+            {(activeWorkspace?.plan || internalUnlimited) && planStatus && (
               <Badge
                 variant="outline"
                 className={

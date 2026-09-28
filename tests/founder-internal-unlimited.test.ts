@@ -600,8 +600,8 @@ try {
     const aff = read("src/lib/affiliates.functions.ts");
     const assertAddon = aff.slice(aff.indexOf("async function assertAddon("), aff.indexOf("// ------", aff.indexOf("async function assertAddon(")));
     t(
-      "assertAddon: the internal entitlement first (top tier, whatever the add-on row says), else the add-on must be live",
-      /if \(await isInternalUnlimitedOrFalse\(workspaceId\)\) return \{ \.\.\.s, addon_tier: "pro" \};\s*if \(s\.addon_status !== "active" && s\.addon_status !== "trialing"\) \{\s*throw new Error\(/.test(assertAddon),
+      "assertAddon: the internal entitlement first (top tier, no program limit, whatever the add-on row says), else the add-on must be live",
+      /if \(await isInternalUnlimitedOrFalse\(workspaceId\)\)\s*return \{ \.\.\.s, addon_tier: "pro", internal_unlimited: true \};\s*if \(s\.addon_status !== "active" && s\.addon_status !== "trialing"\) \{\s*throw new Error\(/.test(assertAddon),
       assertAddon.slice(0, 300),
     );
     for (const [file, re, label] of [

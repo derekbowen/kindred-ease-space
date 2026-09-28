@@ -1702,9 +1702,12 @@ console.log("\n=== UI copy and wiring ===");
   const qpb = read("src/routes/_authenticated/app.content.quick-page-builder.tsx");
   t("Quick Page Builder never shows /p/", !qpb.includes("/p/"));
   t("Quick Page Builder shows the /a/ live prefix", qpb.includes("/a/"));
+  // The default now comes from the model picker (AiModelSelect reads
+  // getAvailableAiModels and selects the server's isDefault option — see
+  // tests/founder-ui.test.ts); the page sends that option's tier only.
   t(
     "Quick Page Builder takes its default tier from the server and sends a tier, never a model id",
-    qpb.includes("defaultTier") && /quality[,:]/.test(qpb) && !/useState\("google\/gemini/.test(qpb) && !/\bmodel:\s/.test(qpb) && !/gpt-5/.test(qpb),
+    /<AiModelSelect\b/.test(qpb) && /quality: qualityForRequest\(quality\)/.test(qpb) && !/useState\("google\/gemini/.test(qpb) && !/\bmodel:\s/.test(qpb) && !/gpt-5/.test(qpb),
   );
   t(
     "Quick Page Builder sends an idempotency key",
