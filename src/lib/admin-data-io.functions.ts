@@ -18,16 +18,20 @@ type ExportTableName = (typeof EXPORT_TABLES)[number];
 // billing_suspended pages).
 export const IMPORT_TABLES = ["content_plan", "content_pages"] as const;
 type ImportTableName = (typeof IMPORT_TABLES)[number];
-// The upsert's conflict target is the server's, never the caller's.
+// The row key an upsert matches on — always inside the caller's workspace.
+export const IMPORT_KEY_COLUMN: Record<ImportTableName, string> = {
+  content_plan: "slug",
+  content_pages: "url_path",
+};
+// The upsert's conflict target is the server's, never the caller's, and always
+// includes workspace_id. The write runs as the service role (past RLS), and
 // content_pages (url_path, source_url, slug) and content_plan (slug) carry
-// unique keys that span ALL workspaces, so a caller-chosen target such as
-// url_path turned the upsert into an overwrite of another workspace's row —
-// the write runs as the service role, past RLS. Each target here is the row id,
-// checked against other workspaces before the write, or a key that includes
-// workspace_id.
+// unique keys that span ALL workspaces: a caller-chosen target such as url_path,
+// or a CSV row id naming another workspace's row, turned the upsert into an
+// overwrite of that row. The file's id and workspace_id columns are ignored.
 export const IMPORT_CONFLICT_TARGET: Record<ImportTableName, string> = {
-  content_plan: "workspace_id,slug",
-  content_pages: "id",
+  content_plan: `workspace_id,${IMPORT_KEY_COLUMN.content_plan}`,
+  content_pages: `workspace_id,${IMPORT_KEY_COLUMN.content_pages}`,
 };
 // tenant_listings has no created_at; its rows are keyed by id.
 const EXPORT_ORDER: Record<ExportTableName, string> = {
@@ -51,7 +55,7 @@ function toCsv(rows: Record<string, unknown>[]): string {
   );
 }
 
-function parseCsv(text: string): string[][] {
+export function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let cur = "";
@@ -152,9 +156,62 @@ export const getImportSchema = createServerFn({ method: "POST" })
     const workspaceId = data.workspaceId;
     await assertWorkspaceMember(workspaceId, (context as any).userId);
     const tableColumns = await getTableColumns(data.table, workspaceId);
-    const conflictColumn = data.table === "content_plan" ? "workspace_id,slug" : "id";
+    // null: the table is export-only.
+    const conflictColumn =
+      (IMPORT_CONFLICT_TARGET as Record<string, string | undefined>)[data.table] ?? null;
     return { tableColumns, conflictColumn };
   });
+
+/**
+ * The rows an import may write, from the parsed file. The file's id and
+ * workspace_id columns are never used: the workspace is the session's, and a
+ * row id is always the database's own (a file id could name another
+ * workspace's row). Rows missing or repeating the key are reported, not sent.
+ */
+export function buildImportRows(
+  table: ImportTableName,
+  header: string[],
+  dataRows: string[][],
+  workspaceId: string,
+) {
+  const keyColumn = IMPORT_KEY_COLUMN[table];
+  const rowErrors: { row: number; key?: string; reason: string }[] = [];
+  const validRows: Record<string, any>[] = [];
+  const validRowNumbers: number[] = [];
+  const seenKeys = new Map<string, number>();
+
+  dataRows.forEach((rawRow, idx) => {
+    const csvRowNum = idx + 2;
+    const obj: Record<string, any> = {};
+    header.forEach((col, i) => {
+      if (col === "workspace_id" || col === "id") return;
+      obj[col] = coerceValue(rawRow[i] ?? "");
+    });
+    // Force tenant
+    obj.workspace_id = workspaceId;
+
+    if (header.includes(keyColumn) && (obj[keyColumn] == null || obj[keyColumn] === "")) {
+      rowErrors.push({ row: csvRowNum, reason: `Missing required "${keyColumn}"` });
+      return;
+    }
+    const keyVal = obj[keyColumn];
+    if (keyVal != null) {
+      const prior = seenKeys.get(String(keyVal));
+      if (prior !== undefined) {
+        rowErrors.push({
+          row: csvRowNum,
+          key: String(keyVal),
+          reason: `Duplicate "${keyColumn}"="${keyVal}" (also row ${prior})`,
+        });
+        return;
+      }
+      seenKeys.set(String(keyVal), csvRowNum);
+    }
+    validRows.push(obj);
+    validRowNumbers.push(csvRowNum);
+  });
+  return { rowErrors, validRows, validRowNumbers };
+}
 
 export const ImportTableInputSchema = z
   .object({
@@ -181,46 +238,14 @@ export const importTable = createServerFn({ method: "POST" })
     if (parsed.length < 2) throw new Error("CSV has no data rows");
     const header = parsed[0];
     const dataRows = parsed.slice(1);
+    const keyColumn = IMPORT_KEY_COLUMN[data.table];
     const conflictColumn = IMPORT_CONFLICT_TARGET[data.table];
-
-    const rowErrors: { row: number; key?: string; reason: string }[] = [];
-    const validRows: Record<string, any>[] = [];
-    const validRowNumbers: number[] = [];
-    const seenKeys = new Map<string, number>();
-
-    dataRows.forEach((rawRow, idx) => {
-      const csvRowNum = idx + 2;
-      const obj: Record<string, any> = {};
-      header.forEach((col, i) => {
-        if (col === "workspace_id") return; // never trust CSV-supplied workspace_id
-        obj[col] = coerceValue(rawRow[i] ?? "");
-      });
-      // Force tenant
-      obj.workspace_id = workspaceId;
-
-      if (
-        header.includes(conflictColumn) &&
-        (obj[conflictColumn] == null || obj[conflictColumn] === "")
-      ) {
-        rowErrors.push({ row: csvRowNum, reason: `Missing required "${conflictColumn}"` });
-        return;
-      }
-      const keyVal = obj[conflictColumn];
-      if (keyVal != null) {
-        const prior = seenKeys.get(String(keyVal));
-        if (prior !== undefined) {
-          rowErrors.push({
-            row: csvRowNum,
-            key: String(keyVal),
-            reason: `Duplicate "${conflictColumn}"="${keyVal}" (also row ${prior})`,
-          });
-          return;
-        }
-        seenKeys.set(String(keyVal), csvRowNum);
-      }
-      validRows.push(obj);
-      validRowNumbers.push(csvRowNum);
-    });
+    const { rowErrors, validRows, validRowNumbers } = buildImportRows(
+      data.table,
+      header,
+      dataRows,
+      workspaceId,
+    );
 
     if (data.dryRun) {
       return {
@@ -238,41 +263,13 @@ export const importTable = createServerFn({ method: "POST" })
     const chunkErrors: string[] = [];
 
     for (let i = 0; i < validRows.length; i += chunkSize) {
-      const chunk = validRows.slice(i, i + chunkSize);
-      const chunkRowNums = validRowNumbers.slice(i, i + chunkSize);
-
-      const foreignIds = new Set<string>();
-      if (data.mode === "upsert" && conflictColumn === "id") {
-        const ids = chunk.map((r) => r.id).filter(Boolean);
-        if (ids.length) {
-          const { data: existing } = await supabaseAdmin
-            .from(data.table)
-            .select("id, workspace_id")
-            .in("id", ids);
-          for (const row of existing ?? []) {
-            if (row.workspace_id !== workspaceId) foreignIds.add(row.id as string);
-          }
-        }
-      }
-
-      const safeChunk: Record<string, any>[] = [];
-      const safeNums: number[] = [];
-      for (let j = 0; j < chunk.length; j++) {
-        const row = chunk[j];
-        const rowNum = chunkRowNums[j];
-        if (row.id && foreignIds.has(String(row.id))) {
-          rowErrors.push({
-            row: rowNum,
-            key: String(row.id),
-            reason: "Row belongs to another workspace",
-          });
-          continue;
-        }
-        safeChunk.push(row);
-        safeNums.push(rowNum);
-      }
-
-      if (!safeChunk.length) continue;
+      // Every row carries the session's workspace_id and no id, and the
+      // conflict target includes workspace_id: an upsert can only match the
+      // caller's own rows, and a clash with another workspace's row on a
+      // cross-workspace unique key is refused (23505), never merged.
+      const safeChunk = validRows.slice(i, i + chunkSize);
+      const safeNums = validRowNumbers.slice(i, i + chunkSize);
+      const chunkRowNums = safeNums;
 
       const tbl = supabaseAdmin.from(data.table) as any;
       const q =
@@ -295,10 +292,7 @@ export const importTable = createServerFn({ method: "POST" })
         if (rowErr) {
           rowErrors.push({
             row: safeNums[j],
-            key:
-              safeChunk[j][conflictColumn] != null
-                ? String(safeChunk[j][conflictColumn])
-                : undefined,
+            key: safeChunk[j][keyColumn] != null ? String(safeChunk[j][keyColumn]) : undefined,
             reason: `DB: ${rowErr.message}`,
           });
         } else inserted++;

@@ -100,10 +100,16 @@ export const updateContentPageBasics = createServerFn({ method: "POST" })
     const { workspaceId, id, source, ...patch } = data;
 
     if (source === "tenant") {
+      // A live page's status belongs to publish_tenant_pages() and the plan's
+      // page limit; this service-role write would skip both (publish past the
+      // limit, or bring back billing_suspended pages). The bulk editor only
+      // ever sends in_sitemap.
+      if (patch.status !== undefined) {
+        throw new Error("Publish or unpublish pages from Pages.");
+      }
       const tenantPatch: Record<string, unknown> = {};
       if (patch.title !== undefined) tenantPatch.title = patch.title;
       if (patch.seo_description !== undefined) tenantPatch.meta_description = patch.seo_description;
-      if (patch.status !== undefined) tenantPatch.status = patch.status;
       if (Object.keys(tenantPatch).length === 0) return { ok: true };
       const { error } = await sb()
         .from("tenant_pages")
