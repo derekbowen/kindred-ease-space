@@ -249,7 +249,7 @@ t("Data Export offers the live page model", dataExport.includes('table="tenant_p
 t("Data Export offers the imported listings", dataExport.includes('table="tenant_listings"'));
 const dataIo = read("src/lib/admin-data-io.functions.ts");
 t("export allowlist includes tenant_listings", /EXPORT_TABLES = \[\.\.\.TABLES, "tenant_listings"\]/.test(dataIo));
-t("import allowlist did not widen to listings", /const TABLES = \["content_plan", "content_pages", "tenant_pages"\] as const;/.test(dataIo));
+t("import allowlist did not widen to listings (legacy tables only)", /export const IMPORT_TABLES = \["content_plan", "content_pages"\] as const;/.test(dataIo) && /table: z\.enum\(IMPORT_TABLES\)/.test(dataIo));
 
 const billing = read("src/routes/_authenticated/app.billing.tsx");
 const betaPage = read("src/routes/beta.tsx");

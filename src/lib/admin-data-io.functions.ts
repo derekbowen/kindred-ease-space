@@ -11,6 +11,24 @@ type TableName = (typeof TABLES)[number];
 // the imported marketplace listings; import stays limited to the legacy tables.
 const EXPORT_TABLES = [...TABLES, "tenant_listings"] as const;
 type ExportTableName = (typeof EXPORT_TABLES)[number];
+// What an import may write: the two legacy tables and nothing else. The live
+// page model (tenant_pages) is export-only: its status belongs to
+// publish_tenant_pages() and the page limit, which a service-role upsert would
+// skip (a direct call could publish past the plan's limit or re-publish
+// billing_suspended pages).
+export const IMPORT_TABLES = ["content_plan", "content_pages"] as const;
+type ImportTableName = (typeof IMPORT_TABLES)[number];
+// The upsert's conflict target is the server's, never the caller's.
+// content_pages (url_path, source_url, slug) and content_plan (slug) carry
+// unique keys that span ALL workspaces, so a caller-chosen target such as
+// url_path turned the upsert into an overwrite of another workspace's row —
+// the write runs as the service role, past RLS. Each target here is the row id,
+// checked against other workspaces before the write, or a key that includes
+// workspace_id.
+export const IMPORT_CONFLICT_TARGET: Record<ImportTableName, string> = {
+  content_plan: "workspace_id,slug",
+  content_pages: "id",
+};
 // tenant_listings has no created_at; its rows are keyed by id.
 const EXPORT_ORDER: Record<ExportTableName, string> = {
   content_plan: "created_at",
@@ -116,10 +134,7 @@ export const exportTable = createServerFn({ method: "POST" })
     };
   });
 
-async function getTableColumns(
-  table: ExportTableName,
-  workspaceId: string,
-): Promise<string[]> {
+async function getTableColumns(table: ExportTableName, workspaceId: string): Promise<string[]> {
   const { data, error } = await supabaseAdmin
     .from(table)
     .select("*")
@@ -141,21 +156,24 @@ export const getImportSchema = createServerFn({ method: "POST" })
     return { tableColumns, conflictColumn };
   });
 
-const importInput = z.object({
-  workspaceId: workspaceIdSchema,
-  table: z.enum(TABLES),
-  csv: z
-    .string()
-    .min(1)
-    .max(25 * 1024 * 1024),
-  mode: z.enum(["upsert", "insert"]).default("upsert"),
-  conflictColumn: z.string().optional(),
-  dryRun: z.boolean().optional(),
-});
+export const ImportTableInputSchema = z
+  .object({
+    workspaceId: workspaceIdSchema,
+    table: z.enum(IMPORT_TABLES),
+    csv: z
+      .string()
+      .min(1)
+      .max(25 * 1024 * 1024),
+    mode: z.enum(["upsert", "insert"]).default("upsert"),
+    dryRun: z.boolean().optional(),
+  })
+  // Unknown keys are refused: a body still carrying conflictColumn (or any
+  // other extra field) fails validation instead of being quietly dropped.
+  .strict();
 
 export const importTable = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => importInput.parse(d))
+  .inputValidator((d: unknown) => ImportTableInputSchema.parse(d))
   .handler(async ({ data, context }) => {
     const workspaceId = data.workspaceId;
     await assertWorkspaceMember(workspaceId, (context as any).userId);
@@ -163,8 +181,7 @@ export const importTable = createServerFn({ method: "POST" })
     if (parsed.length < 2) throw new Error("CSV has no data rows");
     const header = parsed[0];
     const dataRows = parsed.slice(1);
-    const conflictColumn =
-      data.conflictColumn || (data.table === "content_plan" ? "workspace_id,slug" : "id");
+    const conflictColumn = IMPORT_CONFLICT_TARGET[data.table];
 
     const rowErrors: { row: number; key?: string; reason: string }[] = [];
     const validRows: Record<string, any>[] = [];
