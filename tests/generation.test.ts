@@ -2185,10 +2185,17 @@ console.log("\n=== rollback text ===");
   const readme = read("supabase/rollback/README.md");
   t("rollback README lists 000600 in the apply order", /000500 → 000600/.test(readme));
   t(
-    "rollback README verifies 000600 (index, grants, table, columns, trigger)",
+    // Round-5 release review M1: 000800 drops 000600's settlement index and
+    // settle_generation_free_quota, so the combined check expects them in the
+    // 000800 block as GONE, never in the 000600 block as present.
+    "rollback README verifies 000600 (grants, table, columns, trigger) and 000800 the superseded pair gone",
     readme.includes("-- 000600:") &&
-      readme.includes("credit_ledger_generation_settlement_uidx") &&
-      readme.includes("'public.settle_generation_free_quota(uuid,text,text,text)'") &&
+      (() => {
+        const b600 = readme.slice(readme.indexOf("-- 000600:"), readme.indexOf("-- 20260924000700"));
+        return !/indexname='credit_ledger_generation_settlement_uidx'/.test(b600) && !b600.includes("'public.settle_generation_free_quota(uuid,text,text,text)',");
+      })() &&
+      /indexname='credit_ledger_generation_settlement_uidx';\s*-- expect 0/.test(readme) &&
+      /to_regprocedure\('public\.settle_generation_free_quota\(uuid,text,text,text\)'\) AS superseded;\s*-- expect NULL/.test(readme) &&
       readme.includes("'public.reserve_generation_slot(uuid,uuid,int)'") &&
       readme.includes("'public.mark_generation_provider_called(uuid,uuid)'") &&
       readme.includes("'public.release_generation_slot(uuid,uuid)'") &&

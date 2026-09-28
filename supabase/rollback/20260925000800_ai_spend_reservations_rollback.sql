@@ -21,9 +21,10 @@
 --   2. Unschedules the reaper and drops the ai_* functions, the reservation,
 --      budget, settings, briefing-claim and briefing-refresh tables, and the
 --      ledger index.
---   3. Restores what 000800 superseded and the previous build calls:
---      settle_generation_free_quota and credit_ledger_generation_settlement_uidx
---      (the 000600 bodies, verbatim).
+--   3. Restores what 000800 superseded: settle_generation_free_quota and
+--      credit_ledger_generation_settlement_uidx (the 000600 bodies, verbatim).
+--      (The previous production build, 123534f, calls neither: an app
+--      rollback never needs this file — see supabase/rollback/README.md.)
 --
 -- What it keeps: the ai_hold / ai_refund rows in credit_ledger and the
 -- ai_usage_log rows (history). What it forgets: the per-request spend record

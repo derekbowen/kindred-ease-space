@@ -46,16 +46,14 @@ SELECT prosrc LIKE '%ORDER BY priority ASC, verified_at DESC NULLS LAST, id ASC%
   FROM pg_proc WHERE oid = 'public.current_workspace_id_by_host(text)'::regprocedure;
 -- expect true
 
--- 000600: settlement index, the six generation functions service-role only,
--- reservations table (with provider_called_at), billing-mode column, pin trigger
-SELECT indexname FROM pg_indexes
- WHERE schemaname='public' AND indexname='credit_ledger_generation_settlement_uidx';
--- expect one row
+-- 000600: the five generation functions service-role only, reservations table
+-- (with provider_called_at), billing-mode column, pin trigger. (000600's
+-- settlement index and settle_generation_free_quota are superseded by 000800,
+-- which drops both; the 000800 block below checks they are gone.)
 SELECT f, has_function_privilege('anon', to_regprocedure(f), 'EXECUTE') AS anon_exec,
        has_function_privilege('authenticated', to_regprocedure(f), 'EXECUTE') AS auth_exec,
        has_function_privilege('service_role', to_regprocedure(f), 'EXECUTE') AS service_exec
 FROM unnest(ARRAY[
- 'public.settle_generation_free_quota(uuid,text,text,text)',
  'public.reserve_generation_slot(uuid,uuid,int)',
  'public.mark_generation_provider_called(uuid,uuid)',
  'public.release_generation_slot(uuid,uuid)',
@@ -131,6 +129,9 @@ SELECT jobname, schedule, active FROM cron.job WHERE jobname = 'ai-reap-stale-re
 -- expect one row: */5 * * * *, active
 SELECT to_regprocedure('public.settle_generation_free_quota(uuid,text,text,text)') AS superseded;
 -- expect NULL (000800 settles generation itself; the rollback restores this function)
+SELECT count(*) FROM pg_indexes
+ WHERE schemaname='public' AND indexname='credit_ledger_generation_settlement_uidx';
+-- expect 0 (000800 drops 000600's settlement index with it; the rollback restores it)
 SELECT count(*) FROM public.ai_spend_reservations;   -- 0 before first use
 ```
 
@@ -162,8 +163,8 @@ never re-opens an anonymous path: no anon/PUBLIC EXECUTE, no anonymous
 ticket-insert policy (round-4 security review M2). 000500 changes only which of two matching
 workspaces the resolver returns for one hostname; a previous build calls the
 same function and is unaffected.
-20260924000700 replaces one function body that is evaluated at read time and stores nothing, so no data changes either way. It also admits grant_type 'internal' (CHECK) and adds the predicate workspace_is_internal_unlimited(uuid); its rollback refuses to run while any active 'internal' grant exists (revoke those first — the 000930 rollback revokes the founder's), restores the 4-type CHECK, and drops the predicate only when ai_reserve (000800) no longer needs it. A code-only rollback (previous Worker) leaves the two halves disagreeing for a trialing workspace with an active grant — the DB says 'granted' / grant-only limit, the old app says 'trialing' / trial base + grant — so roll the SQL back with the app if the app is rolled back. Harmless today: 0 such workspaces (verified 2026-09-24).
-20260925000800 is additive except for one function it supersedes (settle_generation_free_quota, 000600, never applied in production before it) and the settlement index that went with it. It must be rolled back WITH the code: the build shipped with it reserves every AI call through ai_reserve, and the previous build settles generation through settle_generation_free_quota, which only the rollback restores. The rollback first closes every open hold (held → refunded, called → the customer refunded and the platform budget kept at the full hold) so no customer money stays locked, then drops the tables; the ai_hold / ai_refund ledger rows and ai_usage_log stay as history. Each hold is closed in its own subtransaction: one that cannot be closed raises a WARNING and is listed by the rollback's VERIFY as `UNCLOSED hold: workspace … request … (status, billing, credits): error` — the rest are closed and the rollback completes (the same per-row isolation the lazy expiry and the reaper use).
+20260924000700 replaces one function body that is evaluated at read time and stores nothing, so no data changes either way. It also admits grant_type 'internal' (CHECK) and adds the predicate workspace_is_internal_unlimited(uuid); its rollback refuses to run while any active 'internal' grant exists (revoke those first — the 000930 rollback revokes the founder's), restores the 4-type CHECK, and drops the predicate only when ai_reserve (000800) no longer needs it. A code-only rollback (previous Worker) leaves the two halves disagreeing on the page LIMIT for a trialing workspace with an active grant — the DB says 'granted' / grant-only limit, the old app says 'trialing' / trial base + grant. The DB's atomic publish gate decides, so at worst the old app offers a publish that stays a draft; nothing is served or charged wrongly, and no rollback of this file is needed for an app rollback. The founder's internal grant (000930) reads in the old app as a 1,000,000-page grant.
+20260925000800 is additive except for one function it supersedes (settle_generation_free_quota, 000600, never applied in production before it) and the settlement index that went with it. The previous production build (123534f) calls none of the objects 000600–000800 create or drop, so an APP rollback never needs this rollback: the database stays forward-compatible with the old build. Run it only for an incident the database itself caused, and then only together with rolling the app back, because the build shipped with it reserves every AI call through ai_reserve. The rollback first closes every open hold (held → refunded, called → the customer refunded and the platform budget kept at the full hold) so no customer money stays locked, then drops the tables; the ai_hold / ai_refund ledger rows and ai_usage_log stay as history. Each hold is closed in its own subtransaction: one that cannot be closed raises a WARNING and is listed by the rollback's VERIFY as `UNCLOSED hold: workspace … request … (status, billing, credits): error` — the rest are closed and the rollback completes (the same per-row isolation the lazy expiry and the reaper use).
 
 ## 20260925000900 — help center platform fix (data only)
 

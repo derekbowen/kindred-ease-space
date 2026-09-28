@@ -19,7 +19,7 @@ Record as you go:
 | --- | --- |
 | Release SHA (launch branch head, after the R5 merges) | |
 | `main` before the release (rollback target) | `123534f…` unless it moved |
-| Worker version serving before the release (`bunx wrangler versions list --name founders-click`) | |
+| Worker version serving before the release (`bunx wrangler versions list --name founders-click`; record it AFTER step 1.3, since a `secret put` deploys a new version) | |
 | Window start / end (UTC) | |
 
 ## 0. Before the window
@@ -90,10 +90,16 @@ Record as you go:
    the odd copy from the same source value (Worker: `bunx wrangler secret put
    CRON_SECRET --name founders-click` reads stdin; function: `supabase secrets set
    --env-file`). Without the source value, rotate all three in one sitting from one
-   new value: the two commands above, and Vault through psql so the value is in
-   neither a saved snippet nor the history:
-   `psql "$DB_URL" -v s="$(cat cron_secret.txt)" -c "SELECT vault.update_secret((SELECT id FROM vault.secrets WHERE name = 'CRON_SECRET'), :'s')"`.
-   Re-run A and B.
+   new value, **Vault first** (pg_cron's syncs read it), through psql's stdin so the
+   value is in neither argv, a saved snippet nor the history (psql does not
+   substitute variables inside `-c`, so the one-line `-c` form cannot work):
+   ```bash
+   printf '%s\n' "\\set s \`cat cron_secret.txt\`" \
+     "SELECT vault.update_secret((SELECT id FROM vault.secrets WHERE name = 'CRON_SECRET'), :'s');" \
+     | psql "$DB_URL" -v ON_ERROR_STOP=1
+   ```
+   then the Worker and the function with the two commands above, then delete
+   `cron_secret.txt`. Re-run A and B.
 4. **Keep** the Worker's `OPENROUTER_API_KEY` until step 10 (the previous build
    needs it if you roll back) and the Supabase `OPENROUTER_API_KEY` forever (PRNM).
 
@@ -166,7 +172,10 @@ relative paths:
 - `coach-briefing-cron`: `index.ts`, `../_shared/openai.ts`, `../_shared/ai-pricing.ts`
 - `create-checkout`: `index.ts`, `../_shared/stripe-catalog.ts`, `../_shared/affiliate-requirement.ts`
 
-Check (no customer data involved):
+Check (no customer data involved). The old and new code answer these probes
+identically, so first prove the deploy happened: `supabase functions list
+--project-ref xbxhzinnfhosoztqaaao` (or the MCP `list_edge_functions`) before and
+after this step — all three functions must show a new VERSION / UPDATED_AT.
 ```bash
 # 400 {"error":"Invalid webhook signature"} from the function itself. A 401 means
 # the gateway wants a JWT: redeploy with --no-verify-jwt.
@@ -222,7 +231,8 @@ Check: `curl -s https://www.founders.click/api/public/version` and
 
 On that workspace's dashboard, Daily Briefing → **Generate now** (or **Refresh**). A
 briefing appears. "Couldn't prepare today's briefing" means step 1.3 or the
-`verify_jwt` of step 3 is wrong. This is the end-to-end CRON_SECRET check (Worker →
+`verify_jwt` of step 3 is wrong — or that `coach-briefing-cron` is still the old
+code (the VERSION check in step 3). This is the end-to-end CRON_SECRET check (Worker →
 function).
 
 ## 7. Kill-switch drill
@@ -298,9 +308,12 @@ bunx wrangler secret list --name founders-click   # no OPENROUTER_API_KEY, LOVAB
   git diff --stat 123534f HEAD        # must be empty
   git push origin rollback:main
   ```
-- **Database:** only with the code rollback, back to back, in reverse order, per
-  `supabase/rollback/README.md` — 000800 (and 000600/000700) must go with the old
-  build. The help rows (000900/000910) can stay: the old build renders them no worse.
+- **Database:** normally nothing. The previous build (123534f) calls none of the
+  objects 000100–000930 create or drop, so it runs on the migrated schema; roll
+  back only the Worker and `main`. Use the per-file rollbacks in
+  `supabase/rollback/README.md` (reverse order) only for an incident the database
+  itself caused. The help rows (000900/000910) can stay either way: the old build
+  renders them no worse.
 - **Edge functions:** redeploy the previous source from git history
   (`git checkout 123534f -- supabase/functions && supabase functions deploy <name> …`,
   `--no-verify-jwt` for `stripe-webhook` and `coach-briefing-cron`). Deleted legacy
