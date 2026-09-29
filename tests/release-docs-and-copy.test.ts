@@ -199,10 +199,22 @@ t(
   "the ops probe is not relied on (OPS_PROBE_SECRET is not a Worker secret)",
   /OPS_PROBE_SECRET/.test(cl) && /not a Worker secret/.test(cl),
 );
-t(
-  '"Generate now" is the end-to-end CRON_SECRET check',
-  /Generate now/.test(cl) && /end-to-end CRON_SECRET check/.test(cl),
-);
+{
+  // MVP (2026-09-28): the daily briefing is deferred, so step 6 cannot run
+  // and must say so — never send an operator to a card that is not there.
+  const step6 = cl.slice(at('## 6. Dashboard "Generate now"'), at("## 7. Kill-switch drill"));
+  t(
+    '"Generate now" (the old end-to-end CRON_SECRET check) is out of the MVP release, and step 6 says why',
+    /\*\*Not in the MVP release\.\*\*/.test(step6) &&
+      /daily briefing is deferred/.test(step6) &&
+      /end-to-end CRON_SECRET check/.test(step6) &&
+      /probe \*\*B\*\* of step 1\.3/.test(step6),
+  );
+  t(
+    "the migration step expects coach-briefing-nightly INACTIVE after 000300",
+    /coach-briefing-nightly present and\s+(--\s+)?INACTIVE/.test(migSection),
+  );
+}
 t(
   "the kill-switch drill turns it off, checks the sentence, turns it back on",
   /SET platform_ai_enabled = false/.test(cl) &&

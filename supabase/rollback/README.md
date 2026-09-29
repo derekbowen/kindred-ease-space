@@ -294,3 +294,23 @@ per-workspace AI cap all read the grant fresh). Its VERIFY expects `migration_gr
 run changes nothing. Verified on PGlite with the full AI chain (tests/founder-internal-unlimited.test.ts):
 wrong owner, a second owner, a non-admin or missing granter, and a missing workspace each write nothing;
 the happy path writes exactly the row above; a re-run writes nothing; the rollback revokes only that row.
+
+## 20260929000300 — MVP: deferred features run no background work (cron only)
+
+`supabase/migrations/20260929000300_mvp_deferred_jobs.sql` changes one pg_cron job and no table. The daily
+briefing is deferred with the Coach (MVP scope, 2026-09-28): its on-demand path is refused in the Worker
+(`assertFeatureAvailable("briefing")`, `src/lib/features.server.ts`) and this file stops the nightly run.
+
+| job | change |
+| --- | --- |
+| `coach-briefing-nightly` | `active` true → false through `cron.alter_job(job_id, active := false)` — deactivated, NOT unscheduled: schedule and command stay exactly as they are |
+| every other job | untouched — in particular Pool Rental Near Me's `competitor-radar-daily` and `daily-seo-digest` (another product on this database), and Founders' `sharetribe-sync-30min`, `canonical-audit-daily`, `ai-reap-stale-reservations` |
+
+Idempotent: an inactive job stays inactive; with no job of that name a NOTICE says so and nothing changes. The
+file ends with a check; expect three rows of `true` (the job is not active; it is kept for the rollback — or never
+existed; no other job's `active` changed, read against a snapshot the file takes of `cron.job` before it runs).
+
+Rollback: `supabase/rollback/20260929000300_mvp_deferred_jobs_rollback.sql` sets `active := true` on that job
+only (same schedule and command) and checks that no other job changed. Run it only together with turning the
+briefing back on (`platform_settings.enabled_deferred_features` must list `"briefing"`), otherwise the nightly
+run spends AI money on briefings no screen shows. A missing job is not recreated (20260825122000 defines it).

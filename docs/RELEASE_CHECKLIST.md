@@ -121,6 +121,9 @@ verification block at the end of that file and read every row; **stop on any
 - [ ] `20260925000900_help_center_platform_fix.sql` (help rows; six rows of `true`)
 - [ ] `20260925000910_help_center_claims_fix.sql` (help rows; read the eight rows it prints)
 - [ ] `20260925000930_founder_internal_unlimited.sql` (data: at most one grant for the founder workspace; four rows of `true`)
+- [ ] `20260929000100_mvp_targets_sync_templates.sql` (MVP spine: listing keys, sync lease, page targets, the three templates)
+- [ ] `20260929000200_domain_write_lock_and_exact_host.sql` (MVP spine: domain rows server-write-only; exact-host resolver)
+- [ ] `20260929000300_mvp_deferred_jobs.sql` (deactivates `coach-briefing-nightly` only — never PRNM's `competitor-radar-daily` / `daily-seo-digest`; three rows of `true`)
 
 Then run the combined post-migration verification in `supabase/rollback/README.md`.
 
@@ -144,7 +147,8 @@ SELECT * FROM public.ai_platform_settings;
 -- (see 000800's own verification block). Change the ceiling now if you want another.
 SELECT jobname, schedule, active FROM cron.job
  WHERE jobname IN ('ai-reap-stale-reservations', 'coach-briefing-nightly', 'sharetribe-sync-30min');
--- ai-reap-stale-reservations */5 * * * * active (new); the other two present and active
+-- ai-reap-stale-reservations */5 * * * * active (new); sharetribe-sync-30min present and
+-- active; coach-briefing-nightly present and INACTIVE (000300: the briefing is deferred)
 ```
 
 ## 3. Edge functions — after the migrations, before the Worker
@@ -161,9 +165,11 @@ supabase functions deploy coach-briefing-cron --no-verify-jwt --project-ref xbxh
 supabase functions deploy create-checkout                     --project-ref xbxhzinnfhosoztqaaao
 ```
 
-`create-checkout` keeps JWT verification **on**; it now refuses the Affiliate
-add-on unless the workspace's Sharetribe connection uses the Integration API
-(round-4 release review M1).
+`create-checkout` keeps JWT verification **on**. Add-ons are deferred for the MVP:
+it refuses every `mode: "addon"` checkout with 410 `addon_unavailable` before any
+read or Stripe call (credits have the same 410). The Affiliate add-on's
+Integration API rule (round-4 release review M1) stays in the code, dormant
+behind that refusal.
 
 Deploying through the Supabase MCP `deploy_edge_function` instead? Pass
 `verify_jwt: false` for the first two, and every file each one imports, at the same
@@ -229,11 +235,15 @@ Check: `curl -s https://www.founders.click/api/public/version` and
 
 ## 6. Dashboard "Generate now"
 
-On that workspace's dashboard, Daily Briefing → **Generate now** (or **Refresh**). A
-briefing appears. "Couldn't prepare today's briefing" means step 1.3 or the
-`verify_jwt` of step 3 is wrong — or that `coach-briefing-cron` is still the old
-code (the VERSION check in step 3). This is the end-to-end CRON_SECRET check (Worker →
-function).
+**Not in the MVP release.** The daily briefing is deferred: the dashboard has no
+Daily Briefing card, `generateBriefingNow` refuses ("This part of Founders.click
+isn't available right now."), and 000300 deactivates the nightly job. So the
+end-to-end CRON_SECRET check this step used to be (Worker → function, through
+**Generate now**) cannot run; probe **B** of step 1.3 (Vault → `coach-briefing-cron`)
+still proves the function's copy of the secret. When the briefing returns
+(`enabled_deferred_features` lists `"briefing"`, the job is reactivated by the
+000300 rollback), this step is: on that workspace's dashboard, Daily Briefing →
+**Generate now** (or **Refresh**) and a briefing appears.
 
 ## 7. Kill-switch drill
 

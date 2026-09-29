@@ -63,7 +63,7 @@ t("it starts a page_addon checkout", /checkout\("page_addon", addonQty\)/.test(b
 t("it sells whole blocks of the catalog size", /addonQty \* PAGE_ADDON\.pagesPerUnit/.test(billing));
 
 const checkout = read("supabase/functions/create-checkout/index.ts");
-t("create-checkout accepts page_addon", /const validModes = \["subscription", "addon", "page_addon"\]/.test(checkout));
+t("create-checkout accepts page_addon", /const validModes = \["subscription", "page_addon"\]/.test(checkout));
 t("create-checkout requires a base plan first", /plan_required/.test(checkout) && /extra page capacity stacks on top of a base plan/.test(checkout));
 t("create-checkout prices it from the catalog", /mode === "page_addon"\s*\?\s*await ensurePageAddonPrice\(stripe\)/.test(checkout));
 

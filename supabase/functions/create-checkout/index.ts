@@ -47,8 +47,9 @@ Deno.serve(async (req) => {
     const maxQty = mode === "page_addon" ? 10 : 100;
     const quantity = Math.max(1, Math.min(maxQty, Math.floor(Number(rawQuantity) || 1)));
 
-    // Validate inputs to avoid leaking TypeErrors from Stripe
-    const validModes = ["subscription", "addon", "page_addon"] as const;
+    // Validate inputs to avoid leaking TypeErrors from Stripe. "addon" is not
+    // among them: add-ons are deferred (refused with 410 just below).
+    const validModes = ["subscription", "page_addon"] as const;
     if (!workspace_id || typeof workspace_id !== "string") {
       return new Response(JSON.stringify({ error: "invalid_request" }), {
         status: 400,
@@ -67,6 +68,23 @@ Deno.serve(async (req) => {
         JSON.stringify({
           error: "credits_unavailable",
           message: "AI credit packs are no longer sold. Page capacity is included with every plan.",
+        }),
+        { status: 410, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    // Add-ons (Affiliate Programs, DM Champ) are DEFERRED for the MVP
+    // (2026-09-28): not sold to anyone, whatever the workspace or its
+    // entitlement. Hiding the Add-ons page does not close the endpoint, so
+    // mode:"addon" is refused here, the same way as credits: 410, before any
+    // database read or Stripe call. The catalogue entries, ensureAddonPrice()
+    // and the add-on branches below are left intact for a deliberate restore.
+    // Nobody holds an add-on today (verified in production); existing Stripe
+    // objects, if any, are untouched.
+    if (mode === "addon") {
+      return new Response(
+        JSON.stringify({
+          error: "addon_unavailable",
+          message: "Add-ons aren't available right now.",
         }),
         { status: 410, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
