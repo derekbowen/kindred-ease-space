@@ -477,7 +477,11 @@ function EditPage() {
               </Field>
               <Field
                 label="Page text (Markdown)"
-                hint="Shown below the listings. Use ## for sections."
+                hint={
+                  data.page.kind === "resource_article"
+                    ? "The article. Use ## for sections."
+                    : "Shown below the listings. Use ## for sections."
+                }
               >
                 <Textarea
                   rows={16}
@@ -488,18 +492,20 @@ function EditPage() {
                 />
               </Field>
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Listings shown" hint="1–60, newest first.">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={60}
-                    value={fields.listingLimit}
-                    disabled={readOnly}
-                    onChange={(e) =>
-                      set("listingLimit", Math.max(1, Math.min(60, Number(e.target.value) || 1)))
-                    }
-                  />
-                </Field>
+                {data.page.kind !== "resource_article" && (
+                  <Field label="Listings shown" hint="1–60.">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={60}
+                      value={fields.listingLimit}
+                      disabled={readOnly}
+                      onChange={(e) =>
+                        set("listingLimit", Math.max(1, Math.min(60, Number(e.target.value) || 1)))
+                      }
+                    />
+                  </Field>
+                )}
                 <label className="flex items-start gap-2 pt-6 text-sm">
                   <input
                     type="checkbox"
@@ -519,7 +525,7 @@ function EditPage() {
             </CardContent>
           </Card>
 
-          <ChecksCard check={check} />
+          <ChecksCard check={check} showListings={data.page.kind !== "resource_article"} />
 
           <DomainCard domain={data.domain} />
 
@@ -734,8 +740,11 @@ function Field({
 
 function ChecksCard({
   check,
+  showListings,
 }: {
   check: { ok: boolean; problems: Problem[]; warnings: Problem[]; listingCount: number } | null;
+  /** A Resource Article shows no listing strip: its count would only confuse. */
+  showListings: boolean;
 }) {
   if (!check) {
     return (
@@ -758,9 +767,11 @@ function ChecksCard({
             "Before this can be published"
           )}
         </p>
-        <p className="text-muted-foreground">
-          {check.listingCount} published listings match this page.
-        </p>
+        {showListings && (
+          <p className="text-muted-foreground">
+            {check.listingCount} published listings match this page.
+          </p>
+        )}
         {check.problems.map((p) => (
           <p key={p.code} className="flex items-start gap-2">
             <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />

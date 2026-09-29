@@ -535,6 +535,28 @@ seed();
   );
 }
 
+console.log("\n6b. The title-length warning is about the title search results show");
+seed();
+{
+  const long = "Private pool rentals by the hour in Austin, Texas, for parties"; // 62
+  const withSeo = page({ title: long, h1: long, seo_title: "Private pools in Austin, TX" });
+  const row1 = (await P.loadEditorPage(WS, withSeo.id))!;
+  const c1 = await P.checkStoredPage(WS, row1);
+  t(
+    "a long page title with a short search title set: no truncation warning",
+    !c1.warnings.some((w) => w.code === "title_long" || w.code === "seo_title_long"),
+    JSON.stringify(c1.warnings),
+  );
+  db.table("tenant_pages")[0]!.seo_title = null;
+  const row2 = (await P.loadEditorPage(WS, withSeo.id))!;
+  const c2 = await P.checkStoredPage(WS, row2);
+  t(
+    "…without a search title the page title is what shows, and it warns",
+    c2.warnings.some((w) => w.code === "title_long"),
+    JSON.stringify(c2.warnings),
+  );
+}
+
 console.log("\n7. Every slug the app makes is one the editor accepts");
 {
   const { slugifyPage, findUniqueTenantSlug, PAGE_SLUG_MAX } =

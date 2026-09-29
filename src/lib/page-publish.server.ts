@@ -341,6 +341,9 @@ export async function checkPageContent(
     },
   );
   for (const v of verdict.violations) {
+    // With a search title set, results show IT, not the page title, so the
+    // page title's length can't be cut off (seo_title_long above covers it).
+    if (v.code === "title_long" && page.seoTitle && page.seoTitle.trim()) continue;
     const item = { code: v.code, message: v.message, fix: v.fix };
     (v.severity === "BLOCKING" ? problems : warnings).push(item);
   }
