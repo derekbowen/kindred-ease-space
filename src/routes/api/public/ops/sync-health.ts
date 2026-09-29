@@ -50,7 +50,7 @@ export const Route = createFileRoute("/api/public/ops/sync-health")({
           const { data, error } = await (supabaseAdmin as any)
             .from("tenant_integrations")
             .select(
-              "workspace_id, status, last_sync_at, last_sync_status, last_sync_error, listings_count",
+              "workspace_id, status, last_sync_at, last_sync_status, last_sync_error, listings_count, last_success_at",
             )
             .eq("provider", "sharetribe");
           if (error) throw new Error(error.message);

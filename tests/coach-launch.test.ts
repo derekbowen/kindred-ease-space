@@ -187,8 +187,9 @@ t(
   shell.includes('import { CoachLauncher } from "@/components/coach/CoachLauncher";') &&
     !/<CoachPanel\b/.test(shell),
 );
+// The Sharetribe page no longer mounts a coach at all (MVP; asserted in
+// tests/sharetribe-connection.test.ts).
 for (const f of [
-  "src/routes/_authenticated/app.settings.integrations.sharetribe.tsx",
   "src/routes/_authenticated/app.seo.content-health.tsx",
 ]) {
   const src = read(f);

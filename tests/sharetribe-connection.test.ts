@@ -61,13 +61,16 @@ t("marketplace show URL", buildMarketplaceShowUrl("marketplace") === "https://fl
 t("integration show URL", buildMarketplaceShowUrl("integration") === "https://flex-integ-api.sharetribe.com/v1/integration_api/marketplace/show");
 const mpQ = new URL(buildListingsQueryUrl("marketplace", 2));
 t("marketplace listings query base", mpQ.origin + mpQ.pathname === "https://flex-api.sharetribe.com/v1/api/listings/query", mpQ.href);
-t("marketplace listings query params", mpQ.searchParams.get("per_page") === "100" && mpQ.searchParams.get("page") === "2" && mpQ.searchParams.get("include") === "author,images", mpQ.href);
+t("marketplace listings query params (perPage — Sharetribe's page-size parameter)", mpQ.searchParams.get("perPage") === "100" && mpQ.searchParams.get("page") === "2" && mpQ.searchParams.get("include") === "author,images", mpQ.href);
+t("the ignored per_page parameter is gone", !mpQ.searchParams.has("per_page"), mpQ.href);
 t("marketplace listings request the preferred image variants", (mpQ.searchParams.get("fields.image") ?? "") === "variants.square-small2x,variants.scaled-large,variants.default", mpQ.href);
 t("marketplace listings query has no states filter (API is published-only)", !mpQ.searchParams.has("states"));
 const intQ = new URL(buildListingsQueryUrl("integration", 1));
 t("integration listings query base", intQ.origin + intQ.pathname === "https://flex-integ-api.sharetribe.com/v1/integration_api/listings/query", intQ.href);
 t("integration listings query only asks for published listings", intQ.searchParams.get("states") === "published", intQ.href);
-t("integration listings query keeps includes", intQ.searchParams.get("include") === "author,images" && intQ.searchParams.get("per_page") === "100");
+t("integration listings query keeps includes and asks perPage=100", intQ.searchParams.get("include") === "author,images" && intQ.searchParams.get("perPage") === "100" && !intQ.searchParams.has("per_page"));
+t("integration listings query requests only public listing fields (sparse attributes)", intQ.searchParams.get("fields.listing") === "title,description,price,publicData,geolocation,state" && intQ.searchParams.get("fields.user") === "profile.displayName", intQ.href);
+t("marketplace listings query keeps every public listing field (no listing fieldset)", !mpQ.searchParams.has("fields.listing"), mpQ.href);
 
 console.log("\n=== mapListing on a Marketplace-API-shaped listing ===");
 const listingId = "7a0d2d6e-4c3c-4b7a-9f0e-3c1c0e5a1b22";
@@ -227,19 +230,20 @@ t("the refusal names no workspace, owner, id or marketplace",
   !/[0-9a-f]{8}-[0-9a-f]{4}/i.test(MARKETPLACE_ALREADY_CONNECTED_ERROR) && !/workspace_id|owner|@|marketplace_id/i.test(MARKETPLACE_ALREADY_CONNECTED_ERROR), MARKETPLACE_ALREADY_CONNECTED_ERROR);
 
 const fnSrc = readFileSync(join(import.meta.dir, "..", "src", "lib", "sharetribe-sync.functions.ts"), "utf8");
-const connectBody = fnSrc.slice(fnSrc.indexOf("export const connectSharetribe"), fnSrc.indexOf("export const disconnectSharetribe"));
-t("connect checks for another workspace holding the marketplace before the Vault write",
-  connectBody.indexOf('.neq("workspace_id", data.workspaceId)') > 0 &&
-    connectBody.indexOf('.neq("workspace_id", data.workspaceId)') < connectBody.indexOf("tenant_set_integration_secret"));
+const connectBody = fnSrc.slice(fnSrc.indexOf("export async function connectSharetribeForWorkspace"), fnSrc.indexOf("export const connectSharetribe"));
+t("connect checks for another workspace holding the marketplace before any write (row, then Vault)",
+  connectBody.indexOf('.neq("workspace_id", workspaceId)') > 0 &&
+    connectBody.indexOf('.neq("workspace_id", workspaceId)') < connectBody.indexOf(".upsert(row") &&
+    connectBody.indexOf(".upsert(row") < connectBody.indexOf("args.storeSecret("));
 t("that check reads only an id, never another workspace's row",
   /\.select\("id"\)\s*\.eq\("provider", "sharetribe"\)\s*\.eq\("marketplace_id", v\.marketplaceId\)/.test(connectBody));
 t("a 23505 on the upsert becomes the friendly refusal",
-  /if \(isMarketplaceTakenError\(upsertErr\)\) \{[\s\S]*?return \{ ok: false as const, error: MARKETPLACE_ALREADY_CONNECTED_ERROR \};/.test(connectBody));
+  /if \(isMarketplaceTakenError\(upsertErr\)\) \{[\s\S]*?return \{ ok: false, error: MARKETPLACE_ALREADY_CONNECTED_ERROR \};/.test(connectBody));
 t("the 23505 log line carries the code, not the details with the key",
   /already connected elsewhere", upsertErr\.code\)/.test(connectBody));
 
 console.log("\n=== Disconnect: listings first, row last, idempotent (C10) ===");
-const disconnectBody = fnSrc.slice(fnSrc.indexOf("export const disconnectSharetribe"), fnSrc.indexOf("export const runSharetribeSync"));
+const disconnectBody = fnSrc.slice(fnSrc.indexOf("export async function disconnectSharetribeForWorkspace"), fnSrc.indexOf("export const disconnectSharetribe"));
 const listingsAt = disconnectBody.indexOf('.from("tenant_listings")');
 const rowAt = disconnectBody.indexOf('.from("tenant_integrations")');
 t("listings are deleted before the integration row", listingsAt > 0 && rowAt > listingsAt, `${listingsAt} vs ${rowAt}`);
@@ -247,10 +251,25 @@ t("a failed listings delete says the connection is still in place and to retry",
   /still in place\. Try Disconnect again\./.test(disconnectBody));
 t("a failed row delete also points at Disconnect again", /could not be\. Try Disconnect again\./.test(disconnectBody));
 t("no message claims the connection was removed while listings remain", !/connection was removed, but/.test(disconnectBody));
-t("both deletes filter by workspace (never a bare delete)",
-  (disconnectBody.match(/\.delete\(\)\s*\.eq\("workspace_id", data\.workspaceId\)/g) ?? []).length === 2);
-t("the vault cleanup still runs after both deletes",
-  disconnectBody.indexOf("tenant_delete_integration_secret") > rowAt);
+const deletes = (disconnectBody.match(/\.delete\(\)/g) ?? []).length;
+t("every delete filters by workspace (never a bare delete): listings, row, sweep",
+  deletes === 3 && (disconnectBody.match(/\.delete\(\)\s*\.eq\("workspace_id", workspaceId\)/g) ?? []).length === deletes);
+t("a second listings sweep follows the row delete (a sync mid-write leaves nothing behind)",
+  disconnectBody.lastIndexOf('.from("tenant_listings")') > rowAt);
+t("the vault cleanup still runs after the deletes",
+  disconnectBody.indexOf("tenant_delete_integration_secret") > disconnectBody.lastIndexOf('.from("tenant_listings")'));
+t("the server functions stay owner-gated around the helpers",
+  /export const connectSharetribe[\s\S]*?assertWorkspaceOwner\(data\.workspaceId, context\.userId\);\s*return connectSharetribeForWorkspace\(/.test(fnSrc) &&
+    /export const disconnectSharetribe[\s\S]*?assertWorkspaceOwner\(data\.workspaceId, context\.userId\);\s*return disconnectSharetribeForWorkspace\(/.test(fnSrc));
+t("Sync now and the link check are member-safe (membership checked, not owner-only)",
+  /export const runSharetribeSync[\s\S]*?await assertMember\(data\.workspaceId, context\.userId\);/.test(fnSrc) &&
+    /export const checkSharetribeListingLinks[\s\S]*?await assertMember\(data\.workspaceId, context\.userId\);/.test(fnSrc));
+
+const page = readFileSync(join(import.meta.dir, "..", "src", "routes", "_authenticated", "app.settings.integrations.sharetribe.tsx"), "utf8");
+t("the Sharetribe page no longer mounts the coach", !/InlineCoach|CoachPanel/.test(page));
+t("the page polls the sync's progress while a run holds the lease", /sync_progress/.test(page) && /setInterval\(/.test(page) && /syncing/.test(page));
+t("the page shows identity, counts, last success, the link check and the listing gaps",
+  ["Marketplace ID", "Listings imported", "Last successful sync", "Sync status", "Check listing links", "Listings without a city", "Listings without a category"].every((s) => page.includes(s)));
 
 const m2 = readFileSync(join(migDir, "20260923000200_sync_fanout_cron.sql"), "utf8");
 t("both old jobs unscheduled", m2.includes("cron.unschedule('sharetribe-sync-30min')") && m2.includes("cron.unschedule('sync-sharetribe-30min')"));

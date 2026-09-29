@@ -44,4 +44,14 @@ t("4 days = DEGRADED, stats hidden", (()=>{const r=inventoryHealth("2026-08-26T1
 t("failed sync = DEGRADED even if recent", inventoryHealth("2026-08-30T11:00:00Z","error",now).health === "DEGRADED");
 t("never synced = UNKNOWN", inventoryHealth(null,null,now).health === "UNKNOWN");
 
+console.log("\n=== The statuses the sync records: success | partial | warning | failed ===");
+t("failed (what the sync writes) = DEGRADED even if recent", inventoryHealth("2026-08-30T11:00:00Z","failed",now,"2026-08-30T10:00:00Z").health === "DEGRADED");
+t("partial = WARNING: nothing was removed, closed listings may still count", inventoryHealth("2026-08-30T11:00:00Z","partial",now,"2026-08-30T10:00:00Z").health === "WARNING");
+t("warning (an empty-catalogue strike) = WARNING", inventoryHealth("2026-08-30T11:00:00Z","warning",now,"2026-08-30T10:00:00Z").health === "WARNING");
+t("age runs from last_success_at: a fresh partial on a 4-day-old snapshot = DEGRADED", (()=>{const r=inventoryHealth("2026-08-30T11:00:00Z","partial",now,"2026-08-26T12:00:00Z"); return r.health==="DEGRADED"&&!r.showStats&&Math.round(r.ageHours!)===96;})());
+t("no complete snapshot on record (last_success_at null) = DEGRADED", inventoryHealth("2026-08-30T11:00:00Z","partial",now,null).health === "DEGRADED");
+t("a recent complete snapshot = OK", inventoryHealth("2026-08-30T11:00:00Z","success",now,"2026-08-30T11:00:00Z").health === "OK");
+t("callers that don't read last_success_at: a 'success' last_sync_at stands in", inventoryHealth("2026-08-30T11:00:00Z","success",now).health === "OK");
+t("…but a 'partial' last_sync_at is not taken as a complete snapshot", inventoryHealth("2026-08-30T11:00:00Z","partial",now).health === "DEGRADED");
+
 console.log(`\n${p} passed, ${f} failed\n`); process.exit(f?1:0);
