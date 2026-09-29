@@ -1,199 +1,107 @@
-import { MarkdownRenderer } from "@/components/help/MarkdownRenderer";
-import type { PublicTenantPage } from "@/lib/public-tenant-page.functions";
-
-function fmtPrice(amount: number | null, currency: string | null) {
-  if (amount == null || !currency) return null;
-  try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount / 100);
-  } catch {
-    return `${(amount / 100).toFixed(2)} ${currency}`;
-  }
-}
+/**
+ * CITY HUB — a landing page for one city, built around that city's live
+ * listings: heading and lede, the listing grid, the page's own guide text,
+ * links to related pages, and the way to the marketplace.
+ */
+import { TenantMarkdown } from "./TenantMarkdown";
+import { brandLabel, capitalize, listingCountText, placeText, splitRelated } from "./format";
+import {
+  Breadcrumbs,
+  ListingSection,
+  MarketplaceCta,
+  PinIcon,
+  RelatedPages,
+  TemplateShell,
+} from "./parts";
+import type { TemplatePageProps } from "./types";
 
 export function CityHub({
   page,
+  listings,
+  related,
+  branding,
+  marketplace,
   basePath = "/a",
-  homeHref = "/",
-}: {
-  page: PublicTenantPage;
-  /** Prefix for internal links to sibling pages. "/a" on a tenant host; the
-   * platform preview passes "/s/{workspace}" so related links stay inside the
-   * preview instead of 404ing on founders.click. */
-  basePath?: string;
-  /** Breadcrumb root. null renders the workspace name as plain text (the
-   * preview has no workspace home on the platform host). */
-  homeHref?: string | null;
-}) {
-  const city = page.variables?.city as string | undefined;
-  const state = page.variables?.state as string | undefined;
-  const categoryPlural = (page.variables?.category_plural as string) || "listings";
-  const count = page.listings.length;
-  const location = [city, state].filter(Boolean).join(", ");
+}: TemplatePageProps) {
+  const place = placeText(page.place);
+  const city = page.place.city?.trim() || null;
+  const brand = brandLabel(branding);
+  // The exact matching total, only when the server counted it — never the
+  // length of the (capped) grid dressed up as a total.
+  const total = page.matchingListings ?? 0;
+  const noun = page.listingNoun;
+  const [nearby, more] = splitRelated(related, (r) => r.relation !== "other");
+  const where = city ? ` in ${city}` : "";
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="border-b border-border/60 bg-gradient-to-b from-primary/5 to-transparent">
-        <main className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-          <header className="max-w-3xl">
-            <nav aria-label="Breadcrumb" className="text-xs text-muted-foreground">
-              {homeHref ? (
-                <a href={homeHref} className="hover:text-foreground">
-                  {page.workspace_name || "Home"}
-                </a>
-              ) : (
-                <span>{page.workspace_name || "Home"}</span>
-              )}
-              <span className="mx-1.5">/</span>
-              <span className="text-foreground">{page.h1 || page.title}</span>
-            </nav>
-            {location && (
-              <p className="mt-4 text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">
-                {location}
-              </p>
-            )}
-            <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-5xl sm:leading-tight">
-              {page.h1 || page.title}
-            </h1>
-            {page.meta_description && (
-              <p className="mt-4 text-lg text-muted-foreground leading-relaxed">
-                {page.meta_description}
-              </p>
-            )}
-            {city && count > 0 && (
-              <p className="mt-4 inline-flex items-center gap-2 rounded-full border border-border/60 bg-card px-4 py-1.5 text-sm">
-                <span className="font-semibold text-foreground">{count}</span>
-                <span className="text-muted-foreground">
-                  {categoryPlural} available in {city}
-                </span>
-              </p>
-            )}
-          </header>
-        </main>
-      </div>
-
-      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-        {page.body_markdown && (
-          <section className="mb-12 max-w-3xl">
-            <MarkdownRenderer content={page.body_markdown} />
-          </section>
-        )}
-
-        {count > 0 && (
-          <section>
-            <div className="mb-6 flex items-end justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">
-                  Browse {categoryPlural}
-                </h2>
-                {city && (
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Live inventory from {page.workspace_name || "the marketplace"}
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {page.listings.map((l) => {
-                const img = l.images?.[0];
-                const price = fmtPrice(l.price_amount, l.price_currency);
-                return (
-                  <article
-                    key={l.id}
-                    itemScope
-                    itemType="https://schema.org/Product"
-                    className="group overflow-hidden rounded-xl border border-border bg-card transition hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5"
-                  >
-                    <a
-                      href={l.marketplace_url}
-                      target="_blank"
-                      rel="noopener nofollow"
-                      className="block"
-                    >
-                      <div className="relative aspect-video overflow-hidden bg-muted">
-                        {img?.url ? (
-                          <img
-                            src={img.url}
-                            alt={img.alt || l.title}
-                            loading="lazy"
-                            width={img.width ?? undefined}
-                            height={img.height ?? undefined}
-                            className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
-                            itemProp="image"
-                          />
-                        ) : (
-                          <div className="flex h-full items-center justify-center bg-gradient-to-br from-primary/10 to-muted text-muted-foreground text-sm">
-                            No image
-                          </div>
-                        )}
-                        {price && (
-                          <span
-                            className="absolute bottom-2 right-2 rounded-md bg-background/90 px-2 py-1 text-sm font-semibold backdrop-blur"
-                            itemProp="offers"
-                            itemScope
-                            itemType="https://schema.org/Offer"
-                          >
-                            <span itemProp="price">{price}</span>
-                          </span>
-                        )}
-                      </div>
-                      <div className="p-4">
-                        <h3
-                          className="font-semibold leading-snug line-clamp-2 group-hover:text-primary transition-colors"
-                          itemProp="name"
-                        >
-                          {l.title}
-                        </h3>
-                        {(l.city || l.state) && (
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {[l.city, l.state].filter(Boolean).join(", ")}
-                          </p>
-                        )}
-                        {l.description && (
-                          <p
-                            className="mt-2 text-sm text-muted-foreground line-clamp-2"
-                            itemProp="description"
-                          >
-                            {l.description}
-                          </p>
-                        )}
-                      </div>
-                    </a>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {count === 0 && city && (
-          <div className="rounded-xl border border-dashed border-border p-10 text-center">
-            <p className="font-medium">New {categoryPlural} are on the way in {city}</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Check back soon{page.workspace_name ? ` — ${page.workspace_name} is adding new ${categoryPlural} regularly` : ""}.
+    <TemplateShell kind="city_hub" branding={branding} marketplace={marketplace}>
+      <section
+        data-section="hero"
+        className="border-b border-slate-200 bg-[color:var(--tp-brand-soft)]"
+      >
+        <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+          <Breadcrumbs branding={branding} marketplace={marketplace} current={page.h1} />
+          {place ? (
+            <p className="mt-7 inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wider text-[color:var(--tp-accent)]">
+              <PinIcon />
+              {place}
             </p>
-          </div>
-        )}
+          ) : null}
+          <h1 className="mt-3 max-w-4xl text-3xl font-bold tracking-tight text-slate-900 sm:text-5xl sm:leading-[1.1]">
+            {page.h1}
+          </h1>
+          {page.intro ? (
+            <p
+              data-section="intro"
+              className="mt-5 max-w-3xl text-lg leading-relaxed text-slate-700"
+            >
+              {page.intro}
+            </p>
+          ) : null}
+          {total > 0 ? (
+            <p className="mt-7 inline-flex items-center rounded-full border border-slate-300 bg-white px-4 py-1.5 text-sm text-slate-700">
+              <strong className="mr-1 font-semibold text-slate-900">
+                {listingCountText(total, noun)}
+              </strong>
+              {city ? `available in ${city}` : "available now"}
+            </p>
+          ) : null}
+        </div>
+      </section>
 
-        {page.related_pages && page.related_pages.length > 0 && (
-          <section className="mt-14 border-t border-border/60 pt-8">
-            <h2 className="text-lg font-semibold tracking-tight">
-              More from {page.workspace_name || "this marketplace"}
-            </h2>
-            <ul className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {page.related_pages.map((r) => (
-                <li key={r.slug}>
-                  <a
-                    href={`${basePath}/${r.slug}`}
-                    className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                  >
-                    {r.title}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-      </main>
-    </div>
+      <ListingSection
+        heading={noun ? `${capitalize(noun)}${where}` : `Listings${where}`}
+        subheading={`Live listings from ${brand}`}
+        listings={listings}
+        emptyText={
+          city
+            ? `There are no listings in ${city} right now.`
+            : "There are no listings here right now."
+        }
+        branding={branding}
+        marketplace={marketplace}
+      />
+
+      {page.bodyMarkdown?.trim() ? (
+        <section data-section="body" className="mx-auto w-full max-w-3xl px-4 pb-12 sm:px-6">
+          <TenantMarkdown markdown={page.bodyMarkdown} />
+        </section>
+      ) : null}
+
+      <RelatedPages
+        basePath={basePath}
+        groups={[
+          { heading: city ? `More around ${city}` : "Related pages", items: nearby },
+          { heading: `More from ${brand}`, items: more },
+        ]}
+      />
+
+      <MarketplaceCta
+        heading={city ? `Looking for more in ${city}?` : `Looking for more?`}
+        text={`See every listing available on ${brand}.`}
+        branding={branding}
+        marketplace={marketplace}
+      />
+    </TemplateShell>
   );
 }

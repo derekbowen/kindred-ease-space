@@ -123,7 +123,7 @@ export function liveUrlFor(
 // ---------------------------------------------------------------------------
 
 export const EDITOR_PAGE_COLUMNS =
-  "id, workspace_id, slug, title, h1, seo_title, meta_description, body_markdown, listing_filter, variables, target_key, status, noindex, content_version, generation, published_at, updated_at, created_at, template_id, page_templates:template_id(id, slug, name, is_active, config_schema)";
+  "id, workspace_id, slug, title, h1, seo_title, meta_description, body_markdown, listing_filter, variables, target_key, status, noindex, content_version, generation, published_at, updated_at, created_at, template_id, page_templates:template_id(id, slug, name, is_active, config_schema), workspaces:workspace_id(name, brand_name, brand_color, logo_url)";
 
 export type EditorPageRow = {
   id: string;
@@ -151,6 +151,13 @@ export type EditorPageRow = {
     name: string | null;
     is_active: boolean | null;
     config_schema: unknown;
+  } | null;
+  /** The workspace's brand, for the preview (the public page reads the same). */
+  workspaces?: {
+    name: string | null;
+    brand_name: string | null;
+    brand_color: string | null;
+    logo_url: string | null;
   } | null;
 };
 

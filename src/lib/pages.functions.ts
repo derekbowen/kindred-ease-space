@@ -338,9 +338,19 @@ export const getPageEditor = createServerFn({ method: "POST" })
         }),
         readDomainReadiness(data.workspaceId),
       ]);
-      const { buildTemplateData } = await import("@/lib/tenant-page-data.server");
+      // The real template data (listings, branding, links), built exactly as
+      // the public page builds it — for a draft too. A failed read shows no
+      // preview rather than failing the editor.
+      const { buildTenantPageData } = await import("@/lib/tenant-page-data.server");
       const preview = kind
-        ? await buildTemplateData(data.workspaceId, row, { preview: true })
+        ? await buildTenantPageData(data.workspaceId, row, { kind }).catch((e) => {
+            console.error(
+              "[pages] preview unavailable",
+              row.id,
+              e instanceof Error ? e.message : String(e),
+            );
+            return null;
+          })
         : null;
       return {
         page: {
@@ -431,12 +441,12 @@ export const previewPageEdits = createServerFn({ method: "POST" })
     guarded(data.workspaceId, userIdOf(context), async () => {
       const row = await loadEditorPage(data.workspaceId, data.pageId);
       if (!row) throw new CustomerFacingError("That page doesn't exist any more.");
-      if (!pageKindOf(row))
-        throw new CustomerFacingError("This page's template can't be previewed.");
+      const kind = pageKindOf(row);
+      if (!kind) throw new CustomerFacingError("This page's template can't be previewed.");
       const { fieldsToRow } = await import("@/lib/page-publish.server");
-      const { buildTemplateData } = await import("@/lib/tenant-page-data.server");
+      const { buildTenantPageData } = await import("@/lib/tenant-page-data.server");
       const merged = { ...row, ...fieldsToRow(data.fields, row.listing_filter) } as typeof row;
-      return buildTemplateData(data.workspaceId, merged, { preview: true });
+      return buildTenantPageData(data.workspaceId, merged, { kind });
     }),
   );
 

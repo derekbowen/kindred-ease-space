@@ -1,6 +1,7 @@
 import { createFileRoute, notFound, redirect, useRouter } from "@tanstack/react-router";
 import { getPublicTenantPage } from "@/lib/public-tenant-page.functions";
-import { CityHub } from "@/components/templates/CityHub";
+import { TemplateRenderer } from "@/components/templates/registry";
+import { PREVIEW_PAGE_HEADERS, buildPreviewHead } from "@/components/templates/head";
 import { userMessage } from "@/lib/user-message";
 
 export const Route = createFileRoute("/s/$ws/$slug")({
@@ -8,25 +9,28 @@ export const Route = createFileRoute("/s/$ws/$slug")({
   // Lets a customer view a published page immediately, before they've connected
   // and verified their own marketplace domain. It is deliberately noindexed so it
   // never competes with (or duplicates) the canonical page on the tenant's domain.
+  //
+  // PUBLISHED pages only: getPublicTenantPage reads status = published and the
+  // public listing columns, so a draft or anything private never reaches this
+  // public URL. Never stored by a cache.
   loader: async ({ params }) => {
     const r = await getPublicTenantPage({
       data: { slug: params.slug, workspaceSlug: params.ws },
     });
     if (r.redirect) {
-      throw redirect({ href: r.redirect });
+      throw redirect({ href: r.redirect, statusCode: 301, headers: { ...PREVIEW_PAGE_HEADERS } });
     }
     if (!r.page) throw notFound();
     return { page: r.page };
   },
+  headers: () => ({ ...PREVIEW_PAGE_HEADERS }),
   head: ({ loaderData }) => {
-    if (!loaderData) return {};
-    const p = loaderData.page;
-    return {
-      meta: [
-        { title: `${p.title} — preview` },
-        { name: "robots", content: "noindex, nofollow" },
-      ],
-    };
+    if (!loaderData) {
+      return {
+        meta: [{ title: "Page not found" }, { name: "robots", content: "noindex, nofollow" }],
+      };
+    }
+    return buildPreviewHead(loaderData.page);
   },
   component: PreviewPage,
   errorComponent: ErrorComp,
@@ -42,7 +46,7 @@ function PreviewPage() {
         Preview — connect your marketplace domain in Settings → Domains to publish this page for
         search engines.
       </div>
-      <CityHub page={page} basePath={`/s/${ws}`} homeHref={null} />
+      <TemplateRenderer {...page} basePath={`/s/${ws}`} />
     </div>
   );
 }
