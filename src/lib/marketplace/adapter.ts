@@ -134,21 +134,39 @@ export function getCapabilities(cfg: MarketplaceRouteConfig) {
   };
 }
 
-/** Inventory freshness policy — consumes the sync fields that already exist.
+/** Inventory freshness policy — consumes the sync's recorded outcome.
  *  A Sharetribe outage must degrade a page, never 500 it. */
 export type InventoryHealth = "OK" | "WARNING" | "DEGRADED" | "UNKNOWN";
 
+/**
+ * How far to trust the stored inventory. Age is measured from the last
+ * COMPLETE snapshot (tenant_integrations.last_success_at); pass it as the 4th
+ * argument. Without it (a caller that doesn't read the column), a
+ * last_sync_at whose status is "success" stands in, as before.
+ *
+ * The sync records success | partial | warning | failed:
+ *   failed (and the legacy "error")  → DEGRADED, however recent;
+ *   partial / warning                → at best WARNING — nothing was removed,
+ *                                      so closed listings may still be counted;
+ *   no complete snapshot on record   → DEGRADED;
+ *   > 72 h since the last complete one → DEGRADED; > 24 h → WARNING.
+ */
 export function inventoryHealth(
   lastSyncAt: string | null | undefined,
   lastSyncStatus: string | null | undefined,
   now: number = Date.now(),
+  lastSuccessAt?: string | null,
 ): { health: InventoryHealth; ageHours: number | null; showStats: boolean } {
-  if (!lastSyncAt) return { health: "UNKNOWN", ageHours: null, showStats: false };
-  const ageHours = (now - new Date(lastSyncAt).getTime()) / 3_600_000;
-  if (lastSyncStatus === "error" || ageHours > 72) {
+  if (!lastSyncAt && !lastSuccessAt) return { health: "UNKNOWN", ageHours: null, showStats: false };
+  const confirmedAt = lastSuccessAt !== undefined ? lastSuccessAt : lastSyncStatus === "success" ? lastSyncAt : null;
+  const t = confirmedAt ? Date.parse(confirmedAt) : NaN;
+  const ageHours = Number.isFinite(t) ? (now - t) / 3_600_000 : null;
+  if (lastSyncStatus === "failed" || lastSyncStatus === "error" || ageHours === null || ageHours > 72) {
     // Counts and price ranges may now be lies — render cards, hide statistics.
     return { health: "DEGRADED", ageHours, showStats: false };
   }
-  if (ageHours > 24) return { health: "WARNING", ageHours, showStats: true };
+  if (ageHours > 24 || lastSyncStatus === "partial" || lastSyncStatus === "warning") {
+    return { health: "WARNING", ageHours, showStats: true };
+  }
   return { health: "OK", ageHours, showStats: true };
 }

@@ -267,7 +267,13 @@ for (const [claim, field] of [
 }
 t("(d) Sync now is on the Sharetribe page, not the dashboard", /open \*\*Sharetribe\*\* in the sidebar/.test(firstSync) && /click \*\*Sync now\*\*/.test(firstSync));
 t("(d) private data is never imported (only publicData/metadata are kept)", /Private listing data is never imported/.test(firstSync) && !/privateData/.test(mapListing.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, "")));
-t("(d) 100 listings per page, as the sync requests", /100 at a time/.test(firstSync) && /per_page: "100"/.test(syncServer));
+t(
+  "(d) 100 listings per page, as the sync requests (Sharetribe's perPage parameter)",
+  /100 at a time/.test(firstSync) &&
+    /export const LISTINGS_PER_PAGE = 100;/.test(syncServer) &&
+    /perPage: String\(/.test(syncServer) &&
+    !/per_page/.test(syncServer),
+);
 
 for (const href of [...all.matchAll(/\]\((\/[^)]+)\)/g)].map((m) => m[1])) {
   const ok =

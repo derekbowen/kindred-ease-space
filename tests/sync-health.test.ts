@@ -184,6 +184,43 @@ console.log("\n=== malformed timestamps do not throw or fake freshness ===");
   t("verdict is never_run", r.verdict === "never_run", r.verdict);
 }
 
+console.log("\n=== partial and warning runs are attempts, not fresh snapshots ===");
+{
+  // The sync records success | partial | warning | failed, and the last
+  // COMPLETE snapshot in last_success_at. A run that keeps ending partial
+  // is running — and the inventory is still not confirmed.
+  const r = assess([
+    row({
+      workspace_id: "never-complete",
+      last_sync_at: minsAgo(5),
+      last_sync_status: "partial",
+      last_sync_error: "Your marketplace has more listings than one sync can read. We kept the 10,000 listings we read and removed nothing; the next sync continues.",
+      last_success_at: null,
+    }),
+  ]);
+  t("a workspace whose runs never complete is 'incomplete', not fresh", r.workspaces[0]!.state === "incomplete", r.workspaces[0]!.state);
+  t("…so the platform verdict is broken, not healthy", r.verdict === "broken", r.verdict);
+  t("…it is counted and named", r.incompleteWorkspaces === 1 && r.findings.some((f) => /last sync was partial and it has no complete sync on record/.test(f)), r.findings.join(" | "));
+  t("…and no successful sync is claimed", r.lastSuccessfulSyncAt === null);
+
+  const legacy = assess([row({ workspace_id: "w", last_sync_at: minsAgo(5), last_sync_status: "warning" })]);
+  t("rows read without last_success_at: a 'warning' is not a success", legacy.workspaces[0]!.state === "incomplete" && legacy.verdict === "broken", legacy.workspaces[0]!.state);
+
+  const mixed = assess([
+    row({ workspace_id: "a", last_sync_at: minsAgo(2), last_sync_status: "partial", last_success_at: minsAgo(20) }),
+    row({ workspace_id: "b", last_sync_at: minsAgo(2), last_sync_status: "warning", last_success_at: minsAgo(STALE_AFTER_MINUTES + 30) }),
+    row({ workspace_id: "c", last_sync_at: minsAgo(3), last_sync_status: "success", last_success_at: minsAgo(3) }),
+  ]);
+  t("freshness runs from last_success_at: a partial on a complete sync 20 min ago is fresh", mixed.workspaces[0]!.state === "fresh", mixed.workspaces[0]!.state);
+  t("a warning whose last complete sync is 2 hours old is stale (not 'fresh' as before)", mixed.workspaces[1]!.state === "stale", mixed.workspaces[1]!.state);
+  t("minutesSinceSuccess is reported next to minutesSinceSync", mixed.workspaces[1]!.minutesSinceSuccess === STALE_AFTER_MINUTES + 30 && mixed.workspaces[1]!.minutesSinceSync === 2);
+  t("the platform's last successful sync is the newest last_success_at", mixed.lastSuccessfulSyncAt === minsAgo(3), String(mixed.lastSuccessfulSyncAt));
+  t("verdict degraded (one stale of three)", mixed.verdict === "degraded", mixed.verdict);
+
+  const legacyErr = assess([row({ workspace_id: "old", last_sync_at: minsAgo(2), last_sync_status: "error" })]);
+  t("the legacy 'error' status also counts as failing", legacyErr.workspaces[0]!.state === "failing");
+}
+
 console.log("\n=== the route's gate: OPS_PROBE_SECRET only ===");
 {
   // Hermetic: with no Supabase configuration the admin client throws on first

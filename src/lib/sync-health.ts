@@ -23,7 +23,11 @@
  * 3am over a product that simply has no customers is how alerts get ignored.
  */
 
-/** One row of `tenant_integrations`, as the sync writes it. */
+/**
+ * One row of `tenant_integrations`, as the sync writes it. last_sync_status
+ * is success | partial | warning | failed; last_sync_at is the last ATTEMPT,
+ * last_success_at the last COMPLETE snapshot (20260929000100).
+ */
 export type IntegrationRow = {
   workspace_id: string;
   status: string | null;
@@ -31,6 +35,8 @@ export type IntegrationRow = {
   last_sync_status: string | null;
   last_sync_error: string | null;
   listings_count: number | null;
+  /** Absent on rows read without the column: a recorded "success" stands in. */
+  last_success_at?: string | null;
 };
 
 export type WorkspaceHealth = {
@@ -38,18 +44,28 @@ export type WorkspaceHealth = {
   status: string | null;
   lastSyncAt: string | null;
   lastSyncStatus: string | null;
-  /** Truncated; the sync already caps stored errors at 500 chars. */
+  /** The sync's own customer sentence for the last non-success run. */
   lastSyncError: string | null;
+  lastSuccessAt: string | null;
   listingsCount: number;
+  /** Minutes since the last attempt. */
   minutesSinceSync: number | null;
-  state: "fresh" | "late" | "stale" | "failing" | "never";
+  /** Minutes since the last complete snapshot — what freshness is measured on. */
+  minutesSinceSuccess: number | null;
+  /**
+   * fresh / late / stale — by the last COMPLETE snapshot;
+   * failing    — the last attempt failed;
+   * incomplete — attempts ran, but none has read a complete snapshot;
+   * never      — no attempt on record.
+   */
+  state: "fresh" | "late" | "stale" | "failing" | "incomplete" | "never";
 };
 
 export type SyncHealthReport = {
   /**
    * healthy       — every connected workspace synced recently.
    * no_customers  — nothing is connected. Not a fault.
-   * degraded      — some workspaces are late or failing.
+   * degraded      — some workspaces are late, failing, or never complete a sync.
    * broken        — connected workspaces exist and NONE has synced recently.
    * never_run     — connected workspaces exist and none has EVER synced.
    */
@@ -59,7 +75,9 @@ export type SyncHealthReport = {
   freshWorkspaces: number;
   failingWorkspaces: number;
   neverSyncedWorkspaces: number;
-  /** The most recent successful sync anywhere on the platform. */
+  /** Syncs ran, but none read a complete snapshot (partial / warning only). */
+  incompleteWorkspaces: number;
+  /** The most recent COMPLETE sync anywhere on the platform. */
   lastSuccessfulSyncAt: string | null;
   totalListings: number;
   workspaces: WorkspaceHealth[];
@@ -81,13 +99,26 @@ function minutesBetween(thenIso: string | null, now: Date): number | null {
   return Math.max(0, Math.round((now.getTime() - t) / 60000));
 }
 
-function stateFor(row: IntegrationRow, mins: number | null): WorkspaceHealth["state"] {
+/** The last complete snapshot's time, or null. */
+function successAtOf(row: IntegrationRow): string | null {
+  if (row.last_success_at !== undefined) return row.last_success_at;
+  return row.last_sync_status === "success" ? row.last_sync_at : null;
+}
+
+function stateFor(
+  row: IntegrationRow,
+  minsSinceAttempt: number | null,
+  minsSinceSuccess: number | null,
+): WorkspaceHealth["state"] {
   // A recorded failure outranks freshness: a workspace failing every 30
   // minutes has a very recent last_sync_at and is not healthy.
-  if (row.last_sync_status === "failed") return "failing";
-  if (mins === null) return "never";
-  if (mins <= LATE_AFTER_MINUTES) return "fresh";
-  if (mins <= STALE_AFTER_MINUTES) return "late";
+  if (row.last_sync_status === "failed" || row.last_sync_status === "error") return "failing";
+  if (minsSinceAttempt === null && minsSinceSuccess === null) return "never";
+  // Partial and warning runs are attempts, not snapshots: a workspace whose
+  // runs never complete is not fresh however often they run.
+  if (minsSinceSuccess === null) return "incomplete";
+  if (minsSinceSuccess <= LATE_AFTER_MINUTES) return "fresh";
+  if (minsSinceSuccess <= STALE_AFTER_MINUTES) return "late";
   return "stale";
 }
 
@@ -112,27 +143,35 @@ export function assessSyncHealth(
 
   const workspaces: WorkspaceHealth[] = connected.map((r) => {
     const minutesSinceSync = minutesBetween(r.last_sync_at, now);
+    const lastSuccessAt = successAtOf(r);
+    const minutesSinceSuccess = minutesBetween(lastSuccessAt, now);
     return {
       workspaceId: r.workspace_id,
       status: r.status,
       lastSyncAt: r.last_sync_at,
       lastSyncStatus: r.last_sync_status,
       lastSyncError: r.last_sync_error,
+      lastSuccessAt: minutesSinceSuccess === null ? null : lastSuccessAt,
       listingsCount: r.listings_count ?? 0,
       minutesSinceSync,
-      state: stateFor(r, minutesSinceSync),
+      minutesSinceSuccess,
+      state: stateFor(r, minutesSinceSync, minutesSinceSuccess),
     };
   });
 
   const fresh = workspaces.filter((w) => w.state === "fresh").length;
   const failing = workspaces.filter((w) => w.state === "failing").length;
   const never = workspaces.filter((w) => w.state === "never").length;
+  const incomplete = workspaces.filter((w) => w.state === "incomplete").length;
 
-  const successful = connected
-    .filter((r) => r.last_sync_status === "success" && r.last_sync_at)
-    .map((r) => r.last_sync_at as string)
-    .sort();
-  const lastSuccessfulSyncAt = successful.length ? successful[successful.length - 1]! : null;
+  // The most recent COMPLETE snapshot anywhere (a partial or warning run is not one).
+  let lastSuccessfulSyncAt: string | null = null;
+  for (const w of workspaces) {
+    if (!w.lastSuccessAt) continue;
+    if (!lastSuccessfulSyncAt || Date.parse(w.lastSuccessAt) > Date.parse(lastSuccessfulSyncAt)) {
+      lastSuccessfulSyncAt = w.lastSuccessAt;
+    }
+  }
 
   let verdict: SyncHealthReport["verdict"];
   if (connected.length === 0) {
@@ -158,7 +197,7 @@ export function assessSyncHealth(
     verdict = "degraded";
     findings.push(
       `${fresh} of ${connected.length} connected workspace(s) synced within ` +
-        `${LATE_AFTER_MINUTES} minutes; the rest are late, stale or failing.`,
+        `${LATE_AFTER_MINUTES} minutes; the rest are late, stale, failing or never complete.`,
     );
   } else {
     verdict = "healthy";
@@ -178,6 +217,12 @@ export function assessSyncHealth(
   for (const w of workspaces) {
     if (w.state === "failing" && w.lastSyncError) {
       findings.push(`Workspace ${w.workspaceId} last failed: ${w.lastSyncError}`);
+    } else if ((w.lastSyncStatus === "partial" || w.lastSyncStatus === "warning") && w.state !== "fresh") {
+      findings.push(
+        `Workspace ${w.workspaceId} last sync was ${w.lastSyncStatus}` +
+          (w.lastSuccessAt ? "" : " and it has no complete sync on record") +
+          (w.lastSyncError ? `: ${w.lastSyncError}` : "."),
+      );
     }
   }
 
@@ -195,6 +240,7 @@ export function assessSyncHealth(
     freshWorkspaces: fresh,
     failingWorkspaces: failing,
     neverSyncedWorkspaces: never,
+    incompleteWorkspaces: incomplete,
     lastSuccessfulSyncAt,
     totalListings: workspaces.reduce((n, w) => n + w.listingsCount, 0),
     workspaces,
