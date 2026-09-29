@@ -2,13 +2,17 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const sb = () => supabaseAdmin as any;
 
+/** The longest page slug (the editor and the public route accept no more). */
+export const PAGE_SLUG_MAX = 80;
+
 export function slugifyPage(s: string): string {
   return s
     .toLowerCase()
     .replace(/[\u2018\u2019']/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
+    .slice(0, PAGE_SLUG_MAX)
+    .replace(/-+$/g, ""); // a cut can end on a dash: never keep one
 }
 
 /** Resolve an active page template id by slug (e.g. city_hub). */
@@ -41,7 +45,10 @@ export async function findUniqueTenantSlug(workspaceId: string, baseSlug: string
       .maybeSingle();
     if (!existing) return slug;
     suffix += 1;
-    slug = `${baseSlug}-${suffix}`;
+    // Cut the base so base + "-N" still fits PAGE_SLUG_MAX, without a dash
+    // at the cut: a suffixed slug must be one the editor can save.
+    const room = PAGE_SLUG_MAX - String(suffix).length - 1;
+    slug = `${baseSlug.slice(0, room).replace(/-+$/g, "")}-${suffix}`;
     if (suffix > 50) throw new Error("Could not find a unique slug");
   }
 }

@@ -59,7 +59,8 @@ export const TEMPLATE_CONTRACTS: Record<PageKind, TemplateContract> = {
   resource_article: {
     kind: "resource_article",
     name: "Resource Article",
-    summary: "A useful guide, with links to relevant listings and your marketplace.",
+    summary:
+      "A useful guide written from your marketplace's data, linking to your marketplace and your other pages.",
     requiredScope: [],
     wholePlace: true,
     requiresListings: false,

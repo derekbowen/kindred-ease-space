@@ -21,6 +21,8 @@
  *   - 20260929000400: a page goes live only while it is still the draft at
  *     the version that was validated; 20 drafts racing for 5 slots → 5; 10
  *     racing publishes of one draft → one; archived / suspended never;
+ *   - 20260929000500: a member's session reads its pages but can no longer
+ *     insert, update or delete them; the service role still writes;
  *   - the rollbacks undo the files and the files apply again after them.
  */
 import { Pool, type PoolClient } from "pg";
@@ -56,6 +58,8 @@ const R100 = "supabase/rollback/20260929000100_mvp_targets_sync_templates_rollba
 const R200 = "supabase/rollback/20260929000200_domain_write_lock_and_exact_host_rollback.sql";
 const M400 = "supabase/migrations/20260929000400_mvp_publish_checked.sql";
 const R400 = "supabase/rollback/20260929000400_mvp_publish_checked_rollback.sql";
+const M500 = "supabase/migrations/20260929000500_mvp_tenant_pages_server_writes.sql";
+const R500 = "supabase/rollback/20260929000500_mvp_tenant_pages_server_writes_rollback.sql";
 
 // Production's columns for the tables these files touch (information_schema,
 // 2026-09-28), the policies they replace, and the helpers they call.
@@ -80,6 +84,9 @@ const STUBS = `
   CREATE TABLE public.workspace_members (workspace_id uuid, user_id uuid, role text);
   CREATE FUNCTION public.is_workspace_owner(_ws uuid, _uid uuid) RETURNS boolean LANGUAGE sql STABLE AS $$
     SELECT EXISTS (SELECT 1 FROM public.workspace_members m WHERE m.workspace_id = _ws AND m.user_id = _uid AND m.role = 'owner')
+  $$;
+  CREATE FUNCTION public.is_workspace_member(_ws uuid, _uid uuid) RETURNS boolean LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (SELECT 1 FROM public.workspace_members m WHERE m.workspace_id = _ws AND m.user_id = _uid)
   $$;
 
   CREATE TABLE public.tenant_listings (
@@ -109,6 +116,18 @@ const STUBS = `
     created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(),
     UNIQUE (workspace_id, slug)
   );
+  -- Production's member policies on tenant_pages (the first schema, narrowed
+  -- to draft/archived by 20260827050000), which 000500 removes.
+  ALTER TABLE public.tenant_pages ENABLE ROW LEVEL SECURITY;
+  CREATE POLICY "members read tenant_pages" ON public.tenant_pages FOR SELECT
+    USING (public.is_workspace_member(workspace_id, auth.uid()));
+  CREATE POLICY "members insert tenant_pages" ON public.tenant_pages FOR INSERT
+    WITH CHECK (public.is_workspace_member(workspace_id, auth.uid()) AND status IN ('draft', 'archived'));
+  CREATE POLICY "members update tenant_pages" ON public.tenant_pages FOR UPDATE
+    USING (public.is_workspace_member(workspace_id, auth.uid()))
+    WITH CHECK (public.is_workspace_member(workspace_id, auth.uid()) AND status IN ('draft', 'archived'));
+  CREATE POLICY "members delete tenant_pages" ON public.tenant_pages FOR DELETE
+    USING (public.is_workspace_member(workspace_id, auth.uid()));
   -- workspace_capacity() as publish_tenant_pages reads it (page_limit, publish),
   -- driven by a table the test sets.
   CREATE TABLE public.capacity_stub (workspace_id uuid PRIMARY KEY, page_limit integer, publish boolean);
@@ -615,8 +634,83 @@ try {
     t("a signed-in session cannot call it (service role only)", anonDenied);
   }
 
+  console.log("\n6b. Page rows: the server writes, members read");
+  {
+    const MEMBER = crypto.randomUUID();
+    const WS4 = (
+      await q1<{ id: string }>("INSERT INTO public.workspaces (name) VALUES ('D') RETURNING id")
+    ).id;
+    await q(
+      "INSERT INTO public.workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'member')",
+      [WS4, MEMBER],
+    );
+    const tpl = (
+      await q1<{ id: string }>("SELECT id FROM public.page_templates WHERE slug = 'city_hub'")
+    ).id;
+    const page = (
+      await q1<{ id: string }>(
+        "INSERT INTO public.tenant_pages (workspace_id, template_id, slug, title, status) VALUES ($1,$2,'mine','Mine','draft') RETURNING id",
+        [WS4, tpl],
+      )
+    ).id;
+    const insertSql = `INSERT INTO public.tenant_pages (workspace_id, template_id, slug, title, status) VALUES ('${WS4}', '${tpl}', 'direct', 'Direct', 'draft')`;
+    // Before 000500: the member path exists (what the migration closes).
+    let before = false;
+    try {
+      await asRole({ role: "authenticated", sub: MEMBER }, (c) => c.query(insertSql));
+      before = true;
+    } catch {
+      before = false;
+    }
+    t("before 000500 a member's session could write a draft page directly", before);
+    await q("DELETE FROM public.tenant_pages WHERE slug = 'direct'");
+
+    const m = await applyAndVerify(M500);
+    t(
+      "20260929000500 applies; every verification row reads true",
+      m.allTrue,
+      JSON.stringify(m.rows.filter((r) => r.ok !== true)),
+    );
+    t("…and re-applies (idempotent)", (await applyAndVerify(M500)).allTrue);
+    const read = await asRole({ role: "authenticated", sub: MEMBER }, (c) =>
+      c.query("SELECT id FROM public.tenant_pages"),
+    );
+    t(
+      "a member still reads their own workspace's pages (and only those)",
+      read.rows.length === 1 && read.rows[0].id === page,
+    );
+    const attempts = [
+      insertSql,
+      `UPDATE public.tenant_pages SET title = 'changed', listing_filter = '{}' WHERE id = '${page}'`,
+      `DELETE FROM public.tenant_pages WHERE id = '${page}'`,
+    ];
+    const refused: boolean[] = [];
+    for (const sql of attempts) {
+      try {
+        await asRole({ role: "authenticated", sub: MEMBER }, (c) => c.query(sql));
+        refused.push(false);
+      } catch (e) {
+        refused.push(String((e as { code?: string }).code) === "42501");
+      }
+    }
+    t(
+      "a member's session can no longer insert, update or delete page rows",
+      refused.every(Boolean),
+      JSON.stringify(refused),
+    );
+    const svcWrite = await svc((c) =>
+      c.query("UPDATE public.tenant_pages SET title = 'server' WHERE id = $1 RETURNING id", [page]),
+    );
+    t("the service role still writes them", svcWrite.rows.length === 1);
+  }
+
   console.log("\n7. Rollback, then forward again");
   {
+    await pool.query(readRepo(R500));
+    const restored = await q1(
+      "SELECT count(*) AS n FROM pg_policy WHERE polname IN ('members insert tenant_pages','members update tenant_pages','members delete tenant_pages')",
+    );
+    t("the 000500 rollback restores the member write policies", Number(restored.n) === 3);
     await pool.query(readRepo(R400));
     const gone = await q1(
       "SELECT to_regprocedure('public.publish_tenant_page_checked(uuid,uuid,integer)') IS NULL AS ok",
@@ -638,7 +732,11 @@ try {
     const a = await applyAndVerify(M100);
     const b = await applyAndVerify(M200);
     const c = await applyAndVerify(M400);
-    t("the files apply again after the rollback", a.allTrue && b.allTrue && c.allTrue);
+    const d = await applyAndVerify(M500);
+    t(
+      "the files apply again after the rollback",
+      a.allTrue && b.allTrue && c.allTrue && d.allTrue,
+    );
   }
 } finally {
   await pool.end();

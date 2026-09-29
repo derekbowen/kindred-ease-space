@@ -9,7 +9,7 @@
  *  - a redirect row → a 301 (not the default 307), with the page cache
  *    headers; no page / a billing hold / a template with no renderer → 404;
  *    /a/{slug}/anything → 404 without a lookup;
- *  - Cache-Control: public, max-age=60, s-maxage=60 + Vary: Host,
+ *  - Cache-Control: private, max-age=60 + Vary: Host,
  *    X-Forwarded-Host on public pages (and their 404s), no-store on errors
  *    and on every preview;
  *  - head(): the page's head, a plain noindex title for 404 / error;
@@ -119,7 +119,7 @@ console.log("\n1. /a/$slug: 301 for a move, 404 for anything not served");
   const r = moved.thrown as Response | undefined;
   t("a redirect row is a 301 (not the default 307)", r instanceof Response && r.status === 301, String(r?.status));
   t("…to its target", r?.headers.get("Location") === "/a/pool-rentals");
-  t("…fresh for a minute and varied by host, like the page", r?.headers.get("Cache-Control") === "public, max-age=60, s-maxage=60" && r?.headers.get("Vary") === "Host, X-Forwarded-Host");
+  t("…fresh for a minute and varied by host, like the page", r?.headers.get("Cache-Control") === "private, max-age=60" && r?.headers.get("Vary") === "Host, X-Forwarded-Host");
   for (const [label, res] of [
     ["no page", { page: null, host: HOST, preview: false }],
     ["a billing hold", { page: null, host: HOST, preview: false, billingBlocked: true }],
@@ -143,10 +143,10 @@ console.log("\n2. cache headers");
 {
   const headers = (PublicRoute.options as any).headers as (ctx: any) => Record<string, string>;
   const ok = headers({ loaderData: { page: DATA, host: HOST }, match: { status: "success" } });
-  t("a served page: public, max-age=60, s-maxage=60", ok["Cache-Control"] === "public, max-age=60, s-maxage=60");
+  t("a served page: private, max-age=60 (no shared cache may store it)", ok["Cache-Control"] === "private, max-age=60");
   t("…Vary: Host, X-Forwarded-Host (one path serves every customer's hostname)", ok.Vary === "Host, X-Forwarded-Host");
   const missing = headers({ loaderData: undefined, match: { status: "notFound" } });
-  t("a 404 is held no longer than a page", missing["Cache-Control"] === "public, max-age=60, s-maxage=60");
+  t("a 404 is held no longer than a page", missing["Cache-Control"] === "private, max-age=60");
   const broken = headers({ loaderData: undefined, match: { status: "error" } });
   t("an error is never stored", broken["Cache-Control"] === "no-store" && !("Vary" in broken));
   const preview = (PreviewRoute.options as any).headers({ loaderData: { page: DATA }, match: { status: "success" } });

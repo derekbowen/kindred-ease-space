@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { workspaceIdForHost } from "@/lib/sitemap.server";
+import { requestHost, workspaceIdForHost } from "@/lib/sitemap.server";
 
 // Domain-activation probe. After a customer domain's edge routing is
 // configured, the provisioning service fetches https://{domain}/a/founders-domain-test
@@ -10,15 +10,10 @@ export const Route = createFileRoute("/a/founders-domain-test")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        const host = (
-          request.headers.get("x-forwarded-host") ||
-          request.headers.get("host") ||
-          ""
-        )
-          .split(",")[0]!
-          .trim()
-          .toLowerCase()
-          .replace(/:\d+$/, "");
+        // The same host rule as the pages and sitemap (last forwarded entry).
+        const host = requestHost(
+          request.headers.get("x-forwarded-host") || request.headers.get("host") || "",
+        );
         const workspaceId = host ? await workspaceIdForHost(host) : null;
         const body = [
           "founders-click-domain-test: OK",

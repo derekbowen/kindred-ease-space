@@ -105,7 +105,8 @@ async function workspaceForCharge(
   stripe: Stripe,
   charge: Stripe.Charge,
 ): Promise<string | null> {
-  const invoiceId = typeof charge.invoice === "string" ? charge.invoice : (charge.invoice?.id ?? null);
+  const invoiceId =
+    typeof charge.invoice === "string" ? charge.invoice : (charge.invoice?.id ?? null);
   if (invoiceId) {
     try {
       const invoice = await stripe.invoices.retrieve(invoiceId);
@@ -167,6 +168,32 @@ async function suspendPages(admin: Admin, workspace_id: string) {
     .eq("status", "published");
   if (error) console.error("suspendPages failed", error.message);
   return count ?? 0;
+}
+
+/**
+ * Another base-plan subscription for this workspace that still pays
+ * (active / trialing / past_due), if any. A canceled owner who resubscribes
+ * has two subscription objects; a late or retried event for the OLD one
+ * (Stripe retries for days, and a dashboard resend is always possible) must
+ * not set the workspace's status or suspend the pages the NEW one pays for.
+ * Only base-plan subscriptions are in this table: add-ons branch out before
+ * the upsert. A failed read throws, so Stripe retries rather than guessing.
+ */
+async function otherPayingPlan(
+  admin: Admin,
+  workspace_id: string,
+  subscriptionId: string,
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from("subscriptions")
+    .select("stripe_subscription_id")
+    .eq("workspace_id", workspace_id)
+    .neq("stripe_subscription_id", subscriptionId)
+    .in("status", ["active", "trialing", "past_due"])
+    .limit(1);
+  if (error) throw new Error(`subscription lookup failed: ${error.message}`);
+  const row = ((data ?? []) as Array<{ stripe_subscription_id?: string }>)[0];
+  return row?.stripe_subscription_id ?? null;
 }
 
 /**
@@ -261,8 +288,12 @@ Deno.serve(async (req) => {
   // means a misconfigured endpoint; acknowledge it (a 4xx would make Stripe
   // retry forever) and touch nothing.
   if (event.livemode === env.test) {
-    console.warn(`[stripe-webhook] ignoring ${event.type} ${event.id}: livemode=${event.livemode} on ${env.test ? "test" : "live"} deployment`);
-    return new Response(JSON.stringify({ received: true, ignored: "mode_mismatch" }), { status: 200 });
+    console.warn(
+      `[stripe-webhook] ignoring ${event.type} ${event.id}: livemode=${event.livemode} on ${env.test ? "test" : "live"} deployment`,
+    );
+    return new Response(JSON.stringify({ received: true, ignored: "mode_mismatch" }), {
+      status: 200,
+    });
   }
 
   // Idempotency: claim the event id before doing business work. A concurrent or
@@ -513,6 +544,21 @@ Deno.serve(async (req) => {
           { onConflict: "stripe_subscription_id" },
         );
 
+        // This subscription no longer pays, but another plan subscription for
+        // the workspace does: the event is about the old one. Its own row is
+        // recorded above; the workspace and its pages belong to the new one.
+        if (!entitled) {
+          const current = await otherPayingPlan(admin, workspace_id, sub.id);
+          if (current) {
+            await logBilling(admin, workspace_id, "stale_subscription_event_ignored", event.id, {
+              subscription: sub.id,
+              status: sub.status,
+              current_subscription: current,
+            });
+            break;
+          }
+        }
+
         const wsPatch: Record<string, unknown> = {
           subscription_status: sub.status,
           current_period_end: periodEnd,
@@ -573,7 +619,8 @@ Deno.serve(async (req) => {
         } else {
           workspace_id = stripeSub.metadata?.workspace_id ?? null;
           const priceId = stripeSub.items.data[0]?.price.id ?? null;
-          plan_tier = stripeSub.metadata?.plan_tier ?? (await resolveTierFromPrice(stripe, priceId));
+          plan_tier =
+            stripeSub.metadata?.plan_tier ?? (await resolveTierFromPrice(stripe, priceId));
         }
         if (!workspace_id) break;
         assertTestModeWorkspace(env, workspace_id);
@@ -738,6 +785,17 @@ Deno.serve(async (req) => {
           .update({ status: "canceled", cancel_at_period_end: false })
           .eq("stripe_subscription_id", sub.id);
         if (workspace_id) {
+          // An old subscription ending after the owner resubscribed: record it
+          // (above), but the workspace keeps the status the new one gives it.
+          const current = await otherPayingPlan(admin, workspace_id, sub.id);
+          if (current) {
+            await logBilling(admin, workspace_id, "stale_subscription_event_ignored", event.id, {
+              subscription: sub.id,
+              status: "canceled",
+              current_subscription: current,
+            });
+            break;
+          }
           await admin
             .from("workspaces")
             .update({ subscription_status: "canceled" })

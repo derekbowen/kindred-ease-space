@@ -194,7 +194,7 @@ console.log("\n=== partial and warning runs are attempts, not fresh snapshots ==
       workspace_id: "never-complete",
       last_sync_at: minsAgo(5),
       last_sync_status: "partial",
-      last_sync_error: "Your marketplace has more listings than one sync can read. We kept the 10,000 listings we read and removed nothing; the next sync continues.",
+      last_sync_error: "Your marketplace has more listings than one sync can read. We kept the 10,000 listings we read and removed nothing; contact support to raise the limit.",
       last_success_at: null,
     }),
   ]);

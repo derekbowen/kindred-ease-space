@@ -70,7 +70,7 @@ export async function countMatchingListings(
   return Number(count ?? 0);
 }
 
-/** The listings a page shows: newest first, then id (stable). Throws on error. */
+/** The listings a page shows: most recently synced first, then id (stable). Throws on error. */
 export async function fetchPageListings(
   workspaceId: string,
   filter: ResolvedFilter,

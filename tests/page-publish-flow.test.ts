@@ -243,6 +243,27 @@ seed();
   );
 }
 
+{
+  // The emergency kill switch on an active domain: nothing is published to a
+  // host whose /a/* traffic goes to the customer's own site.
+  const r = P.domainStep([
+    {
+      hostname: "pages.pools.example",
+      verified: true,
+      status: "active",
+      route_prefix: "/a/",
+      last_error: null,
+      activated_at: "2026-09-20T00:00:00Z",
+      created_at: "2026-09-19T00:00:00Z",
+      founders_disabled: true,
+    },
+  ]);
+  t(
+    "a domain switched off by the kill switch is not ready, and says why",
+    !r.ready && /switched off/.test(r.step) && r.hostname === "pages.pools.example",
+  );
+}
+
 console.log("\n2. A valid draft goes live at the reviewed version, and the URL is checked");
 seed();
 {
@@ -497,6 +518,47 @@ seed();
     list.length === 1 && list[0]!.kind === "city_hub",
   );
   t("…and not another workspace's", (await P.listPages(OTHER)).length === 0);
+  // An abandoned claim is shown as interrupted, never "being written".
+  db.table("tenant_pages")[0]!.generation = {
+    state: "generating",
+    request_id: "r2",
+    tier: "standard",
+    source: "builder",
+    started_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+  };
+  const stale = (await P.listPages(WS))[0]!;
+  t(
+    "My Pages shows an abandoned draft run as failed (interrupted), not being written",
+    stale.generating === false &&
+      stale.generationState === "failed" &&
+      /interrupted/.test(stale.generationError ?? ""),
+  );
+}
+
+console.log("\n7. Every slug the app makes is one the editor accepts");
+{
+  const { slugifyPage, findUniqueTenantSlug, PAGE_SLUG_MAX } =
+    await import("../src/lib/tenant-page-helpers.server");
+  const title =
+    "A complete guide to renting a private pool for a birthday party this summer for families";
+  const base = slugifyPage(title);
+  t(
+    "a long title's slug is cut without a trailing dash, and the editor accepts it",
+    base.length <= PAGE_SLUG_MAX &&
+      !base.endsWith("-") &&
+      P.PageFieldsSchema.safeParse(fields({ slug: base })).success,
+    base,
+  );
+  page({ slug: base, target_key: null, status: "archived" });
+  const next = await findUniqueTenantSlug(WS, base);
+  t(
+    "a suffixed slug still fits (base cut to leave room for -N) and is accepted",
+    next !== base &&
+      next.length <= PAGE_SLUG_MAX &&
+      /-2$/.test(next) &&
+      P.PageFieldsSchema.safeParse(fields({ slug: next })).success,
+    next,
+  );
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -564,15 +564,16 @@ const sb = () => supabaseAdmin as any;
 /**
  * The billing states in which page generation is INCLUDED (billed 'granted':
  * no tenant credits), as every plan and /beta promise: a paid plan in good
- * standing ('active'), one inside its payment-retry window ('grace'), and a
- * beta grant ('granted'). It stays bounded by the daily page cap, the
- * per-workspace daily cost cap, the platform ceiling, the rate limit and the
- * pause switches (ai_reserve / reserve_generation_slot). A trial runs on its
- * starter allowance (metered free quota); an expired, lapsed, stale or
- * unknown state is metered too — and the page builder refuses generation for
- * a workspace that may not publish at all.
+ * standing ('active') and a beta grant ('granted'). It stays bounded by the
+ * daily page cap, the per-workspace daily cost cap, the platform ceiling, the
+ * rate limit and the pause switches (ai_reserve / reserve_generation_slot). A
+ * trial runs on its starter allowance (metered free quota); an expired,
+ * lapsed, stale or unknown state is metered too. 'grace' (a failing payment
+ * being retried, or a cancellation's paid-up period) keeps pages up but
+ * pauses publishing, so the page builder refuses generation there — it is not
+ * listed, or the allowance would call it ready.
  */
-export const GENERATION_INCLUDED_STATES = ["active", "grace", "granted"] as const;
+export const GENERATION_INCLUDED_STATES = ["active", "granted"] as const;
 
 export function generationIncludedFor(billingState: string | null | undefined): boolean {
   return (GENERATION_INCLUDED_STATES as readonly string[]).includes(String(billingState ?? ""));

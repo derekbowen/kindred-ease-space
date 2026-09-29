@@ -846,7 +846,7 @@ const ld = (d: TemplateData) =>
   );
   t(
     "public pages: fresh for a minute, varied by host",
-    PUBLIC_PAGE_HEADERS["Cache-Control"] === "public, max-age=60, s-maxage=60" &&
+    PUBLIC_PAGE_HEADERS["Cache-Control"] === "private, max-age=60" &&
       PUBLIC_PAGE_HEADERS.Vary === "Host, X-Forwarded-Host",
   );
   t(

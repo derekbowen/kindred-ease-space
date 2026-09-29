@@ -68,6 +68,14 @@ class Query implements PromiseLike<Resp> {
     this.call.filters.push(["eq", col, val]);
     return this;
   }
+  neq(col: string, val: unknown) {
+    this.call.filters.push(["neq", col, val]);
+    return this;
+  }
+  in(col: string, vals: unknown) {
+    this.call.filters.push(["in", col, vals]);
+    return this;
+  }
   limit(n: number) {
     this.call.filters.push(["limit", "n", n]);
     return this;

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { tenantSitemapResponse } from "@/lib/sitemap.server";
+import { memoizedTenantSitemapResponse } from "@/lib/sitemap.server";
 import { clientIp, rateLimit } from "@/lib/public-rate-limit";
 
 const Query = z.object({
@@ -28,7 +28,7 @@ export const Route = createFileRoute("/api/public/sitemap-by-host")({
         if (!parsed.success) {
           return new Response("hostname required", { status: 400 });
         }
-        const r = await tenantSitemapResponse(parsed.data.hostname, request.url);
+        const r = await memoizedTenantSitemapResponse(parsed.data.hostname, request.url);
         return new Response(r.body, { status: r.status, headers: r.headers });
       },
     },

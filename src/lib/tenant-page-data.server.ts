@@ -245,7 +245,10 @@ export function pageFromRow(
       country: labels?.country ?? null,
     },
     category: labels?.category ?? null,
-    listingNoun: cleanText(vars.category_plural),
+    // A builder page's category_plural is the marketplace's raw category id
+    // ("pool_spa"), kept for the duplicate check — never a noun to print
+    // ("24 pool_spa available"). Only a legacy page's hand-written noun shows.
+    listingNoun: filter?.version === 2 ? null : cleanText(vars.category_plural),
     matchingListings: extra.matchingListings,
     legacy: extra.legacy,
   };

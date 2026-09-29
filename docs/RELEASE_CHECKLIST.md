@@ -130,6 +130,7 @@ check `list_migrations` and skip what is applied), in this order:
 - [ ] `20260929000300_mvp_deferred_jobs.sql` (deactivates `coach-briefing-nightly` only — never PRNM's `competitor-radar-daily` / `daily-seo-digest`; three rows of `true`)
 - [ ] `20260929000310_mvp_help_copy.sql` (help rows: the MVP journey, no speed or Search Console claims, the MVP sidebar's names; nine rows of `true`)
 - [ ] `20260929000400_mvp_publish_checked.sql` (publish exactly the validated draft; one row `ok`)
+- [ ] `20260929000500_mvp_tenant_pages_server_writes.sql` (page rows written by the server only: the member write policies and client write grants go, members still read; three rows `ok`. Its rollback is security-regressive — see the file)
 
 Then run the combined post-migration verification in `supabase/rollback/README.md`.
 
@@ -167,9 +168,16 @@ on the gateway answers every call 401.
 
 ```bash
 supabase functions deploy stripe-webhook      --no-verify-jwt --project-ref xbxhzinnfhosoztqaaao
-supabase functions deploy coach-briefing-cron --no-verify-jwt --project-ref xbxhzinnfhosoztqaaao
 supabase functions deploy create-checkout                     --project-ref xbxhzinnfhosoztqaaao
 ```
+
+`coach-briefing-cron` is **retired for the MVP** (the briefing is deferred; the
+security review found it still callable with the shared `CRON_SECRET`, one AI
+call per workspace). Deploy the 410 stub under its name, as for the four
+retired AI endpoints — `supabase/retired-functions/stub/index.ts` as the
+function's `index.ts`, `verify_jwt: false`. Reversible: redeploy
+`supabase/functions/coach-briefing-cron` from this SHA (it stays in the repo,
+tested) when the briefing comes back.
 
 `create-checkout` keeps JWT verification **on**. Add-ons are deferred for the MVP:
 it refuses every `mode: "addon"` checkout with 410 `addon_unavailable` before any
@@ -181,7 +189,7 @@ Deploying through the Supabase MCP `deploy_edge_function` instead? Pass
 `verify_jwt: false` for the first two, and every file each one imports, at the same
 relative paths:
 - `stripe-webhook`: `index.ts`, `../_shared/stripe-catalog.ts`
-- `coach-briefing-cron`: `index.ts`, `../_shared/openai.ts`, `../_shared/ai-pricing.ts`
+- `coach-briefing-cron` (only when un-retiring it): `index.ts`, `../_shared/openai.ts`, `../_shared/ai-pricing.ts`
 - `create-checkout`: `index.ts`, `../_shared/stripe-catalog.ts`, `../_shared/affiliate-requirement.ts`
 
 Check (no customer data involved). The old and new code answer these probes
@@ -195,7 +203,8 @@ curl -sS -o /dev/null -w "stripe-webhook %{http_code}\n" -X POST \
   https://xbxhzinnfhosoztqaaao.supabase.co/functions/v1/stripe-webhook \
   -H "stripe-signature: t=1,v1=bogus" -H "content-type: application/json" -d '{}'
 ```
-and re-run probe **B** from step 1.3 against the new `coach-briefing-cron`: 200.
+and re-run probe **B** from step 1.3 against `coach-briefing-cron`: while it is
+retired the stub answers 410 `retired_endpoint` (200 only after un-retiring it).
 
 ## 4. Deploy the app
 
@@ -208,6 +217,17 @@ preflight, `wrangler deploy`, eight consecutive identity reads, the smoke.
 
 Check: `curl -s https://www.founders.click/api/public/version` and
 `/api/public/edge-health` both name `<SHA>`.
+
+Then fill the listing match keys (000100 adds them empty): **run a sync for
+every connected workspace now** (Sharetribe → Sync now, or trigger the
+`sharetribe-sync-30min` fan-out), don't wait for the cron. Until a workspace's
+first sync on this build its listings have no keys, so its pages show no
+listings (noindex, out of the sitemap) and Opportunities reports them as
+"synced before locations were matched". Check:
+```sql
+SELECT workspace_id, count(*) FILTER (WHERE category_key IS NULL AND category IS NOT NULL) AS unkeyed
+  FROM public.tenant_listings GROUP BY 1;   -- expect 0 per workspace after its sync
+```
 
 ## 5. Smoke
 

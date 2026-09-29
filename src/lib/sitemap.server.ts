@@ -39,8 +39,13 @@
  * <sitemapindex> of /a/sitemap.xml?page=N, and a page that does not exist is
  * a 404.
  *
- * CACHING. `public, max-age=300, s-maxage=300` with `Vary: Host,
- * X-Forwarded-Host`: a change appears within five minutes, never instantly.
+ * CACHING. `private, max-age=300` with `Vary: Host, X-Forwarded-Host`: a
+ * change appears within five minutes, never instantly. Never a shared-cache
+ * directive: the same path serves every customer's hostname, and a CDN that
+ * ignores Vary (Cloudflare's does) would hand one tenant's sitemap to
+ * another. The route memoizes each host's answer for a minute instead
+ * (sitemapResponseMemo), keyed by the resolved host, so repeated requests do
+ * not rebuild the sitemap from the database each time.
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { decideCapacity } from "@/lib/billing-capacity";
@@ -109,13 +114,21 @@ export function utf8Length(s: string): number {
 // ---------------------------------------------------------------------------
 
 /**
- * The host a request asked for: the first x-forwarded-host entry (or the Host
+ * The host a request asked for: the LAST x-forwarded-host entry (or the Host
  * header), lower-cased, without scheme, path or port. `www.` is KEPT — it is a
  * different host, and the sitemap's URLs are built from exactly this value.
+ *
+ * The last entry, because a proxy that appends (rather than replaces) puts
+ * the value IT saw last: a customer CDN in customer_proxy mode that appends
+ * would otherwise let a visitor-supplied first entry choose the tenant. The
+ * edge Worker sets a single value, so for it first and last are the same.
  */
 export function requestHost(raw: string | null | undefined): string {
-  return String(raw ?? "")
-    .split(",")[0]!
+  return (
+    String(raw ?? "")
+      .split(",")
+      .pop() ?? ""
+  )
     .trim()
     .toLowerCase()
     .replace(/^https?:\/\//, "")
@@ -1500,7 +1513,8 @@ export const SITEMAP_VARY = "Host, X-Forwarded-Host";
 
 export const SITEMAP_OK_HEADERS: Readonly<Record<string, string>> = {
   "Content-Type": "application/xml; charset=utf-8",
-  "Cache-Control": `public, max-age=${SITEMAP_CACHE_SECONDS}, s-maxage=${SITEMAP_CACHE_SECONDS}`,
+  // Private: see CACHING at the top of this file.
+  "Cache-Control": `private, max-age=${SITEMAP_CACHE_SECONDS}`,
   Vary: SITEMAP_VARY,
 };
 
@@ -1560,3 +1574,54 @@ export async function tenantSitemapResponse(
   if (doc === null) return { ...NOT_FOUND, headers: { ...NOT_FOUND.headers } };
   return { status: 200, body: doc, headers: { ...SITEMAP_OK_HEADERS } };
 }
+
+/**
+ * A short per-isolate memo in front of tenantSitemapResponse: an
+ * unauthenticated request otherwise rebuilds the whole sitemap (billing,
+ * grants, every published page, the listing counts) from a database other
+ * products share. Keyed by the normalised request host plus the page
+ * parameter, so an answer is only ever reused for the host it was built for.
+ * Only 200s and 404s are kept (a 503 is retried), for `ttlMs` (a publish
+ * still appears well within SITEMAP_CACHE_SECONDS), at most `maxEntries`
+ * answers and none whose body exceeds `maxBodyChars`.
+ */
+export function sitemapResponseMemo(
+  build: (rawHost: string, requestUrl: string) => Promise<SitemapHttpResult>,
+  {
+    ttlMs = 60_000,
+    maxEntries = 256,
+    maxBodyChars = 2_000_000,
+    now = () => Date.now(),
+  }: { ttlMs?: number; maxEntries?: number; maxBodyChars?: number; now?: () => number } = {},
+) {
+  const memo = new Map<string, { at: number; result: SitemapHttpResult }>();
+  return async (rawHost: string, requestUrl: string): Promise<SitemapHttpResult> => {
+    let pageParam: string | null = null;
+    try {
+      pageParam = new URL(requestUrl).searchParams.get("page");
+    } catch {
+      pageParam = null;
+    }
+    const key = `${requestHost(rawHost)}|${pageParam ?? ""}`;
+    const hit = memo.get(key);
+    const t = now();
+    if (hit && t - hit.at < ttlMs) {
+      return { ...hit.result, headers: { ...hit.result.headers } };
+    }
+    if (hit) memo.delete(key);
+    const result = await build(rawHost, requestUrl);
+    if ((result.status === 200 || result.status === 404) && result.body.length <= maxBodyChars) {
+      if (memo.size >= maxEntries) {
+        const oldest = memo.keys().next();
+        if (!oldest.done) memo.delete(oldest.value);
+      }
+      memo.set(key, { at: t, result: { ...result, headers: { ...result.headers } } });
+    }
+    return result;
+  };
+}
+
+/** The memoized tenant sitemap the public routes serve (the production database). */
+export const memoizedTenantSitemapResponse = sitemapResponseMemo((rawHost, requestUrl) =>
+  tenantSitemapResponse(rawHost, requestUrl),
+);

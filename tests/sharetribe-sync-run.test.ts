@@ -581,6 +581,9 @@ try {
     const row = mapListing(WS, "https://m.example.com", { id: { uuid: uuid(1) }, attributes: { title: "  Quiet   Pool ", price: { amount: 12.5, currency: "US" }, geolocation: { lat: 999, lng: 10 }, publicData: {} } }, [], { mode: "marketplace", syncedAt: "2026-09-28T12:00:00.000Z" });
     t("a fractional amount or bad currency is not a price; impossible coordinates are dropped", row.price_amount === null && row.price_currency === null && row.lat === null && row.lng === 10 && row.title === "Quiet Pool" && row.synced_at === "2026-09-28T12:00:00.000Z");
     t("unmapped place and category stay null (with null keys)", row.city === null && row.category === null && row.city_key === null && row.category_key === null);
+    const huge = mapListing(WS, "https://m.example.com", { id: { uuid: uuid(2) }, attributes: { title: "Villa", price: { amount: 3_000_000_000, currency: "USD" }, publicData: {} } }, [], { mode: "marketplace", syncedAt: "2026-09-28T12:00:00.000Z" });
+    const max = mapListing(WS, "https://m.example.com", { id: { uuid: uuid(3) }, attributes: { title: "Villa", price: { amount: 2_147_483_647, currency: "USD" }, publicData: {} } }, [], { mode: "marketplace", syncedAt: "2026-09-28T12:00:00.000Z" });
+    t("a price past the column's int4 range is stored unpriced (never a failed page upsert); the maximum itself fits", huge.price_amount === null && max.price_amount === 2_147_483_647);
   }
 
   // ==========================================================================

@@ -49,6 +49,21 @@ t("city keys fold case, accents and punctuation", cityKeyOf(" St. Louis ") === "
 t("category keys stay exact (no synonym folding)", categoryKeyOf("Pool") === "pool" && categoryKeyOf("Swimming") === "swimming" && categoryKeyOf("Pool") !== categoryKeyOf("Swimming"));
 t("empty or whitespace is null, never ''", countryKeyOf("  ") === null && cityKeyOf(null) === null && categoryKeyOf(undefined) === null);
 t("listingKeys uses the listing's own country for its region", eq(listingKeys({ country: "US", state: "Oregon", city: "Portland", category: "Pool" }), { countryKey: "us", regionKey: "or", cityKey: "portland", categoryKey: "pool" }));
+{
+  // Non-Latin names key by their own letters (they used to get no key, so
+  // such a marketplace had no opportunities at all); ASCII keys never change.
+  t("東京, Москва and Αθήνα get keys", cityKeyOf("東京") === "東京" && cityKeyOf("Москва") === "москва" && cityKeyOf("Αθήνα") === "αθήνα");
+  t("different non-Latin cities never share a key", cityKeyOf("東京") !== cityKeyOf("大阪") && cityKeyOf("Москва") !== cityKeyOf("Казань"));
+  t("a non-Latin name with a number keeps its letters (not a bare '2')", cityKeyOf("Москва 2") === "москва-2");
+  t("Latin keys are unchanged by the fallback", cityKeyOf("Tromsø") === "troms" && cityKeyOf("São Paulo") === "sao-paulo" && cityKeyOf("Zürich") === "zurich");
+  const k = listingKeys({ country: "Japan", state: "東京都", city: "東京", category: "プール" });
+  t("a Japanese listing gets all four keys", k.countryKey === "jp" && k.regionKey === "東京都" && k.cityKey === "東京" && k.categoryKey === "プール");
+  const hub = slugForTarget("city_hub", { country: "Japan", region: "東京都", city: "東京", category: null }, { ...k, categoryKey: null });
+  const hub2 = slugForTarget("city_hub", { country: "Japan", region: "大阪府", city: "大阪", category: null }, listingKeys({ country: "Japan", state: "大阪府", city: "大阪" }));
+  t("its slug is ASCII, stable and carries the place's identity", /^[a-z0-9-]+$/.test(hub) && hub.endsWith("-jp") && hub !== hub2 && hub === slugForTarget("city_hub", { country: "Japan", region: "東京都", city: "東京", category: null }, { ...k, categoryKey: null }), `${hub} ${hub2}`);
+  const cat = slugForTarget("category_page", { country: null, region: null, city: null, category: "プール" }, listingKeys({ category: "プール" }));
+  t("a non-Latin category slug is ASCII too", /^[a-z0-9-]+$/.test(cat) && cat.length > 1, cat);
+}
 
 console.log("\n2. Same city name, different regions and countries");
 const portlandOR = listingKeys({ country: "US", state: "OR", city: "Portland" });

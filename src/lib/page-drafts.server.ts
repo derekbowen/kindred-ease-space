@@ -94,6 +94,8 @@ export const GENERATION_BILLING_MESSAGE =
   "Your plan doesn't include creating pages right now. Choose a plan in Billing to continue.";
 export const DRAFT_INTERRUPTED_MESSAGE =
   "Writing this draft was interrupted before it finished. Nothing was lost — try again.";
+export const DRAFT_CHANGED_MESSAGE =
+  "This draft is being written or was just changed. Reload it and try again.";
 
 export function notEnoughListingsMessage(kind: PageKind, count: number): string {
   const c = TEMPLATE_CONTRACTS[kind];
@@ -267,7 +269,26 @@ export function isGenerationActive(
 ): boolean {
   if (!g || g.state !== "generating") return false;
   const t = Date.parse(g.started_at);
-  return Number.isFinite(t) && now - t < DRAFT_STALE_MS;
+  // A start time in the future (beyond clock skew) is not a live claim: it
+  // would otherwise hold the draft "being written" indefinitely.
+  return Number.isFinite(t) && t <= now + 60_000 && now - t < DRAFT_STALE_MS;
+}
+
+/**
+ * The generation state as the owner should see it. Nothing rewrites an
+ * abandoned claim (a closed tab, a cancelled Worker, a deploy mid-call), so
+ * a "generating" row older than DRAFT_STALE_MS is reported as failed with
+ * the interrupted message: the editor then offers "Try again" and unlocks
+ * its actions, which the server already accepts for a stale claim.
+ */
+export function effectiveGeneration(
+  g: GenerationState | null | undefined,
+  now = Date.now(),
+): GenerationState | null {
+  if (!g) return null;
+  if (g.state === "generating" && !isGenerationActive(g, now))
+    return { ...g, state: "failed", error: DRAFT_INTERRUPTED_MESSAGE };
+  return g;
 }
 
 /** The page a request id claimed or produced, if any. */
@@ -374,14 +395,20 @@ async function claimExistingDraft(p: {
   workspaceId: string;
   pageId: string;
   generation: GenerationState;
+  /** The version the run was checked against: the claim moves it one on. */
+  expectedVersion: number;
 }): Promise<PageRefRow | null> {
   const staleBefore = new Date(Date.now() - DRAFT_STALE_MS).toISOString();
+  // The claim bumps content_version, so an editor save based on the version
+  // before it fails as a conflict instead of landing mid-run; deliver then
+  // writes only on top of the claimed version (never two texts at one version).
   const { data, error } = await sb()
     .from("tenant_pages")
-    .update({ generation: p.generation })
+    .update({ generation: p.generation, content_version: p.expectedVersion + 1 })
     .eq("id", p.pageId)
     .eq("workspace_id", p.workspaceId)
     .eq("status", "draft")
+    .eq("content_version", p.expectedVersion)
     .or(
       `generation.is.null,generation->>state.is.null,generation->>state.neq.generating,generation->>started_at.lt.${staleBefore}`,
     )
@@ -660,10 +687,16 @@ export async function runPageDraft(req: DraftRequest, deps: DraftDeps = {}): Pro
       claimed = r.claimed;
       created = r.created;
     } else {
-      const r = await claimExistingDraft({ workspaceId: ws, pageId: req.pageId, generation });
+      const r = await claimExistingDraft({
+        workspaceId: ws,
+        pageId: req.pageId,
+        generation,
+        expectedVersion: Number(existingPage!.content_version) || 1,
+      });
       if (!r) {
+        // Another run claimed it, or a save moved it on since it was read.
         await releaseGenerationSlot(ws, req.requestId);
-        throw new CustomerFacingError(GENERATION_IN_PROGRESS_MESSAGE);
+        throw new CustomerFacingError(DRAFT_CHANGED_MESSAGE);
       }
       claimed = r;
     }
@@ -722,6 +755,7 @@ export async function runPageDraft(req: DraftRequest, deps: DraftDeps = {}): Pro
           .eq("id", claimed.id)
           .eq("workspace_id", ws)
           .eq("status", "draft")
+          .eq("content_version", claimedVersion)
           .eq("generation->>request_id", req.requestId)
           .select(PAGE_REF_COLUMNS);
         if (error) throw new Error(`draft save failed: ${error.message}`);
@@ -791,8 +825,10 @@ export function suggestedTitle(kind: PageKind, filter: ResolvedFilter): string {
   const cat = humanLabel(filter.labels.category);
   const place = placeLabel(filter.labels);
   if (kind === "city_hub") return cat ? `${cat} in ${place}` : `Rentals in ${place}`;
+  // Long enough to publish (the contract's TITLE_MIN is 10): a bare category
+  // name ("Pool") would be paid for and then refused at publish.
   if (kind === "category_page")
-    return place ? `${cat ?? "Listings"} in ${place}` : `${cat ?? "Listings"}`;
+    return place ? `${cat ?? "Listings"} in ${place}` : `${cat ?? "All"} listings`;
   return "";
 }
 

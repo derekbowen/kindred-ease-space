@@ -7,7 +7,8 @@ export function slugifyPageTitle(s: string): string {
     .replace(/[\u2018\u2019']/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
+    .slice(0, 80)
+    .replace(/-+$/g, "");
 }
 
 export type PagePreset = {

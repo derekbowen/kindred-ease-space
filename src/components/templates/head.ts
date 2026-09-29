@@ -21,12 +21,14 @@ import { isoOrNull, pageDescription, pageTitleTag } from "./format";
 import type { TemplateData } from "./types";
 
 /**
- * Public page HTML: fresh for a minute everywhere, so a publish, an edit or
- * an unpublish shows within 60 seconds. The same path serves every customer's
- * hostname, so the response varies by the host it was requested on.
+ * Public page HTML: a browser may reuse it for a minute, so a publish, an
+ * edit or an unpublish shows within 60 seconds. PRIVATE: the same path
+ * serves every customer's hostname, and a shared cache that ignores Vary
+ * (Cloudflare's does) would hand one tenant's page to another — so no CDN
+ * may store it. The response still varies by the host it was requested on.
  */
 export const PUBLIC_PAGE_HEADERS: Readonly<Record<string, string>> = Object.freeze({
-  "Cache-Control": "public, max-age=60, s-maxage=60",
+  "Cache-Control": "private, max-age=60",
   Vary: "Host, X-Forwarded-Host",
 });
 

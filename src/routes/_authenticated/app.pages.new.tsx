@@ -35,6 +35,7 @@ import {
   type BuilderTemplate,
 } from "@/lib/pages.functions";
 import type { PageKind } from "@/lib/coverage/target";
+import { TITLE_MIN } from "@/lib/seo/page-contract";
 
 const searchSchema = z.object({
   target: z.string().max(400).optional(),
@@ -168,7 +169,7 @@ function NewPage() {
     !!kind &&
     !!filter &&
     !!quality &&
-    title.trim().length >= 3 &&
+    title.trim().length >= TITLE_MIN &&
     problems.length === 0 &&
     !existing &&
     !!chosenTemplate?.available &&
@@ -394,7 +395,9 @@ function NewPage() {
                     </div>
                     <div className="rounded-md border p-3">
                       <p className="text-xs text-muted-foreground">
-                        Newest listings (what the page will show first)
+                        {kind === "resource_article"
+                          ? "Listings the guide is written from (the article links to your marketplace, not to these)"
+                          : "Listings the page will show"}
                       </p>
                       {review.data.sample.length === 0 ? (
                         <p className="mt-2 text-sm text-muted-foreground">No listings match.</p>
@@ -452,6 +455,11 @@ function NewPage() {
                         }
                         onChange={(e) => setTitle(e.target.value)}
                       />
+                      {title.trim().length > 0 && title.trim().length < TITLE_MIN && (
+                        <p className="text-xs text-muted-foreground">
+                          At least {TITLE_MIN} characters: say what's offered and where.
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="slug">Address</Label>

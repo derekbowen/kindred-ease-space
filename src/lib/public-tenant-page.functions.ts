@@ -27,7 +27,10 @@ function resolveRequestHost(): string | undefined {
   try {
     const raw = getRequestHeader("x-forwarded-host") || getRequestHeader("host");
     if (!raw) return undefined;
-    return raw.split(",")[0]!.trim().toLowerCase().replace(/:\d+$/, "") || undefined;
+    // The LAST entry: a proxy that appends puts the host it saw last, so a
+    // visitor-supplied first entry can't choose the tenant (see requestHost
+    // in src/lib/sitemap.server.ts). The edge Worker sets a single value.
+    return (raw.split(",").pop() ?? "").trim().toLowerCase().replace(/:\d+$/, "") || undefined;
   } catch {
     return undefined;
   }

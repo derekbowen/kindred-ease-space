@@ -288,8 +288,16 @@ let settles: any[] = [];
 let internalUnlimited = false;
 let aiReserve: () => unknown = () => null;
 
-const { runPageDraft, draftStatus, DRAFT_NOT_EDITABLE_MESSAGE, notEnoughListingsMessage } =
-  await import("../src/lib/page-drafts.server");
+const {
+  runPageDraft,
+  draftStatus,
+  DRAFT_NOT_EDITABLE_MESSAGE,
+  DRAFT_INTERRUPTED_MESSAGE,
+  DRAFT_CHANGED_MESSAGE,
+  effectiveGeneration,
+  isGenerationActive,
+  notEnoughListingsMessage,
+} = await import("../src/lib/page-drafts.server");
 const { CustomerFacingError, GENERATION_IN_PROGRESS_MESSAGE, GENERATION_PAUSED_MESSAGE } =
   await import("../src/lib/generation.server");
 
@@ -723,6 +731,27 @@ try {
       errMsg(err) === GENERATION_IN_PROGRESS_MESSAGE && openaiCalls.length === 1,
     );
     row.generation.started_at = new Date(Date.now() - 6 * 60_000).toISOString();
+    // The editor and My Pages show an abandoned claim as interrupted (failed,
+    // "Try again"), never "being written" forever.
+    const seen = effectiveGeneration(row.generation);
+    t(
+      "an abandoned claim is shown as interrupted, not still being written",
+      seen?.state === "failed" &&
+        seen.error === DRAFT_INTERRUPTED_MESSAGE &&
+        !isGenerationActive(row.generation),
+    );
+    t(
+      "a live claim is shown as being written",
+      effectiveGeneration({ ...row.generation, started_at: new Date().toISOString() })?.state ===
+        "generating",
+    );
+    t(
+      "a claim dated in the future is not a live claim",
+      !isGenerationActive({
+        ...row.generation,
+        started_at: new Date(Date.now() + 3_600_000).toISOString(),
+      }),
+    );
     const r = await runPageDraft({
       workspaceId: WS,
       userId: USER,
@@ -734,6 +763,48 @@ try {
     t(
       "an abandoned run (older than 5 minutes) can be taken over",
       r.outcome === "ready" && openaiCalls.length === 2,
+    );
+    const afterRegen = pages()[0]!;
+    t(
+      "a regeneration moves the version on twice (claim, then delivery), so no two texts share one",
+      Number(afterRegen.content_version) === 4,
+      String(afterRegen.content_version),
+    );
+    // A save lands between the regenerate's read and its claim: the claim
+    // (conditional on the version it read) fails, nothing is spent.
+    const callsBefore = openaiCalls.length;
+    db.beforeWrite = ({ method, table, body }) => {
+      if (
+        method === "PATCH" &&
+        table === "tenant_pages" &&
+        body?.generation?.state === "generating"
+      ) {
+        db.beforeWrite = undefined;
+        afterRegen.content_version = Number(afterRegen.content_version) + 1; // the save
+        afterRegen.body_markdown = "The owner's own words, saved a moment ago.";
+      }
+    };
+    let errRace: unknown = null;
+    try {
+      await runPageDraft({
+        workspaceId: WS,
+        userId: USER,
+        requestId: rid(),
+        tier: "standard",
+        mode: "regenerate",
+        pageId: afterRegen.id,
+      });
+    } catch (e) {
+      errRace = e;
+    }
+    db.beforeWrite = undefined;
+    t(
+      "a regenerate racing a save is refused before any spend, and the save stands",
+      errMsg(errRace) === DRAFT_CHANGED_MESSAGE &&
+        openaiCalls.length === callsBefore &&
+        pages()[0]!.body_markdown === "The owner's own words, saved a moment ago." &&
+        pages()[0]!.generation?.state !== "generating",
+      errMsg(errRace),
     );
     row.status = "published";
     let err2: unknown = null;

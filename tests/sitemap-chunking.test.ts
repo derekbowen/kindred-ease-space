@@ -171,7 +171,7 @@ seed(60_001, 0);
   t("the parts never share a URL, and together list every page", !l2.some((l) => s1.has(l)) && new Set([...l1, ...l2]).size === 60_001);
   t("part 1 is the first 50,000 by publication", l1[0] === `https://${HOST}/a/page-000000` && l1[49_999] === `https://${HOST}/a/page-049999`);
   t("each part's lastmod in the index is its newest URL's", children[0]![2] === hour(49_999).replace(/\.\d{3}Z$/, "Z") && children[1]![2] === hour(60_000).replace(/\.\d{3}Z$/, "Z"), `${children[0]![2]} ${children[1]![2]}`);
-  t("each part carries the cache headers", p1.headers["Cache-Control"] === "public, max-age=300, s-maxage=300" && p2.headers.Vary === "Host, X-Forwarded-Host");
+  t("each part carries the cache headers", p1.headers["Cache-Control"] === "private, max-age=300" && p2.headers.Vary === "Host, X-Forwarded-Host");
 
   // Shard membership is stable: editing never moves a URL; publishing appends.
   fake.update("tenant_pages", (p) => p.slug === "page-000123" || p.slug === "page-055555", { updated_at: "2026-09-27T12:00:00Z" });
@@ -255,12 +255,15 @@ console.log("\nthe page parameter");
 console.log("\nthe routes serve the one generator");
 {
   const aRoute = read("src/routes/a.sitemap[.]xml.tsx");
-  t("/a/sitemap.xml answers exactly what tenantSitemapResponse decides (status, body, headers)",
-    /const r = await tenantSitemapResponse\(host, request\.url\);\s*return new Response\(r\.body, \{ status: r\.status, headers: r\.headers \}\);/.test(aRoute));
+  t("/a/sitemap.xml answers exactly what tenantSitemapResponse decides (status, body, headers), through the per-host memo",
+    /const r = await memoizedTenantSitemapResponse\(host, request\.url\);\s*return new Response\(r\.body, \{ status: r\.status, headers: r\.headers \}\);/.test(aRoute));
   t("…for the forwarded host, else the Host header", /request\.headers\.get\("x-forwarded-host"\) \|\| request\.headers\.get\("host"\)/.test(aRoute));
   const byHost = read("src/routes/api/public/sitemap-by-host.ts");
   t("/api/public/sitemap-by-host answers the same way for ?hostname=",
-    /const r = await tenantSitemapResponse\(parsed\.data\.hostname, request\.url\);\s*return new Response\(r\.body, \{ status: r\.status, headers: r\.headers \}\);/.test(byHost));
+    /const r = await memoizedTenantSitemapResponse\(parsed\.data\.hostname, request\.url\);\s*return new Response\(r\.body, \{ status: r\.status, headers: r\.headers \}\);/.test(byHost));
+  const lib = read("src/lib/sitemap.server.ts");
+  t("…and the memo wraps the one generator",
+    /export const memoizedTenantSitemapResponse = sitemapResponseMemo\(\(rawHost, requestUrl\) =>\s*tenantSitemapResponse\(rawHost, requestUrl\),?\s*\);/.test(lib));
   t("…still rate limited and validated", /rateLimit\("sitemap-by-host"/.test(byHost) && /hostname required/.test(byHost));
   const root = read("src/routes/sitemap[.]xml.tsx");
   t("/sitemap.xml never serves a tenant sitemap (the customer's own /sitemap.xml stays theirs)", !/tenantSitemap/.test(root));

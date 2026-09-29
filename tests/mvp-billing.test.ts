@@ -34,14 +34,18 @@ function t(name: string, cond: boolean, extra = "") {
 const read = (rel: string) => readFileSync(join(import.meta.dir, "..", rel), "utf8");
 
 console.log("\n1. Generation is included where the plans say it is");
-for (const s of ["active", "grace", "granted"]) t(`${s}: included`, generationIncludedFor(s));
+for (const s of ["active", "granted"]) t(`${s}: included`, generationIncludedFor(s));
+t(
+  "grace: not included (publishing is paused there, so the builder refuses; the allowance must not say ready)",
+  !generationIncludedFor("grace"),
+);
 for (const s of ["trialing", "trial_expired", "lapsed", "stale", "unknown", "internal", "", null]) {
   t(
     `${String(s)}: not 'granted' billing (trial allowance, metered, or internal's own class)`,
     !generationIncludedFor(s as string),
   );
 }
-t("exactly three included states", GENERATION_INCLUDED_STATES.length === 3);
+t("exactly two included states", GENERATION_INCLUDED_STATES.length === 2);
 const gen = read("src/lib/generation.server.ts");
 t(
   "isGenerationGranted reads the billing state through generationIncludedFor",

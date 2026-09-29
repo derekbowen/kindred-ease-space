@@ -35,6 +35,9 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { cleanText, listingKeys } from "@/lib/coverage/target";
 import { buildListingUrl, resolveRouteConfig } from "@/lib/marketplace/adapter";
 
+/** The largest price tenant_listings.price_amount (int4, minor units) can hold. */
+export const PRICE_AMOUNT_MAX = 2_147_483_647;
+
 export type SharetribeAuthMode = "marketplace" | "integration";
 
 const SHARETRIBE_API = {
@@ -213,25 +216,27 @@ export function partialSentence(
   const kept = `We kept the ${listingsWord(saved)} we read and removed nothing`;
   const ofTotal =
     total !== null && total > 0 ? `${fmt(saved)} of ${fmt(total)} listings` : listingsWord(saved);
+  // Every run starts again from the first page: say "tries again", never
+  // "continues". A catalogue one run can never finish reading says so.
   switch (reason) {
     case "missing_pagination":
-      return `Sharetribe didn't say how many listings there are. ${kept}; the next sync continues.`;
+      return `Sharetribe didn't say how many listings there are. ${kept}; the next sync tries again.`;
     case "count_changed":
     case "count_mismatch":
-      return `Your listings changed while we were reading them. ${kept}; the next sync continues.`;
+      return `Your listings changed while we were reading them. ${kept}; the next sync tries again.`;
     case "pagination_limit":
     case "page_cap":
-      return `Your marketplace has more listings than one sync can read. ${kept}; the next sync continues.`;
+      return `Your marketplace has more listings than one sync can read. ${kept}; contact support to raise the limit.`;
     case "time_budget":
-      return `The sync ran out of time after ${ofTotal}. We kept them and removed nothing; the next sync continues.`;
+      return `The sync ran out of time after ${ofTotal}. We kept them and removed nothing; the next sync tries again. If this keeps happening, contact support.`;
     case "upstream_error":
-      return `Sharetribe stopped answering after ${ofTotal}. We kept them and removed nothing; the next sync continues.`;
+      return `Sharetribe stopped answering after ${ofTotal}. We kept them and removed nothing; the next sync tries again.`;
     case "save_failed":
-      return `We couldn't save every listing. We kept the ${listingsWord(saved)} we saved and removed nothing; the next sync continues.`;
+      return `We couldn't save every listing. We kept the ${listingsWord(saved)} we saved and removed nothing; the next sync tries again.`;
     case "reconcile_failed":
-      return `We updated ${listingsWord(saved)} but couldn't remove the ones that are no longer published. The next sync continues.`;
+      return `We updated ${listingsWord(saved)} but couldn't remove the ones that are no longer published. The next sync tries again.`;
     case "malformed_response":
-      return `Sharetribe sent a page we couldn't read. ${kept}; the next sync continues.`;
+      return `Sharetribe sent a page we couldn't read. ${kept}; the next sync tries again.`;
     case "lease_lost":
       return SYNC_SENTENCES.leaseLost;
   }
@@ -673,7 +678,16 @@ export function mapListing(
   const id = jsonApiId(raw?.id) as string;
   const a: AnyRec = isRecord(raw?.attributes) ? raw.attributes : {};
   const amount = a?.price?.amount;
-  const price = typeof amount === "number" && Number.isSafeInteger(amount) ? amount : null;
+  // tenant_listings.price_amount is a 32-bit integer (minor units): a price
+  // past it would fail its whole page's upsert, every run, and the stale-row
+  // cleanup would never happen. Such a listing is stored unpriced instead.
+  const price =
+    typeof amount === "number" &&
+    Number.isSafeInteger(amount) &&
+    amount >= 0 &&
+    amount <= PRICE_AMOUNT_MAX
+      ? amount
+      : null;
   const rawCurrency = a?.price?.currency;
   const currency =
     typeof rawCurrency === "string" && /^[A-Za-z]{3}$/.test(rawCurrency.trim())

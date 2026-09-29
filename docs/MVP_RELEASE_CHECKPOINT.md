@@ -55,7 +55,9 @@ server-side), not finished.
 | 2026-09-29 | Draft pipeline: grounding through the page's filter (exact count, prices per currency+unit, fenced untrusted sample, per-template prompts, no availability claims); claim-first drafts keyed by target; failures keep the draft; regenerate into the same row | b6a1d74; page-grounding 33, page-draft-flow 60 |
 | 2026-09-29 | Publishing = reachable page: template/filter/inventory/text checks, ACTIVE domain or the exact next step, `publish_tenant_page_checked` (migration 000400: only the validated draft version), live URL probe; live edits validated before any write; slug locked when live | 758cc60; page-publish-flow 45, mvp-migrations.pg 39/39 (PG16: 20 drafts racing for 5 slots → 5) |
 | 2026-09-29 | Screens: Opportunities, New page (builder), editor (real preview via the W4 registry), My Pages; QPB / Generate Content / bulk create redirect; batch + quick-page endpoints refuse; unvalidated tenant-pages write endpoints removed | a412232 (local until W4 merges: the editor imports its registry and data builder) |
-| 2026-09-29 | Billing: generation included for active/grace/granted (as every plan promises); allowance honours it; webhook price-first plan (Billing Portal changes honoured); capacity-gated reactivation; cancelled customers can check out again | 6c6abbc; mvp-billing 19, stripe-webhook 111, ai-allowance 66 |
+| 2026-09-29 | Billing: generation included for active/granted (as every plan promises; grace dropped in the review round — publishing is paused there); allowance honours it; webhook price-first plan (Billing Portal changes honoured); capacity-gated reactivation; cancelled customers can check out again | 6c6abbc; mvp-billing 19, stripe-webhook 111, ai-allowance 66 |
+| 2026-09-29 | Workstreams merged: W2 sync + connect flow, W4 three templates + one public data path, W1 MVP surface + server-side deferral (W3 sitemap earlier); copy (no add-ons, no AI-settings link, no demo poster); scale proof past PostgREST's 1,000-row cap | 900fd75, d749621, 9c1f97e, 3a7b23d, 4a23f47; mvp-scale 12 |
+| 2026-09-29 | Final review (security / money / journey): no CRITICAL; one HIGH (an interrupted draft run locked the editor and its target for good) + MEDIUMs, fixed: abandoned claims shown as interrupted with Try again; a late event for an OLD subscription no longer suspends a resubscribed workspace; last X-Forwarded-Host entry + `private` cache headers + a per-host sitemap memo; honest Resource Article copy; non-Latin place/category keys (ASCII slug stand-ins); slugs never end in a dash or pass 80 with a suffix; legacy-page guidance; 000500 revokes member writes to tenant_pages; regenerate bumps content_version at claim; kill switch honoured at publish; category title/noun; honest sync wording; int4 price clamp; owner-facing price text | this round's commit; page-draft-flow 65, page-publish-flow 49, stripe-webhook 118, sitemap-host 105, coverage-target 46, mvp-migrations.pg 46 (PG16) |
 
 ## Design decisions (the spine — every workstream builds on these)
 
@@ -96,6 +98,24 @@ server-side), not finished.
   not duplicated money.
 - **Stripe test mode**: not runnable end to end from the app's checkout
   without owner-provided test credentials (see approval request).
+- **Marketplace connection is first come, first served**: connecting needs
+  only the marketplace's public Client ID, and a marketplace connects to one
+  workspace. Someone else could connect a marketplace before its owner; the
+  owner is told to contact support (MARKETPLACE_ALREADY_CONNECTED_ERROR).
+  Pages still publish only on a DNS-verified domain, so a squatter can't
+  publish on the owner's domain.
+- **Legacy (v1-filter) pages** stay live as they are but can't be edited or
+  republished; the editor says to archive and recreate from Opportunities.
+  Production holds none for real customers (3 synthetic launch-check pages).
+- **Resource Articles show no listing strip** (the builder sends a
+  whole-marketplace filter); the copy says so.
+- **Non-Latin names** key by their own letters; their slugs use a stable
+  ASCII stand-in (`x…`) the owner can edit before publishing.
+- **Legacy Quick Page / Opportunity Engine pipeline** (`runQuickPage`) has no
+  plan-state check of its own; it is refused/deferred-gated today — add
+  `assertMayGenerate` before re-enabling coach or the opportunity engine.
+- **`/api/public/page-lookup`** (used by the smoke script) serves published
+  page text without the billing check the /a/ route applies.
 
 ## Remaining blockers / owner actions
 
@@ -106,13 +126,15 @@ server-side), not finished.
 
 ## Next exact action
 
-1. Merge the four workstream branches (W1 surface/deferral, W2 sync, W3
-   sitemap, W4 templates/renderer) into the launch branch; resolve conflicts
-   in shared tests (coach-launch, launch-copy, founder-ui, sitemap-host);
-   wire the editor preview to W4's data builder; regenerate routeTree.gen.ts.
-2. Full validation: `bun run test`, `bunx tsc --noEmit`, `bun run build`,
-   `AI_PG_URL=postgres://postgres@127.0.0.1:55432/postgres bun run test:pg`.
-3. Push; apply migrations 000100, 000200, (W1's 000300/000310), 000400 in
-   order with their verification rows; deploy stripe-webhook + create-checkout;
-   push main (deploy-app.yml); verify /api/public/version = tested SHA.
-4. Journeys A–H with evidence; consolidated approval request; handoff.
+1. Commit + push this round (review fixes, 000500, checklist, this doc).
+2. Deploy, in order (approval of 2026-09-28 covers it): migrations 000100,
+   000200, 000300, 000310, 000400, 000500 with their verification rows;
+   stripe-webhook + create-checkout from source; the 410 stub under
+   `coach-briefing-cron`; push `main` (deploy-app.yml); verify
+   `/api/public/version` = tested SHA; sync every connected workspace
+   (listing keys) and check 0 unkeyed rows.
+3. Journeys A–H with evidence (Playwright screenshots of the builder, the
+   three template previews, the editor); record generation time and spend.
+4. One consolidated approval request (founder DNS, Stripe test mode, legacy
+   function deletion, process-auth-emails secret, test accounts); handoff with
+   the PASS/FAIL/BLOCKED/NOT RUN matrix and rollback.

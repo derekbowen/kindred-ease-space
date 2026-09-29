@@ -65,12 +65,49 @@ export function cleanText(raw: unknown): string | null {
   return s ? s : null;
 }
 
-/** Comparison key: lowercase, accents folded, punctuation to single dashes. */
+/**
+ * Key for text with no ASCII letter (東京, Москва, Αθήνα): NFKC, lowercase, any
+ * run of characters that are not letters, marks or digits to one dash. Marks
+ * are kept, not folded: in many scripts they distinguish words.
+ */
+function unicodeKey(s: string): string {
+  return s
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Comparison key: lowercase, accents folded, punctuation to single dashes.
+ * A name the ASCII fold leaves without a single letter (a non-Latin script)
+ * keys by its own letters instead — it would otherwise get no key, or a bare
+ * number, and never match anything. Every ASCII-bearing key is unchanged.
+ */
 export function textKey(raw: unknown): string | null {
   const s = cleanText(raw);
   if (!s) return null;
   const k = slugify(s);
+  if (/[a-z]/.test(k)) return k;
+  const u = unicodeKey(s);
+  if (/\p{L}/u.test(u)) return u;
   return k ? k : null;
+}
+
+/** FNV-1a, 32-bit, as 7 base-36 characters: a stable ASCII stand-in. */
+function shortHash(s: string): string {
+  let h = 0x811c9dc5;
+  for (const ch of s) {
+    h ^= ch.codePointAt(0)!;
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36).padStart(7, "0");
+}
+
+/** A key as a URL-safe slug part: itself when ASCII, else a stable stand-in. */
+function slugPart(key: string | null | undefined): string | null {
+  if (!key) return null;
+  return /^[a-z0-9-]+$/.test(key) ? key : `x${shortHash(key)}`;
 }
 
 const COUNTRY_ALIASES: Record<string, string> = {
@@ -499,12 +536,14 @@ export function placeLabel(labels: Pick<TargetLabels, "city" | "region" | "count
 /** A slug that carries the target's identity, so different regions of the
  *  same city name never collide into slug-2 (austin-tx vs austin-mn). */
 export function slugForTarget(kind: PageKind, labels: TargetLabels, keys: TargetKeys): string {
-  const cat = keys.categoryKey ?? "";
+  // A non-Latin key (textKey) becomes a stable ASCII stand-in: public slugs
+  // are ASCII, and dropping the part would merge different places.
+  const cat = slugPart(keys.categoryKey) ?? "";
   if (kind === "category_page") return slugify([cat].filter(Boolean).join("-"));
   const place = [
-    keys.cityKey,
-    keys.regionKey,
-    keys.countryKey && keys.countryKey !== "us" ? keys.countryKey : null,
+    slugPart(keys.cityKey),
+    slugPart(keys.regionKey),
+    keys.countryKey && keys.countryKey !== "us" ? slugPart(keys.countryKey) : null,
   ]
     .filter(Boolean)
     .join("-");

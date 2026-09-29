@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { tenantSitemapResponse } from "@/lib/sitemap.server";
+import { memoizedTenantSitemapResponse } from "@/lib/sitemap.server";
 
 // The tenant sitemap, under the /a/ prefix. On a connected customer domain the
 // Founders edge controls only /a/* — the customer's own site keeps its
@@ -17,7 +17,7 @@ export const Route = createFileRoute("/a/sitemap.xml")({
     handlers: {
       GET: async ({ request }) => {
         const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
-        const r = await tenantSitemapResponse(host, request.url);
+        const r = await memoizedTenantSitemapResponse(host, request.url);
         return new Response(r.body, { status: r.status, headers: r.headers });
       },
     },

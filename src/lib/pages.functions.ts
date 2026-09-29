@@ -32,11 +32,13 @@ import {
 import { fetchPageListings, priceSummary } from "@/lib/coverage/inventory.server";
 import { loadCoverage } from "@/lib/coverage/coverage.server";
 import { TEMPLATE_CONTRACTS } from "@/lib/templates/contracts";
+import { TITLE_MIN } from "@/lib/seo/page-contract";
 import { BRIEF_MAX_CHARS, describePrices, listingPriceText } from "@/lib/page-grounding";
 import {
   checkTarget,
   draftStatus,
   findLivePageForTarget,
+  effectiveGeneration,
   humanLabel,
   isUsableTemplate,
   readTemplates,
@@ -232,7 +234,8 @@ export const CreateDraftInputSchema = z
     requestId: z.string().uuid(),
     kind: z.enum(PAGE_KINDS),
     filter: InventoryFilterV2Schema,
-    title: z.string().trim().min(3).max(140),
+    // TITLE_MIN: a title the publish check would refuse is refused before the draft is paid for.
+    title: z.string().trim().min(TITLE_MIN).max(140),
     slug: z.string().trim().max(80).optional(),
     description: z.string().trim().max(300).optional().default(""),
     brief: z.string().trim().max(BRIEF_MAX_CHARS).optional().default(""),
@@ -369,7 +372,9 @@ export const getPageEditor = createServerFn({ method: "POST" })
           listingLimit: filter?.limit ?? 24,
           noindex: row.noindex === true,
           version: Number(row.content_version) || 1,
-          generation: row.generation,
+          // As the owner should see it: an abandoned claim is "failed"
+          // (interrupted) so the editor unlocks and offers Try again.
+          generation: effectiveGeneration(row.generation),
           publishedAt: row.published_at,
           updatedAt: row.updated_at,
           targetLabel: filter

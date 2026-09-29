@@ -35,6 +35,7 @@ import { TEMPLATE_CONTRACTS, checkFilterForTemplate, isPageKind } from "@/lib/te
 import { proseLength, validatePageContract } from "@/lib/seo/page-contract";
 import { intentForPage, loadSiblingContext } from "@/lib/seo/page-contract.server";
 import {
+  effectiveGeneration,
   isGenerationActive,
   isUsableTemplate,
   type GenerationState,
@@ -58,6 +59,8 @@ type DomainRow = {
   last_error: string | null;
   activated_at: string | null;
   created_at: string | null;
+  /** The emergency switch: the edge sends ALL of this host's traffic to the customer's own site. */
+  founders_disabled?: boolean | null;
 };
 
 export const EDGE_TARGET = "proxy.founders.click";
@@ -65,6 +68,16 @@ export const EDGE_TARGET = "proxy.founders.click";
 /** The exact next step for a domain that isn't serving pages yet. Pure. */
 export function domainStep(rows: DomainRow[]): DomainReadiness {
   const active = rows.find((r) => r.verified === true && r.status === "active");
+  if (active?.founders_disabled === true) {
+    // The kill switch: /a/* on this host goes to the customer's own site, so
+    // a publish would report a live page that nobody can reach.
+    return {
+      ready: false,
+      hostname: active.hostname,
+      status: active.status,
+      step: `Founders pages are switched off on ${active.hostname} right now: all its traffic goes to your own site. Contact support to switch them back on; your drafts stay ready.`,
+    };
+  }
   if (active) {
     const prefix = `/${String(active.route_prefix ?? "/a/").replace(/^\/+|\/+$/g, "") || "a"}`;
     return {
@@ -103,7 +116,9 @@ export function domainStep(rows: DomainRow[]): DomainReadiness {
 export async function readDomainReadiness(workspaceId: string): Promise<DomainReadiness> {
   const { data, error } = await sb()
     .from("workspace_domains")
-    .select("hostname, verified, status, route_prefix, last_error, activated_at, created_at")
+    .select(
+      "hostname, verified, status, route_prefix, last_error, activated_at, created_at, founders_disabled",
+    )
     .eq("workspace_id", workspaceId)
     .order("activated_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: true });
@@ -887,18 +902,22 @@ export async function listPages(workspaceId: string): Promise<MyPageRow[]> {
     100_000,
   );
   if (!complete) throw new Error("pages: too many pages to list completely");
-  return rows.map((r) => ({
-    id: r.id,
-    slug: r.slug,
-    title: r.title,
-    status: r.status,
-    kind: pageKindOf(r),
-    targetKey: r.target_key,
-    updatedAt: r.updated_at,
-    publishedAt: r.published_at,
-    generationState: r.generation?.state ?? null,
-    generationError: r.generation?.state === "failed" ? (r.generation.error ?? null) : null,
-    generating: isGenerationActive(r.generation),
-    noindex: r.noindex === true,
-  }));
+  return rows.map((r) => {
+    // An abandoned claim shows as failed (interrupted), never "being written".
+    const g = effectiveGeneration(r.generation);
+    return {
+      id: r.id,
+      slug: r.slug,
+      title: r.title,
+      status: r.status,
+      kind: pageKindOf(r),
+      targetKey: r.target_key,
+      updatedAt: r.updated_at,
+      publishedAt: r.published_at,
+      generationState: g?.state ?? null,
+      generationError: g?.state === "failed" ? (g.error ?? null) : null,
+      generating: isGenerationActive(r.generation),
+      noindex: r.noindex === true,
+    };
+  });
 }

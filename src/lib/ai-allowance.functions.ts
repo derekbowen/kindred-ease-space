@@ -111,7 +111,7 @@ export type AllowanceInputs = {
   internalUnlimited?: boolean;
   /**
    * Page generation is included in the workspace's plan or beta grant
-   * (generationIncludedFor: active, grace, granted): no tenant funds, so the
+   * (generationIncludedFor: active, granted): no tenant funds, so the
    * free quota and credits don't limit it; the workspace cap still does.
    */
   generationIncluded?: boolean;

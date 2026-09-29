@@ -145,13 +145,19 @@ t(
 
 // Edge functions
 const fnSection = cl.slice(at("## 3. Edge functions"), at("## 4. Deploy the app"));
+t(
+  "stripe-webhook deploys with --no-verify-jwt",
+  /supabase functions deploy stripe-webhook\s+--no-verify-jwt --project-ref xbxhzinnfhosoztqaaao/.test(
+    fnSection,
+  ),
+);
+t(
+  "coach-briefing-cron is retired for the MVP: the 410 stub under its name, verify_jwt off, reversible",
+  /`coach-briefing-cron` is \*\*retired for the MVP\*\*/.test(fnSection) &&
+    /`supabase\/retired-functions\/stub\/index\.ts` as the\s+function's `index\.ts`, `verify_jwt: false`/.test(fnSection) &&
+    /Reversible: redeploy\s+`supabase\/functions\/coach-briefing-cron` from this SHA/.test(fnSection),
+);
 for (const fn of ["stripe-webhook", "coach-briefing-cron"]) {
-  t(
-    `${fn} deploys with --no-verify-jwt`,
-    new RegExp(
-      `supabase functions deploy ${fn}\\s+--no-verify-jwt --project-ref xbxhzinnfhosoztqaaao`,
-    ).test(fnSection),
-  );
   t(
     `${fn}: supabase/config.toml agrees (verify_jwt = false)`,
     new RegExp(`\\[functions\\.${fn}\\]\\s*\\nverify_jwt = false`).test(
@@ -169,7 +175,8 @@ for (const fn of ["stripe-webhook", "coach-briefing-cron", "create-checkout"]) {
   const shared = [
     ...read(`supabase/functions/${fn}/index.ts`).matchAll(/from "\.\.\/_shared\/([\w.-]+\.ts)"/g),
   ].map((m) => m[1]!);
-  const line = fnSection.split("\n").find((l) => l.startsWith(`- \`${fn}\`:`)) ?? "";
+  // "- `name`:" or, for a retired function, "- `name` (only when un-retiring it):"
+  const line = fnSection.split("\n").find((l) => l.startsWith(`- \`${fn}\``)) ?? "";
   t(
     `the MCP file list for ${fn} names every _shared file it imports (${shared.join(", ")})`,
     shared.length > 0 && shared.every((f) => line.includes(`../_shared/${f}`)),

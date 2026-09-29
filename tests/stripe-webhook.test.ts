@@ -397,6 +397,80 @@ reset();
     ),
   );
 }
+
+console.log("\n=== resubscribed: a late event for the OLD subscription changes nothing ===");
+// The owner canceled sub_1 and resubscribed (sub_2, active). Stripe retries
+// or a dashboard resend then delivers sub_1's end again: the workspace keeps
+// the new subscription's status and its pages stay online.
+reset();
+g.__sbResponses["subscriptions.select"] = [{ data: [{ stripe_subscription_id: "sub_2" }] }];
+{
+  const r = await deliver(
+    subEvent("evt_old_deleted", "canceled", {}, "customer.subscription.deleted"),
+  );
+  const lookup = calls("subscriptions", "select")[0];
+  t(
+    "the lookup asks for ANOTHER paying plan subscription of this workspace",
+    !!lookup &&
+      lookup.filters.some(([f, c, v]) => f === "eq" && c === "workspace_id" && v === WS) &&
+      lookup.filters.some(
+        ([f, c, v]) => f === "neq" && c === "stripe_subscription_id" && v === "sub_1",
+      ) &&
+      lookup.filters.some(
+        ([f, c, v]) =>
+          f === "in" &&
+          c === "status" &&
+          JSON.stringify(v) === JSON.stringify(["active", "trialing", "past_due"]),
+      ),
+  );
+  t(
+    "old subscription deleted: its own row is still marked canceled",
+    r.status === 200 &&
+      calls("subscriptions", "update").some((c) => c.payload?.status === "canceled"),
+  );
+  t(
+    "…but the workspace status is not touched and no page is suspended",
+    calls("workspaces", "update").length === 0 && calls("tenant_pages", "update").length === 0,
+  );
+  t(
+    "…and the skip is audited with the current subscription",
+    calls("billing_events", "insert").some(
+      (c) =>
+        c.payload?.event_type === "stale_subscription_event_ignored" &&
+        c.payload?.data?.current_subscription === "sub_2",
+    ),
+    JSON.stringify(calls("billing_events", "insert").map((c) => c.payload)),
+  );
+}
+reset();
+g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "canceled").data.object;
+g.__sbResponses["subscriptions.select"] = [{ data: [{ stripe_subscription_id: "sub_2" }] }];
+{
+  const r = await deliver(subEvent("evt_old_updated", "canceled"));
+  t(
+    "old subscription updated to canceled: its own row is recorded",
+    r.status === 200 &&
+      calls("subscriptions", "upsert").some((c) => c.payload?.status === "canceled"),
+  );
+  t(
+    "…the workspace keeps the new subscription's status and pages stay online",
+    calls("workspaces", "update").length === 0 &&
+      !calls("tenant_pages", "update").some((c) => c.payload?.status === "billing_suspended"),
+  );
+}
+reset();
+g.__sbResponses["subscriptions.select"] = [{ error: { code: "XX000", message: "down" } }];
+{
+  const r = await deliver(
+    subEvent("evt_lookup_down", "canceled", {}, "customer.subscription.deleted"),
+  );
+  t(
+    "a failed lookup is a 500 (Stripe retries), never a guess either way",
+    r.status === 500 &&
+      calls("workspaces", "update").length === 0 &&
+      calls("tenant_pages", "update").length === 0,
+  );
+}
 reset();
 g.__stripeStubs["subscriptions.retrieve"] = async () => subEvent("x", "active").data.object;
 {

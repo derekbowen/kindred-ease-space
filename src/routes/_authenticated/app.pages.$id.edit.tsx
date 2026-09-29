@@ -370,8 +370,9 @@ function EditPage() {
       )}
       {data.page.legacyFilter && (
         <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
-          This page was made before places were matched exactly. It keeps working, but to publish
-          changes it needs a full location: create a new page for this place from Opportunities.
+          This page was made before places were matched exactly. It stays as it is (live pages keep
+          working), but it can't be changed or republished here. To replace it, archive it, then
+          create a new page for this place from Opportunities.
         </p>
       )}
 

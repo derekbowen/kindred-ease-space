@@ -38,7 +38,11 @@ t("scheme stripped", sm.requestHost("https://www.customer.com") === "www.custome
 t("port stripped", sm.requestHost("www.customer.com:8443") === "www.customer.com");
 t("path, query and fragment stripped", sm.requestHost("www.customer.com/a/x?y#z") === "www.customer.com");
 t("case folded", sm.requestHost("WWW.Customer.COM") === "www.customer.com");
-t("x-forwarded-host list takes the first entry", sm.requestHost("www.customer.com, edge.internal") === "www.customer.com");
+t(
+  "x-forwarded-host list takes the LAST entry (what the closest proxy saw; a visitor-supplied first entry can't pick the tenant)",
+  sm.requestHost("attacker.example, www.customer.com") === "www.customer.com" &&
+    sm.requestHost("www.customer.com") === "www.customer.com",
+);
 t("empty input is empty", sm.requestHost("") === "" && sm.requestHost(null) === "");
 
 console.log("\n=== hostKey: the resolver's key is the exact host ===");
@@ -164,8 +168,10 @@ seed();
   t("…and nothing on the bare host it never proved", bareB.status === 404);
   const upper = await get("POOLS.Example:8443");
   t("case and port don't matter: POOLS.Example:8443 is pools.example", upper.status === 200 && locs(upper.body).join() === "https://pools.example/a/a-pools");
-  const fwd = await get("pools.example, edge.internal");
-  t("an x-forwarded-host list resolves by its first entry", fwd.status === 200);
+  const fwd = await get("attacker.example, pools.example");
+  t("an x-forwarded-host list resolves by its last entry", fwd.status === 200 && locs(fwd.body).join() === "https://pools.example/a/a-pools");
+  const fwdSpoof = await get("pools.example, nobody.example");
+  t("…so a visitor-supplied first entry can't choose the tenant", fwdSpoof.status === 404);
   const legacyHost = await get("legacy.example");
   t("a legacy marketplace_domain stored in mixed case still resolves (lower(stored) = host)", legacyHost.status === 200 && locs(legacyHost.body).join() === "https://legacy.example/a/c-legacy", `${legacyHost.status}`);
   t("URLs are built on exactly the requested verified host", locs(wwwB.body).every((l) => l.startsWith("https://www.boats.example/a/")) && locs(bare.body).every((l) => l.startsWith("https://pools.example/a/")));
@@ -227,10 +233,55 @@ console.log("\n=== the cache window is explicit and short ===");
 {
   seed();
   const res = await get("pools.example");
-  t("Cache-Control: public, max-age=300, s-maxage=300", res.headers["Cache-Control"] === "public, max-age=300, s-maxage=300");
+  t("Cache-Control: private, max-age=300 (no shared cache may store it)", res.headers["Cache-Control"] === "private, max-age=300");
   t("Vary: Host, X-Forwarded-Host (one URL, many hosts)", res.headers.Vary === "Host, X-Forwarded-Host");
   t("Content-Type: application/xml; charset=utf-8", res.headers["Content-Type"] === "application/xml; charset=utf-8");
   t("the window is five minutes", sm.SITEMAP_CACHE_SECONDS === 300);
+}
+
+console.log("\n=== the per-host memo: repeated requests don't rebuild, and never cross hosts ===");
+{
+  let builds: string[] = [];
+  let clock = 1_000;
+  const answers: Record<string, { status: number; body: string }> = {
+    "pools.example|": { status: 200, body: "<urlset>pools</urlset>" },
+    "boats.example|": { status: 200, body: "<urlset>boats</urlset>" },
+    "pools.example|2": { status: 404, body: "not found" },
+    "down.example|": { status: 503, body: "unavailable" },
+    "huge.example|": { status: 200, body: "x".repeat(50) },
+  };
+  const memo = sm.sitemapResponseMemo(
+    async (rawHost: string, url: string) => {
+      const key = `${sm.requestHost(rawHost)}|${new URL(url).searchParams.get("page") ?? ""}`;
+      builds.push(key);
+      const a = answers[key]!;
+      return { status: a.status, body: a.body, headers: { "Cache-Control": "private, max-age=300" } } as any;
+    },
+    { ttlMs: 60_000, maxEntries: 3, maxBodyChars: 40, now: () => clock },
+  );
+  const U = "https://x.example/a/sitemap.xml";
+  const p1 = await memo("pools.example", U);
+  const p2 = await memo("POOLS.example:443", U);
+  t("the second request for a host is served from the memo (one build)", p1.body === p2.body && builds.length === 1, JSON.stringify(builds));
+  const b1 = await memo("boats.example", U);
+  t("another host is built for itself, never given the first host's answer", b1.body === "<urlset>boats</urlset>" && builds.length === 2);
+  const spoof = await memo("attacker.example, boats.example", U);
+  t("the memo key uses the same last-entry host rule", spoof.body === "<urlset>boats</urlset>" && builds.length === 2);
+  await memo("pools.example", U + "?page=2");
+  await memo("pools.example", U + "?page=2");
+  t("each ?page is its own entry, and a 404 is kept too", builds.filter((b) => b === "pools.example|2").length === 1);
+  await memo("down.example", U);
+  await memo("down.example", U);
+  t("a 503 is never kept (the next request retries)", builds.filter((b) => b === "down.example|").length === 2);
+  await memo("huge.example", U);
+  await memo("huge.example", U);
+  t("an answer above the size cap is never kept", builds.filter((b) => b === "huge.example|").length === 2);
+  clock += 60_001;
+  await memo("boats.example", U);
+  t("after the TTL the host is rebuilt", builds.filter((b) => b === "boats.example|").length === 2);
+  builds = [];
+  await memo("pools.example", U);
+  t("the memo holds at most maxEntries answers (the oldest went first)", builds.length === 1);
 }
 
 // ---------------------------------------------------------------------------

@@ -124,8 +124,15 @@ console.log("\n2. Prices per currency and unit, in real minor units");
     JSON.stringify(lines),
   );
   t(
-    "unpriced listings are counted and not to be guessed",
-    lines.some((l) => /1 listing has no price — never guess/.test(l)),
+    "the owner's review panel states the fact only (no instructions to the AI)",
+    lines.includes("1 listing has no price.") && !lines.some((l) => /guess/.test(l)),
+    JSON.stringify(lines),
+  );
+  t(
+    "the prompt counts unpriced listings and says not to guess them",
+    describePrices({ ...summarizePrices(rows), complete: true }, "model").some((l) =>
+      /1 listing has no price — never guess/.test(l),
+    ),
   );
   const truncated = describePrices({ groups: [], unpriced: 0, complete: false });
   t(
