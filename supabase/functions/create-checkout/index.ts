@@ -18,11 +18,43 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+/**
+ * Live or Stripe test mode, chosen by the deployment name, never by the
+ * caller. The same source is deployed twice, like stripe-webhook and
+ * stripe-webhook-test: as `create-checkout` (STRIPE_SECRET_KEY) and as
+ * `create-checkout-test` (STRIPE_SECRET_KEY_TEST). The name is the FIRST path
+ * segment after /functions/v1, so a sub-path of the live function stays live.
+ */
+export function checkoutModeFor(url: string): { test: boolean; keyName: string } {
+  const path = new URL(url).pathname.replace(/^\/functions\/v1(?=\/|$)/, "");
+  const name = path.split("/").find((segment) => segment.length > 0) ?? "";
+  const test = name === "create-checkout-test";
+  return { test, keyName: test ? "STRIPE_SECRET_KEY_TEST" : "STRIPE_SECRET_KEY" };
+}
+
+/**
+ * The test deployment writes stripe_customers just like the live one, and a
+ * test-mode customer id in a real workspace's row would break its live
+ * billing. So test mode serves only the workspaces listed in
+ * STRIPE_TEST_WORKSPACE_IDS (comma-separated UUIDs of a throwaway workspace,
+ * never a customer's — the allowlist stripe-webhook-test reads too). Unset or
+ * empty refuses everything. The live deployment never reads it.
+ */
+export function testModeWorkspaceAllowed(raw: string | null | undefined, workspaceId: string) {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  const allowed = String(raw ?? "")
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .filter((id) => uuid.test(id));
+  return allowed.includes(workspaceId.trim().toLowerCase());
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2024-06-20" });
+    const checkoutMode = checkoutModeFor(req.url);
+    const stripe = new Stripe(Deno.env.get(checkoutMode.keyName)!, { apiVersion: "2024-06-20" });
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const authHeader = req.headers.get("Authorization");
     if (!authHeader)
@@ -55,6 +87,19 @@ Deno.serve(async (req) => {
         status: 400,
         headers: corsHeaders,
       });
+    }
+    // Before any database read or Stripe call (see testModeWorkspaceAllowed).
+    if (
+      checkoutMode.test &&
+      !testModeWorkspaceAllowed(Deno.env.get("STRIPE_TEST_WORKSPACE_IDS"), workspace_id)
+    ) {
+      return new Response(
+        JSON.stringify({
+          error: "test_mode_workspace_refused",
+          message: "Test-mode checkout is limited to the allowlisted test workspace.",
+        }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
     // AI credits were withdrawn as a customer-facing SKU. The UI stopped
     // offering them, but this endpoint kept accepting mode:"credits" and would

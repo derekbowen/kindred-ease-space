@@ -15,6 +15,8 @@ endpoint, is recorded exactly once, updates entitlement, and an identical replay
    - `STRIPE_WEBHOOK_SECRET_TEST` — the signing secret of the test-mode endpoint created in step 3
 2. Deploy the test function: same source as `stripe-webhook`, name `stripe-webhook-test`,
    `verify_jwt=false` (Stripe signs, it does not carry a JWT).
+   For checkout, deploy `create-checkout` again under the name `create-checkout-test`
+   (`verify_jwt=true`); see **Checkout in test mode** below.
 3. Stripe Dashboard (test mode) → Developers → Webhooks → Add endpoint:
    `https://xbxhzinnfhosoztqaaao.supabase.co/functions/v1/stripe-webhook-test`
    Events: `checkout.session.completed`, `customer.subscription.created`,
@@ -23,7 +25,8 @@ endpoint, is recorded exactly once, updates entitlement, and an identical replay
    Copy its signing secret into `STRIPE_WEBHOOK_SECRET_TEST`.
 4. A throwaway workspace `<WS>`, created for this proof and for nothing else: sign up a fresh
    account (or create a new workspace) and publish nothing in it, so there are no live pages
-   for a test event to suspend or reactivate. **Never use the pool-rental-near-me workspace**,
+   for a test event to suspend or reactivate — except the one page the lifecycle proof
+   below publishes on its own test hostname, on purpose. **Never use the pool-rental-near-me workspace**,
    or any other workspace a customer, a live site or a sitemap depends on.
 5. Supabase project secret (Dashboard → Edge Functions → Secrets):
    - `STRIPE_TEST_WORKSPACE_IDS` — the id of `<WS>`. Comma-separated UUIDs if a second
@@ -74,6 +77,50 @@ Use the throwaway workspace id `<WS>` from input 4, listed in `STRIPE_TEST_WORKS
 6. Clean up: cancel the test subscription (sends `customer.subscription.deleted`; `<WS>` has no
    published pages, so nothing flips to `billing_suspended`), delete the test customer, and
    remove `<WS>` from `STRIPE_TEST_WORKSPACE_IDS` (leave the secret empty).
+
+## Checkout in test mode (`create-checkout-test`)
+
+`create-checkout` is deployed the same way: `create-checkout` (live, `STRIPE_SECRET_KEY`)
+and `create-checkout-test` (`STRIPE_SECRET_KEY_TEST`), picked by the function-name segment
+of the path (`checkoutModeFor`), `verify_jwt=true` for both. The test deployment writes
+`stripe_customers` like the live one, and a test customer id in a real workspace's row would
+break that workspace's live billing, so it serves only workspaces in
+`STRIPE_TEST_WORKSPACE_IDS` and answers every other one `403 test_mode_workspace_refused`
+before any read, write or Stripe call. The live deployment never reads the allowlist
+(`tests/checkout-test-mode.test.ts`). The app's Billing page always calls the live function;
+the proof calls `create-checkout-test` directly with the test account's session token and the
+same body the page sends (`{"workspace_id": "<WS>", "mode": "subscription", "tier": "starter"}`).
+The Billing Portal (`customer-portal`) has no test deployment: cancellation in the proof is
+made through the Stripe test API, which sends the same events a portal cancellation sends.
+
+## Full lifecycle with public serving (MVP acceptance)
+
+The acceptance check is about what the public sees, not only the database labels. It needs
+one published page in the allowlisted workspace, on an active domain of its own
+(a dedicated test hostname, e.g. `billing-proof.<your domain>`, added in Settings → Domains
+and removed afterwards). Run it with a Stripe **test clock** so the paid period can end:
+
+1. Fixture: in Stripe test mode create a test clock and a customer on it; store that customer
+   as the workspace's `stripe_customers.stripe_customer_id` (throwaway workspace only), so
+   `create-checkout-test` reuses it.
+2. Checkout: call `create-checkout-test`; open the returned URL and pay with Stripe's test card
+   `4242 4242 4242 4242` (any future expiry, any CVC). No real card is ever used.
+3. Delivery: `checkout.session.completed`, `customer.subscription.created`, `invoice.paid`
+   each recorded once in `stripe_webhook_events` (`processing_status = processed`).
+   Replay one (Dashboard → Resend): `{"received":true,"duplicate":true}`, still one row.
+4. Paid access: `workspaces.plan = starter`, `subscription_status = active`; publish one page;
+   `https://<test host>/a/<slug>` answers 200 and `https://<test host>/a/sitemap.xml` lists it.
+5. Cancellation: set `cancel_at_period_end`; the page keeps serving until the period ends.
+6. Paid-period expiration: advance the test clock past `current_period_end`; Stripe sends
+   `customer.subscription.deleted`. Expect `subscription_status = canceled`, the page withheld
+   (`/a/<slug>` → 404) and gone from `/a/sitemap.xml` (allow the 60 s page / 300 s sitemap
+   cache).
+7. Reactivation: a new `create-checkout-test` session paid with the test card. Expect
+   `subscription_status = active`, the page restored within plan capacity, `/a/<slug>` 200 and
+   back in `/a/sitemap.xml`.
+8. Clean up: cancel the subscription, delete the test clock (removes its customers),
+   unpublish the page, remove the test hostname in Settings → Domains and its DNS records, and
+   empty `STRIPE_TEST_WORKSPACE_IDS`.
 
 ## What the test deployment refuses
 The test deployment shares the database and the service role with the live one, and every
