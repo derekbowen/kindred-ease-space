@@ -1591,10 +1591,25 @@ export function sitemapResponseMemo(
     ttlMs = 60_000,
     maxEntries = 256,
     maxBodyChars = 2_000_000,
+    maxTotalChars = 16_000_000,
     now = () => Date.now(),
-  }: { ttlMs?: number; maxEntries?: number; maxBodyChars?: number; now?: () => number } = {},
+  }: {
+    ttlMs?: number;
+    maxEntries?: number;
+    maxBodyChars?: number;
+    /** All kept bodies together (an isolate has ~128 MB): the oldest go first. */
+    maxTotalChars?: number;
+    now?: () => number;
+  } = {},
 ) {
   const memo = new Map<string, { at: number; result: SitemapHttpResult }>();
+  let totalChars = 0;
+  const drop = (key: string) => {
+    const e = memo.get(key);
+    if (!e) return;
+    totalChars -= e.result.body.length;
+    memo.delete(key);
+  };
   return async (rawHost: string, requestUrl: string): Promise<SitemapHttpResult> => {
     let pageParam: string | null = null;
     try {
@@ -1608,14 +1623,19 @@ export function sitemapResponseMemo(
     if (hit && t - hit.at < ttlMs) {
       return { ...hit.result, headers: { ...hit.result.headers } };
     }
-    if (hit) memo.delete(key);
+    if (hit) drop(key);
     const result = await build(rawHost, requestUrl);
     if ((result.status === 200 || result.status === 404) && result.body.length <= maxBodyChars) {
-      if (memo.size >= maxEntries) {
+      while (
+        memo.size > 0 &&
+        (memo.size >= maxEntries || totalChars + result.body.length > maxTotalChars)
+      ) {
         const oldest = memo.keys().next();
-        if (!oldest.done) memo.delete(oldest.value);
+        if (oldest.done) break;
+        drop(oldest.value);
       }
       memo.set(key, { at: t, result: { ...result, headers: { ...result.headers } } });
+      totalChars += result.body.length;
     }
     return result;
   };

@@ -2057,6 +2057,13 @@ console.log("\n=== UI copy and wiring (the page builder) ===");
       !/gpt-5|gemini/.test(builder),
   );
   t(
+    "a Rewrite whose key only replayed an earlier, ended run asks once more under a fresh key",
+    /if \(r\.outcome === "failed" && r\.replayed\) \{\s*r = await send\(\);\s*regenId\.current = newRequestId\(\);/.test(
+      editorUi,
+    ) &&
+      /\} catch \(e\) \{\s*\/\/ A lost response keeps the key[\s\S]*?await refresh\(\);\s*throw e;/.test(editorUi),
+  );
+  t(
     "rewriting a draft sends a tier, never a model id",
     /<AiModelSelect\b/.test(editorUi) &&
       /quality: qualityForRequest\(quality\)/.test(editorUi) &&

@@ -399,6 +399,7 @@ async function claimExistingDraft(p: {
   expectedVersion: number;
 }): Promise<PageRefRow | null> {
   const staleBefore = new Date(Date.now() - DRAFT_STALE_MS).toISOString();
+  const futureAfter = new Date(Date.now() + 60_000).toISOString();
   // The claim bumps content_version, so an editor save based on the version
   // before it fails as a conflict instead of landing mid-run; deliver then
   // writes only on top of the claimed version (never two texts at one version).
@@ -409,8 +410,10 @@ async function claimExistingDraft(p: {
     .eq("workspace_id", p.workspaceId)
     .eq("status", "draft")
     .eq("content_version", p.expectedVersion)
+    // Claimable: no run, a finished one, or a claim isGenerationActive() calls
+    // abandoned — older than DRAFT_STALE_MS, or dated in the future.
     .or(
-      `generation.is.null,generation->>state.is.null,generation->>state.neq.generating,generation->>started_at.lt.${staleBefore}`,
+      `generation.is.null,generation->>state.is.null,generation->>state.neq.generating,generation->>started_at.lt.${staleBefore},generation->>started_at.gt.${futureAfter}`,
     )
     .select(PAGE_REF_COLUMNS);
   if (error) throw new Error(`draft claim failed: ${error.message}`);
@@ -500,7 +503,8 @@ export type DraftResult =
       creditsCharged: number;
     }
   | { outcome: "generating"; page: DraftPageRef }
-  | { outcome: "failed"; page: DraftPageRef; error: string }
+  /** `replayed`: this is an EARLIER request's answer (its id was sent again), not a new run. */
+  | { outcome: "failed"; page: DraftPageRef; error: string; replayed?: boolean }
   /** A page already covers this target: open it instead (nothing generated). */
   | { outcome: "exists"; page: DraftPageRef };
 
@@ -518,10 +522,15 @@ async function replay(
   if (ours && g?.state === "generating") {
     return isGenerationActive(g)
       ? { outcome: "generating", page }
-      : { outcome: "failed", page, error: DRAFT_INTERRUPTED_MESSAGE };
+      : { outcome: "failed", page, error: DRAFT_INTERRUPTED_MESSAGE, replayed: true };
   }
   if (ours && g?.state === "failed") {
-    return { outcome: "failed", page, error: g.error || GENERATION_UNAVAILABLE_MESSAGE };
+    return {
+      outcome: "failed",
+      page,
+      error: g.error || GENERATION_UNAVAILABLE_MESSAGE,
+      replayed: true,
+    };
   }
   let creditsCharged = 0;
   let billing: ItemBillingStatus = "free";

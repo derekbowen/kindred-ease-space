@@ -752,6 +752,25 @@ try {
         started_at: new Date(Date.now() + 3_600_000).toISOString(),
       }),
     );
+    // The abandoned run's own request id, sent again (an earlier click whose
+    // answer was lost): a replay that says so, never a second run.
+    const callsBeforeReplay = openaiCalls.length;
+    const again = await runPageDraft({
+      workspaceId: WS,
+      userId: USER,
+      requestId: "33333333-3333-4333-8333-333333333333",
+      tier: "standard",
+      mode: "regenerate",
+      pageId: row.id,
+    });
+    t(
+      "re-sending the interrupted run's id replays 'interrupted' (replayed: true), no provider call",
+      again.outcome === "failed" &&
+        (again as any).replayed === true &&
+        (again as any).error === DRAFT_INTERRUPTED_MESSAGE &&
+        openaiCalls.length === callsBeforeReplay,
+      JSON.stringify(again),
+    );
     const r = await runPageDraft({
       workspaceId: WS,
       userId: USER,
@@ -841,6 +860,32 @@ try {
       "another workspace can't regenerate this page",
       err3 instanceof CustomerFacingError && /doesn't exist/.test(errMsg(err3)),
     );
+    {
+      // A claim dated in the future (clock skew or a bad write) is taken over
+      // too: the claim's SQL filter agrees with isGenerationActive.
+      const cur = pages()[0]!;
+      cur.status = "draft";
+      const callsBefore = openaiCalls.length;
+      cur.generation = {
+        ...cur.generation,
+        state: "generating",
+        request_id: "44444444-4444-4444-8444-444444444444",
+        started_at: new Date(Date.now() + 3_600_000).toISOString(),
+      };
+      const future = await runPageDraft({
+        workspaceId: WS,
+        userId: USER,
+        requestId: rid(),
+        tier: "standard",
+        mode: "regenerate",
+        pageId: cur.id,
+      });
+      t(
+        "a claim dated in the future can be taken over (one provider call)",
+        future.outcome === "ready" && openaiCalls.length === callsBefore + 1,
+        JSON.stringify(future),
+      );
+    }
   }
   seed();
   {

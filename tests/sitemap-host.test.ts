@@ -283,6 +283,26 @@ console.log("\n=== the per-host memo: repeated requests don't rebuild, and never
   await memo("pools.example", U);
   t("the memo holds at most maxEntries answers (the oldest went first)", builds.length === 1);
 }
+{
+  // A total-size cap across all kept answers (an isolate has ~128 MB).
+  const built: string[] = [];
+  const memo = sm.sitemapResponseMemo(
+    async (rawHost: string) => {
+      built.push(rawHost);
+      return { status: 200, body: "x".repeat(30), headers: {} } as any;
+    },
+    { ttlMs: 60_000, maxEntries: 100, maxBodyChars: 1_000, maxTotalChars: 70, now: () => 1 },
+  );
+  const U = "https://x.example/a/sitemap.xml";
+  await memo("a.example", U); // 30
+  await memo("b.example", U); // 60
+  await memo("c.example", U); // 90 > 70: a.example goes
+  await memo("b.example", U);
+  await memo("c.example", U);
+  t("kept answers stay under the total-size cap (newest kept)", built.join() === "a.example,b.example,c.example", built.join());
+  await memo("a.example", U);
+  t("…and the evicted oldest answer is rebuilt when asked again", built.length === 4 && built[3] === "a.example", built.join());
+}
 
 // ---------------------------------------------------------------------------
 console.log("\n=== the thin rule: one module, never looser than the renderer's ===");

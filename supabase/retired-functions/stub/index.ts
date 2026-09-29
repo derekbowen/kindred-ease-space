@@ -14,6 +14,10 @@
 // its old verify_jwt setting (help-assistant-chat: off; the rest: on).
 // Deleting the functions for good still needs the owner's approval
 // (docs/RELEASE_CHECKLIST.md §8).
+//
+// Also deployed as coach-briefing-cron for the MVP (the daily briefing is
+// deferred): redeploy supabase/functions/coach-briefing-cron (verify_jwt off)
+// to bring it back.
 const BODY = JSON.stringify({
   error: "retired_endpoint",
   message: "This founders.click endpoint has been retired.",

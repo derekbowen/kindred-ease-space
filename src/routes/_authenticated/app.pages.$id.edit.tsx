@@ -275,16 +275,33 @@ function EditPage() {
 
   const regenerate = () =>
     run("regenerate", async () => {
-      const r = await regenFn({
-        data: {
-          workspaceId,
-          requestId: regenId.current,
-          pageId: id,
-          brief: regenBrief.trim(),
-          quality: qualityForRequest(quality),
-        },
-      });
+      const send = () =>
+        regenFn({
+          data: {
+            workspaceId,
+            requestId: regenId.current,
+            pageId: id,
+            brief: regenBrief.trim(),
+            quality: qualityForRequest(quality),
+          },
+        });
+      let r: Awaited<ReturnType<typeof send>>;
+      try {
+        r = await send();
+      } catch (e) {
+        // A lost response keeps the key (a retry returns that run's result);
+        // show the draft as it is now (being written, or interrupted).
+        await refresh();
+        throw e;
+      }
       regenId.current = newRequestId();
+      // That key belonged to an earlier click whose answer was lost and whose
+      // run then ended: the server only replayed it. The owner asked for a new
+      // draft now, so ask once more under the fresh key.
+      if (r.outcome === "failed" && r.replayed) {
+        r = await send();
+        regenId.current = newRequestId();
+      }
       setShowRegen(false);
       if (r.outcome === "failed")
         setNotice({
