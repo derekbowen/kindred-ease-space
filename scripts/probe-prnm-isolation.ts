@@ -126,22 +126,36 @@ async function call(fn: string, as: "customer" | "publishable" | "none"): Promis
   }
 }
 
-/** One preflight to a retired function: deleted = 401/403 or the gateway's own 404. */
+/**
+ * One preflight to a retired function: deleted = 401/403 or the gateway's own
+ * 404; retired in place = the stub's 410 with its fixed body
+ * (supabase/retired-functions/stub/index.ts).
+ */
 async function callLegacy(fn: string): Promise<Outcome> {
   try {
     const res = await fetch(`${base}/functions/v1/${fn}`, {
       method: "OPTIONS",
       signal: AbortSignal.timeout(15_000),
     });
-    const body = res.status === 404 ? await res.text().catch(() => "") : "";
-    if (res.status !== 404) await res.body?.cancel().catch(() => {});
+    const body = res.status === 404 || res.status === 410 ? await res.text().catch(() => "") : "";
+    if (res.status !== 404 && res.status !== 410) await res.body?.cancel().catch(() => {});
     const deleted = res.status === 404 && isGatewayNotFound(body);
+    const retired = res.status === 410 && body.includes('"error":"retired_endpoint"');
     return {
       fn,
       as: "preflight",
       status: res.status,
-      ok: UNREACHABLE.has(res.status) || deleted,
-      note: res.status === 404 ? (deleted ? "deleted" : "a 404 that is not the gateway's") : undefined,
+      ok: UNREACHABLE.has(res.status) || deleted || retired,
+      note:
+        res.status === 404
+          ? deleted
+            ? "deleted"
+            : "a 404 that is not the gateway's"
+          : res.status === 410
+            ? retired
+              ? "retired (410 stub)"
+              : "a 410 that is not the retired stub's"
+            : undefined,
     };
   } catch {
     return { fn, as: "preflight", status: "error", ok: false };

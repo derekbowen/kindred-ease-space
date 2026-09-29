@@ -258,7 +258,12 @@ console.log("\n=== c) the probe can only send customer credentials ===");
   );
   t(
     "…where a 404 passes only when its body is the gateway's own not-found",
-    /const deleted = res\.status === 404 && isGatewayNotFound\(body\);/.test(legacy) && /ok: UNREACHABLE\.has\(res\.status\) \|\| deleted,/.test(legacy),
+    /const deleted = res\.status === 404 && isGatewayNotFound\(body\);/.test(legacy) && /ok: UNREACHABLE\.has\(res\.status\) \|\| deleted \|\| retired,/.test(legacy),
+  );
+  t(
+    "…and a 410 passes only with the retired stub's own body (supabase/retired-functions/stub)",
+    /const retired = res\.status === 410 && body\.includes\('"error":"retired_endpoint"'\);/.test(legacy) &&
+      readFileSync(join(ROOT, "supabase/retired-functions/stub/index.ts"), "utf8").includes('error: "retired_endpoint"'),
   );
   {
     // The gateway check, executed (transpiled out of the script).

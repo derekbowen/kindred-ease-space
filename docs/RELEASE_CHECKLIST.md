@@ -256,6 +256,14 @@ The same action works again.
 
 ## 8. Delete the four legacy functions
 
+**Done in place, 2026-09-29 (reversible):** all four now run the retired stub
+(`supabase/retired-functions/stub/index.ts`: every request, preflight included,
+gets `410 {"error":"retired_endpoint"}`; nothing is read or charged) —
+`ai-proxy` v23, `coach-chat` v26, `help-assistant-chat` v27,
+`help-assistant-embed` v27, each with its old `verify_jwt`. Rollback: redeploy
+`git show 179205d^:supabase/functions/<name>/` under the same name. Deleting
+them for good (below) still needs the owner's approval.
+
 Nothing in the new build calls them, the kill switch and the ceiling do not cover
 them, and `help-assistant-chat` is public. `ai-proxy`, `help-assistant-chat` and
 `help-assistant-embed` may be deleted earlier (only the old build's help widget
