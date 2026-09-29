@@ -2064,6 +2064,14 @@ console.log("\n=== UI copy and wiring (the page builder) ===");
   );
   t("the builder sends an idempotency key", builder.includes("requestId: requestIdRef.current"));
   t(
+    "the chosen template and target are written to the URL in one replace (they survive a reload)",
+    /search: \{ kind: next\.kind \?\? undefined, target: next\.target \?\? undefined \},\s*replace: true/.test(
+      builder,
+    ) &&
+      /useState<PageKind \| null>\(search\.kind \?\? null\)/.test(builder) &&
+      /useState<string \| null>\(search\.target \?\? null\)/.test(builder),
+  );
+  t(
     "the idempotency key rotates only after a response",
     builder.indexOf("requestIdRef.current = newRequestId()") > builder.indexOf("await createFn("),
   );

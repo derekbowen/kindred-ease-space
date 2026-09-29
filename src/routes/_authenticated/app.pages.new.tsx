@@ -91,8 +91,20 @@ function NewPage() {
     enabled: !!workspaceId,
   });
 
-  const [kind, setKind] = useState<PageKind | null>(search.kind ?? null);
-  const [targetKey, setTargetKey] = useState<string | null>(search.target ?? null);
+  const [kind, setKindState] = useState<PageKind | null>(search.kind ?? null);
+  const [targetKey, setTargetKeyState] = useState<string | null>(search.target ?? null);
+  // The chosen template and target live in the URL too (one replace per
+  // choice), so a reload or a shared link comes back to the same selection.
+  const choose = (next: { kind: PageKind | null; target: string | null }) => {
+    setKindState(next.kind);
+    setTargetKeyState(next.target);
+    void navigate({
+      to: "/app/pages/new",
+      search: { kind: next.kind ?? undefined, target: next.target ?? undefined },
+      replace: true,
+    });
+  };
+  const setTargetKey = (t: string | null) => choose({ kind, target: t });
   const [pickerQuery, setPickerQuery] = useState("");
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
@@ -261,8 +273,7 @@ function NewPage() {
                   t={t}
                   selected={kind === t.kind}
                   onSelect={() => {
-                    setKind(t.kind);
-                    if (t.kind !== kind) setTargetKey(null);
+                    choose({ kind: t.kind, target: t.kind !== kind ? null : targetKey });
                     setPhase({ name: "idle" });
                   }}
                 />
