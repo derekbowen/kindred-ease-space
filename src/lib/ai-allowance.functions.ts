@@ -34,7 +34,13 @@ import { internalAccessFields, type InternalAccessFields } from "@/lib/billing-c
  * the credit balance, the ceiling) never leave the server.
  */
 
-export const AI_ALLOWANCE_STATES = ["ok", "low", "exhausted", "workspace_limit", "platform_paused"] as const;
+export const AI_ALLOWANCE_STATES = [
+  "ok",
+  "low",
+  "exhausted",
+  "workspace_limit",
+  "platform_paused",
+] as const;
 export type AiAllowanceState = (typeof AI_ALLOWANCE_STATES)[number];
 
 export const AI_ALLOWANCE_MESSAGES: Readonly<Record<AiAllowanceState, string>> = Object.freeze({
@@ -73,11 +79,17 @@ export const LOW_ALLOWANCE_CALLS = 3;
 /** Credits a typical page holds on the platform key (the largest common hold). */
 const PAGE_HOLD_CREDITS = Math.max(
   1,
-  creditsForCostMicros(maxCostMicros(AI_DEFAULT_MODEL, 6_000, AI_ROUTE_LIMITS.page_generation.maxOutputTokens)),
+  creditsForCostMicros(
+    maxCostMicros(AI_DEFAULT_MODEL, 6_000, AI_ROUTE_LIMITS.page_generation.maxOutputTokens),
+  ),
 );
 
 /** The smallest hold any route takes: below it the ceiling refuses everything. */
-export const MIN_HOLD_MICROS = maxCostMicros(AI_DEFAULT_MODEL, 1_100, AI_ROUTE_LIMITS.add_meta.maxOutputTokens);
+export const MIN_HOLD_MICROS = maxCostMicros(
+  AI_DEFAULT_MODEL,
+  1_100,
+  AI_ROUTE_LIMITS.add_meta.maxOutputTokens,
+);
 
 export type AllowanceInputs = {
   /** The kill switch (a missing settings row counts as off, as in ai_reserve). */
@@ -97,6 +109,12 @@ export type AllowanceInputs = {
   workspaceRemainingMicros?: number;
   /** The founder / internal unlimited entitlement: no tenant funds and no workspace cap. */
   internalUnlimited?: boolean;
+  /**
+   * Page generation is included in the workspace's plan or beta grant
+   * (generationIncludedFor: active, grace, granted): no tenant funds, so the
+   * free quota and credits don't limit it; the workspace cap still does.
+   */
+  generationIncluded?: boolean;
 };
 
 /** Pure: the state from the inputs. */
@@ -104,9 +122,13 @@ export function deriveAllowanceState(i: AllowanceInputs): AiAllowanceState {
   if (i.ownKey) return "ok";
   if (!i.platformEnabled || !(i.budgetRemainingMicros >= MIN_HOLD_MICROS)) return "platform_paused";
   if (i.internalUnlimited) return "ok";
-  if (i.workspaceRemainingMicros !== undefined && !(i.workspaceRemainingMicros >= MIN_HOLD_MICROS)) {
+  if (
+    i.workspaceRemainingMicros !== undefined &&
+    !(i.workspaceRemainingMicros >= MIN_HOLD_MICROS)
+  ) {
     return "workspace_limit";
   }
+  if (i.generationIncluded) return "ok";
   const free = Math.max(0, Math.floor(Number(i.freeRemaining) || 0));
   const credits = Math.max(0, Math.floor(Number(i.credits) || 0));
   if (free === 0 && credits < 1) return "exhausted";
@@ -115,7 +137,12 @@ export function deriveAllowanceState(i: AllowanceInputs): AiAllowanceState {
 }
 
 /** Pure: the sentence for the page count. */
-export function generationSentence(used: number, cap: number, paused: boolean, internalUnlimited = false): string {
+export function generationSentence(
+  used: number,
+  cap: number,
+  paused: boolean,
+  internalUnlimited = false,
+): string {
   if (paused) return "Page generation is paused platform-wide right now. Try again later.";
   const u = Math.max(0, Math.floor(used));
   if (internalUnlimited) {
@@ -127,7 +154,10 @@ export function generationSentence(used: number, cap: number, paused: boolean, i
 
 type Reader = { from: (table: string) => any };
 type RpcReader = {
-  rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
+  rpc: (
+    fn: string,
+    args: Record<string, unknown>,
+  ) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
 };
 
 /**
@@ -136,38 +166,48 @@ type RpcReader = {
  */
 export async function readAiAllowance(
   workspaceId: string,
-  deps: { db?: Reader } = {},
+  deps: { db?: Reader; generationIncluded?: (workspaceId: string) => Promise<boolean> } = {},
 ): Promise<AiAllowance> {
   const db = deps.db ?? (supabaseAdmin as unknown as Reader);
   const today = new Date().toISOString().slice(0, 10);
-  const { readPlatformSettings, countConsumedLast24h, effectiveDailyCap } = await import("@/lib/generation.server");
+  const { readPlatformSettings, countConsumedLast24h, effectiveDailyCap, isGenerationGranted } =
+    await import("@/lib/generation.server");
   const { isInternalUnlimited } = await import("@/lib/entitlement-grants.server");
   // The same service-role client for the two RPCs (a test seam may give both).
   const rpcDb: RpcReader =
     typeof (deps.db as Partial<RpcReader> | undefined)?.rpc === "function"
       ? (deps.db as unknown as RpcReader)
       : (supabaseAdmin as unknown as RpcReader);
-  const [settings, budget, quota, credits, ownKey, platform, used, internal, wsSpent] = await Promise.all([
-    db
-      .from("ai_platform_settings")
-      .select("platform_ai_enabled, daily_budget_micros, workspace_daily_budget_micros")
-      .eq("id", true)
-      .maybeSingle(),
-    db.from("ai_budget_days").select("spent_micros").eq("day", today).maybeSingle(),
-    db.from("workspace_ai_quota").select("platform_credits_remaining").eq("workspace_id", workspaceId).maybeSingle(),
-    db.from("credit_balances").select("balance").eq("workspace_id", workspaceId).maybeSingle(),
-    db
-      .from("workspace_secrets")
-      .select("id")
-      .eq("workspace_id", workspaceId)
-      .eq("key_name", "OPENAI_API_KEY")
-      .maybeSingle(),
-    readPlatformSettings(),
-    countConsumedLast24h(workspaceId),
-    // Throws on a read failure: an allowance that cannot be read is never "ok".
-    isInternalUnlimited(workspaceId, rpcDb),
-    rpcDb.rpc("ai_workspace_spent_micros", { _workspace_id: workspaceId, _day: today }),
-  ]);
+  const [settings, budget, quota, credits, ownKey, platform, used, internal, wsSpent, included] =
+    await Promise.all([
+      db
+        .from("ai_platform_settings")
+        .select("platform_ai_enabled, daily_budget_micros, workspace_daily_budget_micros")
+        .eq("id", true)
+        .maybeSingle(),
+      db.from("ai_budget_days").select("spent_micros").eq("day", today).maybeSingle(),
+      db
+        .from("workspace_ai_quota")
+        .select("platform_credits_remaining")
+        .eq("workspace_id", workspaceId)
+        .maybeSingle(),
+      db.from("credit_balances").select("balance").eq("workspace_id", workspaceId).maybeSingle(),
+      db
+        .from("workspace_secrets")
+        .select("id")
+        .eq("workspace_id", workspaceId)
+        .eq("key_name", "OPENAI_API_KEY")
+        .maybeSingle(),
+      readPlatformSettings(),
+      countConsumedLast24h(workspaceId),
+      // Throws on a read failure: an allowance that cannot be read is never "ok".
+      isInternalUnlimited(workspaceId, rpcDb),
+      rpcDb.rpc("ai_workspace_spent_micros", { _workspace_id: workspaceId, _day: today }),
+      // Included in the plan / beta grant (a failed read meters: never "free").
+      deps.generationIncluded
+        ? deps.generationIncluded(workspaceId)
+        : isGenerationGranted(workspaceId),
+    ]);
   for (const r of [settings, budget, quota, credits, ownKey, wsSpent]) {
     if (r?.error) throw new Error(`ai allowance read failed: ${r.error.message}`);
   }
@@ -183,8 +223,11 @@ export async function readAiAllowance(
     // No quota row yet: the free allowance the first reservation seeds.
     freeRemaining: quota.data ? Number(quota.data.platform_credits_remaining) : 20,
     credits: Number(credits.data?.balance ?? 0),
-    workspaceRemainingMicros: Number.isFinite(wsCap) ? wsCap - Number(wsSpent.data ?? 0) : undefined,
+    workspaceRemainingMicros: Number.isFinite(wsCap)
+      ? wsCap - Number(wsSpent.data ?? 0)
+      : undefined,
     internalUnlimited: internal,
+    generationIncluded: included,
   });
   const dailyCap = effectiveDailyCap(platform.dailyCap, internal);
   return {

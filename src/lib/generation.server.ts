@@ -562,17 +562,32 @@ seo_title (≤60 chars) and seo_description (≤155 chars) optimised for the top
 const sb = () => supabaseAdmin as any;
 
 /**
- * Is AI generation included for this workspace? True for a beta tenant whose
- * capacity comes from an admin grant (billingState 'granted'): that is the
- * product decision — generation is part of the grant, bounded by the daily
- * cap and the pause switch rather than by credits. A read failure meters
- * normally (fails closed for cost); it never hands out free generation.
+ * The billing states in which page generation is INCLUDED (billed 'granted':
+ * no tenant credits), as every plan and /beta promise: a paid plan in good
+ * standing ('active'), one inside its payment-retry window ('grace'), and a
+ * beta grant ('granted'). It stays bounded by the daily page cap, the
+ * per-workspace daily cost cap, the platform ceiling, the rate limit and the
+ * pause switches (ai_reserve / reserve_generation_slot). A trial runs on its
+ * starter allowance (metered free quota); an expired, lapsed, stale or
+ * unknown state is metered too — and the page builder refuses generation for
+ * a workspace that may not publish at all.
+ */
+export const GENERATION_INCLUDED_STATES = ["active", "grace", "granted"] as const;
+
+export function generationIncludedFor(billingState: string | null | undefined): boolean {
+  return (GENERATION_INCLUDED_STATES as readonly string[]).includes(String(billingState ?? ""));
+}
+
+/**
+ * Is AI generation included for this workspace right now (see
+ * GENERATION_INCLUDED_STATES)? A read failure meters normally (fails closed
+ * for cost); it never hands out free generation.
  */
 export async function isGenerationGranted(workspaceId: string): Promise<boolean> {
   try {
     const { readEntitlement } = await import("@/lib/entitlements.functions");
     const ent = await readEntitlement(workspaceId);
-    return ent.billingState === "granted";
+    return generationIncludedFor(ent.billingState);
   } catch (e) {
     console.error(
       "[generation] entitlement read failed; metering normally",

@@ -36,6 +36,9 @@ const billingSearchSchema = z.object({
   session_id: z.string().optional(),
 });
 
+/** Subscription states that can only be restarted through a new checkout. */
+const ENDED_SUBSCRIPTION_STATUSES = ["canceled", "incomplete_expired"];
+
 export const Route = createFileRoute("/_authenticated/app/billing")({
   head: () => ({ meta: [{ title: "Billing — founders.click" }] }),
   validateSearch: billingSearchSchema,
@@ -171,7 +174,17 @@ function BillingPage() {
   // only stops this page offering plans, trials and checkouts that do not
   // apply. Every other workspace renders exactly as before.
   const internal = Boolean(ent && (ent.internalUnlimited || ent.billingState === "internal"));
-  const hasPlan = Boolean(ent && !internal && !ent.isTrial && ent.planKey);
+  // A live Stripe subscription the portal can change. A cancelled (or expired
+  // incomplete) one can't be restarted from the portal, so its owner chooses a
+  // plan again through checkout — create-checkout allows exactly that, and
+  // still refuses a second plan beside a live one.
+  const hasPlan = Boolean(
+    ent &&
+    !internal &&
+    !ent.isTrial &&
+    ent.planKey &&
+    !ENDED_SUBSCRIPTION_STATUSES.includes(String(ent.subscriptionStatus)),
+  );
   // "Free beta" only when the grant IS the entitlement. A paying customer with a
   // promotional grant on top is not in a free beta and must not be told so.
   const inBeta = Boolean(beta?.beta && ent && ent.billingState === "granted");

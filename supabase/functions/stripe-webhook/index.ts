@@ -169,14 +169,38 @@ async function suspendPages(admin: Admin, workspace_id: string) {
   return count ?? 0;
 }
 
+/**
+ * Payment restored: bring billing-suspended pages back at their original
+ * URLs — through the same atomic capacity gate as a publish
+ * (publish_tenant_pages), oldest first, so a workspace that comes back on a
+ * smaller plan never gets more live pages than it now pays for. Pages beyond
+ * the plan stay suspended, content and URLs intact. Read in batches (the API
+ * answers at most 1,000 rows); a failed gate throws so Stripe retries.
+ */
 async function reactivatePages(admin: Admin, workspace_id: string) {
-  const { error, count } = await admin
-    .from("tenant_pages")
-    .update({ status: "published" }, { count: "exact" })
-    .eq("workspace_id", workspace_id)
-    .eq("status", "billing_suspended");
-  if (error) console.error("reactivatePages failed", error.message);
-  return count ?? 0;
+  let restored = 0;
+  for (let round = 0; round < 50; round++) {
+    const { data: rows, error } = await admin
+      .from("tenant_pages")
+      .select("id")
+      .eq("workspace_id", workspace_id)
+      .eq("status", "billing_suspended")
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(1000);
+    if (error) throw new Error(`reactivatePages read failed: ${error.message}`);
+    const ids = ((rows ?? []) as Array<{ id: string }>).map((r) => r.id);
+    if (ids.length === 0) break;
+    const { data, error: gateErr } = await admin.rpc("publish_tenant_pages", {
+      _workspace_id: workspace_id,
+      _page_ids: ids,
+    });
+    if (gateErr) throw new Error(`reactivatePages gate failed: ${gateErr.message}`);
+    const published = Number((data as { published?: number } | null)?.published ?? 0);
+    restored += published;
+    if (published < ids.length) break; // the plan's capacity is used up
+  }
+  return restored;
 }
 
 /**
@@ -411,8 +435,15 @@ Deno.serve(async (req) => {
         }
 
         // ---- base page plan -------------------------------------------------
-        const priceId = sub.items.data[0]?.price.id ?? null;
-        let tier = sub.metadata?.plan_tier ?? (await resolveTierFromPrice(stripe, priceId));
+        // The price being charged IS the plan. A plan change in the Stripe
+        // Billing Portal swaps the item's price but leaves the subscription
+        // metadata written at checkout behind, so that metadata is only the
+        // last resort (after the amount recovery below), never the first.
+        const itemPrice = sub.items.data[0]?.price;
+        const priceId = itemPrice?.id ?? null;
+        let tier: string =
+          (itemPrice?.metadata?.plan_tier as string | undefined) ??
+          (await resolveTierFromPrice(stripe, priceId).catch(() => "unknown"));
         let includedPages = pagesForTier(tier);
 
         // A price with no plan_tier metadata used to resolve to "unknown", give
@@ -436,6 +467,13 @@ Deno.serve(async (req) => {
               recovered_tier: recovered,
             });
           }
+        }
+
+        // The checkout-time metadata, only when neither the price nor the
+        // amount names a plan.
+        if (includedPages === 0 && sub.metadata?.plan_tier) {
+          tier = sub.metadata.plan_tier;
+          includedPages = pagesForTier(tier);
         }
 
         // Still unresolved: the customer is paying for something this catalog

@@ -4,8 +4,17 @@
  * responses come from globalThis.__sbResponses, a queue keyed by
  * "<table>.<op>" (each entry consumed once; default {data:null,error:null}).
  */
-type Resp = { data?: unknown; error?: { code?: string; message: string } | null; count?: number | null };
-type Call = { table: string; op: string; payload?: unknown; filters: Array<[string, string, unknown]> };
+type Resp = {
+  data?: unknown;
+  error?: { code?: string; message: string } | null;
+  count?: number | null;
+};
+type Call = {
+  table: string;
+  op: string;
+  payload?: unknown;
+  filters: Array<[string, string, unknown]>;
+};
 const g = globalThis as unknown as {
   __sbCalls: Call[];
   __sbResponses: Record<string, Resp[]>;
@@ -37,14 +46,46 @@ class Query implements PromiseLike<Resp> {
     this.call.filters.push(["select", "cols", cols]);
     return this;
   }
-  insert(payload: unknown) { this.call.op = "insert"; this.call.payload = payload; this.key = `${this.call.table}.insert`; return this; }
-  update(payload: unknown) { this.call.op = "update"; this.call.payload = payload; this.key = `${this.call.table}.update`; return this; }
-  upsert(payload: unknown) { this.call.op = "upsert"; this.call.payload = payload; this.key = `${this.call.table}.upsert`; return this; }
-  eq(col: string, val: unknown) { this.call.filters.push(["eq", col, val]); return this; }
-  limit(n: number) { this.call.filters.push(["limit", "n", n]); return this; }
-  maybeSingle() { return this; }
-  single() { return this; }
-  then<T1 = Resp, T2 = never>(res?: (v: Resp) => T1 | PromiseLike<T1>, rej?: (e: unknown) => T2 | PromiseLike<T2>) {
+  insert(payload: unknown) {
+    this.call.op = "insert";
+    this.call.payload = payload;
+    this.key = `${this.call.table}.insert`;
+    return this;
+  }
+  update(payload: unknown) {
+    this.call.op = "update";
+    this.call.payload = payload;
+    this.key = `${this.call.table}.update`;
+    return this;
+  }
+  upsert(payload: unknown) {
+    this.call.op = "upsert";
+    this.call.payload = payload;
+    this.key = `${this.call.table}.upsert`;
+    return this;
+  }
+  eq(col: string, val: unknown) {
+    this.call.filters.push(["eq", col, val]);
+    return this;
+  }
+  limit(n: number) {
+    this.call.filters.push(["limit", "n", n]);
+    return this;
+  }
+  order(col: string, opts?: unknown) {
+    this.call.filters.push(["order", col, opts]);
+    return this;
+  }
+  maybeSingle() {
+    return this;
+  }
+  single() {
+    return this;
+  }
+  then<T1 = Resp, T2 = never>(
+    res?: (v: Resp) => T1 | PromiseLike<T1>,
+    rej?: (e: unknown) => T2 | PromiseLike<T2>,
+  ) {
     return Promise.resolve(next(this.key)).then(res, rej);
   }
 }
@@ -52,7 +93,8 @@ class Query implements PromiseLike<Resp> {
 export function createClient(...args: unknown[]) {
   // A suite that needs real SQL behind the client installs its own factory
   // (tests/_support/ai-db.ts pgliteSupabase); the recording fake otherwise.
-  const custom = (globalThis as { __sbCreateClient?: (...a: unknown[]) => unknown }).__sbCreateClient;
+  const custom = (globalThis as { __sbCreateClient?: (...a: unknown[]) => unknown })
+    .__sbCreateClient;
   if (custom) return custom(...args) as ReturnType<typeof recordingClient>;
   return recordingClient();
 }
