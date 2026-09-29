@@ -1,421 +1,274 @@
 /**
- * TENANT SITEMAP PAST POSTGREST'S ROW CAP. Run: bun tests/sitemap-chunking.test.ts
+ * TENANT SITEMAP PAST POSTGREST'S ROW CAP, AND PAST ONE FILE. Run: bun tests/sitemap-chunking.test.ts
  *
- * Round-4 release review M4. tenantSitemapXml read tenant_pages and
- * content_pages with one `.limit(50_000)` read each; PostgREST's max-rows
- * (~1,000 by default) caps a response silently, so a Pro tenant with 2,400
- * published pages had 1,000 in /a/sitemap.xml. Both reads now come in
- * 1,000-row chunks over a fixed order (id), and above 50,000 URLs the sitemap
- * is a <sitemapindex> of /a/sitemap.xml?page=N.
+ * Round-4 release review M4: one `.limit(50_000)` read per table came back
+ * capped at PostgREST's max-rows (~1,000) and a 2,400-page tenant had 1,000
+ * URLs. Every read is now keyset-paged on id (`id > last`, never an offset, so
+ * a row removed mid-read cannot make another row vanish) and read to an empty
+ * page (a server capping below 1,000 is still read completely). Above 50,000
+ * URLs — or 50 MB — the sitemap is a <sitemapindex> of /a/sitemap.xml?page=N,
+ * cut in a stable order so editing a page never moves a URL between files.
  *
- * The real tenantSitemapXml runs against a fake PostgREST that caps EVERY
- * response at 1,000 rows (whatever the request asked for), honours
- * offset/limit, order and the filters, and reports an exact Content-Range
- * count. Offline.
+ * The real generator through the real supabase-js client against a fake
+ * PostgREST that caps EVERY response (tests/_support/fake-postgrest.ts). Offline.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { FakePostgrest, coverageGroupsOf, harness, type Row } from "./_support/fake-postgrest";
 
-process.env.SUPABASE_URL = "http://sitemap-chunk.test";
+const ORIGIN = "http://sitemap-chunk.test";
+process.env.SUPABASE_URL = ORIGIN;
 process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test";
+const fake = new FakePostgrest(ORIGIN);
+fake.install();
 
 const sm = await import("../src/lib/sitemap.server");
-const { THIN_PAGE_MIN_BODY_CHARS } = await import("../src/lib/thin-page");
-
-let pass = 0,
-  fail = 0;
-const failed: string[] = [];
-function t(name: string, cond: boolean, extra = "") {
-  if (cond) {
-    pass++;
-    console.log(`  PASS  ${name}`);
-  } else {
-    fail++;
-    failed.push(name);
-    console.log(`  FAIL  ${name}  ${extra}`);
-  }
-}
+const { makeFilter } = await import("../src/lib/coverage/target");
+const { t, done } = harness();
 const ROOT = join(import.meta.dir, "..");
 const read = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
 
-// ---------------------------------------------------------------------------
-// The fake PostgREST.
-const MAX_ROWS = 1000;
 const WS = "11111111-1111-4111-8111-111111111111";
 const HOST = "www.pools.example";
-type Row = Record<string, unknown>;
-const tables: Record<string, Row[]> = {};
-type Hit = { table: string; query: URLSearchParams };
-const hits: Hit[] = [];
-let failOn: ((table: string, offset: number) => boolean) | null = null;
-
-function matches(row: Row, col: string, expr: string): boolean {
-  const cell = row[col];
-  if (expr === "is.null") return cell === null || cell === undefined;
-  if (expr === "not.is.null") return cell !== null && cell !== undefined;
-  if (expr.startsWith("eq.")) return String(cell) === expr.slice(3);
-  throw new Error(`fake PostgREST: unsupported filter ${col}=${expr}`);
-}
-const RESERVED = new Set(["select", "order", "limit", "offset"]);
-
-// One scan (the same table and filters, every offset) is filtered once and
-// then sliced, so 60,000-row scenarios stay fast.
-const scanCache = new Map<string, Row[]>();
-globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
-  const url = new URL(
-    typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
-  );
-  if (url.origin !== process.env.SUPABASE_URL) throw new TypeError(`unexpected host ${url.host}`);
-  const path = url.pathname.replace(/^\/rest\/v1\//, "");
-  const headers = new Headers(init?.headers);
-  if (path === "rpc/workspace_granted_pages") return Response.json(0);
-  hits.push({ table: path, query: url.searchParams });
-  const all = tables[path];
-  if (!all) return Response.json({ code: "42P01", message: `no table ${path}` }, { status: 404 });
-  const scanKey = new URLSearchParams(
-    [...url.searchParams].filter(([k]) => k !== "offset" && k !== "limit"),
-  );
-  const key = `${path}?${scanKey}`;
-  let rows = scanCache.get(key);
-  if (!rows) {
-    const preds = [...url.searchParams]
-      .filter(([k]) => !RESERVED.has(k))
-      .map(
-        ([k, v]) =>
-          (r: Row) =>
-            matches(r, k, v),
-      );
-    rows = all.filter((r) => preds.every((p) => p(r)));
-    const order = url.searchParams.get("order");
-    if (order) {
-      const [col, dir] = order.split(",")[0]!.split(".");
-      rows.sort((a, b) => {
-        const x = String(a[col!]);
-        const y = String(b[col!]);
-        return (x < y ? -1 : x > y ? 1 : 0) * (dir === "desc" ? -1 : 1);
-      });
-    }
-    scanCache.set(key, rows);
-  }
-  const total = rows.length;
-  const offset = Number(url.searchParams.get("offset") ?? 0);
-  if (failOn?.(path, offset))
-    return Response.json({ code: "57014", message: "statement timeout" }, { status: 500 });
-  const limit = url.searchParams.has("limit") ? Number(url.searchParams.get("limit")) : Infinity;
-  // max-rows: never more than 1,000 rows in one response, whatever was asked.
-  const page = rows.slice(offset, offset + Math.min(limit, MAX_ROWS));
-  const accept = headers.get("accept") ?? "";
-  const h: Record<string, string> = { "content-type": "application/json" };
-  if ((headers.get("prefer") ?? "").includes("count=exact"))
-    h["content-range"] = page.length
-      ? `${offset}-${offset + page.length - 1}/${total}`
-      : `*/${total}`;
-  if (accept.includes("vnd.pgrst.object")) {
-    return page.length === 1
-      ? new Response(JSON.stringify(page[0]), { headers: h })
-      : Response.json({ code: "PGRST116" }, { status: 406 });
-  }
-  return new Response(JSON.stringify(page), { headers: h });
-}) as typeof fetch;
-
-// ---------------------------------------------------------------------------
-// A Pro tenant: 2,400 published pages, 1,500 legacy pages, 3,000 listings.
-const LONG = "x".repeat(THIN_PAGE_MIN_BODY_CHARS + 50);
-const SHORT = "too short";
+const T_CAT = "7e000000-0000-4000-8000-000000000002";
 const pad = (n: number, w = 6) => String(n).padStart(w, "0");
 const uuid = (prefix: string, n: number) => `${prefix}-0000-4000-8000-${pad(n, 12)}`;
-const day = (n: number) => new Date(Date.UTC(2026, 0, 1) + n * 3_600_000).toISOString();
+const hour = (n: number) => new Date(Date.UTC(2026, 0, 1) + n * 3_600_000).toISOString();
+const pool = makeFilter(["category"], { countryKey: null, regionKey: null, cityKey: null, categoryKey: "pool" });
 
-function seed(tenantCount: number, legacyCount: number, listingCount: number, longBody = LONG) {
-  scanCache.clear();
-  tables.workspace_domains = [
-    {
+/** `tenant` category pages (published in slug order) and `legacy` content pages. */
+function seed(tenant: number, legacy: number, slugOf: (i: number) => string = (i) => `page-${pad(i)}`) {
+  fake.set("workspace_domains", [
+    { id: "d1", workspace_id: WS, hostname: HOST, verified: true, verified_at: "2026-09-01T00:00:00Z", status: "active" },
+  ]);
+  fake.set("workspaces", [
+    { id: WS, marketplace_domain: HOST, domain_verified_at: "2026-09-01T00:00:00Z", subscription_status: "active", current_period_end: "2099-01-01T00:00:00Z" },
+  ]);
+  fake.set("page_templates", [{ id: T_CAT, slug: "category_page", is_active: true }]);
+  // ids deliberately NOT in publication order, so the id-ordered reads and the
+  // publication-ordered sitemap are different orders.
+  fake.set(
+    "tenant_pages",
+    Array.from({ length: tenant }, (_, i) => ({
+      id: uuid("a0000000", (i * 7919) % Math.max(tenant, 1)),
       workspace_id: WS,
-      verified_at: "2026-09-01T00:00:00Z",
-      hostname: "pools.example",
-      verified: true,
-    },
-  ];
-  tables.workspaces = [
-    {
-      id: WS,
-      marketplace_domain: null,
-      domain_verified_at: null,
-      subscription_status: "active",
-      trial_ends_at: null,
-      current_period_end: "2099-01-01T00:00:00Z",
-    },
-  ];
-  // ids deliberately NOT in updated_at order, so a chunked read over id and
-  // the newest-first output are different orders.
-  tables.tenant_pages = Array.from({ length: tenantCount }, (_, i) => ({
-    id: uuid("a0000000", (i * 7919) % tenantCount),
-    workspace_id: WS,
-    status: "published",
-    slug: `page-${pad(i)}`,
-    updated_at: day(i),
-    // Every 100th page matches no listing and has a short body: thin.
-    listing_filter: i % 100 === 0 ? { city: "Nowhere" } : { city: `City ${i % 50}` },
-    body_markdown: i % 100 === 0 ? SHORT : i % 2 ? longBody : "",
-  }));
-  // Drafts and another workspace's pages must never appear.
-  tables.tenant_pages.push(
-    {
-      id: uuid("a1000000", 1),
-      workspace_id: WS,
-      status: "draft",
-      slug: "draft-page",
-      updated_at: day(1),
-      listing_filter: {},
-      body_markdown: LONG,
-    },
-    {
-      id: uuid("a1000000", 2),
-      workspace_id: "other-ws",
+      template_id: T_CAT,
+      slug: slugOf(i),
       status: "published",
-      slug: "not-ours",
-      updated_at: day(1),
-      listing_filter: {},
-      body_markdown: LONG,
-    },
+      noindex: false,
+      listing_filter: pool,
+      published_at: hour(i),
+      created_at: hour(i),
+      updated_at: hour(i),
+    })),
   );
-  tables.content_pages = Array.from({ length: legacyCount }, (_, i) => ({
-    id: uuid("b0000000", (i * 104729) % legacyCount),
-    workspace_id: WS,
-    status: "published",
-    in_sitemap: true,
-    // Legacy pages have no listings: only the body decides. Every 10th is thin.
-    slug:
-      i === 0 ? "page-000001" /* a tenant page's slug: the tenant page wins */ : `legacy-${pad(i)}`,
-    updated_at: day(i),
-    body_markdown: i % 10 === 5 ? SHORT : LONG,
-  }));
-  tables.content_pages.push({
-    id: uuid("b1000000", 1),
-    workspace_id: WS,
-    status: "published",
-    in_sitemap: false,
-    slug: "hidden",
-    updated_at: day(1),
-    body_markdown: LONG,
-  });
-  tables.tenant_listings = Array.from({ length: listingCount }, (_, i) => ({
-    id: uuid("c0000000", i),
-    workspace_id: WS,
-    state_published: true,
-    city: `City ${i % 50}`,
-    state: null,
-    category: null,
-  }));
+  fake.set(
+    "content_pages",
+    Array.from({ length: legacy }, (_, i) => ({
+      id: uuid("b0000000", (i * 104729) % Math.max(legacy, 1)),
+      workspace_id: WS,
+      slug: `legacy-${pad(i)}`,
+      url_path: `/p/legacy-${pad(i)}`,
+      status: "published",
+      in_sitemap: true,
+      redirect_to: null,
+      body_markdown: "x".repeat(400),
+      created_at: hour(-100_000 + i),
+      updated_at: hour(-100_000 + i),
+    })),
+  );
+  fake.set("tenant_listings", [
+    { id: uuid("c0000000", 1), workspace_id: WS, state_published: true, category: "pool", category_key: "pool" },
+  ]);
+  fake.rpcs = {
+    workspace_granted_pages: () => 0,
+    inventory_coverage_groups: (args) => coverageGroupsOf(fake.rows("tenant_listings"), String(args._workspace_id)),
+  };
+  fake.failWhen = null;
+  fake.maxRows = 1000;
 }
 
-function locs(xml: string): string[] {
-  return [...xml.matchAll(/<url><loc>([^<]+)<\/loc>/g)].map((m) => m[1]!);
-}
+const get = (query = "", limits?: import("../src/lib/sitemap.server").SitemapLimits) =>
+  sm.tenantSitemapResponse(HOST, `https://www.founders.click/a/sitemap.xml${query}`, limits ? { limits } : {});
+const locs = (xml: string) => [...xml.matchAll(/<url><loc>([^<]+)<\/loc>/g)].map((m) => m[1]!);
+const pageReads = () =>
+  fake.hits.filter((h) => h.name === "tenant_pages" && h.params.get("status") === "eq.published" && !h.params.has("template_id"));
 
 // ---------------------------------------------------------------------------
 console.log("\na tenant past 1,000 pages gets all of them");
+seed(2400, 1500);
+fake.clearHits();
+{
+  const res = await get();
+  const listed = locs(res.body);
+  t("200 and a <urlset> (under 50,000 URLs)", res.status === 200 && res.body.includes("<urlset") && !res.body.includes("<sitemapindex"));
+  t("all 2,400 tenant pages are listed (was capped at 1,000)", listed.filter((l) => /\/a\/page-/.test(l)).length === 2400, String(listed.filter((l) => /\/a\/page-/.test(l)).length));
+  t("all 1,500 legacy pages are listed", listed.filter((l) => /\/a\/legacy-/.test(l)).length === 1500);
+  t("no URL twice", new Set(listed).size === listed.length);
+  t("URLs are on the requested host, www kept", listed.every((l) => l.startsWith(`https://${HOST}/a/`)));
+  t("legacy pages (created earlier) come first, then pages in publication order",
+    listed[0] === `https://${HOST}/a/legacy-000000` && listed[1500] === `https://${HOST}/a/page-000000` && listed[listed.length - 1] === `https://${HOST}/a/page-002399`);
+  const reads = pageReads();
+  t("tenant_pages: 3 full pages, a short one… then an empty page ends the read (4 reads)", reads.length === 4, String(reads.length));
+  t("keyset, not offsets: no read carries an offset", reads.every((h) => !h.params.has("offset")));
+  t("every read is ordered by id with a 1,000-row limit", reads.every((h) => h.params.get("order") === "id.asc" && h.params.get("limit") === "1000"));
+  t("the first read has no cursor; each later one starts after the last id seen", !reads[0]!.params.has("id") && reads.slice(1).every((h) => /^gt\.[0-9a-f-]{36}$/.test(h.params.get("id") ?? "")));
+  t("every page read keeps the workspace and published filters", reads.every((h) => h.params.get("workspace_id") === `eq.${WS}`));
+  t("content_pages published: 2 pages of 1,000/500, then empty (3 reads)", fake.hits.filter((h) => h.name === "content_pages" && h.params.get("status") === "eq.published").length === 3);
+}
 
-seed(2400, 1500, 3000);
-hits.length = 0;
-const xml = (await sm.tenantSitemapXml(HOST))!;
-const listed = locs(xml);
-const expectTenant = 2400 - 24; // every 100th is thin
-const expectLegacy = 1500 - 150 - 1; // every 10th is thin; one shares a tenant slug
-t(
-  "it is a <urlset> (under 50,000 URLs)",
-  xml.includes("<urlset") && !xml.includes("<sitemapindex"),
-);
-t(
-  `all ${expectTenant} non-thin tenant pages are listed (was capped at 1,000)`,
-  listed.filter((l) => /\/a\/page-/.test(l)).length === expectTenant,
-  String(listed.filter((l) => /\/a\/page-/.test(l)).length),
-);
-t(
-  `all ${expectLegacy} non-thin legacy pages are listed`,
-  listed.filter((l) => /\/a\/legacy-/.test(l)).length === expectLegacy,
-  String(listed.filter((l) => /\/a\/legacy-/.test(l)).length),
-);
-t("no URL is listed twice", new Set(listed).size === listed.length);
-t(
-  "drafts, other workspaces' pages and in_sitemap=false pages stay out",
-  !listed.some((l) => /draft-page|not-ours|hidden/.test(l)),
-);
-t(
-  "URLs are on the requested host (www kept)",
-  listed.every((l) => l.startsWith(`https://${HOST}/a/`)),
-);
-t(
-  "thin pages (no listings, short body) stay out; a long body or a listing keeps a page in",
-  !listed.includes(`https://${HOST}/a/page-000000`) &&
-    !listed.includes(`https://${HOST}/a/page-000100`) &&
-    listed.includes(`https://${HOST}/a/page-000002`) /* empty body, has listings */ &&
-    listed.includes(`https://${HOST}/a/page-000001`),
-);
-t(
-  "a legacy twin of a tenant slug yields to the tenant page",
-  listed.filter((l) => l.endsWith("/a/page-000001")).length === 1,
-);
-const tenantOrder = listed.filter((l) => /\/a\/page-/.test(l));
-t(
-  "newest first within the tenant pages, as before",
-  tenantOrder[0] === `https://${HOST}/a/page-002399` &&
-    tenantOrder[tenantOrder.length - 1] === `https://${HOST}/a/page-000001`,
-  `${tenantOrder[0]} … ${tenantOrder[tenantOrder.length - 1]}`,
-);
-t(
-  "tenant pages come before legacy pages",
-  listed.findIndex((l) => /\/a\/legacy-/.test(l)) >
-    listed.findLastIndex((l) => /\/a\/page-/.test(l)),
-);
+console.log("\na server that caps below the page size is still read completely");
+{
+  seed(2400, 0);
+  fake.maxRows = 500;
+  fake.clearHits();
+  const res = await get();
+  t("every page is listed with a 500-row cap", locs(res.body).length === 2400, String(locs(res.body).length));
+  t("…because a short page is not taken as the end (read until empty)", pageReads().length === 6, String(pageReads().length));
+  fake.maxRows = 1000;
+}
 
-console.log("\n…read in 1,000-row chunks over a fixed order");
-const pageReads = hits.filter((h) => h.table === "tenant_pages");
-const legacyReads = hits.filter((h) => h.table === "content_pages");
-t("tenant_pages: 3 chunks for 2,400 rows", pageReads.length === 3, String(pageReads.length));
-t("content_pages: 2 chunks for 1,500 rows", legacyReads.length === 2, String(legacyReads.length));
-t(
-  "offsets 0 / 1000 / 2000 — no overlap, no gap",
-  JSON.stringify(pageReads.map((h) => h.query.get("offset"))) ===
-    JSON.stringify(["0", "1000", "2000"]),
-  JSON.stringify(pageReads.map((h) => h.query.get("offset"))),
-);
-t(
-  "every page read is ordered by id",
-  [...pageReads, ...legacyReads].every((h) => h.query.get("order") === "id.asc"),
-);
-t(
-  "every page read keeps the workspace and published filters",
-  [...pageReads, ...legacyReads].every(
-    (h) => h.query.get("workspace_id") === `eq.${WS}` && h.query.get("status") === "eq.published",
-  ) && legacyReads.every((h) => h.query.get("in_sitemap") === "eq.true"),
-);
-t(
-  "the listings are chunked too (3,000 rows → 3 reads)",
-  hits.filter((h) => h.table === "tenant_listings").length === 3,
-);
-
-console.log("\na failed chunk lists what was read and says so (never a blank sitemap)");
-failOn = (table, offset) => table === "tenant_pages" && offset === 1000;
-const errors: string[] = [];
-const origError = console.error;
-console.error = (...a: unknown[]) => errors.push(a.map(String).join(" "));
-const partial = locs((await sm.tenantSitemapXml(HOST))!);
-console.error = origError;
-failOn = null;
-t(
-  "the first 1,000 tenant rows are still listed (minus thin)",
-  partial.filter((l) => /\/a\/page-/.test(l)).length > 900,
-);
-t(
-  "…and the incomplete read is logged",
-  errors.some((e) => /tenant_pages read incomplete/.test(e)),
-  errors.join(" | "),
-);
+console.log("\na row removed mid-read cannot make another row vanish");
+{
+  seed(2400, 0);
+  let n = 0;
+  fake.failWhen = (h) => {
+    if (h.name === "tenant_pages" && h.params.get("status") === "eq.published" && !h.params.has("template_id") && ++n === 2) {
+      // Between page 1 and page 2: unpublish a page that page 1 already returned.
+      const first = [...fake.rows("tenant_pages")].sort((a, b) => String(a.id).localeCompare(String(b.id)))[10]!;
+      fake.update("tenant_pages", (p) => p.id === first.id, { status: "draft" });
+    }
+    return null;
+  };
+  const res = await get();
+  fake.failWhen = null;
+  const listed = new Set(locs(res.body));
+  const byId = [...fake.rows("tenant_pages")].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  const boundary = byId[1000]!; // the row an offset read (offset=1000) would have skipped
+  t("the row right after the first page is still listed (an offset read would have skipped it)", listed.has(`https://${HOST}/a/${boundary.slug}`));
+  t("every page is accounted for", listed.size === 2400, String(listed.size));
+}
 
 // ---------------------------------------------------------------------------
 console.log("\nabove 50,000 URLs: a sitemap index of /a/sitemap.xml?page=N");
+seed(60_001, 0);
+{
+  fake.clearHits();
+  const index = await get();
+  const children = [...index.body.matchAll(/<sitemap><loc>([^<]+)<\/loc><lastmod>([^<]+)<\/lastmod><\/sitemap>/g)];
+  t("the main document is a <sitemapindex>", index.status === 200 && index.body.includes(`<sitemapindex xmlns="${sm.SITEMAP_NS}">`));
+  t("two parts, under /a/ on the requested host", children.length === 2 &&
+    children[0]![1] === `https://${HOST}/a/sitemap.xml?page=1` && children[1]![1] === `https://${HOST}/a/sitemap.xml?page=2`,
+    children.map((c) => c[1]).join(", "));
+  t("60,001 pages took 62 keyset reads (61 pages + the empty end), still one aggregation", pageReads().length === 62 && fake.count("inventory_coverage_groups") === 1, `${pageReads().length} / ${fake.count("inventory_coverage_groups")}`);
+  const p1 = await get("?page=1");
+  const p2 = await get("?page=2");
+  const l1 = locs(p1.body);
+  const l2 = locs(p2.body);
+  t("part 1 holds exactly 50,000 URLs", l1.length === 50_000, String(l1.length));
+  t("part 2 holds the rest (10,001)", l2.length === 10_001, String(l2.length));
+  const s1 = new Set(l1);
+  t("the parts never share a URL, and together list every page", !l2.some((l) => s1.has(l)) && new Set([...l1, ...l2]).size === 60_001);
+  t("part 1 is the first 50,000 by publication", l1[0] === `https://${HOST}/a/page-000000` && l1[49_999] === `https://${HOST}/a/page-049999`);
+  t("each part's lastmod in the index is its newest URL's", children[0]![2] === hour(49_999).replace(/\.\d{3}Z$/, "Z") && children[1]![2] === hour(60_000).replace(/\.\d{3}Z$/, "Z"), `${children[0]![2]} ${children[1]![2]}`);
+  t("each part carries the cache headers", p1.headers["Cache-Control"] === "public, max-age=300, s-maxage=300" && p2.headers.Vary === "Host, X-Forwarded-Host");
 
-// Every non-thin page has listings here, so its body does not matter: keep them empty.
-seed(60_001, 0, 50, "");
-hits.length = 0;
-const index = (await sm.tenantSitemapXml(HOST))!;
-const indexReads = hits.filter((h) => h.table === "tenant_pages").length;
-const children = [
-  ...index.matchAll(/<sitemap><loc>([^<]+)<\/loc><lastmod>([^<]+)<\/lastmod><\/sitemap>/g),
-];
-// 60,001 pages; every 100th is thin → 60,001 - 601 = 59,400 URLs.
-t(
-  "the document is a <sitemapindex>",
-  index.includes('<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'),
-);
-t(
-  "two children, under /a/ on the requested host",
-  children.length === 2 &&
-    children[0]![1] === `https://${HOST}/a/sitemap.xml?page=1` &&
-    children[1]![1] === `https://${HOST}/a/sitemap.xml?page=2`,
-  children.map((c) => c[1]).join(", "),
-);
-const p1 = locs((await sm.tenantSitemapXml(HOST, { page: 1 }))!);
-const p2 = locs((await sm.tenantSitemapXml(HOST, { page: 2 }))!);
-const p3xml = (await sm.tenantSitemapXml(HOST, { page: 3 }))!;
-t("page 1 holds exactly 50,000 URLs", p1.length === 50_000, String(p1.length));
-t("page 2 holds the rest (9,400)", p2.length === 9_400, String(p2.length));
-const p1Set = new Set(p1);
-t("the two pages never share a URL", !p2.some((l) => p1Set.has(l)));
-t(
-  "a page past the end is a valid, empty <urlset>",
-  p3xml.includes("<urlset") && locs(p3xml).length === 0,
-);
-// Page 60,000 is thin (every 100th), so the newest listed is 59,999.
-t("child 1's lastmod is the newest URL in it", children[0]![2] === day(59_999), children[0]![2]);
-t(
-  "60,001 rows took 61 chunk reads of tenant_pages (within PAGE_MAX_CHUNKS)",
-  indexReads === 61 && sm.PAGE_MAX_CHUNKS >= 61,
-  String(indexReads),
-);
+  // Shard membership is stable: editing never moves a URL; publishing appends.
+  fake.update("tenant_pages", (p) => p.slug === "page-000123" || p.slug === "page-055555", { updated_at: "2026-09-27T12:00:00Z" });
+  const e1 = locs((await get("?page=1")).body);
+  const e2 = locs((await get("?page=2")).body);
+  t("editing pages (new updated_at) moves no URL between parts", JSON.stringify(e1) === JSON.stringify(l1) && JSON.stringify(e2) === JSON.stringify(l2));
+  t("…while the edited page's lastmod changes", (await get("?page=1")).body.includes(`<loc>https://${HOST}/a/page-000123</loc><lastmod>2026-09-27T12:00:00Z</lastmod>`));
+  fake.set("tenant_pages", [
+    ...fake.rows("tenant_pages"),
+    { id: "00000000-0000-4000-8000-000000000000", workspace_id: WS, template_id: T_CAT, slug: "brand-new", status: "published", noindex: false, listing_filter: pool, published_at: "2040-01-01T00:00:00Z", created_at: "2040-01-01T00:00:00Z", updated_at: "2040-01-01T00:00:00Z" },
+  ]);
+  const n1 = locs((await get("?page=1")).body);
+  const n2 = locs((await get("?page=2")).body);
+  t("publishing a page (lowest id of all!) appends it to the last part; part 1 is untouched", JSON.stringify(n1) === JSON.stringify(l1) && n2[n2.length - 1] === `https://${HOST}/a/brand-new` && n2.length === 10_002);
 
-console.log("\nsitemapDocument and the page parameter");
-const e = (n: number) =>
-  Array.from({ length: n }, (_, i) => ({ loc: `https://h/a/p${i}`, lastmod: day(i) }));
-t("≤ max → one urlset", sm.sitemapDocument(e(3), { host: "h", maxUrls: 3 }).includes("<urlset"));
-t(
-  "> max → index with ceil(n/max) children",
-  (sm.sitemapDocument(e(7), { host: "h", maxUrls: 3 }).match(/<sitemap>/g) ?? []).length === 3,
-);
-t(
-  "page k is the k-th slice",
-  locs(sm.sitemapDocument(e(7), { host: "h", maxUrls: 3, page: 3 })).join() === "https://h/a/p6",
-);
-t("the protocol limit is 50,000", sm.SITEMAP_MAX_URLS === 50_000);
-const q = (s: string) => sm.sitemapPageParam(`https://h/a/sitemap.xml${s}`);
-t("no page → undefined (index or the whole urlset)", q("") === undefined);
-t("?page=2 → 2", q("?page=2") === 2);
-for (const bad of [
-  "?page=0",
-  "?page=-1",
-  "?page=abc",
-  "?page=1e3",
-  "?page=01",
-  "?page=10000",
-  "?page=",
-])
-  t(`${bad} → null (404)`, q(bad) === null);
-
-console.log("\nthe routes serve the pages");
-const aRoute = read("src/routes/a.sitemap[.]xml.tsx");
-t(
-  "/a/sitemap.xml passes ?page through, and 404s a bad one",
-  /const page = sitemapPageParam\(request\.url\);\s*if \(page === null\) return new Response\("not found", \{ status: 404 \}\);\s*const tenant = await tenantSitemapXml\(host, \{ page \}\);/.test(
-    aRoute,
-  ),
-);
-t(
-  "/sitemap.xml passes it on tenant hosts",
-  /tenantSitemapXml\(host, \{ page: page \?\? undefined \}\)/.test(
-    read("src/routes/sitemap[.]xml.tsx"),
-  ),
-);
-t(
-  "/api/public/sitemap-by-host passes it",
-  /tenantSitemapXml\(parsed\.data\.hostname, \{ page \}\)/.test(
-    read("src/routes/api/public/sitemap-by-host.ts"),
-  ),
-);
-const src = read("src/lib/sitemap.server.ts");
-t("no page read still trusts a .limit() the API would cap", !/\.limit\(50_000\)/.test(src));
-t(
-  "bodies are measured and dropped as each chunk arrives (the kept row has no body)",
-  /function toSitemapPage\(row: any, legacy: boolean\): SitemapPage \{[\s\S]*?body_chars: thinPageBodyChars\(row\.body_markdown\),[\s\S]*?\n\}/.test(
-    src,
-  ) &&
-    !/body_markdown:/.test(
-      src.slice(src.indexOf("type SitemapPage = {"), src.indexOf("function toSitemapPage")),
-    ),
-);
-
-console.log(`\n${pass} passed, ${fail} failed`);
-if (fail > 0) {
-  console.log("Failed:\n  " + failed.join("\n  "));
-  process.exit(1);
+  for (const bad of ["?page=0", "?page=-1", "?page=abc", "?page=1e3", "?page=01", "?page=10000", "?page=", "?page=3", "?page=9999"]) {
+    const res = await get(bad);
+    t(`${bad} → 404`, res.status === 404 && res.headers["Cache-Control"] === "no-store", String(res.status));
+  }
 }
+
+console.log("\none file's worth: ?page=1 is that file, ?page=2 does not exist");
+{
+  seed(3, 0);
+  const whole = await get();
+  const one = await get("?page=1");
+  const two = await get("?page=2");
+  t("no page → the <urlset>", whole.status === 200 && whole.body.includes("<urlset") && locs(whole.body).length === 3);
+  t("?page=1 → the same <urlset>", one.status === 200 && one.body === whole.body);
+  t("?page=2 → 404", two.status === 404);
+}
+
+// ---------------------------------------------------------------------------
+console.log("\nthe byte limit: long slugs split files before 50 MB (scaled down)");
+{
+  const longSlug = (i: number) => `${"long-slug-".repeat(20).slice(0, 194)}${pad(i)}`;
+  seed(60, 0, longSlug);
+  const limits = { maxUrls: 50_000, maxBytes: 4096 };
+  const index = await get("", limits);
+  const parts = [...index.body.matchAll(/<sitemap><loc>[^<]*\?page=(\d+)<\/loc>/g)].length;
+  t("slugs are the longest the page route serves (200 characters)", longSlug(1).length === 200);
+  t("60 long URLs over a 4,096-byte limit need several files (an index)", index.body.includes("<sitemapindex") && parts > 1, String(parts));
+  const all: string[] = [];
+  let within = true;
+  for (let k = 1; k <= parts; k++) {
+    const res = await get(`?page=${k}`, limits);
+    if (sm.utf8Length(res.body) > limits.maxBytes) within = false;
+    all.push(...locs(res.body));
+  }
+  t("every file is within the byte limit (bytes, not characters)", within);
+  t("together they list every page once, in order", all.length === 60 && new Set(all).size === 60 && all[0]!.endsWith(longSlug(0)) && all[59]!.endsWith(longSlug(59)));
+  const past = await get(`?page=${parts + 1}`, limits);
+  t("the part after the last is 404", past.status === 404);
+}
+{
+  // With the real limits the URL count binds first: 50,000 of the longest
+  // possible URLs (253-character host, 200-character slug, lastmod) are
+  // nowhere near 50 MB — and the byte limit is still enforced independently.
+  const host = `${"h".repeat(60)}.${"o".repeat(60)}.${"s".repeat(60)}.${"t".repeat(66)}.example`.slice(0, 253);
+  const entry = sm.urlEntryXml({ loc: sm.sitemapLoc(host, "z".repeat(200)), lastmod: "2026-09-28T12:34:56Z" });
+  const perUrl = sm.utf8Length(entry);
+  t("a maximal URL entry is under 600 bytes", perUrl < 600, String(perUrl));
+  t("50,000 of them are under 50 MB, so the 50,000-URL limit binds first", perUrl * 50_000 + 200 < sm.SITEMAP_MAX_BYTES);
+  const shards = sm.planShards(new Array(120_000).fill(perUrl));
+  t("120,000 maximal URLs cut into 50,000 / 50,000 / 20,000", JSON.stringify(shards.map((s) => s.end - s.start)) === "[50000,50000,20000]");
+  const byBytes = sm.planShards(new Array(10).fill(10 * 1024 * 1024));
+  t("ten 10 MB entries (hypothetical) cut at 50 MB: 4 per file", JSON.stringify(byBytes.map((s) => s.end - s.start)) === "[4,4,2]" && byBytes.every((s) => s.bytes <= sm.SITEMAP_MAX_BYTES));
+  t("the limits are the protocol's: 50,000 URLs and 50 MB (52,428,800 bytes)", sm.SITEMAP_MAX_URLS === 50_000 && sm.SITEMAP_MAX_BYTES === 52_428_800);
+}
+
+console.log("\nthe page parameter");
+{
+  const q = (s: string) => sm.sitemapPageParam(`https://h/a/sitemap.xml${s}`);
+  t("no page → undefined (index or the whole urlset)", q("") === undefined);
+  t("?page=2 → 2", q("?page=2") === 2);
+  for (const bad of ["?page=0", "?page=-1", "?page=abc", "?page=1e3", "?page=01", "?page=10000", "?page="]) {
+    t(`${bad} → null (404)`, q(bad) === null);
+  }
+}
+
+console.log("\nthe routes serve the one generator");
+{
+  const aRoute = read("src/routes/a.sitemap[.]xml.tsx");
+  t("/a/sitemap.xml answers exactly what tenantSitemapResponse decides (status, body, headers)",
+    /const r = await tenantSitemapResponse\(host, request\.url\);\s*return new Response\(r\.body, \{ status: r\.status, headers: r\.headers \}\);/.test(aRoute));
+  t("…for the forwarded host, else the Host header", /request\.headers\.get\("x-forwarded-host"\) \|\| request\.headers\.get\("host"\)/.test(aRoute));
+  const byHost = read("src/routes/api/public/sitemap-by-host.ts");
+  t("/api/public/sitemap-by-host answers the same way for ?hostname=",
+    /const r = await tenantSitemapResponse\(parsed\.data\.hostname, request\.url\);\s*return new Response\(r\.body, \{ status: r\.status, headers: r\.headers \}\);/.test(byHost));
+  t("…still rate limited and validated", /rateLimit\("sitemap-by-host"/.test(byHost) && /hostname required/.test(byHost));
+  const root = read("src/routes/sitemap[.]xml.tsx");
+  t("/sitemap.xml never serves a tenant sitemap (the customer's own /sitemap.xml stays theirs)", !/tenantSitemap/.test(root));
+  t("/sitemap.xml serves the platform sitemap only on the platform hosts, else 404", /if \(!servesPlatformSitemap\(host\)\) \{\s*return new Response\("not found", \{\s*status: 404/.test(root));
+  t("/sitemap.xml varies by host too", /Vary: SITEMAP_VARY/.test(root));
+  const src = read("src/lib/sitemap.server.ts");
+  t("no read trusts a .limit() the API would cap, or an offset", !/\.limit\(50_000\)/.test(src) && !/\.range\(from, to\)/.test(src));
+  t("the old chunked-offset reader is gone", !/export async function readInChunks/.test(src));
+}
+
+done();

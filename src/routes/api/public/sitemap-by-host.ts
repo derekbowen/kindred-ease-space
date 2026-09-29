@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { sitemapPageParam, tenantSitemapXml } from "@/lib/sitemap.server";
+import { tenantSitemapResponse } from "@/lib/sitemap.server";
 import { clientIp, rateLimit } from "@/lib/public-rate-limit";
 
 const Query = z.object({
@@ -13,6 +13,9 @@ const Query = z.object({
     .regex(/^[a-z0-9.-]+\.[a-z]{2,}$/),
 });
 
+// The tenant sitemap for ?hostname=, answered exactly as that host's own
+// /a/sitemap.xml would be (same generator, same exact-host rule, same ?page=
+// handling, same cache headers): unknown hosts 404, failed reads 503.
 export const Route = createFileRoute("/api/public/sitemap-by-host")({
   server: {
     handlers: {
@@ -25,16 +28,8 @@ export const Route = createFileRoute("/api/public/sitemap-by-host")({
         if (!parsed.success) {
           return new Response("hostname required", { status: 400 });
         }
-        const page = sitemapPageParam(request.url);
-        if (page === null) return new Response("not found", { status: 404 });
-        const xml = await tenantSitemapXml(parsed.data.hostname, { page });
-        if (xml === null) return new Response("not found", { status: 404 });
-        return new Response(xml, {
-          headers: {
-            "Content-Type": "application/xml; charset=utf-8",
-            "Cache-Control": "public, max-age=3600",
-          },
-        });
+        const r = await tenantSitemapResponse(parsed.data.hostname, request.url);
+        return new Response(r.body, { status: r.status, headers: r.headers });
       },
     },
   },
