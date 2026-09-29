@@ -144,14 +144,15 @@ function platformHead() {
       },
       { property: "og:type", content: "website" },
       { property: "og:site_name", content: "founders.click" },
-      { name: "twitter:card", content: "summary_large_image" },
+      // No share image: the old poster showed a demo of tools this release
+      // defers (and another marketplace's admin). A plain summary card
+      // promises nothing the product doesn't do.
+      { name: "twitter:card", content: "summary" },
       { name: "twitter:title", content: "founders.click — SEO pages from your Sharetribe listings" },
       {
         name: "twitter:description",
         content: "SEO landing pages for Sharetribe marketplaces, built from your live listings.",
       },
-      { property: "og:image", content: canonicalUrl("/product-demo-poster.jpg") },
-      { name: "twitter:image", content: canonicalUrl("/product-demo-poster.jpg") },
       { name: "google-site-verification", content: "wXqrsZ8WyZHOQwr7E-AKXmC_fwxEpLBVgHLsFIepwlw" },
     ],
     links: [

@@ -935,10 +935,10 @@ console.log("\n5. the tenant document shell");
       /tenantHeadTags\(useTags\(\)\)/.test(root),
   );
   t(
-    "the platform head (verification tag, favicon, poster) is unchanged for the app",
+    "the platform head keeps its verification tag and favicon for the app (no demo poster: it showed deferred tools)",
     /google-site-verification/.test(root) &&
       /\{ rel: "icon", href: "\/favicon\.svg", type: "image\/svg\+xml" \}/.test(root) &&
-      /product-demo-poster/.test(root),
+      !/product-demo-poster/.test(root),
   );
   t(
     "__root 404/error on a tenant surface are white-labelled",

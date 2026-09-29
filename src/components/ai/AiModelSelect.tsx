@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { AlertTriangle, PauseCircle } from "lucide-react";
@@ -21,11 +20,9 @@ export const AI_MODELS_LOAD_FAILED =
   "Couldn't load the AI models for this workspace. Refresh the page to try again.";
 /** Shown if the server's own sentence is ever missing or not customer-safe. */
 export const AI_NOT_CONFIGURED_FALLBACK =
-  "AI isn't set up for this workspace yet. Set it up under Settings → AI Providers.";
+  "AI isn't available for this workspace right now. Contact support.";
 export const AI_PAUSED_FALLBACK = "AI features are paused right now. Try again later.";
 
-/** Where a workspace sets up its own AI key (the server's settingsPath). */
-export const AI_SETUP_PATH = "/app/settings/ai";
 
 /**
  * The AI model picker shared by the Quick Page Builder and Generate Content.
@@ -78,12 +75,6 @@ export function AiModelSelect({
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
             {userMessage(data.message, AI_NOT_CONFIGURED_FALLBACK)}
           </p>
-          <Link
-            to={AI_SETUP_PATH}
-            className="mt-1 inline-block text-xs font-medium underline underline-offset-2"
-          >
-            Open Settings → AI Providers
-          </Link>
         </div>
       ) : data?.state === "platform_paused" ? (
         <p className="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">

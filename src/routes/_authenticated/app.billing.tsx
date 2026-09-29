@@ -492,9 +492,8 @@ function BillingPage() {
                 {dearest.monthlyPrice} per month for {cheapest.includedPages.toLocaleString()} to{" "}
                 {dearest.includedPages.toLocaleString()} published pages, plus optional extra
                 capacity at ${PAGE_ADDON.monthlyPrice}/month per{" "}
-                {PAGE_ADDON.pagesPerUnit.toLocaleString()} pages. Optional add-ons (Affiliate
-                Programs, DM Champ) are priced separately on the Add-ons page and only start after a
-                checkout you complete. Nothing is charged without a checkout you complete yourself.
+                {PAGE_ADDON.pagesPerUnit.toLocaleString()} pages. Nothing is charged without a
+                checkout you complete yourself.
               </p>
             </div>
             <div>
@@ -516,8 +515,7 @@ function BillingPage() {
         <div>
           <h2 className="text-lg font-semibold mb-1">Plans</h2>
           <p className="text-sm text-muted-foreground mb-4">
-            Every plan unlocks every core feature — pick one for how many pages you publish. Add-ons
-            are priced separately.
+            Every plan includes the same features — pick one for how many pages you publish.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             {PAGE_PLANS.map((p) => {

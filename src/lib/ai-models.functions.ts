@@ -77,7 +77,7 @@ export const AI_SETTINGS_PATH = "/app/settings/ai";
 /** Customer sentences (they pass isCustomerSentence: no provider or key names). */
 export const AI_MODELS_MESSAGES = Object.freeze({
   none_configured:
-    "AI isn't set up for this workspace yet. Add your own AI key under Settings → AI Providers, or contact support.",
+    "AI isn't set up for this workspace yet. Contact support.",
   platform_paused: AI_MESSAGES.platformPaused,
 });
 

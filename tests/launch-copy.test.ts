@@ -244,7 +244,8 @@ const billing = read("src/routes/_authenticated/app.billing.tsx");
 const betaPage = read("src/routes/beta.tsx");
 const homeSrc = read("src/routes/index.tsx");
 // Whitespace-tolerant: JSX text wraps across source lines and renders as one.
-t("billing discloses add-ons as separately priced", /add-ons \(Affiliate\s+Programs,\s+DM\s+Champ\)\s+are\s+priced\s+separately/i.test(billing));
+// Add-ons are deferred (MVP scope): billing sells none and names none.
+t("billing sells no add-on (Affiliate Programs, DM Champ are deferred)", !/Affiliate|DM Champ|Add-ons page|Add-ons are priced/.test(billing));
 // Add-ons are deferred (MVP scope, 2026-09-28): /beta no longer offers them.
 t("/beta no longer sells add-ons", !/<strong>Add-ons<\/strong>/.test(betaPage) && !/Affiliate Programs|DM Champ/.test(betaPage));
 t("billing discloses the daily generation cap", billing.includes("GENERATION_DAILY_CAP") && /fair-use cap/.test(billing));

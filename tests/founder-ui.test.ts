@@ -132,10 +132,10 @@ t(
   pickModelTier(none, "standard") === "" && modelOptions(none).length === 0,
 );
 t(
-  "not configured: says what to set up and where",
+  "not configured: says to contact support (the AI Providers page is deferred in the MVP)",
   none.state === "none_configured" &&
-    /AI Providers/.test(none.message ?? "") &&
-    none.settingsPath === "/app/settings/ai",
+    /Contact support/.test(none.message ?? "") &&
+    !/AI Providers/.test(none.message ?? ""),
 );
 t(
   "platform paused: nothing selectable",
@@ -189,8 +189,8 @@ t(
   noneHtml.slice(0, 300),
 );
 t(
-  "not configured: links Settings → AI Providers",
-  /href="\/app\/settings\/ai"/.test(noneHtml),
+  "not configured: no link to the deferred AI settings page (it points to support)",
+  !/href="\/app\/settings\/ai"/.test(noneHtml) && /Contact support/.test(noneHtml),
   noneHtml.slice(0, 300),
 );
 t("not configured: no model is offered", !/GPT-5|Gemini/.test(noneHtml));
