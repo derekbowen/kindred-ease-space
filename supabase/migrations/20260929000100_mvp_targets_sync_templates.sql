@@ -188,7 +188,7 @@ UPDATE public.page_templates
  WHERE slug = 'category_page';
 UPDATE public.page_templates
    SET name = 'Resource Article',
-       description = 'A useful guide, with links to relevant listings and your marketplace.',
+       description = 'A useful guide written from your marketplace''s data, linking to your marketplace and your other pages.',
        is_active = true,
        config_schema = '{"version":1,"kind":"resource_article","required_scope":[],"whole_place":true,"requires_listings":false,"min_body_chars":600,"sections":["hero","body","related_listings","cta","related_pages"]}'::jsonb
  WHERE slug = 'resource_article';
