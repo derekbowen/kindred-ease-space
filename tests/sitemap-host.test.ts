@@ -1,349 +1,275 @@
 /**
- * Sitemap host handling.
+ * SITEMAP HOSTS: the exact verified hostname, nothing else. Run: bun tests/sitemap-host.test.ts
  *
- * The bug this locks down: `www.` was stripped for workspace LOOKUP and the
- * stripped value was then used to BUILD sitemap <loc> URLs. a.$slug.tsx
- * canonicalizes to the host actually requested, so the sitemap advertised
- * https://customer.com/a/x while the page declared https://www.customer.com/a/x
- * canonical — and a customer who connected only `www` has no apex route, so
- * every URL in their sitemap failed to resolve.
- *
- * Run: bun tests/sitemap-host.test.ts
+ * current_workspace_id_by_host (migration 20260929000200) no longer strips
+ * "www.": a request for www.example.com used to resolve to whichever workspace
+ * had verified the bare example.com — another tenant's pages and sitemap on a
+ * host nobody proved. The app-side mirror (resolveTenantHost /
+ * workspaceIdForHost in src/lib/sitemap.server.ts) follows it exactly:
+ * case-insensitive, port removed, www kept, verified rows only, the same
+ * preference between the two sources. Unknown hosts get 404, a failed lookup
+ * 503 — never a guess. Behavioral (the real supabase-js client against a fake
+ * PostgREST) plus the rules shared with the page path. Offline.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import {
-  requestHost,
-  normalizeHost,
-  isPlatformHost,
-  escapeXml,
-  preferredHostMatch,
-  readInChunks,
-  LISTING_CHUNK_SIZE,
-  LISTING_MAX_CHUNKS,
-  type HostMatch,
-} from "../src/lib/sitemap.server";
-import { isThinPage, isThinPageMeasured, thinPageBodyChars, buildListingCounter, THIN_PAGE_MIN_BODY_CHARS } from "../src/lib/thin-page";
-import { isPublicPageSlug, PUBLIC_PAGE_SLUG_RE } from "../src/lib/public-page-slug";
-import {
-  isPublicPageSlug as pageRouteIsPublicPageSlug,
-  PUBLIC_PAGE_SLUG_RE as PAGE_ROUTE_PUBLIC_PAGE_SLUG_RE,
-} from "../src/lib/public-tenant-page.functions";
+import { FakePostgrest, coverageGroupsOf, harness, type Row } from "./_support/fake-postgrest-sitemap";
 
-let pass = 0, fail = 0;
-const failed: string[] = [];
-function t(name: string, cond: boolean, extra = "") {
-  if (cond) { pass++; console.log(`  PASS  ${name}`); }
-  else { fail++; failed.push(name); console.log(`  FAIL  ${name}  ${extra}`); }
+const ORIGIN = "http://sitemap-host.test";
+process.env.SUPABASE_URL = ORIGIN;
+process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test";
+const fake = new FakePostgrest(ORIGIN);
+fake.install();
+
+const sm = await import("../src/lib/sitemap.server");
+const thin = await import("../src/lib/thin-page");
+const slugRule = await import("../src/lib/public-page-slug");
+const pageRoute = await import("../src/lib/public-tenant-page.functions");
+const { makeFilter } = await import("../src/lib/coverage/target");
+const { t, done } = harness();
+const ROOT = join(import.meta.dir, "..");
+const read = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
+
+// ---------------------------------------------------------------------------
+console.log("\n=== requestHost: what the visitor asked for ===");
+t("www is PRESERVED", sm.requestHost("www.customer.com") === "www.customer.com");
+t("apex stays apex", sm.requestHost("customer.com") === "customer.com");
+t("scheme stripped", sm.requestHost("https://www.customer.com") === "www.customer.com");
+t("port stripped", sm.requestHost("www.customer.com:8443") === "www.customer.com");
+t("path, query and fragment stripped", sm.requestHost("www.customer.com/a/x?y#z") === "www.customer.com");
+t("case folded", sm.requestHost("WWW.Customer.COM") === "www.customer.com");
+t("x-forwarded-host list takes the first entry", sm.requestHost("www.customer.com, edge.internal") === "www.customer.com");
+t("empty input is empty", sm.requestHost("") === "" && sm.requestHost(null) === "");
+
+console.log("\n=== hostKey: the resolver's key is the exact host ===");
+t("no www stripping: www and bare are two keys", sm.hostKey("www.customer.com") === "www.customer.com" && sm.hostKey("customer.com") === "customer.com");
+t("case-insensitive, port removed", sm.hostKey("WWW.Customer.COM:443") === "www.customer.com");
+t("a host that merely contains www is untouched", sm.hostKey("mywww.customer.com") === "mywww.customer.com");
+for (const junk of ["localhost", "customer.com.", "cust_omer.com", "cust%omer.com", "*.customer.com", "a b.com", "-bad.com", "", "customer..com"]) {
+  t(`"${junk}" can't be a verified hostname → no key (no LIKE wildcard ever reaches a query)`, sm.hostKey(junk) === null);
 }
+t("the old www-stripping lookup key is gone", !("normalizeHost" in sm));
 
-console.log("\n=== requestHost preserves what the visitor asked for ===");
-t("www is PRESERVED for URL building",
-  requestHost("www.customer.com") === "www.customer.com", requestHost("www.customer.com"));
-t("apex stays apex", requestHost("customer.com") === "customer.com");
-t("scheme stripped", requestHost("https://www.customer.com") === "www.customer.com");
-t("port stripped", requestHost("www.customer.com:8443") === "www.customer.com");
-t("path stripped", requestHost("www.customer.com/a/x") === "www.customer.com");
-t("case folded", requestHost("WWW.Customer.COM") === "www.customer.com");
-t("x-forwarded-host list takes the first entry",
-  requestHost("www.customer.com, edge.internal") === "www.customer.com");
-t("empty input is empty", requestHost("") === "");
-
-console.log("\n=== normalizeHost is the LOOKUP key only ===");
-t("www stripped for lookup", normalizeHost("www.customer.com") === "customer.com");
-t("apex and www share one lookup key",
-  normalizeHost("www.customer.com") === normalizeHost("customer.com"));
-t("only a LEADING www is stripped",
-  normalizeHost("www.www-hosting.com") === "www-hosting.com",
-  normalizeHost("www.www-hosting.com"));
-t("a host merely containing www is untouched",
-  normalizeHost("mywww.customer.com") === "mywww.customer.com");
-
-console.log("\n=== the two must not be the same function ===");
-{
-  // This is the actual regression. If these ever collapse back into one, the
-  // sitemap starts emitting URLs the page does not canonicalize to.
-  t("requestHost and normalizeHost DIFFER on a www host",
-    requestHost("www.customer.com") !== normalizeHost("www.customer.com"));
-  t("they agree on an apex host",
-    requestHost("customer.com") === normalizeHost("customer.com"));
-}
-
-console.log("\n=== platform hosts never serve a tenant sitemap ===");
-t("apex platform host detected", isPlatformHost("founders.click"));
-t("www platform host detected", isPlatformHost("www.founders.click"));
-t("platform host with port detected", isPlatformHost("www.founders.click:443"));
-t("a customer domain is not a platform host", !isPlatformHost("www.customer.com"));
+console.log("\n=== platform hosts ===");
+t("founders.click is a platform host", sm.isPlatformHost("founders.click"));
+t("www.founders.click is a platform host", sm.isPlatformHost("www.founders.click") && sm.isPlatformHost("WWW.founders.click:443"));
+t("the platform host set is exact: no other subdomain", !sm.isPlatformHost("app.founders.click") && !sm.isPlatformHost("founders.click.evil.com"));
+t("a customer domain is not a platform host", !sm.isPlatformHost("www.customer.com"));
+t("the platform sitemap answers on the platform hosts (and a local dev server)",
+  sm.servesPlatformSitemap("www.founders.click") && sm.servesPlatformSitemap("founders.click") && sm.servesPlatformSitemap("localhost:3000"));
+t("…and nowhere else", !sm.servesPlatformSitemap("customer.com") && !sm.servesPlatformSitemap("www.customer.com") && !sm.servesPlatformSitemap(""));
+const securityHeaders = read("src/lib/security-headers.ts");
+t("…from the one platform host list (security-headers.ts)", /import \{ PLATFORM_HOSTS \} from "@\/lib\/security-headers";/.test(read("src/lib/sitemap.server.ts")) && /PLATFORM_HOSTS: ReadonlySet<string> = new Set\(\["founders\.click", "www\.founders\.click"\]\)/.test(securityHeaders));
 
 console.log("\n=== XML escaping ===");
-t("ampersand escaped", escapeXml("a&b") === "a&amp;b");
-t("angle brackets escaped", escapeXml("<x>") === "&lt;x&gt;");
-t("quotes escaped", escapeXml("\"'") === "&quot;&apos;");
+t("ampersand escaped", sm.escapeXml("a&b") === "a&amp;b");
+t("angle brackets escaped", sm.escapeXml("<x>") === "&lt;x&gt;");
+t("quotes escaped", sm.escapeXml("\"'") === "&quot;&apos;");
 
-console.log("\n=== host resolution prefers proof of ownership (S2) ===");
+console.log("\n=== the preference rule, shared with the SQL resolver ===");
 {
-  // The hole: workspace A claimed customer.com (which seeded its
-  // marketplace_domain), never verified, and the claim expired. Workspace B
-  // claimed and VERIFIED customer.com. Two sources now name two workspaces,
-  // and "first match" used to be whichever a query returned first.
   const A = "11111111-1111-1111-1111-111111111111";
   const B = "22222222-2222-2222-2222-222222222222";
   const C = "33333333-3333-3333-3333-333333333333";
-  const custom = (workspaceId: string, verifiedAt: string | null): HostMatch =>
+  const custom = (workspaceId: string, verifiedAt: string | null): import("../src/lib/sitemap.server").HostMatch =>
     ({ workspaceId, source: "workspace_domains", verifiedAt });
-  const legacy = (workspaceId: string, verifiedAt: string | null): HostMatch =>
+  const legacy = (workspaceId: string, verifiedAt: string | null): import("../src/lib/sitemap.server").HostMatch =>
     ({ workspaceId, source: "marketplace_domain", verifiedAt });
+  const pick = (m: Parameters<typeof sm.preferredHostMatch>[0]) => sm.preferredHostMatch(m)?.workspaceId ?? null;
+  t("no candidates resolves to nothing", pick([]) === null);
+  t("a lone legacy match still resolves", pick([legacy(A, "2026-01-01T00:00:00Z")]) === A);
+  t("the verified custom domain wins over the legacy branch", pick([legacy(A, "2026-09-20T00:00:00Z"), custom(B, "2026-09-01T00:00:00Z")]) === B);
+  t("…regardless of input order", pick([custom(B, "2026-09-01T00:00:00Z"), legacy(A, "2026-09-20T00:00:00Z")]) === B);
+  t("…and even when neither has a date", pick([legacy(A, null), custom(B, null)]) === B);
+  t("within a source the most recent verification wins", pick([legacy(A, "2026-01-01T00:00:00Z"), legacy(B, "2026-06-01T00:00:00Z")]) === B);
+  t("a dated verification beats an undated one (NULLS LAST)", pick([legacy(A, null), legacy(B, "2020-01-01T00:00:00Z")]) === B);
+  t("an unparseable date counts as undated", pick([legacy(A, "not a date"), legacy(B, "2020-01-01T00:00:00Z")]) === B);
+  t("a full tie goes to the lowest workspace id", pick([legacy(C, null), legacy(A, null), legacy(B, null)]) === A);
 
-  t("no candidates resolves to nothing", preferredHostMatch([]) === null);
-  t("a lone legacy match still resolves", preferredHostMatch([legacy(A, "2026-01-01T00:00:00Z")])?.workspaceId === A);
-  t("a lone verified custom domain resolves", preferredHostMatch([custom(B, "2026-09-01T00:00:00Z")])?.workspaceId === B);
-
-  t("the verified custom domain wins over the legacy branch",
-    preferredHostMatch([legacy(A, "2026-09-20T00:00:00Z"), custom(B, "2026-09-01T00:00:00Z")])?.workspaceId === B);
-  t("…regardless of input order",
-    preferredHostMatch([custom(B, "2026-09-01T00:00:00Z"), legacy(A, "2026-09-20T00:00:00Z")])?.workspaceId === B);
-  t("…even when the legacy verification is more recent",
-    preferredHostMatch([legacy(A, "2026-09-22T00:00:00Z"), custom(B, "2025-01-01T00:00:00Z")])?.workspaceId === B);
-  t("…and even when the legacy match has no date at all",
-    preferredHostMatch([legacy(A, null), custom(B, null)])?.workspaceId === B);
-
-  t("within the legacy branch the most recent verification wins",
-    preferredHostMatch([legacy(A, "2026-01-01T00:00:00Z"), legacy(B, "2026-06-01T00:00:00Z")])?.workspaceId === B);
-  t("a dated verification beats an undated one (NULLS LAST)",
-    preferredHostMatch([legacy(A, null), legacy(B, "2020-01-01T00:00:00Z")])?.workspaceId === B);
-  t("an unparseable date counts as undated",
-    preferredHostMatch([legacy(A, "not a date"), legacy(B, "2020-01-01T00:00:00Z")])?.workspaceId === B);
-  t("a full tie is settled by the lowest workspace id, deterministically",
-    preferredHostMatch([legacy(C, null), legacy(A, null), legacy(B, null)])?.workspaceId === A &&
-      preferredHostMatch([legacy(B, null), legacy(A, null), legacy(C, null)])?.workspaceId === A);
-
-  const input = [legacy(A, "2026-09-20T00:00:00Z"), custom(B, "2026-09-01T00:00:00Z")];
-  const before = JSON.stringify(input);
-  preferredHostMatch(input);
-  t("the input is not reordered", JSON.stringify(input) === before);
-
-  // The database applies the same rule; the two must not drift apart.
-  const ROOT = join(import.meta.dir, "..");
-  const mig = readFileSync(join(ROOT, "supabase/migrations/20260923000500_host_resolver_prefers_verified_domain.sql"), "utf8");
-  t("the SQL resolver orders the same way: custom domain first, newest verification, lowest id",
-    mig.includes("ORDER BY priority ASC, verified_at DESC NULLS LAST, id ASC"));
-  t("the SQL gives workspace_domains priority 0 and marketplace_domain priority 1",
-    /0 AS priority[\s\S]*FROM public\.workspace_domains wd[\s\S]*1 AS priority[\s\S]*FROM public\.workspaces w/.test(mig));
-  const sitemapSrc = readFileSync(join(ROOT, "src/lib/sitemap.server.ts"), "utf8");
-  t("workspaceIdForHost resolves through preferredHostMatch",
-    /export async function workspaceIdForHost[\s\S]*preferredHostMatch\(matches\)/.test(sitemapSrc));
-  t("workspaceIdForHost still reads verified rows only",
-    /\.eq\("verified", true\)/.test(sitemapSrc) && /\.not\("domain_verified_at", "is", null\)/.test(sitemapSrc));
+  const mig = read("supabase/migrations/20260929000200_domain_write_lock_and_exact_host.sql");
+  const fn = mig.slice(mig.indexOf("CREATE OR REPLACE FUNCTION public.current_workspace_id_by_host"), mig.indexOf("$$;", mig.indexOf("CREATE OR REPLACE FUNCTION public.current_workspace_id_by_host")));
+  t("the SQL resolver compares lower(hostname) with the normalized host exactly", /lower\(wd\.hostname\) = n\.h/.test(fn) && /wd\.verified = true/.test(fn));
+  t("…and lower(marketplace_domain) with it, gated on domain_verified_at", /lower\(w\.marketplace_domain\) = n\.h/.test(fn) && /w\.domain_verified_at IS NOT NULL/.test(fn));
+  t("…normalizing only case, surrounding space and the port", /lower\(btrim\(regexp_replace\(COALESCE\(_host, ''\), ':\\d\+\$', ''\)\)\)/.test(fn));
+  t("…with no www stripping", !/www/i.test(fn));
+  t("…and the same order: custom domain first, newest verification, lowest id", /ORDER BY priority ASC, verified_at DESC NULLS LAST, id ASC/.test(fn));
+  const src = read("src/lib/sitemap.server.ts");
+  const resolver = src.slice(src.indexOf("export async function resolveTenantHost"), src.indexOf("export async function workspaceIdForHost"));
+  t("the app mirror reads verified domain rows by case-insensitive exact host", /\.from\("workspace_domains"\)[\s\S]*?\.eq\("verified", true\)[\s\S]*?\.ilike\("hostname", host\)/.test(resolver));
+  t("…and the legacy branch only with a domain_verified_at", /\.ilike\("marketplace_domain", host\)[\s\S]*?\.not\("domain_verified_at", "is", null\)/.test(resolver));
+  t("…re-compares every row exactly (lower-cased stored value === host)", /String\(d\.hostname \?\? ""\)\.toLowerCase\(\) === host/.test(resolver) && /String\(w\.marketplace_domain \?\? ""\)\.toLowerCase\(\) === host/.test(resolver));
+  t("…resolves through preferredHostMatch", /preferredHostMatch\(matches\)/.test(resolver));
+  t("…and nothing in the generator strips www any more", !/replace\(\/\^www\\\./.test(src));
 }
 
-console.log("\n=== the thin-page rule is one rule, shared by the page and the sitemap (P3) ===");
-{
-  t("the threshold is 300 body characters", THIN_PAGE_MIN_BODY_CHARS === 300);
-  t("no listings and 299 characters is thin", isThinPage({ listingCount: 0, bodyMarkdown: "x".repeat(299) }));
-  t("no listings and exactly 300 characters is not thin", !isThinPage({ listingCount: 0, bodyMarkdown: "x".repeat(300) }));
-  t("one listing rescues an empty body", !isThinPage({ listingCount: 1, bodyMarkdown: "" }));
-  t("a null body with no listings is thin", isThinPage({ listingCount: 0, bodyMarkdown: null }));
-  t("an undefined body with no listings is thin", isThinPage({ listingCount: 0, bodyMarkdown: undefined }));
-  t("whitespace does not count as body", isThinPage({ listingCount: 0, bodyMarkdown: " ".repeat(400) }));
-  t("surrounding whitespace is trimmed before counting",
-    isThinPage({ listingCount: 0, bodyMarkdown: `  ${"x".repeat(299)}  ` }) &&
-      !isThinPage({ listingCount: 0, bodyMarkdown: `  ${"x".repeat(300)}  ` }));
+// ---------------------------------------------------------------------------
+console.log("\n=== behavior: www and bare are different hosts ===");
+const WS_A = "aaaaaaaa-0000-4000-8000-000000000001";
+const WS_B = "bbbbbbbb-0000-4000-8000-000000000002";
+const WS_C = "cccccccc-0000-4000-8000-000000000003";
+const T_CITY = "7e000000-0000-4000-8000-000000000001";
+const place = (city: string) => makeFilter(["country", "region", "city"], { countryKey: "us", regionKey: "tx", cityKey: city, categoryKey: null });
 
-  // Both callers must use the shared predicate, not a private copy of it.
-  const ROOT = join(import.meta.dir, "..");
-  const page = readFileSync(join(ROOT, "src/routes/a.$slug.tsx"), "utf8");
-  t("a.$slug.tsx imports the shared predicate", /import \{ isThinPage \} from "@\/lib\/thin-page";/.test(page));
-  t("a.$slug.tsx decides noindex with it",
-    /const isThin = isThinPage\(\{ listingCount: p\.listings\.length, bodyMarkdown: p\.body_markdown \}\);/.test(page));
-  t("a.$slug.tsx no longer restates the numbers", !/bodyLen < 300/.test(page));
-  const sitemap = readFileSync(join(ROOT, "src/lib/sitemap.server.ts"), "utf8");
-  // The sitemap measures each body as its chunk arrives and keeps only the
-  // length, then applies the same rule to it (isThinPageMeasured is what
-  // isThinPage itself calls).
-  t("the sitemap imports the shared predicate",
-    /from "@\/lib\/thin-page"/.test(sitemap) &&
-      /body_chars: thinPageBodyChars\(row\.body_markdown\)/.test(sitemap) &&
-      /isThinPageMeasured\(\{ listingCount, bodyChars: p\.body_chars \}\)/.test(sitemap));
-  t("…the measured form is the same rule",
-    [0, 1].every((listingCount) =>
-      ["", "x".repeat(299), `  ${"x".repeat(299)}  `, "x".repeat(300), " ".repeat(400), null, undefined].every(
-        (body) => isThinPage({ listingCount, bodyMarkdown: body }) === isThinPageMeasured({ listingCount, bodyChars: thinPageBodyChars(body) }),
-      )));
-  t("the sitemap reads listings in one query with an exact count",
-    /\.from\("tenant_listings"\)\s*\.select\("city, state, category", \{ count: "exact" \}\)/.test(sitemap));
-  t("the sitemap fails open when the listings read errors or is cut short",
-    /listingsComplete =\s*!listingsRead\.error &&/.test(sitemap) && /listingsRead\.count <= listingRows\.length/.test(sitemap) &&
-      /const countListings = listingsComplete \? buildListingCounter\(listingRows\) : null;/.test(sitemap));
-  t("legacy content_pages count as having no listings", /p\.legacy \? 0 : countListings\(p\.listing_filter \?\? \{\}\)/.test(sitemap));
-  t("a slug is claimed before the thin test, so a thin page never yields to a legacy twin",
-    sitemap.indexOf("seen.add(slug);") < sitemap.indexOf("if (countListings) {"));
-}
-
-console.log("\n=== listing counts per page filter, matched the way the page query matches ===");
-{
-  const count = buildListingCounter([
-    { city: "Austin", state: "TX", category: "pool" },
-    { city: "austin", state: "tx", category: "cabin" },
-    { city: "Dallas", state: "TX", category: null },
-    { city: null, state: null, category: "pool" },
-    { city: " Austin ", state: "TX", category: "pool" },
+function seed() {
+  fake.set("workspace_domains", [
+    { id: "d1", workspace_id: WS_A, hostname: "pools.example", verified: true, verified_at: "2026-09-01T00:00:00Z", status: "active" },
+    { id: "d2", workspace_id: WS_B, hostname: "www.boats.example", verified: true, verified_at: "2026-09-01T00:00:00Z", status: "active" },
+    // Claimed but never verified: proves nothing.
+    { id: "d3", workspace_id: WS_C, hostname: "unproven.example", verified: false, verified_at: null, status: "verification_required" },
   ]);
-  t("no filter counts every published listing", count({}) === 5, String(count({})));
-  t("null filter counts every published listing", count(null) === 5 && count(undefined) === 5);
-  t("city matches case-insensitively", count({ city: "AUSTIN" }) === 3, String(count({ city: "AUSTIN" })));
-  t("city is trimmed on both sides", count({ city: " austin " }) === 3);
-  t("city + state", count({ city: "austin", state: "tx" }) === 3);
-  t("city + category", count({ city: "Austin", category: "pool" }) === 2, String(count({ city: "Austin", category: "pool" })));
-  t("state alone", count({ state: "tx" }) === 4, String(count({ state: "tx" })));
-  t("category alone is exact, like the page's .eq()", count({ category: "pool" }) === 3 && count({ category: "Pool" }) === 0);
-  t("a listing with no city never satisfies a city filter", count({ city: "" }) === 5 && count({ city: "Nowhere" }) === 0);
-  t("empty filter values mean no filter, like the page's `if (f.city)`", count({ city: "", state: "", category: "" }) === 5);
-  t("a fully specified miss is 0", count({ city: "Dallas", state: "TX", category: "pool" }) === 0);
-  t("non-string filter values are stringified", count({ city: 42 as unknown }) === 0);
-  t("an empty catalogue counts nothing", buildListingCounter([])({}) === 0 && buildListingCounter([])({ city: "x" }) === 0);
-}
-
-console.log("\n=== the listings read is paged past the API row cap (B4) ===");
-{
-  // PostgREST returns at most max-rows (the Supabase default, 1000) per
-  // request, whatever .limit() asked for. A workspace with more published
-  // listings than that got a short read on every fetch, so listingsComplete
-  // was always false: the thin-page filter was skipped and an error logged,
-  // for exactly the workspaces with the most pages.
-  t("chunks are 1000 rows: the PostgREST default max-rows", LISTING_CHUNK_SIZE === 1000);
-  t("at most 50 chunks are read", LISTING_MAX_CHUNKS === 50);
-  type Row = { id: number };
-  const catalogue = (n: number): Row[] => Array.from({ length: n }, (_, i) => ({ id: i }));
-  // Serves a catalogue the way PostgREST does: `count` is the total, a range
-  // returns at most `cap` rows.
-  const serve = (all: Row[], cap = 1000) => {
-    const ranges: Array<[number, number]> = [];
-    const fetchChunk = async (from: number, to: number) => {
-      ranges.push([from, to]);
-      return { data: all.slice(from, Math.min(to + 1, from + cap)), error: null, count: all.length };
-    };
-    return { ranges, fetchChunk };
+  fake.set("workspaces", [
+    { id: WS_A, marketplace_domain: "pools.example", domain_verified_at: "2026-09-01T00:00:00Z", subscription_status: "active", current_period_end: "2099-01-01T00:00:00Z" },
+    { id: WS_B, marketplace_domain: "www.boats.example", domain_verified_at: "2026-09-01T00:00:00Z", subscription_status: "active", current_period_end: "2099-01-01T00:00:00Z" },
+    // A legacy verified marketplace_domain stored in mixed case.
+    { id: WS_C, marketplace_domain: "Legacy.Example", domain_verified_at: "2026-08-01T00:00:00Z", subscription_status: "active", current_period_end: "2099-01-01T00:00:00Z" },
+  ]);
+  fake.set("page_templates", [{ id: T_CITY, slug: "city_hub", is_active: true }]);
+  const pageRow = (ws: string, slug: string, n: number): Row => ({
+    id: `a0000000-0000-4000-8000-00000000000${n}`,
+    workspace_id: ws,
+    template_id: T_CITY,
+    slug,
+    status: "published",
+    noindex: false,
+    listing_filter: place("austin"),
+    published_at: "2026-09-01T00:00:00Z",
+    created_at: "2026-09-01T00:00:00Z",
+    updated_at: "2026-09-02T00:00:00Z",
+  });
+  fake.set("tenant_pages", [pageRow(WS_A, "a-pools", 1), pageRow(WS_B, "b-boats", 2), pageRow(WS_C, "c-legacy", 3)]);
+  fake.set("content_pages", []);
+  fake.set("tenant_listings", [WS_A, WS_B, WS_C].map((ws, i) => ({
+    id: `d0000000-0000-4000-8000-00000000000${i}`, workspace_id: ws, state_published: true,
+    country_key: "us", region_key: "tx", city_key: "austin", category_key: null, city: "austin",
+  })));
+  fake.rpcs = {
+    workspace_granted_pages: () => 0,
+    inventory_coverage_groups: (args) => coverageGroupsOf(fake.rows("tenant_listings"), String(args._workspace_id)),
   };
-  {
-    const { ranges, fetchChunk } = serve(catalogue(2500));
-    const r = await readInChunks(fetchChunk);
-    t("2500 listings are collected in full, with the count", r.error === null && r.count === 2500 && r.data?.length === 2500, `${r.data?.length} of ${r.count}`);
-    t("…in three ranges of 1000, stopping at the count",
-      JSON.stringify(ranges) === JSON.stringify([[0, 999], [1000, 1999], [2000, 2999]]), JSON.stringify(ranges));
-    t("…every row exactly once", new Set(r.data!.map((x) => x.id)).size === 2500);
-  }
-  {
-    const { ranges, fetchChunk } = serve(catalogue(1000));
-    const r = await readInChunks(fetchChunk);
-    t("exactly 1000 listings need one read, no probing for more", r.data?.length === 1000 && ranges.length === 1, String(ranges.length));
-  }
-  {
-    const { ranges, fetchChunk } = serve(catalogue(999));
-    const r = await readInChunks(fetchChunk);
-    t("999 listings need one read", r.data?.length === 999 && ranges.length === 1);
-  }
-  {
-    const { ranges, fetchChunk } = serve(catalogue(0));
-    const r = await readInChunks(fetchChunk);
-    t("an empty catalogue is one read of nothing", r.data?.length === 0 && r.count === 0 && ranges.length === 1);
-  }
-  {
-    const { ranges, fetchChunk } = serve(catalogue(3000), 500);
-    const r = await readInChunks(fetchChunk);
-    t("a server capped below the chunk size is paged from where each read stopped",
-      r.data?.length === 3000 && ranges.length === 6 && ranges[1]![0] === 500, JSON.stringify(ranges));
-  }
-  {
-    const { ranges, fetchChunk } = serve(catalogue(60_000));
-    const r = await readInChunks(fetchChunk);
-    t("the hard stop: 50 chunks, then the read is reported short of its count",
-      ranges.length === 50 && r.data?.length === 50_000 && r.count === 60_000 && r.error === null, `${ranges.length} chunks, ${r.data?.length} of ${r.count}`);
-    t("…which is exactly the sitemap's fail-open condition (count > rows)", !(r.count == null || r.count <= r.data!.length));
-  }
-  {
-    let n = 0;
-    const all = catalogue(2500);
-    const r = await readInChunks(async (from, to) => {
-      n++;
-      if (n === 2) return { data: null, error: { message: "boom" }, count: 2500 };
-      return { data: all.slice(from, to + 1), error: null, count: 2500 };
-    });
-    t("a failing chunk stops the read and reports the error", n === 2 && r.error?.message === "boom");
-    t("…with the rows collected so far and the count, so the caller fails open", r.data?.length === 1000 && r.count === 2500 && r.error !== null);
-  }
-  {
-    const all = catalogue(1500);
-    const r = await readInChunks(async (from, to) => ({ data: all.slice(from, to + 1), error: null, count: null }));
-    t("without a count, a short chunk ends the read", r.data?.length === 1500 && r.count === null);
-  }
-  {
-    const { ranges, fetchChunk } = serve(catalogue(25), 10);
-    const r = await readInChunks(fetchChunk, { chunkSize: 10, maxChunks: 2 });
-    t("chunk size and hard stop are parameters of the loop", r.data?.length === 20 && ranges.length === 2 && r.count === 25);
-  }
-
-  const ROOT = join(import.meta.dir, "..");
-  const sitemap = readFileSync(join(ROOT, "src/lib/sitemap.server.ts"), "utf8");
-  const chunkedAt = sitemap.indexOf("readInChunks<ListingLocation>((from, to) =>");
-  const listingsAt = sitemap.indexOf('.from("tenant_listings")');
-  // The pages are read the same way now; the listings read is the one after its .from().
-  const rangeAt = sitemap.indexOf(".range(from, to)", listingsAt);
-  t("the sitemap's listings read goes through readInChunks with a .range() per chunk", chunkedAt > 0 && listingsAt > chunkedAt && rangeAt > listingsAt);
-  const listingQuery = sitemap.slice(listingsAt, rangeAt);
-  t("…over a fixed order, so chunks neither overlap nor skip", /\.order\("id", \{ ascending: true \}\)/.test(listingQuery));
-  t("…keeping the workspace and published filters", /\.eq\("workspace_id", workspaceId\)\s*\.eq\("state_published", true\)/.test(listingQuery));
-  t("…and no longer trusting a .limit() the API would cap anyway", !/\.limit\(/.test(listingQuery));
-  t("the completeness rule is unchanged: an error or fewer rows than the count fails open",
-    /listingsComplete =\s*!listingsRead\.error &&\s*\(listingsRead\.count == null \|\| listingsRead\.count <= listingRows\.length\);/.test(sitemap));
-  t("…and the incomplete case is still logged", /listings read incomplete, skipping the thin-page filter/.test(sitemap));
+  fake.failWhen = null;
 }
+// Through the edge, request.url is the origin's URL and the tenant host is a header.
+const get = (host: string) => sm.tenantSitemapResponse(host, "https://www.founders.click/a/sitemap.xml");
+const locs = (xml: string) => [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]!);
 
-console.log("\n=== the sitemap never advertises a slug the page route refuses (B5) ===");
+seed();
 {
-  // getPublicTenantPage refuses anything outside PUBLIC_PAGE_SLUG_RE before it
-  // touches a query. A sitemap that lists such a slug sends Google to a URL
-  // that can only 404.
-  const ROOT = join(import.meta.dir, "..");
-  const PURE = join(ROOT, "src/lib/public-page-slug.ts");
-  t("the rule lives in a pure module", existsSync(PURE));
-  const pure = existsSync(PURE) ? readFileSync(PURE, "utf8") : "";
-  t("…with no imports of its own", !/^\s*import /m.test(pure));
-  t("…defining the regex and the predicate",
-    /export const PUBLIC_PAGE_SLUG_RE = \/\^\[a-z0-9-\]\{1,200\}\$\/;/.test(pure) && /export function isPublicPageSlug\(slug: string\): boolean/.test(pure));
-  t("the page route re-exports the very same rule (existing imports keep working)",
-    pageRouteIsPublicPageSlug === isPublicPageSlug && PAGE_ROUTE_PUBLIC_PAGE_SLUG_RE === PUBLIC_PAGE_SLUG_RE);
-  const pageSrc = readFileSync(join(ROOT, "src/lib/public-tenant-page.functions.ts"), "utf8");
-  t("…and no longer defines a copy",
-    !/export const PUBLIC_PAGE_SLUG_RE = \//.test(pageSrc) && /export \{ PUBLIC_PAGE_SLUG_RE, isPublicPageSlug \} from "@\/lib\/public-page-slug";/.test(pageSrc));
-  const sitemap = readFileSync(join(ROOT, "src/lib/sitemap.server.ts"), "utf8");
-  t("the sitemap imports the predicate from the pure module", /import \{ isPublicPageSlug \} from "@\/lib\/public-page-slug";/.test(sitemap));
-  const stripAt = sitemap.indexOf('const slug = String(p.slug || "").replace(/^\\/+/, "");');
-  const filterAt = sitemap.indexOf("if (!slug || !isPublicPageSlug(slug) || seen.has(slug)) return false;");
-  t("…and filters every row (tenant and legacy) with it, right after the leading-slash strip",
-    stripAt > 0 && filterAt > stripAt && filterAt - stripAt < 250, `${stripAt} / ${filterAt}`);
-  t("…before the slug is claimed, so a refused slug never shadows a legacy twin", filterAt > 0 && filterAt < sitemap.indexOf("seen.add(slug);"));
-
-  // The filter, applied the way the sitemap applies it; yields the slug the
-  // <loc> would carry.
-  const advertised = (slugs: string[]) => {
-    const seen = new Set<string>();
-    const out: string[] = [];
-    for (const raw of slugs) {
-      const slug = String(raw || "").replace(/^\/+/, "");
-      if (!slug || !isPublicPageSlug(slug) || seen.has(slug)) continue;
-      seen.add(slug);
-      out.push(slug);
-    }
-    return out;
-  };
-  t("a normal slug is advertised", advertised(["austin-pools"]).length === 1);
-  t("a leading slash is stripped before the rule is applied", JSON.stringify(advertised(["/austin-pools"])) === '["austin-pools"]');
-  t("a filter-widening slug is dropped", advertised(["x,slug.neq.zzz"]).length === 0);
-  t("uppercase, dots, path separators and spaces are dropped", advertised(["Austin", "a.b", "a/b", "a b"]).length === 0);
-  t("a 201-character slug is dropped, 200 passes", advertised(["a".repeat(201)]).length === 0 && advertised(["a".repeat(200)]).length === 1);
-  t("a duplicate is still dropped", advertised(["a", "/a"]).length === 1);
+  const bare = await get("pools.example");
+  t("the verified host gets its sitemap", bare.status === 200 && locs(bare.body).join() === "https://pools.example/a/a-pools", `${bare.status} ${bare.body}`);
+  const www = await get("www.pools.example");
+  t("www.<verified host> is NOT the verified host: 404, no sitemap", www.status === 404 && !www.body.includes("a-pools"), `${www.status} ${www.body}`);
+  const wwwB = await get("www.boats.example");
+  t("a workspace that verified www gets its sitemap on www", wwwB.status === 200 && locs(wwwB.body).join() === "https://www.boats.example/a/b-boats");
+  const bareB = await get("boats.example");
+  t("…and nothing on the bare host it never proved", bareB.status === 404);
+  const upper = await get("POOLS.Example:8443");
+  t("case and port don't matter: POOLS.Example:8443 is pools.example", upper.status === 200 && locs(upper.body).join() === "https://pools.example/a/a-pools");
+  const fwd = await get("pools.example, edge.internal");
+  t("an x-forwarded-host list resolves by its first entry", fwd.status === 200);
+  const legacyHost = await get("legacy.example");
+  t("a legacy marketplace_domain stored in mixed case still resolves (lower(stored) = host)", legacyHost.status === 200 && locs(legacyHost.body).join() === "https://legacy.example/a/c-legacy", `${legacyHost.status}`);
+  t("URLs are built on exactly the requested verified host", locs(wwwB.body).every((l) => l.startsWith("https://www.boats.example/a/")) && locs(bare.body).every((l) => l.startsWith("https://pools.example/a/")));
+}
+{
+  const unknown = await get("nobody.example");
+  t("an unknown host gets 404", unknown.status === 404 && unknown.body === "not found");
+  const unproven = await get("unproven.example");
+  t("a claimed but unverified host gets 404", unproven.status === 404);
+  fake.update("workspaces", (w) => w.id === WS_C, { domain_verified_at: null });
+  const unstamped = await get("legacy.example");
+  t("a legacy marketplace_domain without domain_verified_at gets 404", unstamped.status === 404);
+  seed();
+  for (const platform of ["www.founders.click", "founders.click"]) {
+    const res = await get(platform);
+    t(`the platform host ${platform} has no /a/sitemap.xml (404)`, res.status === 404);
+  }
+  fake.clearHits();
+  for (const junk of ["cust%omer.example", "pools_example.com", "*.example", "localhost"]) {
+    const res = await get(junk);
+    t(`"${junk}" → 404`, res.status === 404);
+  }
+  t("…and none of those reached the database", fake.hits.length === 0, String(fake.hits.length));
+  t("404s are not cached", (await get("nobody.example")).headers["Cache-Control"] === "no-store");
+}
+{
+  // Another tenant is never served for a host it doesn't own.
+  const a = await get("pools.example");
+  const b = await get("www.boats.example");
+  t("each host lists only its own workspace's pages", !locs(a.body).some((l) => /b-boats|c-legacy/.test(l)) && !locs(b.body).some((l) => /a-pools|c-legacy/.test(l)));
+}
+{
+  // A failed lookup is not a verdict: 503, never the other source's answer.
+  seed();
+  const quiet = console.error;
+  console.error = () => {};
+  fake.failWhen = (h) => (h.name === "workspace_domains" ? "timeout" : null);
+  const res = await get("pools.example");
+  const id = await sm.workspaceIdForHost("pools.example");
+  fake.failWhen = null;
+  console.error = quiet;
+  t("the verified-domain read failing → 503, not the legacy branch's guess", res.status === 503 && res.headers["Retry-After"] === "300", `${res.status}`);
+  t("workspaceIdForHost answers null on a failed lookup (the domain test then says not-connected)", id === null);
+  t("workspaceIdForHost resolves the exact host otherwise", (await sm.workspaceIdForHost("pools.example")) === WS_A && (await sm.workspaceIdForHost("www.pools.example")) === null);
+}
+{
+  seed();
+  // The verified custom domain outranks a legacy stamp for the same host.
+  fake.set("workspaces", [
+    ...fake.rows("workspaces"),
+    { id: WS_C + "x", marketplace_domain: "pools.example", domain_verified_at: "2026-09-25T00:00:00Z", subscription_status: "active", current_period_end: "2099-01-01T00:00:00Z" },
+  ]);
+  const res = await get("pools.example");
+  t("a newer legacy stamp on the same host never outranks the verified domain row", locs(res.body).join() === "https://pools.example/a/a-pools");
 }
 
-console.log(`\n${pass} passed, ${fail} failed\n`);
-if (fail) console.log("FAILED:\n  " + failed.join("\n  ") + "\n");
-process.exit(fail ? 1 : 0);
+// ---------------------------------------------------------------------------
+console.log("\n=== the cache window is explicit and short ===");
+{
+  seed();
+  const res = await get("pools.example");
+  t("Cache-Control: public, max-age=300, s-maxage=300", res.headers["Cache-Control"] === "public, max-age=300, s-maxage=300");
+  t("Vary: Host, X-Forwarded-Host (one URL, many hosts)", res.headers.Vary === "Host, X-Forwarded-Host");
+  t("Content-Type: application/xml; charset=utf-8", res.headers["Content-Type"] === "application/xml; charset=utf-8");
+  t("the window is five minutes", sm.SITEMAP_CACHE_SECONDS === 300);
+}
+
+// ---------------------------------------------------------------------------
+console.log("\n=== the thin rule: one module, never looser than the renderer's ===");
+t("the threshold is 300 body characters", thin.THIN_PAGE_MIN_BODY_CHARS === 300);
+t("no listings and 299 characters is thin", thin.isThinPage({ listingCount: 0, bodyMarkdown: "x".repeat(299) }));
+t("no listings and exactly 300 characters is not thin", !thin.isThinPage({ listingCount: 0, bodyMarkdown: "x".repeat(300) }));
+t("one listing rescues an empty body", !thin.isThinPage({ listingCount: 1, bodyMarkdown: "" }));
+t("null / undefined bodies with no listings are thin", thin.isThinPage({ listingCount: 0, bodyMarkdown: null }) && thin.isThinPage({ listingCount: 0, bodyMarkdown: undefined }));
+t("whitespace does not count as body", thin.isThinPage({ listingCount: 0, bodyMarkdown: " ".repeat(400) }));
+t("a listing template with no matching listings is thin, however long its text", thin.isThinForTemplate({ requiresListings: true, listingCount: 0, bodyChars: 5000 }));
+t("a listing template with listings is not thin, even with a short body", !thin.isThinForTemplate({ requiresListings: true, listingCount: 1, bodyChars: 0 }));
+t("a page that needs no listings is judged on its body alone", thin.isThinForTemplate({ requiresListings: false, listingCount: 50, bodyChars: 299 }) && !thin.isThinForTemplate({ requiresListings: false, listingCount: 0, bodyChars: 300 }));
+{
+  let never = true;
+  for (const requiresListings of [true, false])
+    for (const listingCount of [0, 1, 7])
+      for (const bodyChars of [0, 120, 299, 300, 800])
+        if (thin.isThinPageMeasured({ listingCount, bodyChars }) && !thin.isThinForTemplate({ requiresListings, listingCount, bodyChars })) never = false;
+  t("every page isThinPage calls thin is thin by isThinForTemplate too (the sitemap never lists a page the renderer noindexes)", never);
+}
+{
+  const renderers = [
+    "src/routes/a.$slug.tsx",
+    "src/lib/public-tenant-page.functions.ts",
+    ...(existsSync(join(ROOT, "src/components/templates"))
+      ? readdirSync(join(ROOT, "src/components/templates")).map((f) => `src/components/templates/${f}`)
+      : []),
+  ].filter((f) => existsSync(join(ROOT, f)) && !f.endsWith("/"));
+  t("the public renderer decides noindex from src/lib/thin-page (not a private copy)", renderers.some((f) => /from "@\/lib\/thin-page"/.test(read(f))));
+  t("no renderer restates the 300-character number", renderers.every((f) => !/bodyLen < 300|\.length < 300/.test(read(f))));
+  t("the sitemap decides with isThinForTemplate, measuring bodies with thinPageBodyChars", /isThinForTemplate\(/.test(read("src/lib/sitemap.server.ts")) && /thinPageBodyChars\(r\.body_markdown\)/.test(read("src/lib/sitemap.server.ts")));
+}
+
+console.log("\n=== the sitemap never advertises a slug the page route refuses ===");
+t("the rule lives in a pure module", !/^\s*import /m.test(read("src/lib/public-page-slug.ts")));
+t("…/^[a-z0-9-]{1,200}$/", slugRule.PUBLIC_PAGE_SLUG_RE.source === "^[a-z0-9-]{1,200}$");
+t("the page route re-exports the very same rule", pageRoute.isPublicPageSlug === slugRule.isPublicPageSlug && pageRoute.PUBLIC_PAGE_SLUG_RE === slugRule.PUBLIC_PAGE_SLUG_RE);
+t("the sitemap imports it from the pure module", /import \{ isPublicPageSlug \} from "@\/lib\/public-page-slug";/.test(read("src/lib/sitemap.server.ts")));
+t("founders-domain-test is reserved: a static route answers it before any page", sm.RESERVED_PAGE_SLUGS.has("founders-domain-test") && existsSync(join(ROOT, "src/routes/a.founders-domain-test.tsx")));
+
+done();
