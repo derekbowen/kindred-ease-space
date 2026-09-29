@@ -38,6 +38,8 @@ export class FakeDb {
   embeds: Record<string, Record<string, Embed>> = {};
   rpcs: Record<string, RpcHandler> = {};
   hits: Hit[] = [];
+  /** PostgREST's max-rows: every GET/RPC answer is capped at this (Supabase: 1,000). */
+  maxRows: number | null = null;
   /** Called before a write is applied; throw or return a Response to fail it. */
   beforeWrite?: (op: {
     method: string;
@@ -107,6 +109,7 @@ export class FakeDb {
         let rows = out.filter((r) => matches(r, q));
         rows = order(rows, q.get("order"));
         rows = page(rows, q);
+        if (this.maxRows !== null) rows = rows.slice(0, this.maxRows);
         return json(200, rows);
       }
       return json(200, out);
@@ -117,6 +120,7 @@ export class FakeDb {
       const total = rows.length;
       rows = order(rows, q.get("order"));
       rows = page(rows, q);
+      if (this.maxRows !== null) rows = rows.slice(0, this.maxRows);
       const out = rows.map((r) => this.project(table, r, q.get("select")));
       const extra: Record<string, string> = {};
       if (/count=exact/.test(prefer))
