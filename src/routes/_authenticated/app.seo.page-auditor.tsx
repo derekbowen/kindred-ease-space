@@ -9,8 +9,10 @@ import { Loader2 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { auditPage, listRecentAudits, type PageAuditRow } from "@/lib/admin-page-auditor.functions";
 import { userMessage } from "@/lib/user-message";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/seo/page-auditor")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Page Auditor — founders.click" }] }),
   component: PageAuditorPage,
 });

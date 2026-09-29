@@ -3,6 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
 import { z } from "zod";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 // Tables exposed to the admin data-io tool. All are workspace-scoped.
 const TABLES = ["content_plan", "content_pages", "tenant_pages"] as const;
@@ -106,6 +107,10 @@ function coerceValue(raw: string): unknown {
 }
 
 // ---------- Server functions ----------
+// MVP (2026-09-28): import is deferred — getImportSchema and importTable call
+// assertFeatureAvailable("data_import") first (src/lib/features.server.ts), so
+// nothing new is written to the legacy content tables. exportTable stays
+// available: it is a member-only read of the workspace's own rows.
 const tableInput = z.object({ workspaceId: workspaceIdSchema, table: z.enum(EXPORT_TABLES) });
 
 export const exportTable = createServerFn({ method: "POST" })
@@ -153,6 +158,7 @@ export const getImportSchema = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => tableInput.parse(d))
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("data_import");
     const workspaceId = data.workspaceId;
     await assertWorkspaceMember(workspaceId, (context as any).userId);
     const tableColumns = await getTableColumns(data.table, workspaceId);
@@ -232,6 +238,7 @@ export const importTable = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => ImportTableInputSchema.parse(d))
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("data_import");
     const workspaceId = data.workspaceId;
     await assertWorkspaceMember(workspaceId, (context as any).userId);
     const parsed = parseCsv(data.csv);

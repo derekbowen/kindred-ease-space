@@ -9,8 +9,10 @@ import { Loader2, MousePointerClick, Users } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { getCityClickReport, type CityClickReport } from "@/lib/click-report.functions";
 import { userMessage } from "@/lib/user-message";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/seo/click-report")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Click Report — founders.click" }] }),
   component: ClickReportPage,
 });

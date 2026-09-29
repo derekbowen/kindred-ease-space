@@ -14,6 +14,7 @@ import { getMe } from "@/lib/auth.functions";
 import { getAddons } from "@/lib/addons.functions";
 import { SHARETRIBE_SETTINGS_PATH } from "@/lib/affiliate-requirements";
 import { edgeFunctionError } from "@/lib/edge-function-error";
+import { deferredRoute } from "@/lib/deferred-route";
 
 const addonsSearchSchema = z.object({
   success: z.coerce.string().optional(),
@@ -22,6 +23,7 @@ const addonsSearchSchema = z.object({
 });
 
 export const Route = createFileRoute("/_authenticated/app/addons")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Add-ons — founders.click" }] }),
   validateSearch: addonsSearchSchema,
   component: AddonsPage,

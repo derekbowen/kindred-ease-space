@@ -13,6 +13,13 @@ import { userMessage } from "@/lib/user-message";
 const APPLY_FAILED = "Your application didn't send. Please try again.";
 
 export const Route = createFileRoute("/apply/$slug")({
+  // DEFERRED (MVP scope, 2026-09-28): affiliate programs are not offered, so
+  // every sign-up URL is a 404 before the loader runs — no form is looked up
+  // and nothing can be submitted. The server functions refuse on their own
+  // as well (assertFeatureAvailable("affiliates"), src/lib/features.server.ts).
+  beforeLoad: () => {
+    throw notFound();
+  },
   loader: async ({ params }) => {
     const r = await getPublicAffiliateForm({ data: { slug: params.slug } });
     if (!r.form) throw notFound();

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "./admin-helpers.functions";
 import { fetchPublishedPages, resolveLinkTargetStatus } from "@/lib/page-data.helpers.server";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 export type BrokenLink = {
   from_url_path: string;
@@ -26,6 +27,7 @@ export const scanInternalLinks = createServerFn({ method: "POST" })
       data,
       context,
     }): Promise<{ totalPagesScanned: number; totalLinks: number; broken: BrokenLink[] }> => {
+      await assertFeatureAvailable("audits");
       await assertWorkspaceMember(data.workspaceId, context.userId);
 
       const pages = await fetchPublishedPages(data.workspaceId, { limit: data.sampleSize });

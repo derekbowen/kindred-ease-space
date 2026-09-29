@@ -15,6 +15,7 @@ import { ADD_META_MAX_PAGES } from "@/lib/ai/limits";
 import { AI_MESSAGES } from "@/lib/ai/customer-error";
 import type { AiBillingClass, AiDb, AiKey } from "@/lib/ai/spend.server";
 import type { OpenAiTransport } from "@/lib/ai/openai.server";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 /**
  * Confirmed mutation runner for coach insight actions. The UI shows a
@@ -474,6 +475,7 @@ export const runCoachAction = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => CoachActionInputSchema.parse(data))
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("coach");
     const { supabase, userId } = context;
     try {
       await assertWorkspaceMember(data.workspaceId, userId);

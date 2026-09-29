@@ -5,6 +5,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "./admin-helpers.functions";
 import type { AiDb } from "@/lib/ai/spend.server";
 import type { OpenAiTransport } from "@/lib/ai/openai.server";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 const sb = () => supabaseAdmin as any;
 
@@ -256,9 +257,10 @@ ${compSummary}`;
 export const auditPage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => AuditPageInputSchema.parse(d))
-  .handler(
-    async ({ data, context }): Promise<AuditPageResult> => runPageAudit(data, context.userId),
-  );
+  .handler(async ({ data, context }): Promise<AuditPageResult> => {
+    await assertFeatureAvailable("audits");
+    return runPageAudit(data, context.userId);
+  });
 
 export const listRecentAudits = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -272,6 +274,7 @@ export const listRecentAudits = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }): Promise<{ rows: PageAuditRow[] }> => {
+    await assertFeatureAvailable("audits");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     let q = sb()
       .from("page_audits")

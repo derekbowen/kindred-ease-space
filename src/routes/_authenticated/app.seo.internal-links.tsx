@@ -14,8 +14,10 @@ import {
   type LinkSuggestionRow,
 } from "@/lib/admin-seo-tools.functions";
 import { userMessage } from "@/lib/user-message";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/seo/internal-links")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Internal Links — founders.click" }] }),
   component: InternalLinksPage,
 });

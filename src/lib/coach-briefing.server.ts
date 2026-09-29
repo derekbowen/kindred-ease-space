@@ -20,9 +20,17 @@
  * L9). A throttled refresh answers with the day's stored briefing when there
  * is one — a refresh never re-rolls it anyway.
  *
+ * DEFERRED for the MVP (2026-09-28): both entry points below first call
+ * assertFeatureAvailable("briefing") (src/lib/features.server.ts), so no
+ * on-demand request reaches the function — and no AI call is made — for any
+ * workspace, the founder / internal unlimited one included. The nightly run
+ * is stopped separately: migration 20260929000300 deactivates the pg_cron
+ * job 'coach-briefing-nightly'. Stored briefings are kept.
+ *
  * NEVER import from client code.
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { assertFeatureAvailable, type FeatureSettingsReader } from "@/lib/features.server";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -45,15 +53,23 @@ type RpcAndFrom = {
 };
 
 /**
- * The Refresh button: the throttle first (atomic, per workspace), then the
- * function. A throttled refresh never reaches the function: it answers
- * 'exists' when today's briefing is stored, otherwise the throttled
- * sentence. A throttle read error fails closed (no function call).
+ * What the briefing reads and calls; each defaults to the real one. `features`
+ * is where the deferred-feature gate reads platform_settings.
+ */
+export type BriefingDeps = { fetch?: FetchLike; db?: RpcAndFrom; features?: FeatureSettingsReader };
+
+/**
+ * The Refresh button: the feature gate first, then the throttle (atomic, per
+ * workspace), then the function. A throttled refresh never reaches the
+ * function: it answers 'exists' when today's briefing is stored, otherwise
+ * the throttled sentence. A throttle read error fails closed (no function
+ * call).
  */
 export async function refreshBriefing(
   workspaceId: string,
-  deps: { fetch?: FetchLike; db?: RpcAndFrom } = {},
+  deps: BriefingDeps = {},
 ): Promise<BriefingRequestResult> {
+  await assertFeatureAvailable("briefing", deps.features);
   const db = deps.db ?? (supabaseAdmin as unknown as RpcAndFrom);
   const { data: allowed, error } = await db.rpc("coach_briefing_refresh_allowed", {
     _workspace_id: workspaceId,
@@ -80,8 +96,9 @@ const OK_STATUSES = new Set(["exists", "created", "in_progress"]);
 
 export async function requestBriefing(
   workspaceId: string,
-  deps: { fetch?: FetchLike } = {},
+  deps: Pick<BriefingDeps, "fetch" | "features"> = {},
 ): Promise<BriefingRequestResult> {
+  await assertFeatureAvailable("briefing", deps.features);
   const base = process.env.SUPABASE_URL;
   const secret = process.env.CRON_SECRET;
   if (!base || !secret) {

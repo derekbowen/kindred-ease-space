@@ -7,6 +7,7 @@ import { Download, Loader2 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { exportTable } from "@/lib/admin-data-io.functions";
 import { userMessage } from "@/lib/user-message";
+import { deferredRoute } from "@/lib/deferred-route";
 
 type TableName = "tenant_pages" | "tenant_listings" | "content_plan" | "content_pages";
 
@@ -45,6 +46,7 @@ const TABLE_COPY: Record<
 };
 
 export const Route = createFileRoute("/_authenticated/app/content/data-export")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Data export — founders.click" }] }),
   component: DataExportPage,
 });

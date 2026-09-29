@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "./admin-helpers.functions";
 import { requireWorkspaceSecret } from "./workspace-secrets.server";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 const sb = () => supabaseAdmin as any;
 
@@ -22,6 +23,7 @@ export const listTrackedKeywords = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ workspaceId: workspaceIdSchema }).parse(d))
   .handler(async ({ data, context }): Promise<{ rows: TrackedKeywordRow[] }> => {
+    await assertFeatureAvailable("rank_tracker");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const { data: rows } = await sb()
       .from("tracked_keywords")
@@ -44,6 +46,7 @@ export const addTrackedKeyword = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("rank_tracker");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const { error } = await sb()
       .from("tracked_keywords")
@@ -62,6 +65,7 @@ export const deleteTrackedKeyword = createServerFn({ method: "POST" })
     z.object({ workspaceId: workspaceIdSchema, id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("rank_tracker");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const { error } = await sb()
       .from("tracked_keywords")
@@ -87,6 +91,7 @@ export const runSerpCheck = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("rank_tracker");
     await assertWorkspaceMember(data.workspaceId, context.userId);
 
     let serpKey: string;

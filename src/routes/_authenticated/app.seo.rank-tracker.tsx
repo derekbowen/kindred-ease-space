@@ -15,8 +15,10 @@ import {
   type TrackedKeywordRow,
 } from "@/lib/admin-rank-tracker.functions";
 import { userMessage } from "@/lib/user-message";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/seo/rank-tracker")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Rank Tracker — founders.click" }] }),
   component: RankTrackerPage,
 });

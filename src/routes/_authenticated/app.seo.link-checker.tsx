@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { scanInternalLinks, type BrokenLink } from "@/lib/admin-link-checker.functions";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/seo/link-checker")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Link Checker — founders.click" }] }),
   component: LinkCheckerPage,
 });

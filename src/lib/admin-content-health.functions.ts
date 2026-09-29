@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
 import { fetchPublishedPages } from "@/lib/page-data.helpers.server";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 export interface ContentHealthRow {
   id: string;
@@ -38,6 +39,7 @@ export const scanContentHealth = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data, context }): Promise<ContentHealthReport> => {
+    await assertFeatureAvailable("audits");
     await assertWorkspaceMember(data.workspaceId, (context as any).userId);
 
     let pages = await fetchPublishedPages(data.workspaceId, { limit: 10000 });

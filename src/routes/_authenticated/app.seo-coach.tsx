@@ -8,10 +8,12 @@ import { Loader2 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { seoCoachChat } from "@/lib/admin-seo-coach.functions";
 import { userMessage } from "@/lib/user-message";
+import { deferredRoute } from "@/lib/deferred-route";
 
 const SEO_COACH_FAILED = "The SEO Coach couldn't answer that. Try again in a moment.";
 
 export const Route = createFileRoute("/_authenticated/app/seo-coach")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "SEO Coach — founders.click" }] }),
   component: SeoCoachPage,
 });

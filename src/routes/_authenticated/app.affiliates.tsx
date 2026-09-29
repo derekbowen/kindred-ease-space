@@ -12,8 +12,10 @@ import { getMe } from "@/lib/auth.functions";
 import { getAffiliateDashboard, startAffiliateTrial } from "@/lib/affiliates.functions";
 import { getAffiliateRequirement } from "@/lib/affiliate-requirements.functions";
 import { AFFILIATE_REQUIREMENT_NOTE, SHARETRIBE_SETTINGS_PATH } from "@/lib/affiliate-requirements";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/affiliates")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Affiliate Dashboard — founders.click" }] }),
   component: AffiliatesRoute,
 });

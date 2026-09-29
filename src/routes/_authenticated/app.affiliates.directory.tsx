@@ -24,8 +24,10 @@ import {
   setAffiliateStatus,
   listPrograms,
 } from "@/lib/affiliates.functions";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/affiliates/directory")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Affiliates — founders.click" }] }),
   component: AffiliatesPage,
 });

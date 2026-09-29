@@ -7,6 +7,7 @@ import {
   assertWorkspaceOwner,
   workspaceIdSchema,
 } from "./admin-helpers.functions";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 /**
  * Bring-your-own-key, OpenAI only, ONE store: the workspace secret
@@ -62,6 +63,15 @@ export type UsageSummary = {
 const SAVE_FAILED = "Could not save the key. Try again, or contact support if it keeps happening.";
 const DELETE_FAILED = "Could not remove the key. Try again, or contact support if it keeps happening.";
 
+// MVP (2026-09-28): bring-your-own-key settings are deferred. Saving,
+// removing and testing a key (the writes and the one outbound call) first
+// call assertFeatureAvailable("byok_settings") (src/lib/features.server.ts).
+// The two reads below write nothing and spend nothing, so they stay; the
+// generation path never goes through this file anyway — it reads the
+// workspace secret itself (resolveAiKey in src/lib/ai/spend.server.ts,
+// readAvailableAiModels in src/lib/ai-models.functions.ts), so a key a
+// workspace already saved keeps working.
+
 // ---------- list ----------
 
 export const listAiCredentials = createServerFn({ method: "POST" })
@@ -103,6 +113,7 @@ export const upsertAiCredential = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => upsertSchema.parse(d))
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("byok_settings");
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     // The authenticated client: the RPC's owner check reads auth.uid().
     const { error } = await context.supabase.rpc("tenant_set_workspace_secret", {
@@ -125,6 +136,7 @@ export const deleteAiCredential = createServerFn({ method: "POST" })
     z.object({ workspaceId: workspaceIdSchema, provider: providerSchema }).strict().parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("byok_settings");
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     const { data: row } = await supabaseAdmin
       .from("workspace_secrets")
@@ -162,6 +174,7 @@ export const testAiCredential = createServerFn({ method: "POST" })
     z.object({ workspaceId: workspaceIdSchema, provider: providerSchema }).strict().parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("byok_settings");
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     return runKeyTest(data.workspaceId);
   });

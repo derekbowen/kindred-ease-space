@@ -9,8 +9,10 @@ import { Loader2 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { scanContentHealth, type ContentHealthReport } from "@/lib/admin-content-health.functions";
 import { InlineCoach } from "@/components/coach/InlineCoach";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/seo/content-health")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Content Health — founders.click" }] }),
   component: ContentHealthPage,
 });

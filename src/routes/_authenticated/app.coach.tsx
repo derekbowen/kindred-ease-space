@@ -1,14 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Card } from "@/components/ui/card";
 import { MessagesSquare } from "lucide-react";
+import { deferredRoute } from "@/lib/deferred-route";
 
 /**
- * The Coach chat is not part of launch: its backend (the coach-chat edge
- * function) has been removed, and this route makes no call of any kind —
- * no conversation reads, no chat request. The daily briefing on the
- * dashboard is unaffected. Nav entry: launch:false (src/lib/app-nav.ts).
+ * DEFERRED (MVP scope, 2026-09-28): unreachable — `beforeLoad: deferredRoute`
+ * sends every visit to the dashboard (src/lib/deferred-route.ts), there is
+ * no sidebar entry, and the Coach and daily-briefing server functions refuse
+ * (src/lib/features.server.ts). The page below is kept as it was: a static
+ * notice that makes no call of any kind.
  */
 export const Route = createFileRoute("/_authenticated/app/coach")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Coach — founders.click" }] }),
   component: CoachPage,
 });

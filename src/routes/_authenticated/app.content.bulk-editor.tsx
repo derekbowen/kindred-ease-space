@@ -13,8 +13,10 @@ import {
   updateContentPageBasics,
   type ContentPageRow,
 } from "@/lib/admin-content-pages.functions";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/content/bulk-editor")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Bulk Page Editor — founders.click" }] }),
   component: BulkEditorPage,
 });

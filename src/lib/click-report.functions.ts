@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 /**
  * Aggregated click report sourced from city_link_clicks.
@@ -35,6 +36,7 @@ export const getCityClickReport = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => InputSchema.parse(data))
   .handler(async ({ data, context }): Promise<CityClickReport> => {
+    await assertFeatureAvailable("seo_tools");
     await assertWorkspaceMember(data.workspaceId, context.userId);
 
     const since = new Date(Date.now() - data.days * 24 * 60 * 60 * 1000).toISOString();

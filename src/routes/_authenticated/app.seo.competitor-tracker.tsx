@@ -15,8 +15,10 @@ import {
   type CompetitorRow,
 } from "@/lib/admin-seo-tools.functions";
 import { userMessage } from "@/lib/user-message";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/seo/competitor-tracker")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Competitor Tracker — founders.click" }] }),
   component: CompetitorTrackerPage,
 });
