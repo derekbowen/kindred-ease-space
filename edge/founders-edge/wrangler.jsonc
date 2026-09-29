@@ -25,5 +25,10 @@
   // No workers.dev endpoint: this Worker's only legitimate entry points are the
   // customer routes above. Left at wrangler's default (true) a deploy would
   // publish a second, permanent public URL onto the same code path.
-  "workers_dev": false
+  "workers_dev": false,
+  // The ONLY way this Worker can reach the app. Both run on the founders.click
+  // zone and the app is on a route (www.founders.click/*), so a global fetch()
+  // to www.founders.click skips the app and lands on the zone's origin for www
+  // (see foundersFetch in worker.js). tests/edge-outage.test.ts pins this.
+  "services": [{ "binding": "FOUNDERS_APP", "service": "founders-click" }]
 }

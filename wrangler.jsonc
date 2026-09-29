@@ -2,6 +2,13 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "founders-click",
   "compatibility_date": "2025-09-24",
-  "compatibility_flags": ["nodejs_compat"],
+  // global_fetch_strictly_public: a fetch() to a hostname served by this zone
+  // goes through Cloudflare's front door like a visitor's request. Without it
+  // the request skips every Worker on that hostname and goes to the zone's
+  // origin, so the domain activation test and the publish reachability probe
+  // (both fetch the customer's own hostname, a custom hostname on this zone
+  // routed to founders-edge) would test the originless fallback instead of the
+  // real path. tests/edge-outage.test.ts pins this flag.
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "main": "src/server.ts",
 }

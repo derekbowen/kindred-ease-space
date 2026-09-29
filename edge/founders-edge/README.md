@@ -36,8 +36,10 @@ guide. Two details are easy to get wrong and both matter:
    originless on purpose: the Worker answers every custom-hostname request, so
    traffic must never fall through to a real server. If the Worker ever stops
    matching, requests fail closed instead of leaking.
-3. Deploy the Worker as `founders-edge` (dashboard paste, or `npx wrangler
-   deploy` here). **Add no routes by hand** — see below.
+3. Deploy the Worker as `founders-edge` through the workflow or `npx wrangler
+   deploy` here — never by dashboard paste, which drops the `FOUNDERS_APP`
+   service binding (see **How the edge reaches the app**). **Add no routes by
+   hand** — see below.
 4. **Worker routes are created per customer, automatically.** Cloudflare offers
    three options; we use the third:
    - `*/*` — their recommendation, but routes *every* request entering the zone
@@ -78,6 +80,30 @@ exactly what `getDomainConfig()` does.
 - `https://customer.com/a/founders-domain-test` returns the Founders marker
   (proves DNS → edge → origin → tenant resolution).
 - No redirect loop (`x-founders-edge` guard returns 508 if one ever forms).
+
+## How the edge reaches the app
+
+This Worker and the app (`founders-click`, on the route `www.founders.click/*`)
+run on the same zone. Cloudflare does not run a route's Worker for a global
+`fetch()` made by another Worker on that zone — "the only way for a Worker to
+communicate with another Worker running on a route ... is via service
+bindings" ([Cloudflare](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/#worker-to-worker-communication)).
+Such a fetch lands on the zone's origin for `www` instead: the pre-cutover
+Lovable host, which redirects every path back to `www.founders.click`.
+
+So every request meant for the app — `/a/*`, the config lookup, staleness
+telemetry — goes through the `FOUNDERS_APP` service binding declared in
+`wrangler.jsonc`. Customer origins and the platform passthrough keep global
+`fetch()`. `tests/edge-outage.test.ts` fails if anything meant for the app
+leaves through global `fetch()` while the binding exists, or if the binding
+disappears from `wrangler.jsonc`.
+
+The other direction has the same trap. The app's domain activation test and
+publish reachability probe fetch the customer's hostname — a custom hostname
+on this zone, routed here. The app therefore sets the
+`global_fetch_strictly_public` compatibility flag (root `wrangler.jsonc`), so
+those probes enter through Cloudflare's front door like a visitor instead of
+going straight to the originless fallback origin.
 
 ## Ops notes
 

@@ -29,6 +29,31 @@ const FOUNDERS_ORIGIN = "https://www.founders.click";
 const CONFIG_TTL_OK = 60; // seconds — fresh copy, so changes propagate fast
 const CONFIG_TTL_MISS = 10;
 
+/**
+ * Every request to the Founders app goes through the FOUNDERS_APP service
+ * binding (wrangler.jsonc), never through global fetch().
+ *
+ * This Worker and the app (`founders-click`, on the route www.founders.click/*)
+ * run on the same zone, and Cloudflare does not invoke a route's Worker for a
+ * global fetch() made by another Worker on that zone: "On the same zone, the
+ * only way for a Worker to communicate with another Worker running on a route
+ * ... is via service bindings" (developers.cloudflare.com/workers/configuration/
+ * routing/custom-domains/#worker-to-worker-communication). The subrequest goes
+ * to the zone's origin for www.founders.click instead — the pre-cutover Lovable
+ * host, which answers everything with a redirect back to www.founders.click.
+ * Without the binding, every /a/* page, the domain test and the config lookup
+ * would be answered by that host, not by the app.
+ *
+ * global fetch() remains the fallback only where no binding exists (the
+ * in-process tests in tests/edge-outage.test.ts). Customer origins and the
+ * platform passthrough are other zones or the origin itself, so they keep it.
+ */
+function foundersFetch(env) {
+  const app = env && env.FOUNDERS_APP;
+  if (app && typeof app.fetch === "function") return (input, init) => app.fetch(input, init);
+  return (input, init) => fetch(input, init);
+}
+
 // Last-known-good config survives this long and is used only when the control
 // plane is unreachable. It is a safety net, NOT a second source of truth: a
 // customer can legitimately migrate their origin inside this window, so every
@@ -52,7 +77,7 @@ const lastReportAt = new Map();
 
 /** Fire-and-forget staleness telemetry so a control-plane outage is visible to
  *  us before a customer has to report it. Never blocks the response. */
-function reportStale(hostname, ageS, ctx) {
+function reportStale(hostname, ageS, ctx, env) {
   if (ageS < STALE_ALERT_AFTER_S) return;
   const now = Date.now();
   const last = lastReportAt.get(hostname);
@@ -66,7 +91,7 @@ function reportStale(hostname, ageS, ctx) {
   }
   try {
     ctx.waitUntil(
-      fetch(`${FOUNDERS_ORIGIN}/api/public/edge-health`, {
+      foundersFetch(env)(`${FOUNDERS_ORIGIN}/api/public/edge-health`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-founders-edge": "1" },
         body: JSON.stringify({ hostname, state: "STALE_CONFIG", stale_age_s: ageS }),
@@ -149,7 +174,7 @@ export default {
           headers: { "Cache-Control": "no-store", "Retry-After": "60" },
         });
       }
-      return proxyToFounders(request, url, hostname);
+      return proxyToFounders(request, url, hostname, env);
     }
 
     if (config.mode === "subdomain") {
@@ -198,7 +223,7 @@ async function getDomainConfig(hostname, env, ctx) {
   let res = null;
   let body = null;
   try {
-    res = await fetch(
+    res = await foundersFetch(env)(
       `${FOUNDERS_ORIGIN}/api/public/domain-config?hostname=${encodeURIComponent(hostname)}`,
       { headers: { "x-founders-edge": "1" } },
     );
@@ -242,7 +267,7 @@ async function getDomainConfig(hostname, env, ctx) {
       if (stale) {
         const cached = await stale.json();
         const ageS = Math.round((Date.now() - (cached.cached_at || 0)) / 1000);
-        reportStale(hostname, ageS, ctx);
+        reportStale(hostname, ageS, ctx, env);
         return { ...cached, stale: true, stale_age_s: ageS };
       }
       return null;
@@ -263,14 +288,14 @@ async function getDomainConfig(hostname, env, ctx) {
     if (body2 && !body2.error) {
       const ageS = Math.round((Date.now() - (body2.cached_at ?? 0)) / 1000);
       console.warn("[founders-edge] serving stale config", hostname, "age_s=", ageS);
-      reportStale(hostname, ageS, ctx);
+      reportStale(hostname, ageS, ctx, env);
       return { ...body2, stale: true, stale_age_s: ageS };
     }
   }
   return null;
 }
 
-async function proxyToFounders(request, url, tenantHost) {
+async function proxyToFounders(request, url, tenantHost, env) {
   const target = new URL(url.pathname + url.search, FOUNDERS_ORIGIN);
   const headers = new Headers(request.headers);
   // The Founders app resolves the tenant from x-forwarded-host and
@@ -279,7 +304,7 @@ async function proxyToFounders(request, url, tenantHost) {
   headers.set("x-founders-edge", "1");
   headers.set("host", target.hostname);
   try {
-    return await fetch(target.toString(), {
+    return await foundersFetch(env)(target.toString(), {
       method: request.method,
       headers,
       body: request.body,

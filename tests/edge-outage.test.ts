@@ -359,6 +359,74 @@ console.log("\n=== LOOP CONTAINMENT ===");
 }
 
 // ===========================================================================
+console.log("\n=== SAME-ZONE: THE APP IS REACHED THROUGH THE SERVICE BINDING ===");
+// ===========================================================================
+// founders-edge and the app (founders-click, on the route www.founders.click/*)
+// share the founders.click zone. Cloudflare does not run a route's Worker for a
+// global fetch() from another Worker on the same zone: the request goes to the
+// zone's origin for www (the pre-cutover Lovable host, which redirects every
+// path back to www.founders.click). So with the binding present, NOTHING bound
+// for the app may leave through global fetch().
+{
+  section();
+  const appCalls: Array<{ url: string; xfh: string | null; edge: string | null }> = [];
+  let appConfig: "ok" | "throw" = "ok";
+  const env = {
+    FOUNDERS_APP: {
+      fetch: async (input: any, init?: any): Promise<Response> => {
+        const urlStr = typeof input === "string" ? input : input.url;
+        const h = new Headers(init?.headers ?? {});
+        appCalls.push({ url: urlStr, xfh: h.get("x-forwarded-host"), edge: h.get("x-founders-edge") });
+        const u = new URL(urlStr);
+        if (u.pathname === "/api/public/domain-config") {
+          if (appConfig === "throw") throw new Error("app unreachable");
+          return new Response(JSON.stringify(configFor(u.searchParams.get("hostname") || "")), { status: 200 });
+        }
+        if (u.pathname === "/api/public/edge-health") {
+          telemetry.push(JSON.parse(init?.body ?? "{}"));
+          return new Response(JSON.stringify({ ok: true }), { status: 202 });
+        }
+        return new Response(`app:${u.pathname}`, { status: 200 });
+      },
+    },
+  };
+  const getVia = (path: string) => worker.fetch(new Request(`https://${HOST}${path}`), env, ctx);
+  const leakedToGlobal = () => hits.filter((h) => h.startsWith("https://www.founders.click"));
+
+  const page = await getVia("/a/pool-rentals-austin");
+  t("binding: /a/* is answered by the app through FOUNDERS_APP",
+    page.status === 200 && (await page.text()) === "app:/a/pool-rentals-austin");
+  const pageCall = appCalls.find((c) => c.url.includes("/a/pool-rentals-austin"));
+  t("binding: the app is told the customer host (x-forwarded-host) and that the edge sent it",
+    pageCall?.xfh === HOST && pageCall?.edge === "1", JSON.stringify(pageCall));
+  t("binding: the routing config is read through FOUNDERS_APP",
+    appCalls.some((c) => c.url.includes("/api/public/domain-config")));
+
+  const home = await getVia("/");
+  t("binding: customer paths still go to the customer's origin over global fetch()",
+    home.status === 200 && (await home.text()) === "customer:/" && hits.some((h) => h.includes(ORIGIN)));
+
+  expireFresh();
+  ageStale(600);
+  appConfig = "throw";
+  await getVia("/s");
+  t("binding: staleness telemetry goes through FOUNDERS_APP",
+    appCalls.some((c) => c.url.includes("/api/public/edge-health")) &&
+      telemetry.some((e) => e.state === "STALE_CONFIG" && e.hostname === HOST));
+
+  t("binding: no request meant for the app left through global fetch()",
+    leakedToGlobal().length === 0, leakedToGlobal().join(", "));
+
+  const { readFileSync } = await import("node:fs");
+  const edgeCfg = readFileSync(new URL("../edge/founders-edge/wrangler.jsonc", import.meta.url), "utf8");
+  t("config: founders-edge declares the FOUNDERS_APP binding to founders-click",
+    /"services"\s*:\s*\[\s*\{\s*"binding"\s*:\s*"FOUNDERS_APP"\s*,\s*"service"\s*:\s*"founders-click"\s*\}/.test(edgeCfg));
+  const appCfg = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+  t("config: the app fetches its own zone's hostnames through the front door (global_fetch_strictly_public)",
+    /"compatibility_flags"\s*:\s*\[[^\]]*"global_fetch_strictly_public"/.test(appCfg));
+}
+
+// ===========================================================================
 console.log("\n=== PLATFORM HOSTS ===");
 // ===========================================================================
 {
