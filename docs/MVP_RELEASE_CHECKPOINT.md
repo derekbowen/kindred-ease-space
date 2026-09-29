@@ -23,11 +23,11 @@ server-side), not finished.
 
 | Item | Value |
 |---|---|
-| Production app | `8ff1c41` (`/api/public/version`, built 2026-09-28T21:06Z), Worker version `42e50f5a-43bc-4ae2-ac87-f3f41111179d` |
-| Previous app (rollback) | `123534f`, Worker version `dbb4b72c-532f-4d2a-b307-9e612df6aa58` |
-| Launch branch | `claude/repost-assembly-j3l3qg`: 8ff1c41 + data-import hotfix (a76eed0, 51e9541) + MVP commits below — nothing after 8ff1c41 is deployed |
-| Migrations in prod | 000100–000930 applied 2026-09-28 (ledger versions 20260928194935…20260928204541); every launch object present (generation_jobs/items/reservations, ai_spend_reservations, ai_platform_settings, reserve_generation_slot, ai_reserve, workspace_is_internal_unlimited, auth_mode). Opportunity Engine tables (20260830000000) absent — not a dependency. |
-| Edge functions | stripe-webhook v39, coach-briefing-cron v24, create-checkout v41 (this release). Legacy Founders-only AI endpoints still deployed: ai-proxy v22, coach-chat v25, help-assistant-chat v26 (verify_jwt **false**), help-assistant-embed v26 — no callers in code, no invocations in 24 h. |
+| Production app | Release `9bffaf8` pushed to `main` 2026-09-29 13:16Z (deploy-app.yml run 36573906960) — see Work log for the verified runtime SHA. Previous: `8ff1c41`, Worker version `42e50f5a-43bc-4ae2-ac87-f3f41111179d` |
+| Previous app (rollback) | `8ff1c41`, Worker version `42e50f5a-43bc-4ae2-ac87-f3f41111179d` (before it: `123534f` / `dbb4b72c-…`) |
+| Launch branch | `claude/repost-assembly-j3l3qg` = the release SHA + later doc-only commits |
+| Migrations in prod | 000100–000930 (2026-09-28) + the MVP set applied 2026-09-29 in order, every verification row true: 20260929000100 (mvp_targets_sync_templates), 000200 (domain_write_lock_and_exact_host), 000300 (mvp_deferred_jobs: coach-briefing-nightly inactive, all other jobs unchanged), 000310 (mvp_help_copy), 000400 (mvp_publish_checked), 000500 (mvp_tenant_pages_server_writes) |
+| Edge functions | stripe-webhook v40 (price-first plan, capacity-gated reactivation, stale-subscription guard), create-checkout v42 (add-ons 410), coach-briefing-cron v25 = the 410 retired stub (the briefing is deferred); ai-proxy v23, coach-chat v26, help-assistant-chat v27, help-assistant-embed v27 = 410 stubs. PRNM's functions untouched. |
 | AI settings | platform_ai_enabled true, daily ceiling $10, $1/workspace/day, 30 reservations/min (unchanged; no raise without approval) |
 | Founder | auth user `7b3618d3-4d54-4974-8daf-2845777ccc28` (Google), sole owner of workspace `509e5a42-7eb9-4bdb-8b6c-981a15b69dce` (test.poolrentalnearme.com); one active permanent `internal` grant (migration 000930); capacity internal/serve/publish/2147483647; ai_reserve bills `internal` |
 | Founder domain | `test.poolrentalnearme.com`: workspace_domains status `ssl_pending`, verified, connection_type subdomain, edge_hostname `proxy.founders.click`; public DNS is an A record 13.56.89.89 (DNS-only, the Sharetribe server) — not routed to founders-edge |
