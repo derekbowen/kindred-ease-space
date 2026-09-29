@@ -152,9 +152,17 @@ console.log("\n=== the thin-page rule is one rule, shared by the page and the si
   // Both callers must use the shared predicate, not a private copy of it.
   const ROOT = join(import.meta.dir, "..");
   const page = readFileSync(join(ROOT, "src/routes/a.$slug.tsx"), "utf8");
-  t("a.$slug.tsx imports the shared predicate", /import \{ isThinPage \} from "@\/lib\/thin-page";/.test(page));
+  // a.$slug.tsx builds its head from the page data; the robots decision is
+  // src/components/templates/head.ts's pageIsNoindex, which is thin-page's
+  // isNoindexPage (the page's noindex switch + this rule, text-only for a
+  // Resource Article).
+  const pageHead = readFileSync(join(ROOT, "src/components/templates/head.ts"), "utf8");
+  t("a.$slug.tsx imports the shared predicate (through the page head)",
+    /buildTenantPageHead\(loaderData\.page, \{ host: loaderData\.host \}\)/.test(page) &&
+      /import \{ isNoindexPage, thinPageBodyChars \} from "@\/lib\/thin-page";/.test(pageHead));
   t("a.$slug.tsx decides noindex with it",
-    /const isThin = isThinPage\(\{ listingCount: p\.listings\.length, bodyMarkdown: p\.body_markdown \}\);/.test(page));
+    /isNoindexPage\(\{\s*noindex: data\.page\.noindex,\s*kind: data\.page\.kind,\s*listingCount: data\.listings\.length,\s*bodyChars: thinPageBodyChars\(data\.page\.bodyMarkdown\),?\s*\}\)/.test(pageHead) &&
+      /if \(pageIsNoindex\(data\)\) meta\.push\(\{ name: "robots", content: "noindex, follow" \}\);/.test(pageHead));
   t("a.$slug.tsx no longer restates the numbers", !/bodyLen < 300/.test(page));
   const sitemap = readFileSync(join(ROOT, "src/lib/sitemap.server.ts"), "utf8");
   // The sitemap measures each body as its chunk arrives and keeps only the

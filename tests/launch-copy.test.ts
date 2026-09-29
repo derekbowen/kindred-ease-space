@@ -223,13 +223,15 @@ t("shell shows the beta banner", /Free beta/.test(shell) && shell.includes('to="
 // ---------------------------------------------------------------------------
 console.log("\npreview links stay inside the preview");
 
-const cityHub = read("src/components/templates/CityHub.tsx");
-t("CityHub related links use basePath, not a hardcoded /a/", cityHub.includes("`${basePath}/${r.slug}`") && !cityHub.includes("`/a/${r.slug}`"));
-t("CityHub defaults basePath to /a for tenant hosts", /basePath = "\/a"/.test(cityHub));
-t("CityHub can render the breadcrumb root as plain text", /homeHref \? \(/.test(cityHub));
+// All three templates share their related-page links and breadcrumb
+// (src/components/templates/parts.tsx); tests/tenant-templates.test.ts renders them.
+const templateParts = read("src/components/templates/parts.tsx");
+t("template related links use basePath, not a hardcoded /a/", templateParts.includes("`${basePath}/${r.slug}`") && !templateParts.includes("`/a/${r.slug}`"));
+t("every template defaults basePath to /a for tenant hosts", ["CityHub", "CategoryPage", "ResourceArticle"].every((c) => /basePath = "\/a"/.test(read(`src/components/templates/${c}.tsx`))));
+t("the breadcrumb root is the brand's marketplace home, plain text without one — never the platform root", /marketplace\.homeUrl \? \(/.test(templateParts) && !/href="\/"/.test(templateParts));
 const preview = read("src/routes/s.$ws.$slug.tsx");
 t("preview passes /s/{ws} as basePath", preview.includes("basePath={`/s/${ws}`}"));
-t("preview has no workspace home link on the platform host", preview.includes("homeHref={null}"));
+t("preview has no workspace home link on the platform host", !preview.includes('href="/"') && !/homeHref=/.test(preview));
 
 // ---------------------------------------------------------------------------
 console.log("\nrelease path and welcome email honesty");

@@ -1,10 +1,13 @@
 import { useEffect } from "react";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import {
+  Asset,
   Outlet,
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
+  useTags,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -16,12 +19,29 @@ import { authEventNavigation, authLandingFromHash } from "@/lib/auth-landing";
 import { I18nProvider } from "@/lib/i18n";
 import { canonicalUrl } from "@/lib/canonical";
 import { Toaster } from "@/components/ui/sonner";
+import {
+  isTenantSurfacePath,
+  tenantHeadTags,
+  tenantRootHead,
+} from "@/components/templates/tenant-shell";
+import { TENANT_NOT_FOUND, TenantStatusPage } from "@/components/templates/StatusPage";
 
 if (typeof window !== "undefined") {
   installServerFnAuthFetch();
 }
 
+/**
+ * Is this a customer-facing page (/a/*, served on the customer's hostname)?
+ * Those render with no platform identity and no client script — see
+ * src/components/templates/tenant-shell.ts. Every other path is unchanged.
+ */
+function useTenantSurface(): boolean {
+  return useRouterState({ select: (s) => isTenantSurfacePath(s.location.pathname) });
+}
+
 function NotFoundComponent() {
+  const tenant = useTenantSurface();
+  if (tenant) return <TenantStatusPage {...TENANT_NOT_FOUND} />;
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
@@ -46,7 +66,18 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
+  const tenant = useTenantSurface();
+  const href = useRouterState({ select: (s) => s.location.href });
 
+  if (tenant) {
+    return (
+      <TenantStatusPage
+        heading="Something went wrong"
+        message="This page couldn't load. Try again in a moment."
+        retryHref={href}
+      />
+    );
+  }
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
@@ -79,7 +110,23 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-  head: () => ({
+  // Decided once per navigation from the path, so head() below can see it.
+  beforeLoad: ({ location }) => ({ tenantSurface: isTenantSurfacePath(location.pathname) }),
+  head: ({ match }) =>
+    (match.context as { tenantSurface?: boolean }).tenantSurface
+      ? // A customer's page: none of the platform's title, description, Open
+        // Graph poster, favicon or site verification; the stylesheet from the
+        // platform origin (/assets/* is not reachable on their hostname).
+        tenantRootHead(appCss)
+      : platformHead(),
+  shellComponent: RootShell,
+  component: RootComponent,
+  notFoundComponent: NotFoundComponent,
+  errorComponent: ErrorComponent,
+});
+
+function platformHead() {
+  return {
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
@@ -115,22 +162,31 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
       { rel: "apple-touch-icon", href: "/favicon.svg" },
     ],
-  }),
-  shellComponent: RootShell,
-  component: RootComponent,
-  notFoundComponent: NotFoundComponent,
-  errorComponent: ErrorComponent,
-});
+  };
+}
+
+/** HeadContent for a customer's page: no module preloads, absolute stylesheet. */
+function TenantHeadContent() {
+  const tags = tenantHeadTags(useTags());
+  return (
+    <>
+      {tags.map((tag) => (
+        <Asset {...tag} key={`tsr-meta-${JSON.stringify(tag)}`} />
+      ))}
+    </>
+  );
+}
 
 function RootShell({ children }: { children: React.ReactNode }) {
+  const tenant = useTenantSurface();
   return (
     <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
+      <head>{tenant ? <TenantHeadContent /> : <HeadContent />}</head>
       <body>
         {children}
-        <Scripts />
+        {/* A customer's page ships no client script: /assets/* is not
+            reachable on their hostname, and the page is complete as HTML. */}
+        {tenant ? null : <Scripts />}
       </body>
     </html>
   );
@@ -138,7 +194,16 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const tenant = useTenantSurface();
 
+  if (tenant) {
+    // A customer's page: no toast host, no platform auth listener.
+    return (
+      <QueryClientProvider client={queryClient}>
+        <Outlet />
+      </QueryClientProvider>
+    );
+  }
   return (
     <QueryClientProvider client={queryClient}>
       <AuthStateBridge />
