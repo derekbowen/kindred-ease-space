@@ -23,8 +23,8 @@ server-side), not finished.
 
 | Item | Value |
 |---|---|
-| Production app | Release `9bffaf8` pushed to `main` 2026-09-29 13:16Z (deploy-app.yml run 36573906960) — see Work log for the verified runtime SHA. Previous: `8ff1c41`, Worker version `42e50f5a-43bc-4ae2-ac87-f3f41111179d` |
-| Previous app (rollback) | `8ff1c41`, Worker version `42e50f5a-43bc-4ae2-ac87-f3f41111179d` (before it: `123534f` / `dbb4b72c-…`) |
+| Production app | **`55b5728`** (`/api/public/version`, built 2026-09-29T14:04:47Z), Worker version `c55a8631-b8b7-4dad-bc17-f63eaab2a08b`, deploy-app.yml run 36579746343 (typecheck, 78 test suites, build, deploy, smoke 10 pass / 0 fail / 1 SKIPPED = the public /a/ page, not run). Same SHA passed locally: full chain 78/78, tsc, build, test:pg 47 + 46 |
+| Previous app (rollback) | `8ff1c41`, Worker version `42e50f5a-43bc-4ae2-ac87-f3f41111179d` — compatible with every MVP migration (they are additive; it writes pages on the service role only) |
 | Launch branch | `claude/repost-assembly-j3l3qg` = the release SHA + later doc-only commits |
 | Migrations in prod | 000100–000930 (2026-09-28) + the MVP set applied 2026-09-29 in order, every verification row true: 20260929000100 (mvp_targets_sync_templates), 000200 (domain_write_lock_and_exact_host), 000300 (mvp_deferred_jobs: coach-briefing-nightly inactive, all other jobs unchanged), 000310 (mvp_help_copy), 000400 (mvp_publish_checked), 000500 (mvp_tenant_pages_server_writes) |
 | Edge functions | stripe-webhook v40 (price-first plan, capacity-gated reactivation, stale-subscription guard), create-checkout v42 (add-ons 410), coach-briefing-cron v25 = the 410 retired stub (the briefing is deferred); ai-proxy v23, coach-chat v26, help-assistant-chat v27, help-assistant-embed v27 = 410 stubs. PRNM's functions untouched. |
@@ -58,6 +58,10 @@ server-side), not finished.
 | 2026-09-29 | Billing: generation included for active/granted (as every plan promises; grace dropped in the review round — publishing is paused there); allowance honours it; webhook price-first plan (Billing Portal changes honoured); capacity-gated reactivation; cancelled customers can check out again | 6c6abbc; mvp-billing 19, stripe-webhook 111, ai-allowance 66 |
 | 2026-09-29 | Workstreams merged: W2 sync + connect flow, W4 three templates + one public data path, W1 MVP surface + server-side deferral (W3 sitemap earlier); copy (no add-ons, no AI-settings link, no demo poster); scale proof past PostgREST's 1,000-row cap | 900fd75, d749621, 9c1f97e, 3a7b23d, 4a23f47; mvp-scale 12 |
 | 2026-09-29 | Final review (security / money / journey): no CRITICAL; one HIGH (an interrupted draft run locked the editor and its target for good) + MEDIUMs, fixed: abandoned claims shown as interrupted with Try again; a late event for an OLD subscription no longer suspends a resubscribed workspace; last X-Forwarded-Host entry + `private` cache headers + a per-host sitemap memo; honest Resource Article copy; non-Latin place/category keys (ASCII slug stand-ins); slugs never end in a dash or pass 80 with a suffix; legacy-page guidance; 000500 revokes member writes to tenant_pages; regenerate bumps content_version at claim; kill switch honoured at publish; category title/noun; honest sync wording; int4 price clamp; owner-facing price text | this round's commit; page-draft-flow 65, page-publish-flow 49, stripe-webhook 118, sitemap-host 105, coverage-target 46, mvp-migrations.pg 46 (PG16) |
+| 2026-09-29 | Gate review of the fix commit: CLEAN (no HIGH/CRITICAL; the HIGH verified closed); its cheap MEDIUMs fixed (one-click retry after a lost Rewrite, future-dated claims, memo size cap) | 9bffaf8 |
+| 2026-09-29 | DEPLOYED: migrations 000100, 000200, 000300, 000310, 000400, 000500 (every verification row true); stripe-webhook v40, create-checkout v42, coach-briefing-cron v25 (410 stub); main → 9bffaf8 then 55b5728 (editor copy found in the live journey) | runs 36573906960, 36579746343 |
+| 2026-09-29 | LIVE EVIDENCE on 55b5728 / 9bffaf8: normal account journey 22/22 (MVP nav, deferred screens redirect, three templates survive reload, phone width, a real draft in 11.2 s, publish refused with the exact domain step); edit + double click + refresh-mid-run 6/6 (one draft and one settled charge each); security probes 19/19 + checkout refusals; founder inventory synced by the new code (63/63, 0 removed, 0 unkeyed) | scratchpad launch/runs/mvp-9bffaf8, mvp-55b5728 |
+| 2026-09-29 | Generation: gpt-5-nano (Standard), 7.8–10.0 s provider time, 332–397 µ$ each, 3 live generations = 1,061 µ$ (~$0.001), trial free quota 17 → 14 | ai_spend_reservations |
 
 ## Design decisions (the spine — every workstream builds on these)
 
@@ -119,22 +123,27 @@ server-side), not finished.
 
 ## Remaining blockers / owner actions
 
-- Founder domain routing: DNS for test.poolrentalnearme.com must point at
-  `proxy.founders.click` (owner's Cloudflare zone) — see MVP-6.
-- Second smoke-signup runner (~4/day, `smoke*@example.com`) is outside the
-  four repos in this session; emails are suppressed.
+- **Founder domain DNS (blocks live publishing, journey F):** `test.poolrentalnearme.com`
+  is an A record to 13.56.89.89 (the Sharetribe server), so it never reaches
+  the edge and TLS can't complete (`ssl_pending`). Recommended: a dedicated
+  pages hostname (e.g. `pages.poolrentalnearme.com`) added in Settings →
+  Domains, TXT-verified, CNAME → `proxy.founders.click`.
+- **Founder browser run (journey A):** needs the founder's own Google session —
+  the prompt is scratchpad `launch/founder-mvp-check.md` (Claude in Chrome).
+- **Stripe test mode:** owner-provided test keys + STRIPE_TEST_WORKSPACE_IDS.
+- **Ordinary connect → sync:** a second Sharetribe marketplace environment
+  (Client ID) for the approved normal account.
+- Optional cleanups (need approval): delete the five 410-stub functions; drop
+  the inactive `process-auth-emails` job (plaintext secret in its command);
+  delete the synthetic pages in the approved test workspace.
 
 ## Next exact action
 
-1. Commit + push this round (review fixes, 000500, checklist, this doc).
-2. Deploy, in order (approval of 2026-09-28 covers it): migrations 000100,
-   000200, 000300, 000310, 000400, 000500 with their verification rows;
-   stripe-webhook + create-checkout from source; the 410 stub under
-   `coach-briefing-cron`; push `main` (deploy-app.yml); verify
-   `/api/public/version` = tested SHA; sync every connected workspace
-   (listing keys) and check 0 unkeyed rows.
-3. Journeys A–H with evidence (Playwright screenshots of the builder, the
-   three template previews, the editor); record generation time and spend.
-4. One consolidated approval request (founder DNS, Stripe test mode, legacy
-   function deletion, process-auth-emails secret, test accounts); handoff with
-   the PASS/FAIL/BLOCKED/NOT RUN matrix and rollback.
+1. When DNS is done: verify the domain (Settings → Domains → check), publish
+   one approved page (a Category Page from the founder's inventory), prove
+   TLS/HTTP, SSR title/H1/description/canonical, listing links and
+   `/a/sitemap.xml` inclusion, then edit and unpublish and verify the sitemap
+   and cache update (private, max-age=60 / 300).
+2. Stripe test mode once keys exist: test-card checkout, webhook deliveries
+   (idempotent), capacity, cancellation → suspension, resubscribe.
+3. Founder browser run (founder-mvp-check.md) → record A.
