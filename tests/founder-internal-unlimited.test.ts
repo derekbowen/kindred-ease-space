@@ -625,7 +625,8 @@ try {
     for (const [file, re, label] of [
       ["src/lib/affiliate-sync.functions.ts", /if \(!\(await affiliateAddonUsable\(data\.workspaceId, settings\?\.addon_status\)\)\) \{/, "the referral sync"],
       ["src/lib/affiliate-public.functions.ts", /!\(await affiliateAddonUsable\(settings\.workspace_id, settings\.addon_status\)\)/, "the public affiliate form"],
-      ["src/lib/sharetribe-sync.server.ts", /if \(await affiliateAddonUsable\(workspaceId, affSettings\?\.addon_status\)\) \{/, "the scheduled referral sync"],
+      // The listing sync no longer chains the referral sync (affiliate deferred;
+      // tests/sharetribe-sync-run.test.ts proves it is never called).
     ] as const) {
       t(`${label} uses the one add-on predicate (add-on live, or internal)`, re.test(read(file)));
     }
