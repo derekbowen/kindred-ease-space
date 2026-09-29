@@ -25,7 +25,7 @@ server-side), not finished.
 |---|---|
 | Production app | `8ff1c41` (`/api/public/version`, built 2026-09-28T21:06Z), Worker version `42e50f5a-43bc-4ae2-ac87-f3f41111179d` |
 | Previous app (rollback) | `123534f`, Worker version `dbb4b72c-532f-4d2a-b307-9e612df6aa58` |
-| Launch branch | `claude/repost-assembly-j3l3qg` @ `51e9541` (8ff1c41 + data-import hotfix a76eed0, 51e9541 — reviewed clean, not yet deployed) |
+| Launch branch | `claude/repost-assembly-j3l3qg`: 8ff1c41 + data-import hotfix (a76eed0, 51e9541) + MVP commits below — nothing after 8ff1c41 is deployed |
 | Migrations in prod | 000100–000930 applied 2026-09-28 (ledger versions 20260928194935…20260928204541); every launch object present (generation_jobs/items/reservations, ai_spend_reservations, ai_platform_settings, reserve_generation_slot, ai_reserve, workspace_is_internal_unlimited, auth_mode). Opportunity Engine tables (20260830000000) absent — not a dependency. |
 | Edge functions | stripe-webhook v39, coach-briefing-cron v24, create-checkout v41 (this release). Legacy Founders-only AI endpoints still deployed: ai-proxy v22, coach-chat v25, help-assistant-chat v26 (verify_jwt **false**), help-assistant-embed v26 — no callers in code, no invocations in 24 h. |
 | AI settings | platform_ai_enabled true, daily ceiling $10, $1/workspace/day, 30 reservations/min (unchanged; no raise without approval) |
@@ -50,6 +50,12 @@ server-side), not finished.
 |---|---|---|
 | 2026-09-28 | Release 8ff1c41 deployed + verified (migrations, 3 functions, app); kill-switch drill; normal-user journey; founder entitlement (DB) | CI 36483699751; this session |
 | 2026-09-28 | Data-import cross-workspace takeover (HIGH) fixed on branch: server-chosen workspace-scoped conflict target, file ids ignored, tenant_pages not importable; bulk editor refuses tenant status | a76eed0, 51e9541; tests/data-import-scope.test.ts 48/48; re-review: closes the hole |
+| 2026-09-28 | MVP spine: one target/filter (target.ts), one inventory query, template contracts, migrations 000100 (keys, sync lease, one live page per target, templates, coverage groups) + 000200 (domain rows server-write-only, exact host) | a48c668; coverage-target 39, templates-contract 18, mvp-migrations.pg on PG16 |
+| 2026-09-29 | Coverage service (defects A–F: no caps, exact totals, six states, country, legacy pages, dismissals, evidence); groups RPC + dismissals read in ordered ranges (PostgREST caps RPCs at 1,000) | eeb3c74, b6a1d74; coverage-report 26 |
+| 2026-09-29 | Draft pipeline: grounding through the page's filter (exact count, prices per currency+unit, fenced untrusted sample, per-template prompts, no availability claims); claim-first drafts keyed by target; failures keep the draft; regenerate into the same row | b6a1d74; page-grounding 33, page-draft-flow 60 |
+| 2026-09-29 | Publishing = reachable page: template/filter/inventory/text checks, ACTIVE domain or the exact next step, `publish_tenant_page_checked` (migration 000400: only the validated draft version), live URL probe; live edits validated before any write; slug locked when live | 758cc60; page-publish-flow 45, mvp-migrations.pg 39/39 (PG16: 20 drafts racing for 5 slots → 5) |
+| 2026-09-29 | Screens: Opportunities, New page (builder), editor (real preview via the W4 registry), My Pages; QPB / Generate Content / bulk create redirect; batch + quick-page endpoints refuse; unvalidated tenant-pages write endpoints removed | a412232 (local until W4 merges: the editor imports its registry and data builder) |
+| 2026-09-29 | Billing: generation included for active/grace/granted (as every plan promises); allowance honours it; webhook price-first plan (Billing Portal changes honoured); capacity-gated reactivation; cancelled customers can check out again | 6c6abbc; mvp-billing 19, stripe-webhook 111, ai-allowance 66 |
 
 ## Design decisions (the spine — every workstream builds on these)
 
@@ -75,6 +81,22 @@ server-side), not finished.
   job embeds a plaintext Supabase secret key in its command → owner decision.
 - Add-ons: nobody holds one (0 affiliate, 0 requests, 0 billing events).
 
+## Known limitations (documented, not fixed in this release)
+
+- **past_due grace anchor**: the retry window is `current_period_end + 7 days`
+  in both decideCapacity (TS) and workspace_capacity (SQL). Stripe advances
+  the period at renewal even when the invoice fails, so a failing card keeps
+  pages up ~5 weeks, not 7 days. Errs toward the customer; the fix needs a
+  `past_due_since` (or period start) column set by the webhook and both
+  capacity functions changed together.
+- **Webhook event claim is not a lease**: a redelivery that arrives while the
+  first attempt is still running reprocesses concurrently. Every handler is
+  idempotent (upserts keyed by Stripe ids, grant_credits keyed by invoice,
+  reactivation through the capacity gate), so the effect is duplicated work,
+  not duplicated money.
+- **Stripe test mode**: not runnable end to end from the app's checkout
+  without owner-provided test credentials (see approval request).
+
 ## Remaining blockers / owner actions
 
 - Founder domain routing: DNS for test.poolrentalnearme.com must point at
@@ -84,9 +106,13 @@ server-side), not finished.
 
 ## Next exact action
 
-The six area maps are done (findings summarized in the design section and the
-task list). Implement in parallel on top of the spine commit:
-W1 surface/deferral, W2 sync, W3 sitemap + public delivery, W4 templates +
-renderers; lead: coverage service + Opportunities, generation (grounding,
-claim-first drafts, seo_title), builder/editor/publish, billing reconciliation.
-Then merge, full validation, test:pg, deploy, journeys A–H.
+1. Merge the four workstream branches (W1 surface/deferral, W2 sync, W3
+   sitemap, W4 templates/renderer) into the launch branch; resolve conflicts
+   in shared tests (coach-launch, launch-copy, founder-ui, sitemap-host);
+   wire the editor preview to W4's data builder; regenerate routeTree.gen.ts.
+2. Full validation: `bun run test`, `bunx tsc --noEmit`, `bun run build`,
+   `AI_PG_URL=postgres://postgres@127.0.0.1:55432/postgres bun run test:pg`.
+3. Push; apply migrations 000100, 000200, (W1's 000300/000310), 000400 in
+   order with their verification rows; deploy stripe-webhook + create-checkout;
+   push main (deploy-app.yml); verify /api/public/version = tested SHA.
+4. Journeys A–H with evidence; consolidated approval request; handoff.
