@@ -22,7 +22,13 @@
  *   - the dashboard's Refresh (refreshBriefing, what generateBriefingNow
  *     runs) reaches the function at most once per workspace per 10 minutes
  *     (L9), answering the stored briefing when throttled;
- *   - tenant text is clipped and the input is bounded (L4).
+ *   - tenant text is clipped and the input is bounded (L4);
+ *   - the briefing is DEFERRED for the MVP (src/lib/features.server.ts): with
+ *     the feature off — the default, for every workspace — the app's request
+ *     is refused before anything is sent. Everything above is proven with it
+ *     turned back on the only way ops can: the platform_settings row
+ *     enabled_deferred_features = ["briefing"], read through the same
+ *     supabase-js stand-in.
  *
  * PGlite is one connection, so this proves the logic across interleaved
  * requests; tests/ai-concurrency.pg.ts races the claim itself on
@@ -171,7 +177,9 @@ const { requestBriefing } = await import("../src/lib/coach-briefing.server");
 /** The app's own request, delivered straight to the handler. */
 const inProcess = async (url: string | URL | Request, init?: RequestInit) =>
   handler(new Request(String(url instanceof Request ? url.url : url), init));
-const refresh = (ws = WS) => requestBriefing(ws, { fetch: inProcess });
+/** Where the deferred-feature gate reads platform_settings (the PGlite stand-in). */
+const settingsDb = pgliteSupabase(db) as any;
+const refresh = (ws = WS) => requestBriefing(ws, { fetch: inProcess, features: settingsDb });
 const cron = (secret: string | null = CRON, body: Record<string, unknown> = {}) =>
   handler(
     new Request("http://supabase.test/functions/v1/coach-briefing-cron", {
@@ -186,6 +194,40 @@ const logs: string[] = [];
 console.error = (...a: unknown[]) => void logs.push(a.map(String).join(" "));
 
 try {
+  // -------------------------------------------------------------------------
+  console.log("\n=== deferred: off by default, nothing is sent ===");
+  {
+    let sent = 0;
+    const counting = async (url: string | URL | Request, init?: RequestInit) => {
+      sent++;
+      return inProcess(url, init);
+    };
+    const { refreshBriefing } = await import("../src/lib/coach-briefing.server");
+    const refusal = async (p: Promise<unknown>) => {
+      try {
+        await p;
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    };
+    const REFUSED = "This part of Founders.click isn't available right now.";
+    t(
+      "requestBriefing is refused while the feature is off",
+      (await refusal(requestBriefing(WS, { fetch: counting, features: settingsDb }))) === REFUSED,
+    );
+    t(
+      "so is refreshBriefing (the dashboard's Refresh)",
+      (await refusal(refreshBriefing(WS, { fetch: counting, db: settingsDb, features: settingsDb }))) === REFUSED,
+    );
+    t("…nothing reached the function and no AI request was made", sent === 0 && aiRequests === 0);
+    t(
+      "…and no refresh was even counted against the throttle",
+      (await one<any>("SELECT count(*)::int AS n FROM public.coach_briefing_refreshes")).n === 0,
+    );
+    await db.exec(`INSERT INTO public.platform_settings (key, value) VALUES ('enabled_deferred_features', '["briefing"]'::jsonb)`);
+  }
+
   // -------------------------------------------------------------------------
   console.log("\n=== 10 concurrent Refreshes + the nightly cron ===");
   {
@@ -293,7 +335,7 @@ try {
       calls++;
       return inProcess(url, init);
     };
-    const press = (ws = WS) => refreshBriefing(ws, { fetch: counted, db: sb as any });
+    const press = (ws = WS) => refreshBriefing(ws, { fetch: counted, db: sb as any, features: sb as any });
     t("the interval is 10 minutes", BRIEFING_REFRESH_INTERVAL_SECONDS === 600);
     const first = await press();
     t("the first Refresh reaches the function (today's briefing: 'exists')", first.ok && (first as any).status === "exists" && calls === 1, JSON.stringify(first));

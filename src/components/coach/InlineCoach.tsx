@@ -1,47 +1,21 @@
-import { useState } from "react";
-import { Sparkles } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { CoachPanel } from "./CoachPanel";
-import { useCoachEnabled } from "./coach-availability";
-
 /**
- * InlineCoach renders a compact "Ask coach" trigger anchored within an editor
- * page. When opened it slides in the shared CoachPanel pre-loaded with the
- * current page/route context so suggestions are scoped to what the user is
- * editing. Hidden until a workspaceId is available, and hidden entirely
- * while the Coach is off (coach-availability).
+ * The "Ask coach" button screens used to place beside an editor. The Coach is
+ * DEFERRED (MVP scope, 2026-09-28), so this renders nothing — for every
+ * workspace, the founder / internal unlimited one included, and whatever the
+ * URL says. There is no switch that brings it back: the Coach's route
+ * redirects to /app (src/lib/deferred-route.ts) and its server functions
+ * refuse (src/lib/features.server.ts).
+ *
+ * Kept, with its props, only because screens other workstreams own still
+ * mount it (the Sharetribe page, the page editor); they can drop the element.
  */
-export function InlineCoach({
-  workspaceId,
-  context,
-  label = "Ask coach",
-  variant = "outline",
-  size = "sm",
-  className,
-}: {
+export function InlineCoach(_props: {
   workspaceId: string | null;
   context?: { page_id?: string; route?: string };
   label?: string;
   variant?: "default" | "outline" | "secondary" | "ghost";
   size?: "sm" | "default" | "lg";
   className?: string;
-}) {
-  const enabled = useCoachEnabled();
-  const [open, setOpen] = useState(false);
-  if (!enabled || !workspaceId) return null;
-  return (
-    <>
-      <Button
-        type="button"
-        variant={variant}
-        size={size}
-        onClick={() => setOpen(true)}
-        className={className}
-      >
-        <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-        {label}
-      </Button>
-      <CoachPanel open={open} onOpenChange={setOpen} workspaceId={workspaceId} context={context} />
-    </>
-  );
+}): null {
+  return null;
 }

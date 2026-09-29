@@ -264,72 +264,70 @@ export const ListGenerationTargetsInputSchema = z
 export const listGenerationTargets = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => ListGenerationTargetsInputSchema.parse(d))
-  .handler(async ({ data, context }) =>
-    customerSafe(async () => {
-      await assertWorkspaceMember(data.workspaceId, context.userId);
-      batchGenerationMoved();
+  .handler(async ({ data, context }) => customerSafe(async () => {
+    await assertWorkspaceMember(data.workspaceId, context.userId);
+    batchGenerationMoved();
 
-      const [{ targets, syncedListings, dominantCategory }, settings, consumed24h, internal] =
-        await Promise.all([
-          loadTargets(data.workspaceId, data.minListings),
-          readPlatformSettings(),
-          countConsumedLast24h(data.workspaceId),
-          isInternalWorkspace(data.workspaceId),
-        ]);
-      // The founder / internal unlimited entitlement has no daily cap.
-      const dailyCap = effectiveDailyCap(settings.dailyCap, internal);
+    const [{ targets, syncedListings, dominantCategory }, settings, consumed24h, internal] =
+      await Promise.all([
+        loadTargets(data.workspaceId, data.minListings),
+        readPlatformSettings(),
+        countConsumedLast24h(data.workspaceId),
+        isInternalWorkspace(data.workspaceId),
+      ]);
+    // The founder / internal unlimited entitlement has no daily cap.
+    const dailyCap = effectiveDailyCap(settings.dailyCap, internal);
 
-      // Only the items for the cities on screen (at most a few dozen), and only
-      // the columns the listing needs — never the whole table.
-      const keys = targets.map((t) => t.targetKey);
-      let items: Array<{
-        target_key: string;
-        status: GenerationItemRow["status"];
-        page_id: string | null;
-        attempts: number;
-      }> = [];
-      if (keys.length) {
-        const { data: rows, error } = await sb()
-          .from("generation_items")
-          .select("target_key, status, page_id, attempts")
-          .eq("workspace_id", data.workspaceId)
-          .in("target_key", keys)
-          .limit(keys.length);
-        if (error) throw new Error(error.message);
-        items = rows ?? [];
-      }
-      const byKey = new Map(items.map((i) => [i.target_key, i]));
+    // Only the items for the cities on screen (at most a few dozen), and only
+    // the columns the listing needs — never the whole table.
+    const keys = targets.map((t) => t.targetKey);
+    let items: Array<{
+      target_key: string;
+      status: GenerationItemRow["status"];
+      page_id: string | null;
+      attempts: number;
+    }> = [];
+    if (keys.length) {
+      const { data: rows, error } = await sb()
+        .from("generation_items")
+        .select("target_key, status, page_id, attempts")
+        .eq("workspace_id", data.workspaceId)
+        .in("target_key", keys)
+        .limit(keys.length);
+      if (error) throw new Error(error.message);
+      items = rows ?? [];
+    }
+    const byKey = new Map(items.map((i) => [i.target_key, i]));
 
-      const list: TargetListing[] = targets.map((t) => {
-        const existing = byKey.get(t.targetKey);
-        return {
-          ...t,
-          // A done item whose draft was deleted (page_id nulled by the FK) is
-          // generatable again — "done" alone is not "has a page".
-          alreadyGenerated: existing?.status === "done" && !!existing.page_id,
-          itemStatus: existing?.status ?? null,
-          pageId: existing?.page_id ?? null,
-          attemptsExhausted:
-            !!existing && existing.status !== "done" && attemptsExhausted(existing.attempts),
-        };
-      });
-
+    const list: TargetListing[] = targets.map((t) => {
+      const existing = byKey.get(t.targetKey);
       return {
-        targets: list,
-        syncedListings,
-        dominantCategory,
-        minListings: data.minListings,
-        paused: settings.paused,
-        dailyCap,
-        remainingToday: dailyCapRemaining(dailyCap, consumed24h),
-        /** No daily cap: the workspace holds the founder / internal unlimited entitlement. */
-        internalUnlimited: internal,
-        // Quality tiers, never model names: the server maps a tier to a model.
-        tiers: GENERATION_TIER_OPTIONS,
-        defaultTier: GENERATION_DEFAULT_TIER,
+        ...t,
+        // A done item whose draft was deleted (page_id nulled by the FK) is
+        // generatable again — "done" alone is not "has a page".
+        alreadyGenerated: existing?.status === "done" && !!existing.page_id,
+        itemStatus: existing?.status ?? null,
+        pageId: existing?.page_id ?? null,
+        attemptsExhausted:
+          !!existing && existing.status !== "done" && attemptsExhausted(existing.attempts),
       };
-    }),
-  );
+    });
+
+    return {
+      targets: list,
+      syncedListings,
+      dominantCategory,
+      minListings: data.minListings,
+      paused: settings.paused,
+      dailyCap,
+      remainingToday: dailyCapRemaining(dailyCap, consumed24h),
+      /** No daily cap: the workspace holds the founder / internal unlimited entitlement. */
+      internalUnlimited: internal,
+      // Quality tiers, never model names: the server maps a tier to a model.
+      tiers: GENERATION_TIER_OPTIONS,
+      defaultTier: GENERATION_DEFAULT_TIER,
+    };
+  }));
 
 export const StartGenerationJobInputSchema = z
   .object({
@@ -347,13 +345,11 @@ export type StartGenerationJobInput = z.infer<typeof StartGenerationJobInputSche
 export const startGenerationJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => StartGenerationJobInputSchema.parse(d))
-  .handler(async ({ data, context }) =>
-    customerSafe(async () => {
-      await assertWorkspaceMember(data.workspaceId, context.userId);
-      batchGenerationMoved();
-      return startJob(data, context.userId);
-    }),
-  );
+  .handler(async ({ data, context }) => customerSafe(async () => {
+    await assertWorkspaceMember(data.workspaceId, context.userId);
+    batchGenerationMoved();
+    return startJob(data, context.userId);
+  }));
 
 /**
  * The job start behind startGenerationJob; the caller has checked membership.
@@ -396,9 +392,7 @@ async function startJob(data: StartGenerationJobInput, userId: string) {
         `Those cities were given up on after ${MAX_ITEM_ATTEMPTS} failed attempts each. Contact support if you need them written.`,
       );
     }
-    throw new CustomerFacingError(
-      "Every city you picked already has a generated draft. Nothing to do.",
-    );
+    throw new CustomerFacingError("Every city you picked already has a generated draft. Nothing to do.");
   }
 
   // Sizing only: the job may not ask for more pages than today's cap has
@@ -511,12 +505,10 @@ const jobInput = (d: unknown) =>
 export const getGenerationJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(jobInput)
-  .handler(async ({ data, context }) =>
-    customerSafe(async () => {
-      await assertWorkspaceMember(data.workspaceId, context.userId);
-      return loadJob(data.workspaceId, data.jobId);
-    }),
-  );
+  .handler(async ({ data, context }) => customerSafe(async () => {
+    await assertWorkspaceMember(data.workspaceId, context.userId);
+    return loadJob(data.workspaceId, data.jobId);
+  }));
 
 /**
  * "Stop after this one". The job is marked cancelled and every item still
@@ -528,26 +520,24 @@ export const getGenerationJob = createServerFn({ method: "POST" })
 export const cancelGenerationJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(jobInput)
-  .handler(async ({ data, context }) =>
-    customerSafe(async () => {
-      await assertWorkspaceMember(data.workspaceId, context.userId);
-      const { error: jobErr } = await sb()
-        .from("generation_jobs")
-        .update({ status: "cancelled", finished_at: new Date().toISOString() })
-        .eq("workspace_id", data.workspaceId)
-        .eq("id", data.jobId)
-        .in("status", ["queued", "running"]);
-      if (jobErr) throw new Error(jobErr.message);
-      const { error: itemErr } = await sb()
-        .from("generation_items")
-        .update({ status: "skipped", error: "Job was cancelled" })
-        .eq("workspace_id", data.workspaceId)
-        .eq("job_id", data.jobId)
-        .eq("status", "pending");
-      if (itemErr) throw new Error(itemErr.message);
-      return loadJob(data.workspaceId, data.jobId);
-    }),
-  );
+  .handler(async ({ data, context }) => customerSafe(async () => {
+    await assertWorkspaceMember(data.workspaceId, context.userId);
+    const { error: jobErr } = await sb()
+      .from("generation_jobs")
+      .update({ status: "cancelled", finished_at: new Date().toISOString() })
+      .eq("workspace_id", data.workspaceId)
+      .eq("id", data.jobId)
+      .in("status", ["queued", "running"]);
+    if (jobErr) throw new Error(jobErr.message);
+    const { error: itemErr } = await sb()
+      .from("generation_items")
+      .update({ status: "skipped", error: "Job was cancelled" })
+      .eq("workspace_id", data.workspaceId)
+      .eq("job_id", data.jobId)
+      .eq("status", "pending");
+    if (itemErr) throw new Error(itemErr.message);
+    return loadJob(data.workspaceId, data.jobId);
+  }));
 
 /**
  * One unit of work. Safe to call repeatedly for the same item:
@@ -609,10 +599,7 @@ async function runItem(
   if (job?.status === "cancelled") {
     // Fenced on the state this run read: if another driver claimed the item
     // meanwhile, nothing is written and its claim stands.
-    const changed = await markItemIfUnchanged(row, {
-      status: "skipped",
-      error: "Job was cancelled",
-    });
+    const changed = await markItemIfUnchanged(row, { status: "skipped", error: "Job was cancelled" });
     return { item: await freshItem(row.id), changed };
   }
 
@@ -806,10 +793,7 @@ async function runItem(
     // back: it cost nothing, so it must not bring the item closer to "gave
     // up after 3 attempts". Fenced on the claim's token like every write.
     const refusedBeforeCall =
-      !slotMarked &&
-      e instanceof CustomerFacingError &&
-      !!e.code &&
-      SPEND_REFUSAL_CODES.has(e.code);
+      !slotMarked && e instanceof CustomerFacingError && !!e.code && SPEND_REFUSAL_CODES.has(e.code);
     const { error: failErr } = await sb()
       .from("generation_items")
       .update({
@@ -839,24 +823,20 @@ const itemInput = (d: unknown) => GenerationItemInputSchema.parse(d);
 export const processGenerationItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(itemInput)
-  .handler(async ({ data, context }) =>
-    customerSafe(async () => {
-      await assertWorkspaceMember(data.workspaceId, context.userId);
-      batchGenerationMoved();
-      return runItem(data.workspaceId, context.userId, data.itemId);
-    }),
-  );
+  .handler(async ({ data, context }) => customerSafe(async () => {
+    await assertWorkspaceMember(data.workspaceId, context.userId);
+    batchGenerationMoved();
+    return runItem(data.workspaceId, context.userId, data.itemId);
+  }));
 
 export const retryGenerationItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(itemInput)
-  .handler(async ({ data, context }) =>
-    customerSafe(async () => {
-      await assertWorkspaceMember(data.workspaceId, context.userId);
-      batchGenerationMoved();
-      return runItem(data.workspaceId, context.userId, data.itemId, { onlyIfFailed: true });
-    }),
-  );
+  .handler(async ({ data, context }) => customerSafe(async () => {
+    await assertWorkspaceMember(data.workspaceId, context.userId);
+    batchGenerationMoved();
+    return runItem(data.workspaceId, context.userId, data.itemId, { onlyIfFailed: true });
+  }));
 
 export type PublishOutcome = "published" | "already_published" | "draft" | "limit" | "error";
 
@@ -878,62 +858,53 @@ export type PublishResult = {
 export const publishGeneratedPages = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(jobInput)
-  .handler(async ({ data, context }) =>
-    customerSafe(async () => {
-      await assertWorkspaceMember(data.workspaceId, context.userId);
-      batchGenerationMoved();
-      const { items } = await loadJob(data.workspaceId, data.jobId);
-      const { publishPagesAtomically, pageLimitMessage } =
-        await import("@/lib/entitlements.functions");
+  .handler(async ({ data, context }) => customerSafe(async () => {
+    await assertWorkspaceMember(data.workspaceId, context.userId);
+    batchGenerationMoved();
+    const { items } = await loadJob(data.workspaceId, data.jobId);
+    const { publishPagesAtomically, pageLimitMessage } =
+      await import("@/lib/entitlements.functions");
 
-      const results: PublishResult[] = [];
-      let limitHit = false;
-      let limitMsg = "";
-      for (const item of items) {
-        if (item.status !== "done" || !item.page_id) continue;
-        const base = { itemId: item.id, pageId: item.page_id, slug: item.slug, title: null };
-        try {
-          const check = await checkStoredPageContract(data.workspaceId, item.page_id);
-          const withTitle = { ...base, slug: check.slug, title: check.title };
-          if (check.status === "published") {
-            results.push({ ...withTitle, outcome: "already_published", message: "Already live." });
-            continue;
-          }
-          if (!check.ok) {
-            results.push({
-              ...withTitle,
-              outcome: "draft",
-              message: contractFailureMessage(check),
-            });
-            continue;
-          }
-          if (limitHit) {
-            results.push({ ...withTitle, outcome: "limit", message: limitMsg });
-            continue;
-          }
-          const gate = await publishPagesAtomically(data.workspaceId, [item.page_id]);
-          if (gate.published === 0) {
-            limitHit = true;
-            limitMsg = `${pageLimitMessage(gate.limit)} The page stays a draft.`;
-            results.push({ ...withTitle, outcome: "limit", message: limitMsg });
-          } else {
-            results.push({ ...withTitle, outcome: "published", message: "Published." });
-          }
-        } catch (e) {
-          // Never the database's text: the customer reads one plain sentence.
-          const msg = customerMessage(
-            e,
-            "Could not publish this page right now. Try again in a minute.",
-          );
-          results.push({ ...base, outcome: "error", message: msg.slice(0, 300) });
+    const results: PublishResult[] = [];
+    let limitHit = false;
+    let limitMsg = "";
+    for (const item of items) {
+      if (item.status !== "done" || !item.page_id) continue;
+      const base = { itemId: item.id, pageId: item.page_id, slug: item.slug, title: null };
+      try {
+        const check = await checkStoredPageContract(data.workspaceId, item.page_id);
+        const withTitle = { ...base, slug: check.slug, title: check.title };
+        if (check.status === "published") {
+          results.push({ ...withTitle, outcome: "already_published", message: "Already live." });
+          continue;
         }
+        if (!check.ok) {
+          results.push({ ...withTitle, outcome: "draft", message: contractFailureMessage(check) });
+          continue;
+        }
+        if (limitHit) {
+          results.push({ ...withTitle, outcome: "limit", message: limitMsg });
+          continue;
+        }
+        const gate = await publishPagesAtomically(data.workspaceId, [item.page_id]);
+        if (gate.published === 0) {
+          limitHit = true;
+          limitMsg = `${pageLimitMessage(gate.limit)} The page stays a draft.`;
+          results.push({ ...withTitle, outcome: "limit", message: limitMsg });
+        } else {
+          results.push({ ...withTitle, outcome: "published", message: "Published." });
+        }
+      } catch (e) {
+        // Never the database's text: the customer reads one plain sentence.
+        const msg = customerMessage(e, "Could not publish this page right now. Try again in a minute.");
+        results.push({ ...base, outcome: "error", message: msg.slice(0, 300) });
       }
+    }
 
-      return {
-        results,
-        published: results.filter((r) => r.outcome === "published").length,
-        keptAsDraft: results.filter((r) => r.outcome === "draft").length,
-        limitReached: limitHit,
-      };
-    }),
-  );
+    return {
+      results,
+      published: results.filter((r) => r.outcome === "published").length,
+      keptAsDraft: results.filter((r) => r.outcome === "draft").length,
+      limitReached: limitHit,
+    };
+  }));

@@ -24,7 +24,7 @@ process.env.SUPABASE_URL = "http://supabase.test";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test";
 
 import { FakeBackend } from "./_support/fake-backend";
-import { applyPostgrestQuery, serveTables, type Row, type Tables } from "./_support/fake-postgrest";
+import { applyPostgrestQuery, serveTables, type Row, type Tables } from "./_support/fake-postgrest-tenant";
 import { LISTING_PUBLIC_COLUMNS } from "../src/lib/coverage/inventory.server";
 import { listingKeys, makeFilter, resolveFilter } from "../src/lib/coverage/target";
 

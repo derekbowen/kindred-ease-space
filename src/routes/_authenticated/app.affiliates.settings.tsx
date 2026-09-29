@@ -11,11 +11,13 @@ import { getMe } from "@/lib/auth.functions";
 import { getAffiliateSettings, updateAffiliateSettings } from "@/lib/affiliates.functions";
 import { runAffiliateSync } from "@/lib/affiliate-sync.functions";
 import { AFFILIATE_REQUIREMENT_NOTE } from "@/lib/affiliate-requirements";
+import { deferredRoute } from "@/lib/deferred-route";
 
 const AFFILIATE_SYNC_FAILED =
   "Couldn't sync affiliate sales from your marketplace. Try again in a few minutes, or contact support if it keeps happening.";
 
 export const Route = createFileRoute("/_authenticated/app/affiliates/settings")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Affiliate Settings — founders.click" }] }),
   component: AffiliateSettings,
 });

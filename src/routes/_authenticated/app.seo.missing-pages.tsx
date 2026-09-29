@@ -12,8 +12,10 @@ import {
   redirect404,
   type Content404Row,
 } from "@/lib/admin-404-log.functions";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/seo/missing-pages")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Missing Pages — founders.click" }] }),
   component: MissingPagesPage,
 });

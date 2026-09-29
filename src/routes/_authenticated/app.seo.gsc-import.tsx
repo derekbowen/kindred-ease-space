@@ -9,8 +9,10 @@ import { getMe } from "@/lib/auth.functions";
 import { parseDelimited } from "@/lib/csv";
 import { importGscQueries, getKeywordStats } from "@/lib/admin-seo-tools.functions";
 import { userMessage } from "@/lib/user-message";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/seo/gsc-import")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "GSC Import — founders.click" }] }),
   component: GscImportPage,
 });

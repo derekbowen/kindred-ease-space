@@ -427,8 +427,8 @@ try {
       JSON.stringify(e),
     );
     t(
-      "…internalUnlimited true, planLabel 'Founder / Internal Unlimited', revealLaunchHiddenFeatures true",
-      e.internalUnlimited === true && e.planLabel === INTERNAL_UNLIMITED_PLAN_LABEL && e.revealLaunchHiddenFeatures === true,
+      "…internalUnlimited true, planLabel 'Founder / Internal Unlimited', and no reveal flag (the founder sees the same MVP)",
+      e.internalUnlimited === true && e.planLabel === INTERNAL_UNLIMITED_PLAN_LABEL && !("revealLaunchHiddenFeatures" in e),
     );
     t("…even though its trial ended ten days ago (no trial expiry while the grant is active)", e.isTrial === true && e.billingState !== "trial_expired");
     t("…decided by THE predicate, for this workspace only", backend.rpcHits("workspace_is_internal_unlimited").map((h) => JSON.stringify(h.body)).join() === JSON.stringify({ _workspace_id: WS }));
@@ -442,8 +442,8 @@ try {
       JSON.stringify(e),
     );
     t(
-      "…internalUnlimited false, planLabel null, revealLaunchHiddenFeatures false",
-      e.internalUnlimited === false && e.planLabel === null && e.revealLaunchHiddenFeatures === false,
+      "…internalUnlimited false, planLabel null, no reveal flag",
+      e.internalUnlimited === false && e.planLabel === null && !("revealLaunchHiddenFeatures" in e),
     );
   }
   world({ internal: false, granted: 50 });
@@ -468,7 +468,7 @@ try {
     const b = await readBetaStatus(WS);
     t(
       "readBetaStatus (getBetaStatus): internal is not a free beta — beta false, with the internal fields",
-      b.beta === false && b.pageLimit === 0 && b.internalUnlimited === true && b.planLabel === INTERNAL_UNLIMITED_PLAN_LABEL && b.revealLaunchHiddenFeatures === true,
+      b.beta === false && b.pageLimit === 0 && b.internalUnlimited === true && b.planLabel === INTERNAL_UNLIMITED_PLAN_LABEL && !("revealLaunchHiddenFeatures" in b),
       JSON.stringify(b),
     );
   }

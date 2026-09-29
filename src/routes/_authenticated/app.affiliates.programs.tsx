@@ -7,8 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getMe } from "@/lib/auth.functions";
 import { listPrograms } from "@/lib/affiliates.functions";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/affiliates/programs")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Affiliate Programs — founders.click" }] }),
   component: ProgramsRoute,
 });

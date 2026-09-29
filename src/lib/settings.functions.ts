@@ -8,8 +8,8 @@ import { internalAccessFields, type InternalAccessFields } from "@/lib/billing-c
 const sb = () => supabaseAdmin as any;
 
 /**
- * internalUnlimited / planLabel / revealLaunchHiddenFeatures: the founder /
- * internal unlimited entitlement, computed here from the workspace's grants
+ * internalUnlimited / planLabel: the founder / internal unlimited
+ * entitlement, computed here from the workspace's grants
  * on every request (member-only, read-only; see InternalAccessFields).
  */
 export type SettingsContext = InternalAccessFields & {

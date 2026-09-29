@@ -1977,21 +1977,15 @@ console.log("\n=== coach create_city_page runs through the core ===");
 console.log("\n=== approveOpportunity: idempotent and guarded ===");
 {
   const opp = read("src/lib/opportunities.functions.ts");
-  const approve = opp.slice(
-    opp.indexOf("export async function runApproveOpportunity("),
-    opp.indexOf("export const skipOpportunity"),
-  );
+  const approve = opp.slice(opp.indexOf("export async function runApproveOpportunity("), opp.indexOf("export const skipOpportunity"));
+  // MVP (2026-09-28): the old engine is deferred, so the handler asks the
+  // feature gate first and only then runs the pipeline.
   t(
-    "approveOpportunity (its pipeline, runApproveOpportunity) was found",
+    "approveOpportunity (its pipeline, runApproveOpportunity) was found, behind the deferred-feature gate",
     approve.length > 0 &&
-      /\.handler\(async \(\{ data, context \}\) => runApproveOpportunity\(data, context\.userId\)\)/.test(
-        approve,
-      ),
+      /\.handler\(async \(\{ data, context \}\) => \{\s*await assertFeatureAvailable\("legacy_opportunity_engine"\);\s*return runApproveOpportunity\(data, context\.userId\);\s*\}\)/.test(approve),
   );
-  t(
-    "the opportunity id is the generation request id",
-    approve.includes("generationRequestId: opp.id,"),
-  );
+  t("the opportunity id is the generation request id", approve.includes("generationRequestId: opp.id,"));
   t(
     "the 'generating' transition is guarded against in-flight and finished states and reports its rows",
     /status: "generating",[\s\S]*?\.eq\("id", data\.id\)\s*\.eq\("workspace_id", data\.workspaceId\)\s*\.not\("status", "in", "\(generating,draft_ready,published\)"\)\s*\.select\("id"\)/.test(

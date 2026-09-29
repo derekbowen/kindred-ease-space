@@ -14,8 +14,10 @@ import {
   listApplications,
   decideApplication,
 } from "@/lib/affiliates.functions";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/affiliates/customise")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Customise — founders.click" }] }),
   component: CustomisePage,
 });

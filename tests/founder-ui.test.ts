@@ -10,11 +10,12 @@
  *  2. The founder / internal unlimited account, and only it, reads "Founder /
  *     Internal Unlimited · No usage limits · Internal account": no trial
  *     card, no plans or checkout on Billing, no page-limit bar, no daily-cap
- *     number, the unlaunched tools visible — all from the server-computed
- *     flags. A normal customer's wording and sidebar are unchanged.
+ *     number — all from the server-computed flags. Its sidebar and Settings
+ *     tabs are the same MVP every customer sees (MVP scope, 2026-09-28: the
+ *     old reveal of unlaunched tools is gone).
  * Offline.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -27,8 +28,8 @@ import {
 } from "@tanstack/react-router";
 import { availableModelsFor, type AvailableAiModels } from "../src/lib/ai-models.functions";
 import { modelOptions, pickModelTier, qualityForRequest } from "../src/components/ai/model-choice";
-import { NAV_SECTIONS, isNavItemVisible, type NavItem } from "../src/lib/app-nav";
-import { SETTINGS_TABS, isSettingsTabVisible } from "../src/components/settings/settings-tabs";
+import { NAV_SECTIONS, visibleNavSections, type NavItem } from "../src/lib/app-nav";
+import { SETTINGS_TABS } from "../src/components/settings/settings-tabs";
 import {
   describePlanStatus,
   INTERNAL_PLAN_LABEL,
@@ -248,24 +249,20 @@ const gemini = uiFiles.filter((f) => /gemini/i.test(readFileSync(f, "utf8")));
 t("no Gemini anywhere in the app's routes or components", gemini.length === 0, gemini.join(", "));
 
 // ---------------------------------------------------------------------------
-console.log("\nfounder reveal: the unlaunched tools, never a stub, never an ops tool");
+console.log("\nthe founder sees the same MVP sidebar and Settings tabs as every customer");
 
 const items: NavItem[] = NAV_SECTIONS.flatMap((s) => s.items);
-const customer = { showStubs: false, isInternal: false };
-const founder = { showStubs: false, isInternal: false, revealLaunchHidden: true };
-const byTo = (to: string) => items.find((i) => i.to === to)!;
-const visibleTo = (opts: Parameters<typeof isNavItemVisible>[1]) =>
-  items.filter((i) => isNavItemVisible(i, opts)).map((i) => i.to);
-const cust = visibleTo(customer);
-const fnd = visibleTo(founder);
-t(
-  "a customer still sees only launch items",
-  items.filter((i) => isNavItemVisible(i, customer)).every((i) => i.launch && !i.stub),
-);
-t(
-  "revealLaunchHidden:false is exactly the customer view",
-  visibleTo({ ...customer, revealLaunchHidden: false }).join() === cust.join(),
-);
+const customerView = visibleNavSections({ platformAdmin: false }).flatMap((s) => s.items.map((i) => i.to));
+// visibleNavSections takes no entitlement at all: whatever else is passed —
+// the old reveal flags included — the answer is the same.
+const founderView = visibleNavSections({
+  platformAdmin: false,
+  internalUnlimited: true,
+  revealLaunchHidden: true,
+  revealLaunchHiddenFeatures: true,
+  showStubs: true,
+} as unknown as { platformAdmin: boolean }).flatMap((s) => s.items.map((i) => i.to));
+t("the founder's sidebar is exactly the customer's", founderView.join() === customerView.join(), founderView.join(","));
 for (const to of [
   "/app/seo/keyword-opportunities",
   "/app/seo/competitor-tracker",
@@ -276,51 +273,21 @@ for (const to of [
   "/app/content/data-import",
   "/app/settings/ai",
   "/app/settings/api-keys",
+  "/app/coach",
 ]) {
-  t(
-    `founder sees ${to}; a customer does not`,
-    fnd.includes(to) && !cust.includes(to) && !byTo(to).stub,
-  );
+  t(`no one sees ${to} (it is not in the nav at all)`, !items.some((i) => i.to === to) && !founderView.includes(to));
 }
-t(
-  "founder never sees a stub",
-  items.filter((i) => isNavItemVisible(i, founder)).every((i) => !i.stub),
-);
-t(
-  "founder reveal never shows an internalOnly ops tool",
-  items.filter((i) => isNavItemVisible(i, founder)).every((i) => !i.internalOnly),
-);
-t("the Coach (a static notice) is not revealed", !fnd.includes("/app/coach"));
-t(
-  "every launch item a customer sees, the founder sees too",
-  cust.every((to) => fnd.includes(to)),
-);
-const tabsFounder = SETTINGS_TABS.filter((tab) =>
-  isSettingsTabVisible(tab.to, { showStubs: false, revealLaunchHidden: true }),
-).map((x) => x.to as string);
-const tabsCustomer = SETTINGS_TABS.filter((tab) =>
-  isSettingsTabVisible(tab.to, { showStubs: false }),
-).map((x) => x.to as string);
-t(
-  "Settings: the founder sees AI Providers and API Keys",
-  tabsFounder.includes("/app/settings/ai") && tabsFounder.includes("/app/settings/api-keys"),
-);
-t(
-  "Settings: a customer still does not",
-  !tabsCustomer.includes("/app/settings/ai") && !tabsCustomer.includes("/app/settings/api-keys"),
-);
+t("the customer sidebar has no internalOnly ops tool", items.filter((i) => customerView.includes(i.to)).every((i) => !i.internalOnly));
+const tabs = SETTINGS_TABS.map((x) => x.to as string);
+t("Settings: the same four tabs for everyone, no AI Providers or API Keys", tabs.join() === "/app/settings,/app/settings/domains,/app/settings/integrations/sharetribe,/app/billing", tabs.join());
 
 const shell = read("src/routes/_authenticated/app.tsx");
-t(
-  "the shell reveals only from the server's flag",
-  /const revealLaunchHidden = beta\?\.revealLaunchHiddenFeatures === true;/.test(shell) &&
-    /isNavItemVisible\(i, \{ showStubs, isInternal, revealLaunchHidden \}\)/.test(shell),
-);
+t("the shell reveals nothing from the founder flag", !/revealLaunchHidden/.test(shell) && /visibleNavSections\(\{ platformAdmin \}\)/.test(shell));
 t("the shell never compares an email", !/@gmail|derekbowen|\.email ===|email\)\s*===/.test(shell));
-const hook = read("src/components/billing/use-internal-access.ts");
 t(
-  "SettingsNav's flag is the server's (getBetaStatus), not a guess",
-  /getBetaStatus/.test(hook) && /data\?\.revealLaunchHiddenFeatures === true/.test(hook),
+  "the reveal hook is gone and no source asks for a reveal flag",
+  !existsSync(join(ROOT, "src/components/billing/use-internal-access.ts")) &&
+    [...walk(join(ROOT, "src"))].every((f) => !/revealLaunchHidden/.test(readFileSync(f, "utf8"))),
 );
 
 // ---------------------------------------------------------------------------
@@ -389,29 +356,9 @@ t(
 // ---------------------------------------------------------------------------
 console.log("\nthe AI figure: no sentinel number for the internal account");
 
-const base = {
-  generationsUsedToday: 7,
-  generationPaused: false,
-  summary: "AI features are ready to use for this workspace.",
-  state: "ok" as const,
-};
-const internalAllowance = {
-  ...base,
-  dailyCap: 2_147_483_647,
-  internalUnlimited: true,
-  planLabel: INTERNAL_PLAN_LABEL,
-  revealLaunchHiddenFeatures: true,
-  generationSummary:
-    "No daily limit on AI-generated pages for this internal account. 7 generated in the last 24 hours.",
-} as AiAllowance;
-const normalAllowance = {
-  ...base,
-  dailyCap: 50,
-  internalUnlimited: false,
-  planLabel: null,
-  revealLaunchHiddenFeatures: false,
-  generationSummary: "7 of 50 AI-generated pages used in the last 24 hours.",
-} as AiAllowance;
+const base = { generationsUsedToday: 7, generationPaused: false, summary: "AI features are ready to use for this workspace.", state: "ok" as const };
+const internalAllowance = { ...base, dailyCap: 2_147_483_647, internalUnlimited: true, planLabel: INTERNAL_PLAN_LABEL, generationSummary: "No daily limit on AI-generated pages for this internal account. 7 generated in the last 24 hours." } as AiAllowance;
+const normalAllowance = { ...base, dailyCap: 50, internalUnlimited: false, planLabel: null, generationSummary: "7 of 50 AI-generated pages used in the last 24 hours." } as AiAllowance;
 t("internal: '7 / Unlimited'", formatAllowanceCount(internalAllowance) === "7 / Unlimited");
 t(
   "internal: never prints 2,147,483,647",
@@ -462,7 +409,7 @@ t(
 );
 t(
   "hasPlan is false for the internal account (no extra-capacity checkout)",
-  /const hasPlan = Boolean\(ent && !internal && !ent\.isTrial && ent\.planKey\);/.test(billing),
+  /const hasPlan = Boolean\(\s*ent &&\s*!internal &&\s*!ent\.isTrial &&\s*ent\.planKey &&/.test(billing),
 );
 t(
   "the internal card names the entitlement",

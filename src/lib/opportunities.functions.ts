@@ -4,6 +4,12 @@
  * Controlled rollout: availability requires BOTH the global kill switch
  * (OPPORTUNITY_ENGINE_ENABLED) AND explicit per-workspace enrollment, so an
  * unvalidated recommendation engine can never reach every customer at once.
+ *
+ * DEFERRED for the MVP (2026-09-28): the coverage service replaces this
+ * engine, so every handler below first calls
+ * assertFeatureAvailable("legacy_opportunity_engine") (src/lib/features.server.ts),
+ * which refuses for every workspace — enrolled, internal or not — before any
+ * read, write or generation. Its tables and rows are kept.
  */
 
 import { createServerFn } from "@tanstack/react-start";
@@ -11,6 +17,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { assertWorkspaceMember, assertWorkspaceOwner, workspaceIdSchema } from "./admin-helpers.functions";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 const sb = () => supabaseAdmin as any;
 
@@ -54,6 +61,7 @@ export const getOpportunityFlag = createServerFn({ method: "GET" })
     z.object({ workspaceId: workspaceIdSchema.optional() }).parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("legacy_opportunity_engine");
     const global = opportunityEngineEnabled();
     if (!global || !data.workspaceId) return { enabled: false, global };
     try {
@@ -70,6 +78,7 @@ export const setAnalysisDomain = createServerFn({ method: "POST" })
     z.object({ workspaceId: workspaceIdSchema, domain: z.string().min(3).max(253) }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("legacy_opportunity_engine");
     await assertAvailable(data.workspaceId);
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     const host = data.domain
@@ -98,6 +107,7 @@ export const runOpportunityAnalysis = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("legacy_opportunity_engine");
     await assertAvailable(data.workspaceId);
     await assertWorkspaceOwner(data.workspaceId, context.userId);
 
@@ -190,6 +200,7 @@ export const listOpportunities = createServerFn({ method: "GET" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("legacy_opportunity_engine");
     await assertAvailable(data.workspaceId);
     await assertWorkspaceMember(data.workspaceId, context.userId);
     let q = sb()
@@ -219,6 +230,7 @@ export const getOpportunity = createServerFn({ method: "GET" })
     z.object({ workspaceId: workspaceIdSchema, id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("legacy_opportunity_engine");
     await assertAvailable(data.workspaceId);
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const [{ data: opp }, { data: evidence }] = await Promise.all([
@@ -358,7 +370,10 @@ export async function runApproveOpportunity(
 export const approveOpportunity = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => ApproveOpportunityInputSchema.parse(d))
-  .handler(async ({ data, context }) => runApproveOpportunity(data, context.userId));
+  .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("legacy_opportunity_engine");
+    return runApproveOpportunity(data, context.userId);
+  });
 
 export const skipOpportunity = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -366,6 +381,7 @@ export const skipOpportunity = createServerFn({ method: "POST" })
     z.object({ workspaceId: workspaceIdSchema, id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("legacy_opportunity_engine");
     await assertAvailable(data.workspaceId);
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     await sb()

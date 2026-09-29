@@ -199,10 +199,22 @@ t(
   "the ops probe is not relied on (OPS_PROBE_SECRET is not a Worker secret)",
   /OPS_PROBE_SECRET/.test(cl) && /not a Worker secret/.test(cl),
 );
-t(
-  '"Generate now" is the end-to-end CRON_SECRET check',
-  /Generate now/.test(cl) && /end-to-end CRON_SECRET check/.test(cl),
-);
+{
+  // MVP (2026-09-28): the daily briefing is deferred, so step 6 cannot run
+  // and must say so — never send an operator to a card that is not there.
+  const step6 = cl.slice(at('## 6. Dashboard "Generate now"'), at("## 7. Kill-switch drill"));
+  t(
+    '"Generate now" (the old end-to-end CRON_SECRET check) is out of the MVP release, and step 6 says why',
+    /\*\*Not in the MVP release\.\*\*/.test(step6) &&
+      /daily briefing is deferred/.test(step6) &&
+      /end-to-end CRON_SECRET check/.test(step6) &&
+      /probe \*\*B\*\* of step 1\.3/.test(step6),
+  );
+  t(
+    "the migration step expects coach-briefing-nightly INACTIVE after 000300",
+    /coach-briefing-nightly present and\s+(--\s+)?INACTIVE/.test(migSection),
+  );
+}
 t(
   "the kill-switch drill turns it off, checks the sentence, turns it back on",
   /SET platform_ai_enabled = false/.test(cl) &&
@@ -329,9 +341,12 @@ t(
 
 console.log("\nL6: copy that promised more than the product does");
 const home = read("src/routes/index.tsx");
+// The Quick Page Builder card ("in minutes … in one step") is gone with the
+// MVP copy (2026-09-28): the homepage describes the journey, with no speed
+// promise (tests/mvp-surface.test.ts pins the full list).
 t(
-  "the Quick Page Builder card says it publishes in one step",
-  /publish it in one step/.test(home) && !/then publish when it's ready/.test(home),
+  "the homepage makes no speed promise and names no Quick Page Builder",
+  !/in minutes|in one step|60 seconds|in an afternoon/i.test(home) && !/Quick Page Builder/.test(home),
 );
 t(
   "the article page's reply time is 'usually', not a promise",
@@ -351,8 +366,8 @@ t(
   !/\/app\/seo\/gsc-import/.test(code(dash)) && !/track clicks and impressions/.test(code(dash)),
 );
 t(
-  "the Coach link stays behind its switch",
-  /\{coachEnabled && \(\s*<Button[\s\S]*?to="\/app\/coach"/.test(dash),
+  "the dashboard has no Coach link at all (the Coach is deferred)",
+  !/\/app\/coach/.test(code(dash)) && !/coachEnabled/.test(dash),
 );
 
 console.log("\nL8: SEO hygiene");

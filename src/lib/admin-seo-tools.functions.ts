@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "./admin-helpers.functions";
 import { requireWorkspaceSecret } from "./workspace-secrets.server";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 const sb = () => supabaseAdmin as any;
 
@@ -45,6 +46,7 @@ export const importGscQueries = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("seo_tools");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const captured_at = new Date().toISOString();
     const payload = data.rows.map((r) => ({
@@ -76,6 +78,7 @@ export const findKeywordOpportunities = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }): Promise<{ rows: KeywordRow[]; total: number }> => {
+    await assertFeatureAvailable("seo_tools");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     let q = sb()
       .from("gsc_query_data")
@@ -95,6 +98,7 @@ export const getKeywordStats = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ workspaceId: workspaceIdSchema }).parse(d))
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("seo_tools");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const ws = data.workspaceId;
     const [totalQ, oppQ, topQ] = await Promise.all([
@@ -151,6 +155,7 @@ export const listCompetitorPages = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }): Promise<{ rows: CompetitorRow[] }> => {
+    await assertFeatureAvailable("competitor_tools");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     let q = sb()
       .from("competitor_pages")
@@ -180,6 +185,7 @@ export const scrapeCompetitorUrl = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("competitor_tools");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     let fcKey: string;
     try {
@@ -261,6 +267,7 @@ export const deleteCompetitor = createServerFn({ method: "POST" })
     z.object({ workspaceId: workspaceIdSchema, id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("competitor_tools");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const { error } = await sb()
       .from("competitor_pages")
@@ -400,6 +407,7 @@ export const generateLinkSuggestions = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("seo_tools");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const { fetchPublishedPages } = await import("@/lib/page-data.helpers.server");
     const pages = await fetchPublishedPages(data.workspaceId, { limit: data.sampleSize });
@@ -464,6 +472,7 @@ export const listLinkSuggestions = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }): Promise<{ rows: LinkSuggestionRow[] }> => {
+    await assertFeatureAvailable("seo_tools");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     let q = sb()
       .from("internal_link_suggestions")
@@ -492,6 +501,7 @@ export const updateLinkSuggestionStatus = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("seo_tools");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const { error } = await sb()
       .from("internal_link_suggestions")

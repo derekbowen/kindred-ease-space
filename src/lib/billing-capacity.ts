@@ -58,21 +58,23 @@ export const INTERNAL_UNLIMITED_PLAN_LABEL = "Founder / Internal Unlimited";
  * carries (getPageEntitlement, getBetaStatus, getSettingsContext,
  * getAiAllowance). Computed on the server from the workspace's grants on
  * every request; the client never supplies or caches them.
+ *
+ * They word the plan and lift limits; they reveal nothing. The founder /
+ * internal unlimited workspace sees the same MVP as every customer (MVP
+ * scope, 2026-09-28): the old flag that revealed unlaunched tools is gone, and
+ * deferred features are off for it too (src/lib/features.server.ts).
  */
 export type InternalAccessFields = {
   /** True only while the workspace holds an ACTIVE grant_type 'internal' grant. */
   internalUnlimited: boolean;
   /** "Founder / Internal Unlimited" when internalUnlimited, otherwise null (use the normal plan wording). */
   planLabel: string | null;
-  /** True only when internalUnlimited: the UI may show launch:false (non-stub) features. */
-  revealLaunchHiddenFeatures: boolean;
 };
 
 export function internalAccessFields(internalUnlimited: boolean): InternalAccessFields {
   return {
     internalUnlimited,
     planLabel: internalUnlimited ? INTERNAL_UNLIMITED_PLAN_LABEL : null,
-    revealLaunchHiddenFeatures: internalUnlimited,
   };
 }
 

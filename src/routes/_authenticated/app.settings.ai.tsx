@@ -25,8 +25,10 @@ import { getAiAllowance, type AiAllowance } from "@/lib/ai-allowance.functions";
 import { getSettingsContext } from "@/lib/settings.functions";
 import { SettingsNav } from "@/components/settings/SettingsNav";
 import { OwnerOnlyBanner } from "@/components/settings/OwnerOnlyBanner";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/settings/ai")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "AI Providers — founders.click" }] }),
   component: AiSettingsPage,
 });

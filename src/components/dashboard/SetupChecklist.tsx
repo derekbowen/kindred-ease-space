@@ -2,70 +2,24 @@ import { Link } from "@tanstack/react-router";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Circle, Plug, Globe, RefreshCw, FileText } from "lucide-react";
+import { setupSteps, type SetupFacts, type SetupStepId } from "./overview-status";
 
-export type SetupStatus = {
-  sharetribeConnected: boolean;
-  hasListings: boolean;
-  hasDomain: boolean;
-  hasPublishedPage: boolean;
+const ICONS: Record<SetupStepId, React.ComponentType<{ className?: string }>> = {
+  sharetribe: Plug,
+  listings: RefreshCw,
+  domain: Globe,
+  page: FileText,
 };
 
-type Step = {
-  id: string;
-  label: string;
-  description: string;
-  done: boolean;
-  to: string;
-  icon: React.ComponentType<{ className?: string }>;
-  cta: string;
-};
-
-export function SetupChecklist({ status }: { status: SetupStatus }) {
-  const steps: Step[] = [
-    {
-      id: "sharetribe",
-      label: "Connect Sharetribe",
-      description:
-        "Read-only, needs just a Client ID. We import your published listings and build SEO pages around them.",
-      done: status.sharetribeConnected,
-      to: "/app/settings/integrations/sharetribe",
-      icon: Plug,
-      cta: "Connect",
-    },
-    {
-      id: "listings",
-      label: "Sync listings",
-      description:
-        "Run a sync after connecting — city and category pages need listing data. It then refreshes about every 30 minutes.",
-      done: status.hasListings,
-      to: "/app/settings/integrations/sharetribe",
-      icon: RefreshCw,
-      cta: "Sync now",
-    },
-    {
-      id: "domain",
-      label: "Set marketplace domain",
-      description: "Used for canonical URLs and tenant page hosting on your real domain.",
-      done: status.hasDomain,
-      to: "/app/settings",
-      icon: Globe,
-      cta: "Add domain",
-    },
-    {
-      id: "page",
-      label: "Publish your first page",
-      description: "A city hub or category page is the fastest path to Google impressions.",
-      done: status.hasPublishedPage,
-      to: "/app/pages/new",
-      icon: FileText,
-      cta: "Create page",
-    },
-  ];
-
+/**
+ * The MVP journey as four setup steps (overview-status.ts): Sharetribe
+ * connected → listings synced → domain active → first page published, each
+ * linking to the screen that completes it. Hidden once every step is done.
+ */
+export function SetupChecklist({ facts }: { facts: SetupFacts }) {
+  const steps = setupSteps(facts);
   const completed = steps.filter((s) => s.done).length;
-  const allDone = completed === steps.length;
-  if (allDone) return null;
-
+  if (completed === steps.length) return null;
   const next = steps.find((s) => !s.done);
 
   return (
@@ -73,7 +27,7 @@ export function SetupChecklist({ status }: { status: SetupStatus }) {
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <CardTitle className="text-base">Get your marketplace ranking</CardTitle>
+            <CardTitle className="text-base">Get your first page live</CardTitle>
             <CardDescription>
               {completed} of {steps.length} setup steps complete
               {next ? ` — next: ${next.label.toLowerCase()}` : ""}
@@ -88,7 +42,7 @@ export function SetupChecklist({ status }: { status: SetupStatus }) {
       </CardHeader>
       <CardContent className="space-y-2">
         {steps.map((step) => {
-          const Icon = step.icon;
+          const Icon = ICONS[step.id];
           return (
             <div
               key={step.id}
@@ -108,7 +62,9 @@ export function SetupChecklist({ status }: { status: SetupStatus }) {
                   <Icon className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-sm font-medium">{step.label}</span>
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5">{step.description}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 break-words">
+                  {step.description}
+                </p>
               </div>
               {!step.done && (
                 <Button variant="ghost" size="sm" className="shrink-0 h-7 text-xs" asChild>

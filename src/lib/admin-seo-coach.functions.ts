@@ -3,6 +3,7 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember, workspaceIdSchema } from "./admin-helpers.functions";
+import { assertFeatureAvailable } from "@/lib/features.server";
 import type { AiDb } from "@/lib/ai/spend.server";
 import type { OpenAiTransport } from "@/lib/ai/openai.server";
 
@@ -278,6 +279,7 @@ export async function runSeoCoachTurn(
 export const seoCoachChat = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => SeoCoachInputSchema.parse(d))
-  .handler(
-    async ({ data, context }): Promise<SeoCoachResult> => runSeoCoachTurn(data, context.userId),
-  );
+  .handler(async ({ data, context }): Promise<SeoCoachResult> => {
+    await assertFeatureAvailable("coach");
+    return runSeoCoachTurn(data, context.userId);
+  });

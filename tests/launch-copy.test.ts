@@ -5,13 +5,15 @@
  * pins the ones that were wrong at the launch audit so they cannot quietly
  * come back: a stub advertised as a feature, a stub shown in the launch nav,
  * a support ticket that reaches nobody, an editor pointing at the wrong
- * public path, and the independence statement going missing.
+ * public path, and the independence statement going missing. Since the MVP
+ * scope (owner, 2026-09-28) the sidebar IS the MVP journey and nothing else
+ * (tests/mvp-surface.test.ts pins it item for item).
  *
  * Offline: it reads source files and the nav catalog, nothing else.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { NAV_SECTIONS, isNavItemVisible } from "../src/lib/app-nav";
+import { NAV_SECTIONS, visibleNavSections } from "../src/lib/app-nav";
 import { PAGE_PLANS, PAGE_ADDON } from "../src/lib/plan-catalog";
 
 let pass = 0,
@@ -35,40 +37,18 @@ const items = NAV_SECTIONS.flatMap((s) => s.items.map((i) => ({ ...i, section: s
 const byLabel = (label: string) => items.find((i) => i.label === label);
 
 // ---------------------------------------------------------------------------
-console.log("\nnav: launch items are real");
+console.log("\nnav: the MVP, and only the MVP");
 
-for (const i of items.filter((i) => i.launch)) {
-  t(`launch item "${i.label}" is not a stub`, !i.stub);
-}
-t(
-  "at least one launch item exists",
-  items.some((i) => i.launch),
+const customerItems = visibleNavSections({ platformAdmin: false }).flatMap((s) =>
+  s.items.map((i) => ({ ...i, section: s.label })),
 );
-
-const gen = byLabel("Generate Content");
-t("Generate Content is a launch item", Boolean(gen?.launch));
-t("Generate Content is not a stub", Boolean(gen) && !gen!.stub);
-
-for (const label of [
-  "Dashboard",
-  "Pages",
-  "Quick Page Builder",
-  "Data Export",
-  "Billing & Plans",
-  "Workspace Settings",
-  "Sharetribe",
-  "Help & feedback",
-  "Add-ons",
-]) {
-  const i = byLabel(label);
-  t(`"${label}" is a launch item`, Boolean(i?.launch), i ? "" : "(missing)");
-}
+t(
+  "the customer sidebar is the MVP journey, in order",
+  customerItems.map((i) => i.label).join(" | ") ===
+    "Overview | Sharetribe & inventory | Opportunities | Page Builder | My Pages | Sitemap | Settings | Help & feedback",
+  customerItems.map((i) => i.label).join(" | "),
+);
 t("Help & feedback points at the contact form", byLabel("Help & feedback")?.to === "/help/contact");
-t(
-  "Affiliates live under the Add-ons section",
-  byLabel("Affiliate Dashboard")?.section === "Add-ons",
-);
-
 for (const label of [
   "Coach",
   "SEO Coach",
@@ -76,52 +56,48 @@ for (const label of [
   "API Keys",
   "Lead Inbox",
   "Competitor Radar",
+  "Generate Content",
+  "Quick Page Builder",
+  "Data Export",
+  "Data Import",
+  "Add-ons",
+  "Affiliate Dashboard",
+  "Rank Tracker",
 ]) {
-  const i = byLabel(label);
-  t(`"${label}" is not a launch item`, Boolean(i) && !i!.launch, i ? "" : "(missing)");
+  t(`"${label}" is not in the nav at all`, !byLabel(label));
 }
 t(
-  "no SEO tool is a launch item for customers",
-  items.filter((i) => i.section === "SEO" && !i.internalOnly).every((i) => !i.launch),
+  "the only SEO screen a customer sees is the Sitemap",
+  customerItems.filter((i) => i.to.startsWith("/app/seo/")).map((i) => i.to).join() === "/app/seo/sitemap",
 );
 t(
-  "no customer-facing ops item is a launch item",
-  items.filter((i) => i.section === "Users & Ops" && !i.internalOnly).every((i) => !i.launch),
+  "no customer sees an ops item",
+  customerItems.every((i) => !i.to.startsWith("/app/ops/") && !i.to.startsWith("/app/admin/")),
 );
 
 // ---------------------------------------------------------------------------
 console.log("\nnav: the shell's visibility rule");
 
-const customer = { showStubs: false, isInternal: false };
-const visible = items.filter((i) => isNavItemVisible(i, customer));
+const adminItems = visibleNavSections({ platformAdmin: true }).flatMap((s) => s.items);
+t("customers never see an internal tool", customerItems.every((i) => !i.internalOnly));
 t(
-  "customers see only launch items",
-  visible.every((i) => i.launch),
+  "the platform-admin workspace sees the MVP plus the internalOnly ops tools, nothing else",
+  adminItems.filter((i) => !i.internalOnly).map((i) => i.to).join() === customerItems.map((i) => i.to).join() &&
+    adminItems.filter((i) => i.internalOnly).length === items.filter((i) => i.internalOnly).length,
 );
-t(
-  "customers never see a stub",
-  visible.every((i) => !i.stub),
-);
-t(
-  "customers never see an internal tool",
-  visible.every((i) => !i.internalOnly),
-);
-t(
-  "customers see Generate Content",
-  visible.some((i) => i.label === "Generate Content"),
-);
-t("customers do not see Coach", !visible.some((i) => i.label === "Coach"));
-t(
-  "?showStubs=1 reveals hidden and stubbed routes",
-  items.filter((i) => isNavItemVisible(i, { ...customer, showStubs: true })).length >
-    visible.length,
-);
-t(
-  "?showStubs=1 still hides internal tools from customers",
-  items
-    .filter((i) => isNavItemVisible(i, { ...customer, showStubs: true }))
-    .every((i) => !i.internalOnly),
-);
+{
+  const g = globalThis as { window?: unknown };
+  const had = "window" in g;
+  const prev = g.window;
+  g.window = { location: { search: "?showStubs=1" } };
+  try {
+    const revealed = visibleNavSections({ platformAdmin: false }).flatMap((s) => s.items.map((i) => i.to));
+    t("?showStubs=1 reveals nothing any more", revealed.join() === customerItems.map((i) => i.to).join());
+  } finally {
+    if (had) g.window = prev;
+    else delete g.window;
+  }
+}
 
 // ---------------------------------------------------------------------------
 console.log("\nhomepage: no stub is advertised");
@@ -130,9 +106,8 @@ const home = read("src/routes/index.tsx");
 t('homepage does not mention "Lead Inbox"', !home.includes("Lead Inbox"));
 t('homepage does not mention "lead inbox"', !/lead inbox/i.test(home));
 t('homepage does not mention "Competitor Radar"', !/competitor radar/i.test(home));
-const stubLabels = items.filter((i) => i.stub).map((i) => i.label);
-for (const label of stubLabels) {
-  t(`homepage does not advertise stub "${label}"`, !home.includes(label));
+for (const label of ["Lead Inbox", "Competitor Radar", "Rank Tracker", "SEO Coach", "Data Export", "Content Factory", "Quick Page Builder"]) {
+  t(`homepage does not advertise the deferred "${label}"`, !home.includes(label));
 }
 t("homepage keeps pricing", home.includes("PAGE_PLANS") && home.includes('id="pricing"'));
 t("homepage keeps the trial line", home.includes("14-day free trial"));
@@ -217,7 +192,7 @@ t(
 );
 t("dashboard no longer links the click-report stub", !dash.includes("/app/seo/click-report"));
 const shell = read("src/routes/_authenticated/app.tsx");
-t("shell uses the shared visibility rule", shell.includes("isNavItemVisible"));
+t("shell uses the shared visibility rule", shell.includes("visibleNavSections"));
 t("shell shows the beta banner", /Free beta/.test(shell) && shell.includes('to="/beta"'));
 
 // ---------------------------------------------------------------------------
@@ -269,31 +244,13 @@ const billing = read("src/routes/_authenticated/app.billing.tsx");
 const betaPage = read("src/routes/beta.tsx");
 const homeSrc = read("src/routes/index.tsx");
 // Whitespace-tolerant: JSX text wraps across source lines and renders as one.
-t(
-  "billing discloses add-ons as separately priced",
-  /add-ons \(Affiliate\s+Programs,\s+DM\s+Champ\)\s+are\s+priced\s+separately/i.test(billing),
-);
-t(
-  "/beta discloses add-ons as separately priced",
-  /<strong>Add-ons<\/strong>/.test(betaPage) && /priced separately/.test(betaPage),
-);
-t(
-  "billing discloses the daily generation cap",
-  billing.includes("GENERATION_DAILY_CAP") && /fair-use cap/.test(billing),
-);
-t(
-  "/beta discloses the daily generation cap",
-  betaPage.includes("GENERATION_DAILY_CAP") && /fair-use cap/.test(betaPage),
-);
-t(
-  "no page still promises a monthly AI allowance on the beta",
-  !/metered by a monthly\s+allowance/.test(billing) &&
-    !/metered by a monthly allowance/.test(betaPage),
-);
-t(
-  "homepage no longer claims every feature",
-  !homeSrc.includes("Every feature unlocked") && homeSrc.includes("Every core feature unlocked"),
-);
+t("billing discloses add-ons as separately priced", /add-ons \(Affiliate\s+Programs,\s+DM\s+Champ\)\s+are\s+priced\s+separately/i.test(billing));
+// Add-ons are deferred (MVP scope, 2026-09-28): /beta no longer offers them.
+t("/beta no longer sells add-ons", !/<strong>Add-ons<\/strong>/.test(betaPage) && !/Affiliate Programs|DM Champ/.test(betaPage));
+t("billing discloses the daily generation cap", billing.includes("GENERATION_DAILY_CAP") && /fair-use cap/.test(billing));
+t("/beta discloses the daily generation cap", betaPage.includes("GENERATION_DAILY_CAP") && /fair-use cap/.test(betaPage));
+t("no page still promises a monthly AI allowance on the beta", !/metered by a monthly\s+allowance/.test(billing) && !/metered by a monthly allowance/.test(betaPage));
+t("homepage no longer claims every feature", !homeSrc.includes("Every feature unlocked") && homeSrc.includes("Every core feature unlocked"));
 t("homepage FAQ no longer claims audits are included", !/rewrites and audits/.test(homeSrc));
 t(
   "/beta no longer promises a notice we do not send",
@@ -324,16 +281,9 @@ for (const f of [
   t(`${f} does not advertise /p/`, !/\/p\/\{|\/p\/\$\{|\/p\/slug|\/p\/\{"/.test(read(f)));
 }
 const stub = read("src/components/StubToolPage.tsx");
-t(
-  "stub pages send customers to the dashboard",
-  /navigate\(\{ to: "\/app", replace: true \}\)/.test(stub) && /showStubs/.test(stub),
-);
+t("stub pages send everyone to the dashboard, with no way to reveal them", /navigate\(\{ to: "\/app", replace: true \}\)/.test(stub) && !/showStubs/.test(stub));
 const settings = read("src/routes/_authenticated/app.settings.tsx");
-t(
-  "settings hides the AI-provider and API-key cards at launch",
-  /showAdvanced &&/.test(settings) &&
-    settings.indexOf("const showAdvanced") < settings.indexOf('title="AI providers"'),
-);
+t("settings has no AI-provider or API-key card at all", !/title="AI providers"/.test(settings) && !/title="API keys"/.test(settings) && !/showAdvanced/.test(settings));
 const deployDoc = read("docs/DEPLOYMENT.md");
 t("deploy doc's secret loop skips section headers", /\^\\\[/.test(deployDoc));
 
@@ -404,21 +354,9 @@ t(
 // C6 — the feature grid includes an add-on, so nothing above it may claim
 // everything is included, and the pricing intro claims core features only.
 t('features eyebrow no longer says "Everything included"', !/Everything included/.test(homeSrc));
-t(
-  "features eyebrow says what is included, not everything",
-  /What(&apos;|')s included/.test(homeSrc),
-);
-t(
-  "pricing intro claims every core feature, not every feature",
-  !/Every plan unlocks every feature\b/.test(collapse(homeSrc)) &&
-    /Every plan unlocks every core feature/.test(collapse(homeSrc)),
-);
-t(
-  "affiliate card is labelled an optional add-on",
-  /Available as an add-on/.test(homeSrc) &&
-    /badge: "Optional add-on"/.test(homeSrc) &&
-    /\{badge && \(/.test(homeSrc),
-);
+t("features eyebrow says what is included, not everything", /What(&apos;|')s included/.test(homeSrc));
+t("pricing intro claims every core feature, not every feature", !/Every plan unlocks every feature\b/.test(collapse(homeSrc)) && /Every plan unlocks every core feature/.test(collapse(homeSrc)));
+t("the homepage sells no add-on (affiliates are deferred)", !/Available as an add-on/.test(homeSrc) && !/Optional add-on/.test(homeSrc) && !/Affiliate/.test(homeSrc));
 
 // C7 — the enforced cap is a platform_settings knob, so copy says "currently".
 t(

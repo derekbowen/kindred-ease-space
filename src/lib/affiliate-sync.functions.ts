@@ -3,12 +3,14 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceOwner, workspaceIdSchema } from "@/lib/admin-helpers.functions";
 import { runAffiliateReferralSync } from "@/lib/affiliate-sync.server";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 /** Pull Sharetribe transactions and attribute referrals/payouts. Owner-gated. */
 export const runAffiliateSync = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ workspaceId: workspaceIdSchema }).parse(d))
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("affiliates");
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     // Entitlement gate: the referral sync is part of the paid affiliate add-on
     // (or the founder / internal unlimited entitlement, read on the server).

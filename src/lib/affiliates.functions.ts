@@ -7,6 +7,7 @@ import {
   assertWorkspaceOwner,
   workspaceIdSchema,
 } from "@/lib/admin-helpers.functions";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 // New tables aren't in the generated types yet; use the same admin-cast pattern
 // the rest of the server fns use.
@@ -82,6 +83,7 @@ export const getAffiliateSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ workspaceId: workspaceIdSchema }).parse(d))
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("affiliates");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     return { settings: await ensureSettings(data.workspaceId) };
   });
@@ -105,6 +107,7 @@ export const updateAffiliateSettings = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("affiliates");
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     await ensureSettings(data.workspaceId);
     const patch: Record<string, unknown> = {};
@@ -131,6 +134,7 @@ export const startAffiliateTrial = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ workspaceId: workspaceIdSchema }).parse(d))
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("affiliates");
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     const s = await ensureSettings(data.workspaceId);
     if (s.addon_status === "active") return { ok: true as const, already: true };
@@ -150,6 +154,7 @@ export const listPrograms = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ workspaceId: workspaceIdSchema }).parse(d))
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("affiliates");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const { data: programs } = await sb()
       .from("affiliate_programs")
@@ -177,6 +182,7 @@ export const getProgram = createServerFn({ method: "GET" })
     z.object({ workspaceId: workspaceIdSchema, id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("affiliates");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const { data: program } = await sb()
       .from("affiliate_programs")
@@ -208,6 +214,7 @@ export const upsertProgram = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => ProgramInput.parse(d))
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("affiliates");
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     const settings = await assertAddon(data.workspaceId);
 
@@ -282,6 +289,7 @@ export const deleteProgram = createServerFn({ method: "POST" })
     z.object({ workspaceId: workspaceIdSchema, id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("affiliates");
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     const { error } = await sb()
       .from("affiliate_programs")
@@ -307,6 +315,7 @@ export const listAffiliates = createServerFn({ method: "GET" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("affiliates");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     let q = sb()
       .from("affiliates")
@@ -382,6 +391,7 @@ export const createAffiliate = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("affiliates");
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     await assertAddon(data.workspaceId);
     let code = randomCode();
@@ -423,6 +433,7 @@ export const setAffiliateStatus = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("affiliates");
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     const { error } = await sb()
       .from("affiliates")
@@ -447,6 +458,7 @@ export const listPayouts = createServerFn({ method: "GET" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("affiliates");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     let q = sb()
       .from("affiliate_payouts")
@@ -491,6 +503,7 @@ export const setPayoutStatus = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("affiliates");
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     const patch: Record<string, unknown> = { status: data.status };
     if (data.status === "paid") patch.paid_at = new Date().toISOString();
@@ -509,6 +522,7 @@ export const getAffiliateDashboard = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ workspaceId: workspaceIdSchema }).parse(d))
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("affiliates");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const settings = await ensureSettings(data.workspaceId);
     // The founder / internal unlimited entitlement includes the add-on (the
@@ -603,6 +617,7 @@ export const listApplications = createServerFn({ method: "GET" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("affiliates");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     let q = sb()
       .from("affiliate_applications")
@@ -628,6 +643,7 @@ export const decideApplication = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("affiliates");
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     await assertAddon(data.workspaceId);
     const { data: app, error: appErr } = await sb()

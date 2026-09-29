@@ -22,9 +22,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { getMe } from "@/lib/auth.functions";
 import { ensureWorkspace } from "@/lib/workspace.functions";
 import { useQuery } from "@tanstack/react-query";
-import { NAV_SECTIONS, isNavItemVisible } from "@/lib/app-nav";
+import { activeNavItem, visibleNavSections } from "@/lib/app-nav";
 import { getBetaStatus } from "@/lib/entitlements.functions";
-import { CoachLauncher } from "@/components/coach/CoachLauncher";
 import { userMessage } from "@/lib/user-message";
 import { describePlanStatus } from "@/components/billing/plan-status";
 import { workspaceInitial } from "@/components/workspace-initial";
@@ -119,10 +118,20 @@ function AppShell() {
   });
   const inBeta = Boolean(beta?.beta);
   // The founder / internal unlimited entitlement, as the server computed it
-  // (getBetaStatus). It words the badge and reveals the finished tools that
-  // are not launched yet; it lifts no limit here — the server does that.
+  // (getBetaStatus). It only words the plan badge: the founder sees the same
+  // sidebar as every customer, and it lifts no limit here — the server does.
   const internalUnlimited = beta?.internalUnlimited === true;
-  const revealLaunchHidden = beta?.revealLaunchHiddenFeatures === true;
+  // The sidebar is the MVP (src/lib/app-nav.ts). The platform-admin ops
+  // section shows only for the internal (platform-admin) workspace, as
+  // before; nothing else — no URL parameter, no entitlement — adds an item.
+  const platformAdmin = Boolean(
+    (activeWorkspace as { is_internal?: boolean } | undefined)?.is_internal,
+  );
+  const navSections = visibleNavSections({ platformAdmin });
+  const activeItem = activeNavItem(
+    location.pathname,
+    navSections.flatMap((s) => s.items),
+  );
   // Same wording as the dashboard and billing page: an expired trial (still
   // 'trialing' in the database) reads "Trial ended", never "Trial".
   const planStatus = activeWorkspace
@@ -168,33 +177,15 @@ function AppShell() {
             </Link>
           </SidebarHeader>
           <SidebarContent>
-            {NAV_SECTIONS.map((section) => {
-              // The sidebar is the launch product: only items flagged
-              // `launch` in app-nav.ts show, and stubs never do. Append
-              // ?showStubs=1 to any in-app URL to reveal everything for
-              // internal testing (the hidden routes stay routable).
-              const showStubs =
-                typeof window !== "undefined" &&
-                new URLSearchParams(window.location.search).get("showStubs") === "1";
-              // internalOnly tools (platform ops) only show for the internal
-              // dogfood workspace — customers were seeing them before.
-              const isInternal = Boolean(
-                (activeWorkspace as { is_internal?: boolean } | undefined)?.is_internal,
-              );
-              const items = section.items.filter((i) =>
-                isNavItemVisible(i, { showStubs, isInternal, revealLaunchHidden }),
-              );
-              if (items.length === 0) return null;
+            {navSections.map((section) => {
               return (
                 <SidebarGroup key={section.label}>
                   <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
                   <SidebarGroupContent>
                     <SidebarMenu>
-                      {items.map((item) => {
+                      {section.items.map((item) => {
                         const Icon = item.icon;
-                        const active = item.exact
-                          ? location.pathname === item.to
-                          : location.pathname.startsWith(item.to) && item.to !== "/app";
+                        const active = activeItem?.to === item.to;
                         return (
                           <SidebarMenuItem key={item.to}>
                             <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
@@ -207,11 +198,6 @@ function AppShell() {
                                     className="ml-auto h-4 px-1 text-[10px]"
                                   >
                                     internal
-                                  </Badge>
-                                )}
-                                {item.stub && (
-                                  <Badge variant="outline" className="ml-auto h-4 px-1 text-[10px]">
-                                    soon
                                   </Badge>
                                 )}
                               </Link>
@@ -279,8 +265,6 @@ function AppShell() {
             <Outlet />
           </main>
         </SidebarInset>
-        {/* Renders nothing while the Coach is off for launch (coach-availability). */}
-        <CoachLauncher workspaceId={me?.memberships?.[0]?.workspace_id ?? null} />
       </div>
     </SidebarProvider>
   );

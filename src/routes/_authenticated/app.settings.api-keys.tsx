@@ -17,8 +17,10 @@ import {
 import { getSettingsContext } from "@/lib/settings.functions";
 import { SettingsNav } from "@/components/settings/SettingsNav";
 import { OwnerOnlyBanner } from "@/components/settings/OwnerOnlyBanner";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/settings/api-keys")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "API Keys — founders.click" }] }),
   component: ApiKeysPage,
 });

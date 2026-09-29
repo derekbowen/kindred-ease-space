@@ -3,6 +3,7 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceOwner, workspaceIdSchema } from "./admin-helpers.functions";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 export type WorkspaceSecretRow = {
   id: string;
@@ -15,6 +16,7 @@ export const listWorkspaceSecrets = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ workspaceId: workspaceIdSchema }).parse(d))
   .handler(async ({ data, context }): Promise<{ rows: WorkspaceSecretRow[] }> => {
+    await assertFeatureAvailable("workspace_api_keys");
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     const { data: rows } = await supabaseAdmin
       .from("workspace_secrets")
@@ -47,6 +49,7 @@ export const upsertWorkspaceSecret = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("workspace_api_keys");
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     // Use the authenticated user's client so the RPC's auth.uid() owner check
     // sees the caller — supabaseAdmin would run as service_role with null uid.
@@ -65,6 +68,7 @@ export const deleteWorkspaceSecret = createServerFn({ method: "POST" })
     z.object({ workspaceId: workspaceIdSchema, id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("workspace_api_keys");
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     const { error } = await context.supabase.rpc("tenant_delete_workspace_secret", {
       _workspace_id: data.workspaceId,

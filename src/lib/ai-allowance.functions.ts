@@ -23,8 +23,8 @@ import { internalAccessFields, type InternalAccessFields } from "@/lib/billing-c
  *       limited by either), its daily AI cost cap (workspace_limit, the same
  *       sum ai_reserve checks: ai_workspace_spent_micros) and the platform
  *       kill switch / daily ceiling (platform_paused);
- *   internalUnlimited / planLabel / revealLaunchHiddenFeatures — the founder
- *       / internal unlimited entitlement (no daily page cap, no tenant
+ *   internalUnlimited / planLabel — the founder / internal unlimited
+ *       entitlement (no daily page cap, no tenant
  *       funds, no workspace cap; the kill switch and the ceiling still
  *       apply), computed here on every read;
  *   summary / generationSummary — fixed customer sentences for the state and

@@ -10,8 +10,10 @@ import { toast } from "sonner";
 import { userMessage } from "@/lib/user-message";
 import { getMe } from "@/lib/auth.functions";
 import { listPayouts, setPayoutStatus } from "@/lib/affiliates.functions";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/affiliates/payouts")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Payouts — founders.click" }] }),
   component: PayoutsPage,
 });

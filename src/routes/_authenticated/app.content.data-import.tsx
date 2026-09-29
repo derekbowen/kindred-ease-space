@@ -9,10 +9,12 @@ import { Upload, Loader2 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { importTable } from "@/lib/admin-data-io.functions";
 import { userMessage } from "@/lib/user-message";
+import { deferredRoute } from "@/lib/deferred-route";
 
 type TableName = "content_plan" | "content_pages";
 
 export const Route = createFileRoute("/_authenticated/app/content/data-import")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Data import — founders.click" }] }),
   component: DataImportPage,
 });

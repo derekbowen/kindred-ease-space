@@ -2,11 +2,13 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertWorkspaceMember } from "@/lib/admin-helpers.functions";
 import { z } from "zod";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 export const listConversations = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ workspaceId: z.string().uuid() }).parse)
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("coach");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const { supabase } = context;
     const { data: rows } = await supabase
@@ -29,6 +31,7 @@ export const createConversation = createServerFn({ method: "POST" })
     }).parse,
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("coach");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const { supabase, userId } = context;
     const { data: row, error } = await supabase
@@ -55,6 +58,7 @@ export const renameConversation = createServerFn({ method: "POST" })
     }).parse,
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("coach");
     const { supabase } = context;
     const { error } = await supabase
       .from("coach_conversations")
@@ -68,6 +72,7 @@ export const deleteConversation = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ conversationId: z.string().uuid() }).parse)
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("coach");
     const { supabase } = context;
     const { error } = await supabase
       .from("coach_conversations")
@@ -81,6 +86,7 @@ export const getMessages = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ conversationId: z.string().uuid() }).parse)
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("coach");
     const { supabase } = context;
     const { data: rows } = await supabase
       .from("coach_messages")
@@ -94,6 +100,7 @@ export const getTodayBriefing = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ workspaceId: z.string().uuid() }).parse)
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("briefing");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     const { supabase } = context;
     const today = new Date().toISOString().slice(0, 10);
@@ -120,6 +127,7 @@ export const generateBriefingNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => GenerateBriefingInputSchema.parse(d))
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("briefing");
     // Without this, any authenticated user could ask for another workspace's
     // briefing via an arbitrary id.
     await assertWorkspaceMember(data.workspaceId, context.userId);
@@ -137,6 +145,7 @@ export const dismissInsight = createServerFn({ method: "POST" })
     }).parse,
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("briefing");
     const { supabase, userId } = context;
     const { assertWorkspaceMember } = await import("@/lib/admin-helpers.functions");
     await assertWorkspaceMember(data.workspaceId, userId);

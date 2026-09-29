@@ -8,8 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { findKeywordOpportunities, type KeywordRow } from "@/lib/admin-seo-tools.functions";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/seo/keyword-opportunities")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Keyword Opportunities — founders.click" }] }),
   component: KeywordOpportunitiesPage,
 });

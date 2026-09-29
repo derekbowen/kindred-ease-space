@@ -1,45 +1,32 @@
-import { NAV_SECTIONS, isNavItemVisible, type NavItem } from "@/lib/app-nav";
-
 /**
- * Which Settings tabs a customer sees.
+ * The Settings tab strip (SettingsNav): workspace & branding, domains, the
+ * Sharetribe connection and billing — the same for every workspace, the
+ * founder / internal unlimited one included.
  *
- * A tab follows its sidebar entry's launch rule (isNavItemVisible in
- * src/lib/app-nav.ts): AI Providers and API Keys are `launch: false` in the
- * sidebar, but the Settings tab strip listed them for every customer anyway,
- * which put bring-your-own-key screens for tools that are not in this launch
- * one click from Workspace Settings. A tab with no sidebar entry of its own
- * (Domains) is part of settings proper and always shows. `?showStubs=1`
- * reveals everything for internal testing, exactly as it does the sidebar,
- * and the founder / internal unlimited account's server-computed
- * revealLaunchHiddenFeatures shows the launch:false tabs, as it does there.
+ * Bring-your-own AI keys and workspace API keys are deferred (MVP scope,
+ * 2026-09-28): they have no tab, their routes redirect to /app
+ * (src/lib/deferred-route.ts) and their server functions refuse
+ * (src/lib/features.server.ts). Nothing — no URL parameter, no entitlement —
+ * adds a tab.
+ *
+ * Billing lives at /app/billing (outside /app/settings); its tab is here so
+ * Settings is one place for the account.
  */
 export const SETTINGS_TABS = [
   { to: "/app/settings", label: "Workspace", exact: true },
   { to: "/app/settings/domains", label: "Domains" },
   { to: "/app/settings/integrations/sharetribe", label: "Sharetribe" },
-  { to: "/app/settings/ai", label: "AI Providers" },
-  { to: "/app/settings/api-keys", label: "API Keys" },
+  { to: "/app/billing", label: "Billing" },
 ] as const;
 
 export type SettingsTabPath = (typeof SETTINGS_TABS)[number]["to"];
 
-function sidebarItemFor(to: string): NavItem | undefined {
-  for (const section of NAV_SECTIONS) {
-    const item = section.items.find((i) => i.to === to);
-    if (item) return item;
-  }
-  return undefined;
-}
-
-export function isSettingsTabVisible(
-  to: string,
-  opts: { showStubs: boolean; revealLaunchHidden?: boolean },
+/** Is this tab the current page? Exact for Workspace; the path or below it otherwise. */
+export function isSettingsTabActive(
+  tab: (typeof SETTINGS_TABS)[number],
+  pathname: string,
 ): boolean {
-  const item = sidebarItemFor(to);
-  if (!item) return true;
-  return isNavItemVisible(item, {
-    showStubs: opts.showStubs,
-    isInternal: false,
-    revealLaunchHidden: opts.revealLaunchHidden === true,
-  });
+  const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+  if ("exact" in tab && tab.exact) return path === tab.to;
+  return path === tab.to || path.startsWith(`${tab.to}/`);
 }

@@ -1,31 +1,29 @@
 /**
- * COACH IS OFF FOR LAUNCH. Run: bun tests/coach-launch.test.ts
+ * THE COACH IS DEFERRED. Run: bun tests/coach-launch.test.ts
  *
- * The Coach chat is not part of launch and its backend (the coach-chat edge
- * function) is being removed. Its sidebar entry was already `launch: false`,
- * but other entry points still rendered in the launch build: the floating
- * launcher (orange sparkle, bottom-right, ⌘J) on every app page, "Ask coach
- * about sync" on the Sharetribe page, "Ask coach about SEO", the page
- * editor's "Coach" button and the dashboard's "Ask Coach" link — and the
- * panel they open posted to coach-chat.
+ * Launch hid the Coach chat behind a switch (coach-availability.ts): its nav
+ * entry was `launch: false`, every entry point asked that switch, and
+ * ?showStubs=1 brought them all back for internal testing. The MVP scope
+ * (owner, 2026-09-28) defers the Coach AND the daily briefing outright, for
+ * every workspace — the founder / internal unlimited one included — so the
+ * switch itself is gone:
  *
- * Pinned here: every entry point follows the Coach's own nav entry through
- * the sidebar's rule (coach-availability.ts), none renders in a launch build,
- * the panel makes no network call at all, no component calls coach-chat, and
- * the DailyBriefing card stays on the dashboard.
+ *   - no sidebar entry for /app/coach or /app/seo-coach, and nothing that
+ *     can reveal one (no ?showStubs=1, no founder flag);
+ *   - no entry point renders: the floating launcher is gone from the shell,
+ *     InlineCoach renders nothing whatever it is given, the dashboard has no
+ *     Coach card and no daily briefing, and no screen links to /app/coach;
+ *   - both routes redirect to /app before they load;
+ *   - the panel still makes no network call, and nothing calls coach-chat;
+ *   - the server refuses: every Coach and briefing handler asks the feature
+ *     gate first (tests/mvp-surface.test.ts drives the gate itself).
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { isNavItemVisible } from "../src/lib/app-nav";
-import {
-  COACH_ROUTE,
-  coachNavItem,
-  isCoachEnabled,
-  showStubsInUrl,
-} from "../src/components/coach/coach-availability";
-import { CoachLauncher } from "../src/components/coach/CoachLauncher";
+import { isRedirect } from "@tanstack/react-router";
+import { NAV_SECTIONS, visibleNavSections } from "../src/lib/app-nav";
 import { InlineCoach } from "../src/components/coach/InlineCoach";
 
 let pass = 0,
@@ -58,6 +56,7 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 const components = walk(join(ROOT, "src/components"));
 const routes = walk(join(ROOT, "src/routes"));
+const src = walk(join(ROOT, "src"));
 const ui = [...routes, ...components];
 
 /** Run `fn` with a browser-like window whose URL query is `search`. */
@@ -75,130 +74,99 @@ function withUrl<T>(search: string, fn: () => T): T {
 }
 
 // ---------------------------------------------------------------------------
-console.log("\nthe switch is the Coach's nav entry, read the sidebar's way");
+console.log("\nno sidebar entry, and nothing can reveal one");
 
-const item = coachNavItem();
-t("the Coach nav entry, if any, points at /app/coach", !item || item.to === COACH_ROUTE);
-t("the Coach is not a launch item", !item || !item.launch);
-t("a customer's launch build: Coach off", isCoachEnabled({ showStubs: false }) === false);
+const COACH_ROUTES = ["/app/coach", "/app/seo-coach"];
 t(
-  "the internal dogfood workspace: Coach off too",
-  isCoachEnabled({ showStubs: false, isInternal: true }) === false,
+  "the nav catalog has no Coach or SEO Coach entry",
+  NAV_SECTIONS.every((s) => s.items.every((i) => !COACH_ROUTES.includes(i.to))),
 );
+for (const platformAdmin of [false, true]) {
+  for (const search of ["", "?showStubs=1"]) {
+    const visible = withUrl(search, () =>
+      visibleNavSections({ platformAdmin }).flatMap((s) => s.items.map((i) => i.to)),
+    );
+    t(
+      `platformAdmin ${platformAdmin}, URL "${search || "(none)"}": no Coach entry`,
+      COACH_ROUTES.every((r) => !visible.includes(r)),
+      visible.join(","),
+    );
+  }
+}
 t(
-  "the switch agrees with isNavItemVisible for every combination",
-  [false, true].every((showStubs) =>
-    [false, true].every(
-      (isInternal) =>
-        isCoachEnabled({ showStubs, isInternal }) ===
-        (item ? isNavItemVisible(item, { showStubs, isInternal }) : false),
-    ),
-  ),
+  "the reveal switch is gone (coach-availability.ts and CoachLauncher.tsx deleted)",
+  !existsSync(join(ROOT, "src/components/coach/coach-availability.ts")) &&
+    !existsSync(join(ROOT, "src/components/coach/CoachLauncher.tsx")),
 );
-t("no ?showStubs=1 in the URL → not revealed", withUrl("", () => showStubsInUrl()) === false);
-t("?showStubs=1 is read from the URL", withUrl("?showStubs=1", () => showStubsInUrl()) === true);
-t("?showStubs=0 does not reveal", withUrl("?showStubs=0", () => showStubsInUrl()) === false);
-t("no window (SSR) → not revealed", showStubsInUrl() === false);
+const importers = src.filter((f) => /coach-availability|CoachLauncher|useCoachEnabled|isCoachEnabled/.test(code(read(f))));
+t("nothing imports or calls it", importers.length === 0, importers.join(", "));
+const showStubs = src.filter((f) => /showStubs/.test(code(read(f))));
+t("no source reads ?showStubs any more", showStubs.length === 0, showStubs.join(", "));
 
 // ---------------------------------------------------------------------------
-console.log("\nno entry point renders in the launch build");
+console.log("\nno entry point renders");
 
-const launcherHtml = renderToStaticMarkup(createElement(CoachLauncher, { workspaceId: "ws-1" }));
-t("the floating launcher renders nothing", launcherHtml === "", launcherHtml);
 for (const label of ["Ask coach about sync", "Ask coach about SEO", "Coach", undefined]) {
-  const html = renderToStaticMarkup(
-    createElement(InlineCoach, { workspaceId: "ws-1", ...(label ? { label } : {}) }),
-  );
-  t(`InlineCoach "${label ?? "Ask coach"}" renders nothing`, html === "", html);
+  for (const search of ["", "?showStubs=1"]) {
+    const html = withUrl(search, () =>
+      renderToStaticMarkup(
+        createElement(InlineCoach, { workspaceId: "ws-1", ...(label ? { label } : {}) }),
+      ),
+    );
+    t(`InlineCoach "${label ?? "(default)"}" renders nothing (URL "${search || "(none)"}")`, html === "", html);
+  }
 }
-const revealedFirstPaint = withUrl("?showStubs=1", () =>
-  renderToStaticMarkup(createElement(CoachLauncher, { workspaceId: "ws-1" })),
-);
+const inline = code(read("src/components/coach/InlineCoach.tsx"));
 t(
-  "even with ?showStubs=1 the first render is empty (decided after mount: no hydration mismatch)",
-  revealedFirstPaint === "",
-  revealedFirstPaint,
+  "InlineCoach returns null unconditionally: no panel, no button, no hook",
+  /return null;/.test(inline) && !/CoachPanel|<Button|useState|useEffect/.test(inline),
 );
-
-const availability = read("src/components/coach/coach-availability.ts");
-t("useCoachEnabled starts false", /useState\(false\)/.test(availability));
-t(
-  "useCoachEnabled decides from the nav rule and the URL",
-  /setEnabled\(isCoachEnabled\(\{ showStubs: showStubsInUrl\(\) \}\)\)/.test(availability) &&
-    /isNavItemVisible\(/.test(availability),
+const shell = code(read("src/routes/_authenticated/app.tsx"));
+t("the shell mounts no Coach component", !/components\/coach/.test(shell) && !/<Coach/.test(shell));
+const panelUsers = ui.filter(
+  (f) => f !== "src/components/coach/CoachPanel.tsx" && /<CoachPanel\b/.test(code(read(f))),
 );
-
-const launcher = read("src/components/coach/CoachLauncher.tsx");
-const launcherGate = launcher.indexOf("if (!enabled || !workspaceId) return null;");
-t(
-  "CoachLauncher asks the switch before rendering",
-  /const enabled = useCoachEnabled\(\);/.test(launcher) && launcherGate > 0,
-);
-t(
-  "the ⌘J shortcut is registered only by the rendered button, never while the Coach is off",
-  launcher.indexOf('addEventListener("keydown"') >
-    launcher.indexOf("function CoachLauncherButton") &&
-    launcher.indexOf("function CoachLauncherButton") > launcherGate,
-);
-const inline = read("src/components/coach/InlineCoach.tsx");
-t(
-  "InlineCoach asks the switch before rendering",
-  /const enabled = useCoachEnabled\(\);/.test(inline) &&
-    /if \(!enabled \|\| !workspaceId\) return null;/.test(inline),
-);
-
-console.log("\nevery entry point goes through the switch");
-const panelUsers = ui.filter((f) => /<CoachPanel\b/.test(read(f)));
-t(
-  "CoachPanel is opened only by the gated launcher and InlineCoach",
-  panelUsers.every(
-    (f) =>
-      f === "src/components/coach/CoachLauncher.tsx" ||
-      f === "src/components/coach/InlineCoach.tsx",
-  ),
-  panelUsers.join(", "),
-);
+t("CoachPanel is mounted by nothing", panelUsers.length === 0, panelUsers.join(", "));
 const coachLinks = ui.filter(
-  (f) => f !== "src/routes/_authenticated/app.coach.tsx" && /to="\/app\/coach"/.test(read(f)),
+  (f) =>
+    f !== "src/routes/_authenticated/app.coach.tsx" &&
+    f !== "src/routes/_authenticated/app.seo-coach.tsx" &&
+    /["'`]\/app\/(seo-)?coach["'`]/.test(code(read(f))),
 );
+t("no screen links to /app/coach or /app/seo-coach", coachLinks.length === 0, coachLinks.join(", "));
+const askCoach = ui.filter((f) => /Ask [Cc]oach/.test(code(read(f))));
 t(
-  "every link to /app/coach is behind the switch",
-  coachLinks.every(
-    (f) =>
-      /useCoachEnabled\(\)/.test(read(f)) &&
-      /\{coachEnabled && \(\s*<Button[\s\S]*?to="\/app\/coach"/.test(read(f)),
-  ),
-  coachLinks.join(", "),
-);
-const askCoach = ui.filter((f) => /Ask [Cc]oach/.test(read(f)));
-t(
-  '"Ask coach" appears only as an InlineCoach label or behind the switch',
-  askCoach.every(
-    (f) =>
-      f === "src/components/coach/InlineCoach.tsx" ||
-      /<InlineCoach\b/.test(read(f)) ||
-      /useCoachEnabled\(\)/.test(read(f)),
-  ),
+  '"Ask coach" survives only as a label handed to the no-op InlineCoach',
+  askCoach.every((f) => /<InlineCoach\b/.test(read(f))),
   askCoach.join(", "),
 );
-const shell = read("src/routes/_authenticated/app.tsx");
-t(
-  "the shell mounts the gated launcher, not the panel",
-  shell.includes('import { CoachLauncher } from "@/components/coach/CoachLauncher";') &&
-    !/<CoachPanel\b/.test(shell),
+
+const dash = read("src/routes/_authenticated/app.index.tsx");
+t("the dashboard imports no Coach component", !/components\/coach/.test(dash));
+t("the dashboard renders no daily briefing and no Coach card", !/DailyBriefing|coachEnabled|Ask Coach/.test(code(dash)));
+const briefingUsers = ui.filter(
+  (f) => f !== "src/components/coach/DailyBriefing.tsx" && /DailyBriefing/.test(code(read(f))),
 );
-// The Sharetribe page no longer mounts a coach at all (MVP; asserted in
-// tests/sharetribe-connection.test.ts).
-for (const f of [
-  "src/routes/_authenticated/app.seo.content-health.tsx",
-]) {
-  const src = read(f);
-  t(
-    `${f} uses the gated InlineCoach`,
-    !src ||
-      (src.includes('import { InlineCoach } from "@/components/coach/InlineCoach";') &&
-        !/<CoachPanel\b/.test(src)),
-  );
+t(
+  "DailyBriefing.tsx is kept as dormant code but mounted nowhere",
+  existsSync(join(ROOT, "src/components/coach/DailyBriefing.tsx")) && briefingUsers.length === 0,
+  briefingUsers.join(", "),
+);
+
+// ---------------------------------------------------------------------------
+console.log("\nboth routes redirect to /app before they load");
+
+for (const file of ["app.coach", "app.seo-coach"]) {
+  const mod = await import(`../src/routes/_authenticated/${file}.tsx`);
+  const beforeLoad = mod.Route?.options?.beforeLoad as undefined | ((ctx: unknown) => unknown);
+  let thrown: unknown = null;
+  try {
+    await beforeLoad?.({});
+  } catch (e) {
+    thrown = e;
+  }
+  const to = (thrown as { options?: { to?: string } } | null)?.options?.to;
+  t(`${file}: beforeLoad throws a redirect to /app`, isRedirect(thrown) && to === "/app", String(to));
 }
 
 // ---------------------------------------------------------------------------
@@ -219,30 +187,33 @@ for (const [label, re] of [
 ] as const) {
   t(`CoachPanel has no ${label}`, !re.test(panel));
 }
-t(
-  "CoachPanel has no send box to type into",
-  !/<Textarea\b/.test(panel) && !/\bsend\s*\(/.test(panel),
-);
 const callers = components.filter((f) => /coach-chat|functions\/v1\/coach/.test(code(read(f))));
 t("no file under src/components calls coach-chat", callers.length === 0, callers.join(", "));
 
 // ---------------------------------------------------------------------------
-console.log("\nthe DailyBriefing card stays");
+console.log("\nthe server refuses: every Coach and briefing handler asks the gate first");
 
-const dash = read("src/routes/_authenticated/app.index.tsx");
-t(
-  "DailyBriefing.tsx is still there",
-  existsSync(join(ROOT, "src/components/coach/DailyBriefing.tsx")),
-);
-t(
-  "the dashboard still renders it, not behind the Coach switch",
-  /\{workspaceId && <DailyBriefing workspaceId=\{workspaceId\} \/>\}/.test(dash) &&
-    !/coachEnabled && <DailyBriefing/.test(dash),
-);
-t(
-  "DailyBriefing is not gated by the chat switch",
-  !/useCoachEnabled/.test(read("src/components/coach/DailyBriefing.tsx")),
-);
+const coachFns = read("src/lib/coach.functions.ts");
+const handlers = [...coachFns.matchAll(/export const (\w+) = createServerFn\(/g)].map((m) => m[1]!);
+t("coach.functions.ts still has its eight handlers", handlers.length === 8, handlers.join(","));
+for (const name of handlers) {
+  const at = coachFns.indexOf(`export const ${name} = createServerFn(`);
+  const next = coachFns.indexOf("\nexport ", at + 1);
+  const block = coachFns.slice(at, next < 0 ? undefined : next);
+  t(
+    `${name}: the first statement is assertFeatureAvailable("coach" | "briefing")`,
+    /\.handler\(async \([^)]*\)[^{]*=> \{\s*await assertFeatureAvailable\("(coach|briefing)"\);/.test(block),
+  );
+}
+const briefingServer = read("src/lib/coach-briefing.server.ts");
+for (const fn of ["refreshBriefing", "requestBriefing"]) {
+  const at = briefingServer.indexOf(`export async function ${fn}(`);
+  const body = briefingServer.slice(at, briefingServer.indexOf("\n}", at));
+  t(
+    `${fn} asks the gate before anything else`,
+    at > 0 && /\): Promise<BriefingRequestResult> \{\s*await assertFeatureAvailable\("briefing", deps\.features\);/.test(body),
+  );
+}
 
 // MVP: the page editor has no coach at all (the coach is deferred).
 t(

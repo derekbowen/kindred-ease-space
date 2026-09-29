@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
 import { recordPage404, tenantUrlPath } from "@/lib/page-data.helpers.server";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 const sb = () => supabaseAdmin as any;
 
@@ -31,6 +32,7 @@ export const list404s = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }): Promise<{ rows: Content404Row[] }> => {
+    await assertFeatureAvailable("seo_tools");
     await assertWorkspaceMember(data.workspaceId, (context as any).userId);
     let q = sb()
       .from("content_404_log")
@@ -58,6 +60,7 @@ export const resolve404 = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("seo_tools");
     await assertWorkspaceMember(data.workspaceId, (context as any).userId);
     const { error } = await sb()
       .from("content_404_log")
@@ -83,6 +86,7 @@ export const redirect404 = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("seo_tools");
     await assertWorkspaceMember(data.workspaceId, (context as any).userId);
 
     const { data: row, error: rowErr } = await sb()
@@ -156,6 +160,7 @@ export const logPublic404 = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
+    await assertFeatureAvailable("seo_tools");
     await recordPage404(data.workspaceId, data.slug);
     return { ok: true as const };
   });

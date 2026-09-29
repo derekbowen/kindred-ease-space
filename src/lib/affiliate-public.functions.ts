@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getRequestIP } from "@tanstack/react-start/server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 const sb = () => supabaseAdmin as any;
 
@@ -30,6 +31,7 @@ export type PublicAffiliateForm = {
 export const getPublicAffiliateForm = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => z.object({ slug: z.string().trim().min(1).max(60) }).parse(d))
   .handler(async ({ data }): Promise<{ form: PublicAffiliateForm | null }> => {
+    await assertFeatureAvailable("affiliates");
     const { data: settings } = await sb()
       .from("workspace_affiliate_settings")
       .select(
@@ -73,6 +75,7 @@ export const submitAffiliateApplication = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
+    await assertFeatureAvailable("affiliates");
     let ip = "unknown";
     try {
       ip = getRequestIP({ xForwardedFor: true }) || "unknown";

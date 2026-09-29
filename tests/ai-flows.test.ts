@@ -724,30 +724,53 @@ try {
       calls.push({ url: String(url), init });
       return new Response(typeof body === "string" ? body : JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
     };
+    // The briefing is DEFERRED for the MVP (src/lib/features.server.ts): off
+    // by default, so nothing is sent at all. The logic below it is proven
+    // with the feature turned back on the only way ops can —
+    // platform_settings.enabled_deferred_features = ["briefing"].
+    const settingsWith = (value: unknown) => ({
+      from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: value === undefined ? null : { value }, error: null }) }) }) }),
+    });
+    const briefingOn = settingsWith(["briefing"]);
+    {
+      calls.length = 0;
+      let refused: unknown = null;
+      try {
+        await requestBriefing(WS, { fetch: answer(200, { results: [{ workspace_id: WS, status: "created" }] }), features: settingsWith(undefined) });
+      } catch (e) {
+        refused = e;
+      }
+      t(
+        "deferred: with the feature off (the default) the request is refused and nothing is sent",
+        refused instanceof Error && refused.message === "This part of Founders.click isn't available right now." && calls.length === 0,
+        String(refused),
+      );
+    }
     for (const status of ["created", "exists", "in_progress"] as const) {
       calls.length = 0;
-      const r = await requestBriefing(WS, { fetch: answer(200, { processed: 1, results: [{ workspace_id: WS, status }] }) });
+      const r = await requestBriefing(WS, { fetch: answer(200, { processed: 1, results: [{ workspace_id: WS, status }] }), features: briefingOn });
       t(`'${status}' comes back as a status`, r.ok === true && (r as any).status === status, JSON.stringify(r));
     }
     const req = calls[0]!;
     t("one POST to coach-briefing-cron, for this workspace only", req.url === "http://supabase.test/functions/v1/coach-briefing-cron" && req.init?.method === "POST" && JSON.parse(String(req.init?.body)).workspace_id === WS);
     t("it presents the cron secret (the function fails closed without it)", new Headers(req.init?.headers).get("x-cron-secret") === "cron-secret-for-tests");
     t("it carries a timeout signal", req.init?.signal instanceof AbortSignal);
-    const bad = await requestBriefing(WS, { fetch: answer(500, "internal detail: relation coach_x does not exist") });
+    const bad = await requestBriefing(WS, { fetch: answer(500, "internal detail: relation coach_x does not exist"), features: briefingOn });
     t("a failing function is the fixed sentence, never its body", bad.ok === false && (bad as any).error === BRIEFING_FAILED_MESSAGE);
-    const odd = await requestBriefing(WS, { fetch: answer(200, { results: [{ workspace_id: WS, status: "error" }] }) });
+    const odd = await requestBriefing(WS, { fetch: answer(200, { results: [{ workspace_id: WS, status: "error" }] }), features: briefingOn });
     t("an 'error' status is the fixed sentence", odd.ok === false && (odd as any).error === BRIEFING_FAILED_MESSAGE);
-    const other = await requestBriefing(WS, { fetch: answer(200, { results: [{ workspace_id: "someone-else", status: "created" }] }) });
+    const other = await requestBriefing(WS, { fetch: answer(200, { results: [{ workspace_id: "someone-else", status: "created" }] }), features: briefingOn });
     t("a result for another workspace is not taken as this one's", other.ok === false);
     const down = await requestBriefing(WS, {
       fetch: async () => {
         throw new TypeError("fetch failed");
       },
+      features: briefingOn,
     });
     t("a network failure is the fixed sentence", down.ok === false && (down as any).error === BRIEFING_FAILED_MESSAGE);
     delete process.env.CRON_SECRET;
     calls.length = 0;
-    const unset = await requestBriefing(WS, { fetch: answer(200, {}) });
+    const unset = await requestBriefing(WS, { fetch: answer(200, {}), features: briefingOn });
     t("without CRON_SECRET nothing is sent at all", unset.ok === false && calls.length === 0);
   }
 } finally {

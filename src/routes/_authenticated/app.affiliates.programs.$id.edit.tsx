@@ -17,8 +17,10 @@ import { toast } from "sonner";
 import { userMessage } from "@/lib/user-message";
 import { getMe } from "@/lib/auth.functions";
 import { getProgram, upsertProgram } from "@/lib/affiliates.functions";
+import { deferredRoute } from "@/lib/deferred-route";
 
 export const Route = createFileRoute("/_authenticated/app/affiliates/programs/$id/edit")({
+  beforeLoad: deferredRoute,
   head: () => ({ meta: [{ title: "Edit Program — founders.click" }] }),
   component: ProgramEdit,
 });

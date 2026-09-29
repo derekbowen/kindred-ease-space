@@ -72,7 +72,12 @@ function seed() {
       },
     ],
   };
-  db.embeds = { tenant_pages: { page_templates: { table: "page_templates", fk: "template_id" } } };
+  db.embeds = {
+    tenant_pages: {
+      page_templates: { table: "page_templates", fk: "template_id" },
+      workspaces: { table: "workspaces", fk: "workspace_id" },
+    },
+  };
   for (const kind of ["city_hub", "category_page", "resource_article"] as const) {
     db.insertRow("page_templates", {
       id: `tpl-${kind}`,

@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { assertWorkspaceMember, workspaceIdSchema } from "@/lib/admin-helpers.functions";
 import { fetchPublishedPages, tenantUrlPath } from "@/lib/page-data.helpers.server";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 const sb = () => supabaseAdmin as any;
 
@@ -33,6 +34,7 @@ export const listContentPages = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("bulk_editor");
     await assertWorkspaceMember(data.workspaceId, (context as any).userId);
 
     const statusFilter = data.status || "published";
@@ -96,6 +98,7 @@ export const updateContentPageBasics = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("bulk_editor");
     await assertWorkspaceMember(data.workspaceId, (context as any).userId);
     const { workspaceId, id, source, ...patch } = data;
 

@@ -8,10 +8,15 @@
  * still trialled and sold there, and "Run sync now" answered "try again in a
  * few minutes" forever. Now:
  *   - startAffiliateTrial refuses unless the connection is the Integration API;
- *   - create-checkout refuses every affiliate tier the same way, before any
- *     Stripe object exists (driven here offline, with recording fakes);
  *   - the sync says what to do instead of secret_decrypt_failed;
- *   - the Add-ons card, /app/affiliates, the homepage card and /beta say so.
+ *   - the Add-ons card, /app/affiliates and the settings page say so.
+ *
+ * Since the MVP scope (owner, 2026-09-28) add-ons are DEFERRED: create-checkout
+ * refuses every add-on — affiliate tiers and DM Champ alike — with 410
+ * addon_unavailable before it reads anything (driven here offline, with
+ * recording fakes), the homepage and /beta no longer sell one, and every
+ * affiliate server function asks the feature gate first. The requirement
+ * logic above is kept, dormant, for the day add-ons return.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -348,57 +353,37 @@ async function buy(
 const MARKETPLACE = { data: { auth_mode: "marketplace" }, error: null };
 const INTEGRATION = { data: { auth_mode: "integration" }, error: null };
 const NONE = { data: null, error: null };
+const BROKEN = { data: null, error: { message: "boom" } };
 
-for (const key of ["affiliate-lite", "affiliate-standard", "affiliate-pro"]) {
-  const r = await buy(key, MARKETPLACE);
-  t(
-    `${key} on the Marketplace API → 409 with the reconnect sentence, no Stripe call`,
-    r.status === 409 &&
-      r.body?.error === "integration_api_required" &&
-      r.body?.message === req.AFFILIATE_RECONNECT_MESSAGE &&
-      r.stripe.length === 0,
-    `${r.status} ${JSON.stringify(r.body)} ${r.stripe.join(",")}`,
-  );
+for (const key of ["affiliate-lite", "affiliate-standard", "affiliate-pro", "dmchamp"]) {
+  for (const [label, integration] of [
+    ["Marketplace API", MARKETPLACE],
+    ["Integration API", INTEGRATION],
+    ["no connection", NONE],
+    ["an unreadable connection", BROKEN],
+  ] as const) {
+    const r = await buy(key, integration);
+    t(
+      `${key}, ${label} → 410 addon_unavailable, nothing read, no Stripe call`,
+      r.status === 410 &&
+        r.body?.error === "addon_unavailable" &&
+        r.body?.message === "Add-ons aren't available right now." &&
+        isCustomerSentence(String(r.body?.message)) &&
+        r.stripe.length === 0 &&
+        r.tables.length === 0,
+      `${r.status} ${JSON.stringify(r.body)} ${r.stripe.join(",")} ${r.tables.map((c) => c.table).join(",")}`,
+    );
+  }
 }
-const none = await buy("affiliate-standard", NONE);
-t(
-  "affiliate-standard with no connection → 409 with the connect sentence",
-  none.status === 409 &&
-    none.body?.message === req.AFFILIATE_CONNECT_MESSAGE &&
-    none.stripe.length === 0,
-);
-const broken = await buy("affiliate-standard", { data: null, error: { message: "boom" } });
-t(
-  "an unreadable connection → 503 in a customer sentence, no Stripe call (fails closed)",
-  broken.status === 503 &&
-    isCustomerSentence(String(broken.body?.message)) &&
-    broken.stripe.length === 0,
-  `${broken.status} ${JSON.stringify(broken.body)}`,
-);
-const ok = await buy("affiliate-standard", INTEGRATION);
-t(
-  "affiliate-standard on the Integration API → checkout proceeds to Stripe",
-  ok.status === 200 &&
-    ok.body?.url === "https://checkout.stripe.test/s" &&
-    ok.stripe.includes("checkout.sessions.create"),
-  `${ok.status} ${JSON.stringify(ok.body)}`,
-);
-const gateRead = ok.tables.find((c) => c.table === "tenant_integrations");
-t(
-  "…after reading this workspace's Sharetribe row",
-  !!gateRead &&
-    gateRead.filters.some(([op, c, v]) => op === "eq" && c === "workspace_id" && v === WS) &&
-    gateRead.filters.some(([op, c, v]) => op === "eq" && c === "provider" && v === "sharetribe"),
-);
-const dm = await buy("dmchamp", MARKETPLACE);
-t(
-  "DM Champ is not gated by the Sharetribe connection",
-  dm.status === 200 && !dm.tables.some((c) => c.table === "tenant_integrations"),
-);
 const member = await buy("affiliate-standard", MARKETPLACE, "member");
 t(
-  "a non-owner is refused as before, before the connection is read",
-  member.status === 403 && !member.tables.some((c) => c.table === "tenant_integrations"),
+  "a non-owner gets the same 410 (the refusal needs no membership read)",
+  member.status === 410 && member.tables.length === 0,
+);
+t(
+  "the Integration API rule stays in create-checkout, dormant behind the 410, for the day add-ons return",
+  /affiliateConnectionRefusal\(integration\)/.test(checkoutSrc) &&
+    checkoutSrc.indexOf('if (mode === "addon") {') < checkoutSrc.indexOf("affiliateConnectionRefusal(integration)"),
 );
 
 console.log("\nthe refusal's sentence reaches the customer");
@@ -471,16 +456,12 @@ t(
     isCustomerSentence(req.AFFILIATE_REQUIREMENT_NOTE),
 );
 t(
-  "the homepage card says it needs the Integration API",
-  /Available as an add-on, priced separately; it needs your marketplace connected through Sharetribe's Integration API\./.test(
-    read("src/routes/index.tsx"),
-  ),
+  "the homepage no longer sells the add-on (deferred)",
+  !/Affiliate|add-on, priced separately/.test(read("src/routes/index.tsx")),
 );
 t(
-  "/beta says it",
-  /Affiliate Programs tracks referrals through Sharetribe&apos;s Integration API/.test(
-    read("src/routes/beta.tsx"),
-  ),
+  "/beta no longer sells it either",
+  !/Affiliate Programs|DM Champ/.test(read("src/routes/beta.tsx")),
 );
 const fns = read("src/lib/affiliate-requirements.functions.ts");
 t(

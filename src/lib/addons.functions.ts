@@ -12,6 +12,7 @@ import {
   affiliateConnectionProblem,
 } from "@/lib/affiliate-requirements";
 import { readSharetribeConnectionMode } from "@/lib/affiliate-requirements.server";
+import { assertFeatureAvailable } from "@/lib/features.server";
 
 const sb = () => supabaseAdmin as any;
 
@@ -73,6 +74,7 @@ export const getAddons = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ workspaceId: workspaceIdSchema }).parse(d))
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("addons");
     await assertWorkspaceMember(data.workspaceId, context.userId);
     // The founder / internal unlimited entitlement (read fresh on the server;
     // a failed read is "no"): the self-serve add-on is included, so nothing
@@ -132,6 +134,7 @@ export const requestAddon = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await assertFeatureAvailable("addons");
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     const item = ADDON_CATALOG.find((a) => a.key === data.addonKey);
     if (!item) throw new Error("Unknown add-on");

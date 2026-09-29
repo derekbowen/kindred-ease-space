@@ -132,10 +132,7 @@ const wordCount = (s: string | null | undefined) =>
  * was settled when it ran (or is held and will be, by the reaper at the
  * latest). Pages without a spend record owe nothing.
  */
-async function replayResult(
-  existing: ExistingPage,
-  ctx: { workspaceId: string; requestId: string },
-): Promise<QuickPageResult> {
+async function replayResult(existing: ExistingPage, ctx: { workspaceId: string; requestId: string }): Promise<QuickPageResult> {
   let creditsCharged = 0;
   let billing: ItemBillingStatus = "free";
   const spend = await readSpendSettlement(ctx.workspaceId, ctx.requestId);
@@ -185,10 +182,7 @@ export async function runQuickPage(
   if (data.generationRequestId) {
     const existing = await findPageByRequestId(data.workspaceId, data.generationRequestId);
     if (existing) {
-      return replayResult(existing, {
-        workspaceId: data.workspaceId,
-        requestId: data.generationRequestId,
-      });
+      return replayResult(existing, { workspaceId: data.workspaceId, requestId: data.generationRequestId });
     }
   }
   const generationRequestId = data.generationRequestId ?? crypto.randomUUID();
@@ -217,10 +211,7 @@ export async function runQuickPage(
   //    workspace holding the founder / internal unlimited entitlement (read
   //    fresh; a failed read keeps the cap) has no cap — the slot is still
   //    taken, so the id buys one provider call either way.
-  const cap = effectiveDailyCap(
-    settings.dailyCap,
-    await isInternalWorkspace(data.workspaceId, deps.db),
-  );
+  const cap = effectiveDailyCap(settings.dailyCap, await isInternalWorkspace(data.workspaceId, deps.db));
   const slot = await reserveGenerationSlot(data.workspaceId, generationRequestId, cap);
   if (slot === "cap_reached") {
     throw new CustomerFacingError(dailyCapMessage(settings.dailyCap, 0));
@@ -231,10 +222,7 @@ export async function runQuickPage(
     // is the answer; a deleted draft is NOT regenerated for free.
     const existing = await findPageByRequestId(data.workspaceId, generationRequestId);
     if (existing) {
-      return replayResult(existing, {
-        workspaceId: data.workspaceId,
-        requestId: generationRequestId,
-      });
+      return replayResult(existing, { workspaceId: data.workspaceId, requestId: generationRequestId });
     }
     throw new CustomerFacingError(GENERATION_ALREADY_USED_MESSAGE);
   }
@@ -298,10 +286,7 @@ export async function runQuickPage(
   if (page.replayed) {
     const existing = await findPageByRequestId(data.workspaceId, generationRequestId);
     if (existing) {
-      return replayResult(existing, {
-        workspaceId: data.workspaceId,
-        requestId: generationRequestId,
-      });
+      return replayResult(existing, { workspaceId: data.workspaceId, requestId: generationRequestId });
     }
   }
 

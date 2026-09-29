@@ -126,13 +126,22 @@ console.log("\n=== the supported checkout modes are unaffected ===");
 
 // Withdrawing one SKU must not narrow the endpoint by accident. These are the
 // paths a paying customer still uses; a regression here is a checkout outage.
-for (const mode of ["subscription", "addon", "page_addon"]) {
+// "addon" left this list with the MVP scope (2026-09-28): add-ons are deferred
+// and refused with their own 410 (tests/mvp-surface.test.ts drives it).
+for (const mode of ["subscription", "page_addon"]) {
   t(
     `"${mode}" is still an accepted mode`,
     new RegExp(`const validModes\\s*=\\s*\\[[^\\]]*"${mode}"`).test(src),
     `validModes no longer lists ${mode}`,
   );
 }
+t(
+  '"addon" is refused like credits: its own 410, before generic validation',
+  !/const validModes\s*=\s*\[[^\]]*"addon"/.test(src) &&
+    /addon_unavailable[\s\S]{0,400}?status:\s*410/.test(src) &&
+    src.indexOf('if (mode === "addon") {') > -1 &&
+    src.indexOf('if (mode === "addon") {') < src.indexOf('error: "invalid_mode"'),
+);
 
 t(
   "the 410 matches credits EXACTLY and cannot catch another mode",
@@ -147,9 +156,9 @@ t(
   "the plan checkout path is gone",
 );
 t(
-  "addon still routes to ensureAddonPrice",
+  "the dormant add-on path is kept for a deliberate restore (ensureAddonPrice, unreachable behind the 410)",
   /await\s+ensureAddonPrice\s*\(/.test(src),
-  "the feature add-on path is gone",
+  "the feature add-on path was deleted rather than refused",
 );
 t(
   "page_addon still routes to ensurePageAddonPrice",
