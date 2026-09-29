@@ -190,7 +190,6 @@ t(
 for (const f of [
   "src/routes/_authenticated/app.settings.integrations.sharetribe.tsx",
   "src/routes/_authenticated/app.seo.content-health.tsx",
-  "src/routes/_authenticated/app.pages.$id.edit.tsx",
 ]) {
   const src = read(f);
   t(
@@ -242,6 +241,14 @@ t(
 t(
   "DailyBriefing is not gated by the chat switch",
   !/useCoachEnabled/.test(read("src/components/coach/DailyBriefing.tsx")),
+);
+
+// MVP: the page editor has no coach at all (the coach is deferred).
+t(
+  "the page editor mounts no coach",
+  !/InlineCoach|CoachPanel|CoachLauncher/.test(
+    read("src/routes/_authenticated/app.pages.$id.edit.tsx"),
+  ),
 );
 
 console.log(`\n${pass} passed, ${fail} failed`);

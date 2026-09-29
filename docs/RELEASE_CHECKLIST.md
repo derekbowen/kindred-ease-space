@@ -122,6 +122,13 @@ verification block at the end of that file and read every row; **stop on any
 - [ ] `20260925000910_help_center_claims_fix.sql` (help rows; read the eight rows it prints)
 - [ ] `20260925000930_founder_internal_unlimited.sql` (data: at most one grant for the founder workspace; four rows of `true`)
 
+The MVP release (the files above have been in production since 2026-09-28;
+check `list_migrations` and skip what is applied):
+
+- [ ] `20260929000100_mvp_targets_sync_templates.sql` (listing keys + price unit, the sync lease functions, tenant_pages target/SEO/version columns + one live page per target, the three templates active, coverage dismissals and groups; every row `ok`)
+- [ ] `20260929000200_domain_write_lock_and_exact_host.sql` (domain rows server-write-only; exact-host resolver)
+- [ ] `20260929000400_mvp_publish_checked.sql` (publish exactly the validated draft; one row `ok`)
+
 Then run the combined post-migration verification in `supabase/rollback/README.md`.
 
 Why all of them first:

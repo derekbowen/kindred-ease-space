@@ -42,11 +42,16 @@ t(
   shown.includes("Your pages") && shown.includes("Your synced listings"),
 );
 t(
-  "no customer-visible title or description contains a table name, an underscore or \"legacy\"",
-  shown.every((s) => !TABLES.some((tb) => s.includes(tb)) && !s.includes("_") && !/legacy/i.test(s)),
+  'no customer-visible title or description contains a table name, an underscore or "legacy"',
+  shown.every(
+    (s) => !TABLES.some((tb) => s.includes(tb)) && !s.includes("_") && !/legacy/i.test(s),
+  ),
   shown.join(" | "),
 );
-t("the raw table name is no longer rendered", !/\{table\}/.test(exp.replace(/data: \{ workspaceId, table \}/, "")));
+t(
+  "the raw table name is no longer rendered",
+  !/\{table\}/.test(exp.replace(/data: \{ workspaceId, table \}/, "")),
+);
 t("no monospace table-name label", !/font-mono/.test(exp));
 t(
   "the download is named in customer words",
@@ -55,7 +60,8 @@ t(
 );
 t(
   'the result line counts items, not "rows"',
-  !/Exported \$\{res\.rowCount\} rows/.test(exp) && /Downloaded \$\{res\.rowCount\.toLocaleString\(\)\}/.test(exp),
+  !/Exported \$\{res\.rowCount\} rows/.test(exp) &&
+    /Downloaded \$\{res\.rowCount\.toLocaleString\(\)\}/.test(exp),
 );
 // What is exported did not change.
 for (const tb of TABLES) {
@@ -63,21 +69,36 @@ for (const tb of TABLES) {
 }
 t("the server call is unchanged", /run\(\{ data: \{ workspaceId, table \} \}\)/.test(exp));
 const io = read("src/lib/admin-data-io.functions.ts");
-t("the export allowlist is unchanged", /EXPORT_TABLES = \[\.\.\.TABLES, "tenant_listings"\]/.test(io));
+t(
+  "the export allowlist is unchanged",
+  /EXPORT_TABLES = \[\.\.\.TABLES, "tenant_listings"\]/.test(io),
+);
 
 // ---------------------------------------------------------------------------
 console.log("\npage status badges");
 
 t('published → "Published"', pageStatusLabel("published") === "Published");
 t('draft → "Draft"', pageStatusLabel("draft") === "Draft");
-t('billing_suspended → "Paused (billing)"', pageStatusLabel("billing_suspended") === "Paused (billing)");
+t(
+  'billing_suspended → "Paused (billing)"',
+  pageStatusLabel("billing_suspended") === "Paused (billing)",
+);
 t('archived → "Archived"', pageStatusLabel("archived") === "Archived");
-t("an unknown status loses its underscores", pageStatusLabel("some_new_state") === "Some new state");
+t(
+  "an unknown status loses its underscores",
+  pageStatusLabel("some_new_state") === "Some new state",
+);
 t("an empty status reads Draft", pageStatusLabel(null) === "Draft");
 const pages = read("src/routes/_authenticated/app.pages.tsx");
 const editor = read("src/routes/_authenticated/app.pages.$id.edit.tsx");
-t("the Pages list badge uses pageStatusLabel", /\{pageStatusLabel\(r\.status\)\}/.test(pages) && !/>\s*\{r\.status\}\s*</.test(pages));
-t("the editor badge uses pageStatusLabel", /\{pageStatusLabel\(status\)\}/.test(editor) && !/>\{status\}<\/Badge>/.test(editor));
+t(
+  "the Pages list badge uses pageStatusLabel",
+  /pageStatusLabel\(p\.status\)/.test(pages) && !/>\s*\{p\.status\}\s*</.test(pages),
+);
+t(
+  "the editor badge uses pageStatusLabel",
+  /pageStatusLabel\(status\)/.test(editor) && !/>\{status\}<\/Badge>/.test(editor),
+);
 
 // ---------------------------------------------------------------------------
 console.log("\ntemplate syntax and stale promises");
@@ -89,7 +110,10 @@ t(
   "Workspace Settings no longer promises API keys in its subtitle",
   !/Workspace profile, integrations, and API keys\./.test(settings),
 );
-t("the role reads in words (Owner, not owner)", /\{roleLabel\(ctx\?\.role \?\? me\?\.memberships\?\.\[0\]\?\.role\)\}/.test(settings));
+t(
+  "the role reads in words (Owner, not owner)",
+  /\{roleLabel\(ctx\?\.role \?\? me\?\.memberships\?\.\[0\]\?\.role\)\}/.test(settings),
+);
 t("the editor still says where a page renders", /Renders at .*\/a\//.test(editor));
 
 console.log(`\n${pass} passed, ${fail} failed`);

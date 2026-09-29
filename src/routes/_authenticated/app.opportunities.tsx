@@ -1,331 +1,512 @@
-import { useCallback, useEffect, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Loader2, Search, Sparkles, TrendingUp, Package, Ban, CheckCircle2 } from "lucide-react";
-import { getMe } from "@/lib/auth.functions";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  getOpportunityFlag,
-  setAnalysisDomain,
-  runOpportunityAnalysis,
-  listOpportunities,
-  approveOpportunity,
-  skipOpportunity,
-  type OpportunityListItem,
-} from "@/lib/opportunities.functions";
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  Info,
+  Loader2,
+  MapPin,
+  RefreshCw,
+  Search,
+  Tag,
+  Undo2,
+  XCircle,
+} from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { userMessage } from "@/lib/user-message";
+import {
+  getCoverage,
+  setCoverageDismissed,
+  type CoverageView,
+} from "@/lib/coverage/coverage.functions";
+import type { CoverageItem, CoverageState } from "@/lib/coverage/coverage.server";
+import { restorePage } from "@/lib/pages.functions";
+import { timeAgo, useCurrentWorkspace } from "@/components/pages/use-workspace";
 
 export const Route = createFileRoute("/_authenticated/app/opportunities")({
-  head: () => ({ meta: [{ title: "SEO Opportunities — founders.click" }] }),
+  head: () => ({ meta: [{ title: "Opportunities — founders.click" }] }),
   component: OpportunitiesPage,
 });
 
-const STEP_LABELS: Record<string, string> = {
-  site_scan: "Site scan",
-  inventory: "Listings",
-  discovery: "Opportunities",
+const VIEWS: Array<{ id: CoverageView; label: string }> = [
+  { id: "open", label: "Open" },
+  { id: "missing", label: "No page yet" },
+  { id: "draft", label: "Drafts" },
+  { id: "published", label: "Published" },
+  { id: "archived", label: "Archived" },
+  { id: "insufficient", label: "Not enough listings" },
+  { id: "dismissed", label: "Dismissed" },
+  { id: "all", label: "All" },
+];
+
+const STATE_BADGE: Record<CoverageState, { label: string; cls: string }> = {
+  missing: {
+    label: "No page yet",
+    cls: "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+  },
+  draft: {
+    label: "Draft in progress",
+    cls: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  },
+  published: {
+    label: "Published",
+    cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  },
+  suspended: {
+    label: "Paused by plan",
+    cls: "border-orange-500/40 bg-orange-500/10 text-orange-700 dark:text-orange-300",
+  },
+  archived: { label: "Archived", cls: "border-border bg-muted text-muted-foreground" },
+  insufficient: {
+    label: "Not enough listings",
+    cls: "border-border bg-muted text-muted-foreground",
+  },
 };
 
-/** Customer-facing bands only. The internal numeric score is never rendered —
- *  it exists to sort candidates, not to imply precision we don't have. */
-const BAND_STYLE: Record<string, { label: string; cls: string }> = {
-  HIGH: { label: "High opportunity", cls: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30" },
-  MEDIUM: { label: "Medium opportunity", cls: "bg-blue-500/10 text-blue-600 border-blue-500/30" },
-  LOW: { label: "Low opportunity", cls: "bg-muted text-muted-foreground border-border" },
-};
+const PAGE_SIZE = 50;
 
-const ACTION_LABEL: Record<string, string> = {
-  BUILD_NEW_PAGE: "Build new page",
-  IMPROVE_EXISTING: "Improve existing page",
-  WAIT_FOR_INVENTORY: "Wait for more inventory",
-  DO_NOT_BUILD: "Not recommended",
-};
+function itemTitle(i: CoverageItem): string {
+  const cat = i.labels.category ? humanize(i.labels.category) : null;
+  if (i.kind === "category_page") return cat ?? "Listings with no category";
+  const place = [i.labels.city, i.labels.region, i.labels.country].filter(Boolean).join(", ");
+  return `${place || "Listings with no location"}${cat ? ` · ${cat}` : ""}`;
+}
+
+function humanize(raw: string): string {
+  const s = raw.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : raw;
+}
 
 function OpportunitiesPage() {
-  const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
-  const [domain, setDomain] = useState("");
-  const [rows, setRows] = useState<OpportunityListItem[]>([]);
-  const [counts, setCounts] = useState({ build: 0, improve: 0, wait: 0, reject: 0 });
-  const [tab, setTab] = useState<string>("BUILD_NEW_PAGE");
-  const [busy, setBusy] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [workingId, setWorkingId] = useState<string | null>(null);
+  const { workspaceId } = useCurrentWorkspace();
+  const [view, setView] = useState<CoverageView>("open");
+  const [kind, setKind] = useState<"all" | "city_hub" | "category_page">("all");
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const fetchCoverage = useServerFn(getCoverage);
+  const dismissFn = useServerFn(setCoverageDismissed);
+  const restoreFn = useServerFn(restorePage);
 
-  const flagFn = useServerFn(getOpportunityFlag);
-  const setDomainFn = useServerFn(setAnalysisDomain);
-  const analyzeFn = useServerFn(runOpportunityAnalysis);
-  const listFn = useServerFn(listOpportunities);
-  const approveFn = useServerFn(approveOpportunity);
-  const skipFn = useServerFn(skipOpportunity);
+  const q = useQuery({
+    queryKey: ["coverage", workspaceId, view, kind, page],
+    queryFn: () =>
+      fetchCoverage({ data: { workspaceId: workspaceId!, view, kind, page, pageSize: PAGE_SIZE } }),
+    enabled: !!workspaceId,
+    placeholderData: (prev) => prev,
+  });
 
-  useEffect(() => {
-    getMe().then((me) => {
-      const ws = me.memberships[0]?.workspace_id ?? null;
-      setWorkspaceId(ws);
-      // Availability is global-flag AND workspace-enrollment, both decided
-      // server-side. The client is never the authority.
-      flagFn({ data: ws ? { workspaceId: ws } : {} })
-        .then((f) => setEnabled(f.enabled))
-        .catch(() => setEnabled(false));
-    });
-  }, [flagFn]);
-
-  const reload = useCallback(
-    async (ws: string) => {
-      try {
-        const r = await listFn({ data: { workspaceId: ws } });
-        setRows(r.rows);
-        setCounts(r.counts);
-      } catch (e) {
-        setErr(userMessage(e, "Couldn't load your opportunities. Refresh the page to try again."));
-      }
+  const dismiss = useMutation({
+    mutationFn: (v: { targetKey: string; dismissed: boolean }) =>
+      dismissFn({
+        data: { workspaceId: workspaceId!, targetKey: v.targetKey, dismissed: v.dismissed },
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["coverage", workspaceId] }),
+    onError: (e) => setActionError(userMessage(e, "Couldn't update this opportunity. Try again.")),
+  });
+  const restore = useMutation({
+    mutationFn: (pageId: string) => restoreFn({ data: { workspaceId: workspaceId!, pageId } }),
+    onSuccess: (r) => {
+      if (!r.ok) setActionError(userMessage(r.message, "Couldn't restore that page."));
+      qc.invalidateQueries({ queryKey: ["coverage", workspaceId] });
     },
-    [listFn],
+    onError: (e) => setActionError(userMessage(e, "Couldn't restore that page. Try again.")),
+  });
+
+  const data = q.data;
+  const items = (data?.items ?? []).filter((i) =>
+    search.trim() ? itemTitle(i).toLowerCase().includes(search.trim().toLowerCase()) : true,
   );
-
-  useEffect(() => {
-    if (workspaceId && enabled) reload(workspaceId);
-  }, [workspaceId, enabled, reload]);
-
-  async function onAnalyze() {
-    if (!workspaceId) return;
-    setAnalyzing(true);
-    setErr(null);
-    setMsg(null);
-    try {
-      if (domain.trim()) {
-        const d = await setDomainFn({ data: { workspaceId, domain: domain.trim() } });
-        if (!d.ok) {
-          setErr(
-            userMessage(d.error, "Couldn't save that domain. Enter a domain like example.com."),
-          );
-          return;
-        }
-      }
-      const r = await analyzeFn({ data: { workspaceId, skipScan: false } });
-      // A failed step's detail is the server's raw error text: only a
-      // finished step's detail is shown as it is.
-      const steps = (r.steps ?? [])
-        .map(
-          (s) =>
-            `${STEP_LABELS[s.step] ?? "Analysis"}: ${
-              s.ok ? s.detail : userMessage(s.detail, "didn't run this time")
-            }`,
-        )
-        .join(" · ");
-      setMsg(steps);
-      await reload(workspaceId);
-    } catch (e) {
-      setErr(userMessage(e, "The analysis didn't finish. Try again in a few minutes."));
-    } finally {
-      setAnalyzing(false);
-    }
-  }
-
-  async function onApprove(id: string) {
-    if (!workspaceId) return;
-    setWorkingId(id);
-    setErr(null);
-    try {
-      const r = await approveFn({ data: { workspaceId, id } });
-      if (r.ok) {
-        setMsg("Draft created. Review it under Pages, then publish when you're happy.");
-        await reload(workspaceId);
-      } else {
-        setErr(userMessage(r.error, "Couldn't build this page. Try again in a few minutes."));
-      }
-    } finally {
-      setWorkingId(null);
-    }
-  }
-
-  async function onSkip(id: string) {
-    if (!workspaceId) return;
-    setWorkingId(id);
-    try {
-      await skipFn({ data: { workspaceId, id } });
-      await reload(workspaceId);
-    } finally {
-      setWorkingId(null);
-    }
-  }
-
-  if (enabled === null) {
-    return (
-      <div className="flex items-center gap-2 p-8 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-      </div>
-    );
-  }
-
-  if (!enabled) {
-    return (
-      <div className="max-w-2xl p-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>SEO Opportunities</CardTitle>
-            <CardDescription>
-              This feature isn't enabled for your workspace yet.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
-    );
-  }
-
-  const visible = rows.filter((r) => r.recommendation === tab);
+  const pages = data ? Math.max(1, Math.ceil(data.viewTotal / data.pageSize)) : 1;
 
   return (
-    <div className="space-y-6 max-w-4xl pb-12">
+    <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">SEO Opportunities</h1>
-        <p className="text-sm text-muted-foreground">
-          We analyze your website, your Google Search Console data and your live inventory, then
-          recommend only the pages worth building.
+        <h1 className="text-2xl font-semibold tracking-tight">Opportunities</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Inventory-backed coverage opportunities: the places and categories your published listings
+          support, and whether each one has a page yet.
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Analyze your website</CardTitle>
-          <CardDescription>
-            Just your existing website address — no DNS changes needed. Connecting a publishing
-            domain comes later, once you've approved something worth publishing.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex-1 min-w-[260px] space-y-1">
-              <Label>Your website</Label>
-              <Input
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                placeholder="example.com"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") onAnalyze();
-                }}
-              />
+      {q.isLoading && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Reading your listings and pages…
+        </div>
+      )}
+      {q.error && (
+        <Card className="border-destructive/40">
+          <CardContent className="flex items-start gap-3 p-4 text-sm">
+            <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div>
+              <p className="font-medium">Couldn't load your opportunities.</p>
+              <p className="text-muted-foreground">
+                {userMessage(
+                  q.error,
+                  "Nothing is shown rather than a wrong number. Try again in a minute.",
+                )}
+              </p>
+              <Button size="sm" variant="outline" className="mt-2" onClick={() => q.refetch()}>
+                <RefreshCw className="mr-1 h-3.5 w-3.5" /> Try again
+              </Button>
             </div>
-            <Button onClick={onAnalyze} disabled={analyzing || !workspaceId} className="gap-2">
-              {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-              {analyzing ? "Analyzing…" : "Find opportunities"}
-            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {data && (
+        <>
+          <EvidenceBanner evidence={data.evidence} />
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Stat
+              label="No page yet"
+              value={data.totals.missing}
+              hint="enough listings for a page"
+            />
+            <Stat label="Drafts" value={data.totals.draft} hint="in progress" />
+            <Stat
+              label="Published"
+              value={data.totals.published + data.totals.suspended}
+              hint={
+                data.totals.suspended ? `${data.totals.suspended} paused by plan` : "live coverage"
+              }
+            />
+            <Stat
+              label="Published listings"
+              value={data.totals.listings}
+              hint="in your marketplace"
+            />
           </div>
-          {msg && <p className="text-xs text-muted-foreground">{msg}</p>}
-          {err && <p className="text-sm text-destructive">{err}</p>}
-        </CardContent>
-      </Card>
 
-      <div className="grid gap-3 sm:grid-cols-4">
-        {[
-          { key: "BUILD_NEW_PAGE", n: counts.build, label: "Worth building", icon: Sparkles },
-          { key: "IMPROVE_EXISTING", n: counts.improve, label: "Improve instead", icon: TrendingUp },
-          { key: "WAIT_FOR_INVENTORY", n: counts.wait, label: "Need inventory", icon: Package },
-          { key: "DO_NOT_BUILD", n: counts.reject, label: "We rejected", icon: Ban },
-        ].map((t) => {
-          const Icon = t.icon;
-          return (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`rounded-lg border p-3 text-left transition ${
-                tab === t.key ? "border-primary bg-primary/5" : "border-border/60 hover:bg-muted/30"
-              }`}
-            >
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Icon className="h-3.5 w-3.5" />
-                <span className="text-xs">{t.label}</span>
-              </div>
-              <p className="mt-1 text-2xl font-bold tabular-nums">{t.n}</p>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="space-y-3">
-        {visible.length === 0 && (
-          <Card>
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              {rows.length === 0
-                ? "No analysis yet — enter your website above to get started."
-                : "Nothing in this category."}
-            </CardContent>
-          </Card>
-        )}
-
-        {visible.map((o) => {
-          const band = o.band ? BAND_STYLE[o.band] : null;
-          return (
-            <Card key={o.id}>
-              <CardHeader className="space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  {band && (
-                    <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${band.cls}`}>
-                      {band.label}
-                    </span>
+          {(data.totals.withoutCity > 0 ||
+            data.totals.withoutCategory > 0 ||
+            data.totals.needsResync > 0) && (
+            <Card>
+              <CardContent className="flex items-start gap-3 p-4 text-sm">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <div className="space-y-1 text-muted-foreground">
+                  {data.totals.withoutCity > 0 && (
+                    <p>
+                      <span className="font-medium text-foreground">{data.totals.withoutCity}</span>{" "}
+                      listing
+                      {data.totals.withoutCity === 1 ? " has" : "s have"} no city, so no City Hub
+                      can show {data.totals.withoutCity === 1 ? "it" : "them"}.
+                    </p>
                   )}
-                  {o.confidence && (
-                    <span className="text-xs text-muted-foreground">
-                      Confidence: {o.confidence} evidence
-                    </span>
+                  {data.totals.withoutCategory > 0 && (
+                    <p>
+                      <span className="font-medium text-foreground">
+                        {data.totals.withoutCategory}
+                      </span>{" "}
+                      listing
+                      {data.totals.withoutCategory === 1 ? " has" : "s have"} no category, so no
+                      Category Page can show {data.totals.withoutCategory === 1 ? "it" : "them"}.
+                    </p>
+                  )}
+                  {data.totals.needsResync > 0 && (
+                    <p>
+                      {data.totals.needsResync} listing
+                      {data.totals.needsResync === 1 ? " was" : "s were"} synced before locations
+                      were matched —{" "}
+                      <Link to="/app/settings/integrations/sharetribe" className="underline">
+                        run a sync
+                      </Link>{" "}
+                      to count {data.totals.needsResync === 1 ? "it" : "them"}.
+                    </p>
                   )}
                 </div>
-                <CardTitle className="text-lg">{o.intent_label}</CardTitle>
-                <CardDescription>
-                  Recommended action: <strong>{ACTION_LABEL[o.recommendation]}</strong>
-                  {o.proposed_slug && o.recommendation === "BUILD_NEW_PAGE" && (
-                    <>
-                      {" · "}
-                      <code className="text-xs">/a/{o.proposed_slug}</code>
-                    </>
-                  )}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Why
-                  </p>
-                  <ul className="mt-1 space-y-1">
-                    {(o.explanation ?? []).slice(0, 6).map((line, i) => (
-                      <li key={i} className="flex gap-2 text-sm text-muted-foreground">
-                        <span className="text-primary">·</span>
-                        <span>{line}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {o.status === "draft_ready" ? (
-                  <p className="flex items-center gap-2 text-sm text-emerald-600">
-                    <CheckCircle2 className="h-4 w-4" /> Draft created — review it under Pages.
-                  </p>
-                ) : o.recommendation === "BUILD_NEW_PAGE" ? (
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      onClick={() => onApprove(o.id)}
-                      disabled={workingId === o.id}
-                      className="gap-2"
-                    >
-                      {workingId === o.id && <Loader2 className="h-4 w-4 animate-spin" />}
-                      Build this page
-                    </Button>
-                    <Button variant="ghost" onClick={() => onSkip(o.id)} disabled={workingId === o.id}>
-                      Skip
-                    </Button>
-                  </div>
-                ) : null}
               </CardContent>
             </Card>
-          );
-        })}
-      </div>
+          )}
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="-mx-1 flex flex-wrap gap-1">
+              {VIEWS.map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => {
+                    setView(v.id);
+                    setPage(1);
+                  }}
+                  className={cn(
+                    "rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                    view === v.id
+                      ? "bg-foreground text-background"
+                      : "text-muted-foreground hover:bg-muted",
+                  )}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <select
+                aria-label="Page type"
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+                value={kind}
+                onChange={(e) => {
+                  setKind(e.target.value as typeof kind);
+                  setPage(1);
+                }}
+              >
+                <option value="all">All page types</option>
+                <option value="city_hub">City Hubs</option>
+                <option value="category_page">Category Pages</option>
+              </select>
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  aria-label="Filter this page of results"
+                  placeholder="Filter"
+                  className="h-9 w-36 pl-7"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          {actionError && (
+            <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+              {actionError}
+            </p>
+          )}
+
+          {items.length === 0 ? (
+            <Card>
+              <CardContent className="p-6 text-center text-sm text-muted-foreground">
+                {data.viewTotal === 0
+                  ? emptyText(view, data.totals.targets)
+                  : "Nothing on this page matches the filter."}
+              </CardContent>
+            </Card>
+          ) : (
+            <ul className="space-y-2">
+              {items.map((i) => (
+                <OpportunityRow
+                  key={i.targetKey}
+                  item={i}
+                  busy={dismiss.isPending || restore.isPending}
+                  onDismiss={(d) => dismiss.mutate({ targetKey: i.targetKey, dismissed: d })}
+                  onRestore={(pageId) => restore.mutate(pageId)}
+                />
+              ))}
+            </ul>
+          )}
+
+          <div className="flex items-center justify-between text-sm text-muted-foreground">
+            <span>
+              {data.viewTotal === 0
+                ? "0 results"
+                : `${(data.page - 1) * data.pageSize + 1}–${Math.min(data.page * data.pageSize, data.viewTotal)} of ${data.viewTotal}`}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page <= 1 || q.isFetching}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                Previous
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page >= pages || q.isFetching}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+
+          <p className="text-xs text-muted-foreground">{data.scopeNote}</p>
+        </>
+      )}
     </div>
+  );
+}
+
+function emptyText(view: CoverageView, targets: number): string {
+  if (targets === 0)
+    return "No opportunities yet: once your listings sync with a city or a category, they appear here.";
+  switch (view) {
+    case "open":
+      return "Nothing open: every place and category with enough listings has a page or is dismissed.";
+    case "draft":
+      return "No drafts in progress.";
+    case "published":
+      return "No published pages yet.";
+    case "dismissed":
+      return "Nothing dismissed.";
+    default:
+      return "Nothing here.";
+  }
+}
+
+function Stat({ label, value, hint }: { label: string; value: number; hint: string }) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="mt-1 text-2xl font-semibold tabular-nums">{value.toLocaleString()}</p>
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EvidenceBanner({
+  evidence,
+}: {
+  evidence: {
+    state: string;
+    message: string;
+    lastSuccessAt: string | null;
+    listingsCount: number | null;
+    upstreamTotal: number | null;
+  };
+}) {
+  const ok = evidence.state === "complete";
+  return (
+    <Card className={cn(!ok && "border-amber-500/40")}>
+      <CardContent className="flex flex-col gap-2 p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          {ok ? (
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+          ) : (
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          )}
+          <div>
+            <p className={cn(!ok && "font-medium")}>
+              {userMessage(evidence.message, "Sync status is unavailable right now.")}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Last complete sync: {timeAgo(evidence.lastSuccessAt)}
+            </p>
+          </div>
+        </div>
+        {evidence.state === "never_synced" ? (
+          <Button asChild size="sm">
+            <Link to="/app/settings/integrations/sharetribe">Connect Sharetribe</Link>
+          </Button>
+        ) : !ok ? (
+          <Button asChild size="sm" variant="outline">
+            <Link to="/app/settings/integrations/sharetribe">Open sync</Link>
+          </Button>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OpportunityRow({
+  item,
+  busy,
+  onDismiss,
+  onRestore,
+}: {
+  item: CoverageItem;
+  busy: boolean;
+  onDismiss: (dismissed: boolean) => void;
+  onRestore: (pageId: string) => void;
+}) {
+  const badge = STATE_BADGE[item.state];
+  const Icon = item.kind === "city_hub" ? MapPin : Tag;
+  return (
+    <li>
+      <Card>
+        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="font-medium">{itemTitle(item)}</span>
+              <Badge variant="outline" className="text-xs">
+                {item.kind === "city_hub" ? "City Hub" : "Category Page"}
+              </Badge>
+              <Badge variant="outline" className={cn("text-xs", badge.cls)}>
+                {item.dismissed ? "Dismissed" : badge.label}
+              </Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium tabular-nums text-foreground">{item.listingCount}</span>{" "}
+              published listing
+              {item.listingCount === 1 ? "" : "s"} · {item.reason}
+            </p>
+            {item.warnings.map((w) => (
+              <p
+                key={w}
+                className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-300"
+              >
+                <AlertTriangle className="h-3 w-3" /> {w}
+              </p>
+            ))}
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {item.dismissed ? (
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => onDismiss(false)}>
+                <Undo2 className="mr-1 h-3.5 w-3.5" /> Restore to list
+              </Button>
+            ) : (
+              <>
+                {item.state === "missing" && (
+                  <Button asChild size="sm">
+                    <Link to="/app/pages/new" search={{ target: item.targetKey, kind: item.kind }}>
+                      Create page <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                )}
+                {item.state === "draft" && item.page && (
+                  <Button asChild size="sm">
+                    <Link to="/app/pages/$id/edit" params={{ id: item.page.id }}>
+                      Resume draft
+                    </Link>
+                  </Button>
+                )}
+                {(item.state === "published" || item.state === "suspended") && item.page && (
+                  <Button asChild size="sm" variant="outline">
+                    <Link to="/app/pages/$id/edit" params={{ id: item.page.id }}>
+                      Review page
+                    </Link>
+                  </Button>
+                )}
+                {item.state === "archived" && item.page && (
+                  <>
+                    <Button size="sm" disabled={busy} onClick={() => onRestore(item.page!.id)}>
+                      Restore draft
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link
+                        to="/app/pages/new"
+                        search={{ target: item.targetKey, kind: item.kind }}
+                      >
+                        New page
+                      </Link>
+                    </Button>
+                  </>
+                )}
+                {(item.state === "missing" ||
+                  item.state === "insufficient" ||
+                  item.state === "archived") && (
+                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => onDismiss(true)}>
+                    Dismiss
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </li>
   );
 }

@@ -481,7 +481,6 @@ for (const rel of [
   "src/routes/_authenticated/app.addons.tsx",
   "src/routes/_authenticated/app.admin.email-templates.tsx",
   "src/routes/_authenticated/app.pages.$id.edit.tsx",
-  "src/routes/_authenticated/app.pages.bulk.tsx",
   "src/components/WorkspaceBrandingCard.tsx",
   "src/components/coach/DailyBriefing.tsx",
 ]) {

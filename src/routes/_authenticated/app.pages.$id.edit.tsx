@@ -1,485 +1,835 @@
-import { useEffect, useMemo, useState } from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
+  ExternalLink,
+  Eye,
+  Loader2,
+  PencilLine,
+  RefreshCw,
+  XCircle,
+} from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import {
-  Loader2,
-  Save,
-  ExternalLink,
-  Building2,
-  FileText,
-  Search,
-  LayoutGrid,
-  Eye,
-} from "lucide-react";
-import { getMe } from "@/lib/auth.functions";
-import { listPageTemplates, getTenantPage, upsertTenantPage } from "@/lib/tenant-pages.functions";
-import { getPageBuilderContext } from "@/lib/page-builder.functions";
-import { InlineCoach } from "@/components/coach/InlineCoach";
-import { userMessage } from "@/lib/user-message";
-import { PageLivePreview } from "@/components/pages/PageLivePreview";
-import { PageSeoPreview } from "@/components/pages/PageSeoPreview";
-import { slugifyPageTitle } from "@/components/pages/page-builder-utils";
 import { cn } from "@/lib/utils";
+import { userMessage } from "@/lib/user-message";
+import { AiModelSelect } from "@/components/ai/AiModelSelect";
+import { qualityForRequest } from "@/components/ai/model-choice";
+import { TemplateRenderer, type TemplateData } from "@/components/templates/registry";
+import { newRequestId, timeAgo, useCurrentWorkspace } from "@/components/pages/use-workspace";
 import { pageStatusLabel } from "@/components/pages/page-status";
-
-const PAGE_SAVE_FAILED =
-  "Couldn't save this page. Check the fields and try again, or contact support if it keeps happening.";
+import {
+  archivePage,
+  deletePage,
+  getPageEditor,
+  previewPageEdits,
+  publishPage,
+  regeneratePageDraft,
+  restorePage,
+  saveLivePage,
+  savePageDraft,
+  unpublishPage,
+} from "@/lib/pages.functions";
 
 export const Route = createFileRoute("/_authenticated/app/pages/$id/edit")({
   head: () => ({ meta: [{ title: "Edit page — founders.click" }] }),
   component: EditPage,
 });
 
-type Template = {
-  id: string;
+type Fields = {
+  title: string;
+  h1: string;
+  seoTitle: string;
+  metaDescription: string;
   slug: string;
-  name: string;
-  description: string | null;
-  is_active: boolean;
+  bodyMarkdown: string;
+  listingLimit: number;
+  noindex: boolean;
 };
 
-const TEMPLATE_ICONS: Record<string, typeof Building2> = {
-  city_hub: Building2,
+type Problem = { code: string; message: string; fix?: string };
+type Notice =
+  | { tone: "ok"; text: string; href?: string | null; detail?: string | null }
+  | { tone: "error"; text: string; problems?: Problem[]; step?: string | null };
+
+const STATUS_CLASS: Record<string, string> = {
+  draft: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  published: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  archived: "border-border bg-muted text-muted-foreground",
+  billing_suspended: "border-orange-500/40 bg-orange-500/10 text-orange-700",
 };
 
 function EditPage() {
   const { id } = Route.useParams();
-  const isNew = id === "new";
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const { workspaceId } = useCurrentWorkspace();
+  const editorFn = useServerFn(getPageEditor);
+  const saveDraftFn = useServerFn(savePageDraft);
+  const saveLiveFn = useServerFn(saveLivePage);
+  const publishFn = useServerFn(publishPage);
+  const unpublishFn = useServerFn(unpublishPage);
+  const archiveFn = useServerFn(archivePage);
+  const restoreFn = useServerFn(restorePage);
+  const deleteFn = useServerFn(deletePage);
+  const regenFn = useServerFn(regeneratePageDraft);
+  const previewFn = useServerFn(previewPageEdits);
 
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
-  const [domain, setDomain] = useState<string | null>(null);
-  const [wsSlug, setWsSlug] = useState<string | null>(null);
-  const [wsDomain, setWsDomain] = useState<string | null>(null);
-  const [wsDomainVerified, setWsDomainVerified] = useState<boolean>(false);
-  const [listingCount, setListingCount] = useState(0);
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [templateId, setTemplateId] = useState<string>("");
-  const [slug, setSlug] = useState("");
-  const [slugTouched, setSlugTouched] = useState(false);
-  const [title, setTitle] = useState("");
-  const [metaDescription, setMetaDescription] = useState("");
-  const [h1, setH1] = useState("");
-  const [h1Touched, setH1Touched] = useState(false);
-  const [bodyMarkdown, setBodyMarkdown] = useState("");
-  const [city, setCity] = useState("");
-  const [state, setState] = useState("");
-  const [categoryPlural, setCategoryPlural] = useState("listings");
-  const [limit, setLimit] = useState(24);
-  const [status, setStatus] = useState<"draft" | "published">("draft");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState("content");
+  const editor = useQuery({
+    queryKey: ["page-editor", workspaceId, id],
+    queryFn: () => editorFn({ data: { workspaceId: workspaceId!, pageId: id } }),
+    enabled: !!workspaceId,
+    // While the draft is being written, follow it.
+    refetchInterval: (q) => {
+      const g = q.state.data?.page.generation;
+      return g?.state === "generating" ? 3000 : false;
+    },
+  });
 
-  const tplFn = useServerFn(listPageTemplates);
-  const getFn = useServerFn(getTenantPage);
-  const saveFn = useServerFn(upsertTenantPage);
-  const ctxFn = useServerFn(getPageBuilderContext);
+  const [fields, setFields] = useState<Fields | null>(null);
+  const [savedFields, setSavedFields] = useState<Fields | null>(null);
+  const [version, setVersion] = useState(1);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [preview, setPreview] = useState<TemplateData | null>(null);
+  const [previewStale, setPreviewStale] = useState(false);
+  const [mobileTab, setMobileTab] = useState<"edit" | "preview">("edit");
+  const [quality, setQuality] = useState("");
+  const [showRegen, setShowRegen] = useState(false);
+  const [regenBrief, setRegenBrief] = useState("");
+  const regenId = useRef(newRequestId());
 
+  // Load the server's version into the form (again after every save/refresh
+  // that moved the version, never over unsaved typing).
+  const page = editor.data?.page;
   useEffect(() => {
-    Promise.all([getMe(), tplFn()]).then(([me, t]) => {
-      const wsId = me.memberships[0]?.workspace_id ?? null;
-      setWorkspaceId(wsId);
-      const ws = me.memberships[0]?.workspaces as
-        | { slug: string | null; marketplace_domain: string | null; domain_verified_at: string | null }
-        | undefined;
-      setWsSlug(ws?.slug ?? null);
-      setWsDomain(ws?.marketplace_domain ?? null);
-      setWsDomainVerified(Boolean(ws?.marketplace_domain && ws?.domain_verified_at));
-      const tpls = (t.templates as Template[]).filter((x) => x.is_active);
-      setTemplates(tpls);
-      if (isNew && tpls[0]) setTemplateId(tpls[0].id);
-      if (wsId) {
-        ctxFn({ data: { workspaceId: wsId } }).then((r: any) => {
-          setDomain(r.domain);
-        });
-      }
-    });
-  }, [tplFn, ctxFn, isNew]);
-
-  useEffect(() => {
-    if (isNew || !workspaceId) {
-      setLoading(false);
-      return;
+    if (!page) return;
+    const f: Fields = {
+      title: page.title,
+      h1: page.h1,
+      seoTitle: page.seoTitle ?? "",
+      metaDescription: page.metaDescription ?? "",
+      slug: page.slug,
+      bodyMarkdown: page.bodyMarkdown,
+      listingLimit: page.listingLimit,
+      noindex: page.noindex,
+    };
+    const dirty = fields && savedFields && JSON.stringify(fields) !== JSON.stringify(savedFields);
+    if (!fields || !dirty || page.version !== version) {
+      setFields(f);
+      setSavedFields(f);
+      setVersion(page.version);
+      setPreview((editor.data?.preview as TemplateData | null) ?? null);
+      setPreviewStale(false);
+      setRegenBrief(page.generation?.brief ?? "");
     }
-    getFn({ data: { workspaceId, id } }).then((r) => {
-      const p = r.page as any;
-      if (p) {
-        setTemplateId(p.template_id);
-        setSlug(p.slug);
-        setSlugTouched(true);
-        setTitle(p.title);
-        setMetaDescription(p.meta_description ?? "");
-        setH1(p.h1 ?? "");
-        setH1Touched(true);
-        setBodyMarkdown(p.body_markdown ?? "");
-        setCity(p.variables?.city ?? "");
-        setState(p.variables?.state ?? "");
-        setCategoryPlural(p.variables?.category_plural ?? "listings");
-        setLimit(Number(p.listing_filter?.limit ?? 24));
-        setStatus(p.status === "published" ? "published" : "draft");
-      }
-      setLoading(false);
-    });
-  }, [isNew, workspaceId, id, getFn]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page?.version, page?.generation?.state, page?.status]);
 
-  useEffect(() => {
-    if (!workspaceId || !city) {
-      setListingCount(0);
-      return;
-    }
-    ctxFn({ data: { workspaceId } }).then((r: any) => {
-      const match = r.cities.find(
-        (c: any) => c.city.toLowerCase() === city.toLowerCase() && (!state || c.state === state),
-      );
-      setListingCount(match?.listingCount ?? 0);
-    });
-  }, [workspaceId, city, state, ctxFn]);
-
-  useEffect(() => {
-    if (!slugTouched && title) setSlug(slugifyPageTitle(title));
-  }, [title, slugTouched]);
-
-  useEffect(() => {
-    if (!h1Touched && title) setH1(title);
-  }, [title, h1Touched]);
-
-  const selectedTemplate = templates.find((t) => t.id === templateId);
-
-  const previewPage = useMemo(
-    () => ({
-      title,
-      slug,
-      metaDescription,
-      h1,
-      bodyMarkdown,
-      city: city || undefined,
-      state: state || undefined,
-      categoryPlural,
-      listingCount,
-    }),
-    [title, slug, metaDescription, h1, bodyMarkdown, city, state, categoryPlural, listingCount],
+  const dirty = useMemo(
+    () => !!fields && !!savedFields && JSON.stringify(fields) !== JSON.stringify(savedFields),
+    [fields, savedFields],
   );
+  useEffect(() => {
+    if (dirty) setPreviewStale(true);
+  }, [dirty, fields]);
 
-  async function onSave(publish: boolean, opts?: { unpublish?: boolean }) {
-    if (!workspaceId || !templateId) return;
-    setSaving(true);
-    setErr(null);
-    try {
-      const r = await saveFn({
-        data: {
-          workspaceId,
-          id: isNew ? undefined : id,
-          templateId,
-          slug,
-          title,
-          metaDescription: metaDescription || null,
-          h1: h1 || null,
-          bodyMarkdown: bodyMarkdown || null,
-          variables: { city, state, category_plural: categoryPlural },
-          listingFilter: { city, state, limit, sort: "newest" },
-          // "Save" on a published page keeps it published; taking it offline is
-          // the explicit Unpublish action (there was previously no way at all).
-          status: opts?.unpublish ? "draft" : publish ? "published" : status,
-        },
-      });
-      if (r.ok) {
-        navigate({ to: "/app/pages" });
-      } else {
-        setErr(userMessage(r.error, PAGE_SAVE_FAILED));
-      }
-    } catch (e) {
-      // A rejected input (e.g. a slug with spaces) used to vanish silently.
-      setErr(userMessage(e, PAGE_SAVE_FAILED));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (loading) {
+  if (!workspaceId || editor.isLoading || !fields) {
     return (
-      <div className="flex h-[50vh] items-center justify-center gap-2 text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin" /> Loading editor…
+      <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
+        {editor.error ? (
+          <span className="text-destructive">
+            {userMessage(editor.error, "Couldn't open this page.")}
+          </span>
+        ) : (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" /> Opening the page…
+          </>
+        )}
       </div>
     );
   }
+  const data = editor.data!;
+  const status = data.page.status;
+  const generating = data.page.generation?.state === "generating";
+  const failed = data.page.generation?.state === "failed";
+  const isLive = status === "published";
+  const isDraft = status === "draft";
+  const readOnly = status === "archived" || status === "billing_suspended" || generating;
 
-  const editorForm = (
-    <div className="space-y-6 overflow-y-auto p-4 sm:p-6">
-      <header className="space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
-              {isNew ? "New page" : "Edit page"}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Renders at <code className="font-mono text-xs">/a/{slug || "slug"}</code>
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant={status === "published" ? "default" : "secondary"}>
-              {pageStatusLabel(status)}
-            </Badge>
-            <InlineCoach
-              workspaceId={workspaceId}
-              context={{ page_id: isNew ? undefined : id, route: `/app/pages/${id}/edit` }}
-              label="Coach"
-            />
-          </div>
+  const set = <K extends keyof Fields>(k: K, v: Fields[K]) =>
+    setFields((f) => (f ? { ...f, [k]: v } : f));
+  const payload = () => ({
+    ...fields,
+    seoTitle: fields.seoTitle.trim() || null,
+    metaDescription: fields.metaDescription.trim() || null,
+  });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["page-editor", workspaceId, id] });
+
+  async function run(label: string, fn: () => Promise<void>) {
+    setBusy(label);
+    setNotice(null);
+    try {
+      await fn();
+    } catch (e) {
+      setNotice({
+        tone: "error",
+        text: userMessage(e, "That didn't work. Nothing was changed. Try again."),
+      });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const save = () =>
+    run("save", async () => {
+      const fn = isLive ? saveLiveFn : saveDraftFn;
+      const r = await fn({
+        data: { workspaceId, pageId: id, expectedVersion: version, fields: payload() },
+      });
+      if (!r.ok) {
+        setNotice({
+          tone: "error",
+          text: userMessage(r.message, "Not saved. Nothing was changed."),
+          problems: r.problems,
+        });
+        return;
+      }
+      setVersion(r.version);
+      setSavedFields(fields);
+      setNotice({
+        tone: "ok",
+        text: isLive
+          ? "Live page updated. Changes reach visitors within a few minutes (pages are cached briefly)."
+          : "Draft saved.",
+      });
+      await refresh();
+    });
+
+  const publish = () =>
+    run("publish", async () => {
+      let v = version;
+      if (dirty) {
+        const s = await saveDraftFn({
+          data: { workspaceId, pageId: id, expectedVersion: version, fields: payload() },
+        });
+        if (!s.ok) {
+          setNotice({
+            tone: "error",
+            text: userMessage(s.message, "Not saved. Nothing was changed."),
+            problems: s.problems,
+          });
+          return;
+        }
+        v = s.version;
+        setVersion(v);
+        setSavedFields(fields);
+      }
+      const r = await publishFn({ data: { workspaceId, pageId: id, expectedVersion: v } });
+      if (!r.ok) {
+        setNotice({
+          tone: "error",
+          text: userMessage(r.message, "Not published. The page stays a draft."),
+          problems: r.problems,
+          step: r.step ?? null,
+        });
+        await refresh();
+        return;
+      }
+      setNotice({
+        tone: "ok",
+        text: r.reachable?.reachable
+          ? "Published — the page is live."
+          : "Published. We couldn't confirm it loads on your domain yet:",
+        href: r.liveUrl ?? null,
+        detail: r.reachable?.reachable ? null : (r.reachable?.detail ?? null),
+      });
+      await refresh();
+    });
+
+  const lifecycle = (label: string, fn: typeof unpublishFn, done: string) =>
+    run(label, async () => {
+      const r = await fn({ data: { workspaceId, pageId: id } });
+      if (!r.ok) {
+        setNotice({
+          tone: "error",
+          text: userMessage(r.message, "That didn't work. Nothing was changed."),
+        });
+        return;
+      }
+      if (r.status === "deleted") {
+        navigate({ to: "/app/pages" });
+        return;
+      }
+      setNotice({ tone: "ok", text: done });
+      await refresh();
+    });
+
+  const regenerate = () =>
+    run("regenerate", async () => {
+      const r = await regenFn({
+        data: {
+          workspaceId,
+          requestId: regenId.current,
+          pageId: id,
+          brief: regenBrief.trim(),
+          quality: qualityForRequest(quality),
+        },
+      });
+      regenId.current = newRequestId();
+      setShowRegen(false);
+      if (r.outcome === "failed")
+        setNotice({
+          tone: "error",
+          text: `${userMessage(r.error, "The draft couldn't be rewritten.")} Your previous text was kept.`,
+        });
+      else setNotice({ tone: "ok", text: "New draft written. Review it before publishing." });
+      await refresh();
+    });
+
+  const refreshPreview = () =>
+    run("preview", async () => {
+      const p = await previewFn({ data: { workspaceId, pageId: id, fields: payload() } });
+      setPreview(p as TemplateData);
+      setPreviewStale(false);
+      setMobileTab("preview");
+    });
+
+  const badge = { cls: STATUS_CLASS[status] ?? "" };
+  const check = data.check;
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/app/pages">
+            <ArrowLeft className="mr-1 h-4 w-4" /> Pages
+          </Link>
+        </Button>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <Badge variant="outline">{data.page.templateName}</Badge>
+          <Badge variant="outline" className={badge.cls}>
+            {generating ? "Being written" : pageStatusLabel(status)}
+          </Badge>
+          {data.page.targetLabel && (
+            <span className="text-muted-foreground">{data.page.targetLabel}</span>
+          )}
+          {data.liveUrl && (
+            <a
+              href={data.liveUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 underline"
+            >
+              View live <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          )}
         </div>
-        {err && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {err}
-          </div>
-        )}
-      </header>
+      </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Template</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-2">
-            {templates.map((t) => {
-              const Icon = TEMPLATE_ICONS[t.slug] ?? FileText;
-              const selected = templateId === t.id;
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setTemplateId(t.id)}
-                  className={cn(
-                    "flex items-start gap-3 rounded-lg border p-3 text-left transition",
-                    selected
-                      ? "border-primary bg-primary/10"
-                      : "border-border hover:border-primary/40",
-                  )}
-                >
-                  <Icon
-                    className={cn(
-                      "mt-0.5 h-5 w-5 shrink-0",
-                      selected ? "text-primary" : "text-muted-foreground",
-                    )}
+      <h1 className="text-xl font-semibold tracking-tight">
+        {fields.h1 || fields.title || "Untitled page"}
+      </h1>
+
+      {generating && (
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4 text-sm" aria-live="polite">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Writing this draft from your listing data — started{" "}
+            {timeAgo(data.page.generation?.started_at)}. This page updates by itself when it's
+            ready.
+          </CardContent>
+        </Card>
+      )}
+      {failed && !generating && (
+        <Card className="border-destructive/40">
+          <CardContent className="space-y-2 p-4 text-sm">
+            <p className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+              The last attempt to write this draft failed:{" "}
+              {userMessage(data.page.generation?.error, "the writer didn't finish.")}
+            </p>
+            <p className="text-muted-foreground">
+              Your title, listings, notes and any earlier text were kept.
+            </p>
+            {isDraft && (
+              <Button size="sm" onClick={() => setShowRegen(true)}>
+                <RefreshCw className="mr-1 h-3.5 w-3.5" /> Try again
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+      {data.page.legacyFilter && (
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+          This page was made before places were matched exactly. It keeps working, but to publish
+          changes it needs a full location: create a new page for this place from Opportunities.
+        </p>
+      )}
+
+      {notice && <NoticeBox notice={notice} />}
+
+      <div className="flex gap-1 lg:hidden">
+        <Button
+          size="sm"
+          variant={mobileTab === "edit" ? "default" : "outline"}
+          onClick={() => setMobileTab("edit")}
+        >
+          <PencilLine className="mr-1 h-3.5 w-3.5" /> Edit
+        </Button>
+        <Button
+          size="sm"
+          variant={mobileTab === "preview" ? "default" : "outline"}
+          onClick={() => setMobileTab("preview")}
+        >
+          <Eye className="mr-1 h-3.5 w-3.5" /> Preview
+        </Button>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+        <div className={cn("space-y-4", mobileTab !== "edit" && "hidden lg:block")}>
+          <Card>
+            <CardContent className="space-y-4 p-4">
+              <Field
+                label="Page title"
+                hint="Used in links and as the search title when that is empty."
+              >
+                <Input
+                  value={fields.title}
+                  maxLength={140}
+                  disabled={readOnly}
+                  onChange={(e) => set("title", e.target.value)}
+                />
+              </Field>
+              <Field label="Heading (H1)">
+                <Input
+                  value={fields.h1}
+                  maxLength={200}
+                  disabled={readOnly}
+                  onChange={(e) => set("h1", e.target.value)}
+                />
+              </Field>
+              <Field
+                label="Search title"
+                hint={`${fields.seoTitle.length}/60 — what search results show.`}
+              >
+                <Input
+                  value={fields.seoTitle}
+                  maxLength={70}
+                  disabled={readOnly}
+                  onChange={(e) => set("seoTitle", e.target.value)}
+                />
+              </Field>
+              <Field
+                label="Search description"
+                hint={`${fields.metaDescription.length} characters — aim for 70–155.`}
+              >
+                <Textarea
+                  rows={2}
+                  value={fields.metaDescription}
+                  maxLength={320}
+                  disabled={readOnly}
+                  onChange={(e) => set("metaDescription", e.target.value)}
+                />
+              </Field>
+              <Field
+                label="Address"
+                hint={`Renders at ${data.domain.ready ? `${data.domain.baseUrl}/` : "/a/"}${fields.slug}${isLive ? " — a live page's address can't change." : ""}`}
+              >
+                <div className="flex items-center rounded-md border bg-muted/40 pl-2 text-sm text-muted-foreground">
+                  /a/
+                  <Input
+                    className="border-0 bg-transparent pl-0.5 shadow-none focus-visible:ring-0"
+                    value={fields.slug}
+                    maxLength={80}
+                    disabled={readOnly || isLive}
+                    onChange={(e) =>
+                      set("slug", e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))
+                    }
                   />
-                  <div>
-                    <p className="font-medium text-sm">{t.name}</p>
-                    <p className="text-xs text-muted-foreground">{t.description}</p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+                </div>
+              </Field>
+              <Field
+                label="Page text (Markdown)"
+                hint="Shown below the listings. Use ## for sections."
+              >
+                <Textarea
+                  rows={16}
+                  className="font-mono text-xs"
+                  value={fields.bodyMarkdown}
+                  disabled={readOnly}
+                  onChange={(e) => set("bodyMarkdown", e.target.value)}
+                />
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Listings shown" hint="1–60, newest first.">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={fields.listingLimit}
+                    disabled={readOnly}
+                    onChange={(e) =>
+                      set("listingLimit", Math.max(1, Math.min(60, Number(e.target.value) || 1)))
+                    }
+                  />
+                </Field>
+                <label className="flex items-start gap-2 pt-6 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={fields.noindex}
+                    disabled={readOnly}
+                    onChange={(e) => set("noindex", e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Hide from search engines
+                    <span className="block text-xs text-muted-foreground">
+                      Adds noindex and leaves the page out of the sitemap.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </CardContent>
+          </Card>
 
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="content" className="gap-1 text-xs sm:text-sm">
-            <FileText className="h-3.5 w-3.5" /> Content
-          </TabsTrigger>
-          <TabsTrigger value="seo" className="gap-1 text-xs sm:text-sm">
-            <Search className="h-3.5 w-3.5" /> SEO
-          </TabsTrigger>
-          <TabsTrigger value="listings" className="gap-1 text-xs sm:text-sm">
-            <LayoutGrid className="h-3.5 w-3.5" /> Listings
-          </TabsTrigger>
-          <TabsTrigger value="preview" className="gap-1 text-xs sm:text-sm xl:hidden">
-            <Eye className="h-3.5 w-3.5" /> Preview
-          </TabsTrigger>
-        </TabsList>
+          <ChecksCard check={check} />
 
-        <TabsContent value="content" className="mt-4 space-y-4">
-          <div className="space-y-1.5">
-            <Label>Body (markdown)</Label>
-            <Textarea
-              value={bodyMarkdown}
-              onChange={(e) => setBodyMarkdown(e.target.value)}
-              rows={14}
-              className="font-mono text-sm leading-relaxed"
-              placeholder="## Why rent a pool in Austin&#10;&#10;Write long-form content here. Headings, lists, and links supported."
-            />
-            <p className="text-xs text-muted-foreground">
-              {bodyMarkdown.split(/\s+/).filter(Boolean).length} words
+          <DomainCard domain={data.domain} />
+
+          <Card>
+            <CardContent className="flex flex-wrap gap-2 p-4">
+              {isDraft && (
+                <>
+                  <Button onClick={save} disabled={!!busy || !dirty || readOnly}>
+                    {busy === "save" && <Loader2 className="mr-1 h-4 w-4 animate-spin" />} Save
+                    draft
+                  </Button>
+                  <Button
+                    onClick={publish}
+                    disabled={!!busy || readOnly}
+                    variant="default"
+                    className="bg-emerald-700 hover:bg-emerald-800"
+                  >
+                    {busy === "publish" && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}{" "}
+                    {dirty ? "Save and publish" : "Publish"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowRegen((v) => !v)}
+                    disabled={!!busy || generating}
+                  >
+                    <RefreshCw className="mr-1 h-3.5 w-3.5" /> Rewrite draft
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() =>
+                      lifecycle("archive", archiveFn, "Archived. It no longer counts as coverage.")
+                    }
+                    disabled={!!busy || generating}
+                  >
+                    Archive
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="text-destructive"
+                    disabled={!!busy || generating}
+                    onClick={() => {
+                      if (window.confirm("Delete this draft? This can't be undone."))
+                        void lifecycle("delete", deleteFn, "Deleted.");
+                    }}
+                  >
+                    Delete draft
+                  </Button>
+                </>
+              )}
+              {isLive && (
+                <>
+                  <Button onClick={save} disabled={!!busy || !dirty}>
+                    {busy === "save" && <Loader2 className="mr-1 h-4 w-4 animate-spin" />} Update
+                    live page
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      lifecycle(
+                        "unpublish",
+                        unpublishFn,
+                        "Unpublished. It's a draft again and no longer on your domain.",
+                      )
+                    }
+                    disabled={!!busy}
+                  >
+                    Unpublish
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => lifecycle("archive", archiveFn, "Archived and taken offline.")}
+                    disabled={!!busy}
+                  >
+                    Archive
+                  </Button>
+                </>
+              )}
+              {status === "archived" && (
+                <>
+                  <Button
+                    onClick={() => lifecycle("restore", restoreFn, "Restored as a draft.")}
+                    disabled={!!busy}
+                  >
+                    Restore as draft
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="text-destructive"
+                    disabled={!!busy}
+                    onClick={() => {
+                      if (window.confirm("Delete this page for good? This can't be undone."))
+                        void lifecycle("delete", deleteFn, "Deleted.");
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </>
+              )}
+              {status === "billing_suspended" && (
+                <p className="text-sm text-muted-foreground">
+                  This page is paused because your plan's page limit went down. It comes back when
+                  capacity allows — see Billing.
+                </p>
+              )}
+              {dirty && (
+                <span className="self-center text-xs text-amber-700 dark:text-amber-300">
+                  Unsaved changes
+                </span>
+              )}
+            </CardContent>
+          </Card>
+
+          {showRegen && isDraft && (
+            <Card>
+              <CardContent className="space-y-3 p-4">
+                <p className="text-sm font-medium">Rewrite this draft</p>
+                <p className="text-sm text-muted-foreground">
+                  The writer starts again from your current listing data. Your present text is
+                  replaced only if the new draft is written successfully.
+                </p>
+                <Field label="Notes for the writer">
+                  <Textarea
+                    rows={3}
+                    maxLength={2000}
+                    value={regenBrief}
+                    onChange={(e) => setRegenBrief(e.target.value)}
+                  />
+                </Field>
+                <Field label="Writing quality">
+                  <AiModelSelect
+                    workspaceId={workspaceId}
+                    value={quality}
+                    onChange={setQuality}
+                    id="regen-quality"
+                  />
+                </Field>
+                <div className="flex gap-2">
+                  <Button onClick={regenerate} disabled={!!busy || !quality}>
+                    {busy === "regenerate" && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}{" "}
+                    Rewrite
+                  </Button>
+                  <Button variant="ghost" onClick={() => setShowRegen(false)}>
+                    Cancel
+                  </Button>
+                </div>
+                {busy === "regenerate" && (
+                  <p className="text-xs text-muted-foreground" aria-live="polite">
+                    Writing — usually 20–60 seconds. Your current text stays until the new one is
+                    ready.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        <div className={cn("space-y-2", mobileTab !== "preview" && "hidden lg:block")}>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-medium">
+              Preview — the real template with your real listings
             </p>
+            <Button size="sm" variant="outline" onClick={refreshPreview} disabled={!!busy}>
+              {busy === "preview" ? (
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Eye className="mr-1 h-3.5 w-3.5" />
+              )}
+              {previewStale ? "Preview changes" : "Refresh"}
+            </Button>
           </div>
-        </TabsContent>
-
-        <TabsContent value="seo" className="mt-4 space-y-4">
-          <div className="space-y-1.5">
-            <Label>URL slug</Label>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">/a/</span>
-              <Input
-                value={slug}
-                onChange={(e) => {
-                  setSlugTouched(true);
-                  setSlug(e.target.value);
-                }}
-                placeholder="austin-pools"
-                className="font-mono"
-              />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label>SEO title</Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
-            <p className="text-xs text-muted-foreground">{title.length}/200</p>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Meta description</Label>
-            <Textarea
-              value={metaDescription}
-              onChange={(e) => setMetaDescription(e.target.value)}
-              maxLength={320}
-              rows={3}
-            />
-            <p className="text-xs text-muted-foreground">
-              {metaDescription.length}/320 · aim for 120–160
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <Label>H1 headline</Label>
-            <Input
-              value={h1}
-              onChange={(e) => {
-                setH1Touched(true);
-                setH1(e.target.value);
-              }}
-              maxLength={200}
-            />
-          </div>
-          <PageSeoPreview
-            title={title}
-            slug={slug}
-            metaDescription={metaDescription}
-            domain={domain}
-          />
-        </TabsContent>
-
-        <TabsContent value="listings" className="mt-4 space-y-4">
-          <CardDescription className="text-sm">
-            {selectedTemplate?.slug === "city_hub"
-              ? "City Hub pulls live listings from Sharetribe using these filters."
-              : "Listing grid filters for this template."}
-          </CardDescription>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>City</Label>
-              <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Austin" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>State</Label>
-              <Input value={state} onChange={(e) => setState(e.target.value)} placeholder="TX" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Category label (plural)</Label>
-              <Input value={categoryPlural} onChange={(e) => setCategoryPlural(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Max listings</Label>
-              <Input
-                type="number"
-                min={1}
-                max={100}
-                value={limit}
-                onChange={(e) => setLimit(Math.max(1, Math.min(100, Number(e.target.value) || 24)))}
-              />
-            </div>
-          </div>
-          {city && (
-            <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{listingCount}</span> synced listings
-              match {city}
-              {state ? `, ${state}` : ""}
+          {previewStale && (
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              The preview shows the last saved version.
             </p>
           )}
-        </TabsContent>
-
-        <TabsContent value="preview" className="mt-4 xl:hidden">
-          <PageLivePreview page={previewPage} domain={domain} />
-        </TabsContent>
-      </Tabs>
-
-      <div className="sticky bottom-0 flex flex-wrap gap-2 border-t border-border bg-background/95 py-4 backdrop-blur">
-        {status === "published" ? (
-          <Button onClick={() => onSave(true)} disabled={saving}>
-            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            <Save className="h-4 w-4 mr-2" /> Save changes
-          </Button>
-        ) : (
-          <>
-            <Button onClick={() => onSave(false)} disabled={saving} variant="outline">
-              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              <Save className="h-4 w-4 mr-2" /> Save draft
-            </Button>
-            <Button onClick={() => onSave(true)} disabled={saving}>
-              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Publish live
-            </Button>
-          </>
-        )}
-        {!isNew && status === "published" && (
-          <Button
-            onClick={() => onSave(false, { unpublish: true })}
-            disabled={saving}
-            variant="ghost"
-            className="text-muted-foreground"
-          >
-            Unpublish
-          </Button>
-        )}
-        {!isNew && status === "published" && slug && (
-          <Button asChild variant="ghost" size="sm">
-            <a
-              href={
-                wsDomainVerified
-                  ? `https://${wsDomain}/a/${slug}`
-                  : wsSlug
-                    ? `/s/${wsSlug}/${slug}`
-                    : `/a/${slug}`
-              }
-              target="_blank"
-              rel="noreferrer"
-            >
-              <ExternalLink className="h-4 w-4 mr-2" /> {wsDomainVerified ? "View live" : "Preview"}
-            </a>
-          </Button>
-        )}
+          <div className="max-h-[80vh] overflow-y-auto rounded-lg border bg-white">
+            {preview ? (
+              <TemplateRenderer {...preview} basePath={null} />
+            ) : (
+              <p className="p-6 text-sm text-muted-foreground">
+                No preview available for this page.
+              </p>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Draft previews are private: they are never in your sitemap and never served on your
+            domain.
+          </p>
+        </div>
       </div>
     </div>
   );
+}
 
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="h-[calc(100vh-4rem)] min-h-[600px]">
-      <div className="hidden h-full xl:block">
-        {/* @ts-expect-error - react-resizable-panels Group direction typing through wrapper */}
-        <ResizablePanelGroup direction="horizontal">
-          <ResizablePanel defaultSize={52} minSize={36}>
-            {editorForm}
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={48} minSize={30}>
-            <div className="h-full overflow-y-auto bg-muted/20 p-4 sm:p-6 space-y-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Live preview
-              </p>
-              <PageLivePreview page={previewPage} domain={domain} />
-            </div>
-          </ResizablePanel>
-        </ResizablePanelGroup>
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      {children}
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
+function ChecksCard({
+  check,
+}: {
+  check: { ok: boolean; problems: Problem[]; warnings: Problem[]; listingCount: number } | null;
+}) {
+  if (!check) {
+    return (
+      <Card>
+        <CardContent className="p-4 text-sm text-muted-foreground">
+          The publish checks couldn't run just now. They run again when you publish.
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <Card>
+      <CardContent className="space-y-2 p-4 text-sm">
+        <p className="font-medium">
+          {check.ok ? (
+            <span className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300">
+              <CheckCircle2 className="h-4 w-4" /> Ready to publish (as last saved)
+            </span>
+          ) : (
+            "Before this can be published"
+          )}
+        </p>
+        <p className="text-muted-foreground">
+          {check.listingCount} published listings match this page.
+        </p>
+        {check.problems.map((p) => (
+          <p key={p.code} className="flex items-start gap-2">
+            <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <span>
+              {userMessage(p.message, "This needs attention before publishing.")}{" "}
+              {p.fix && <span className="text-muted-foreground">{p.fix}</span>}
+            </span>
+          </p>
+        ))}
+        {check.warnings.map((p) => (
+          <p key={p.code} className="flex items-start gap-2 text-muted-foreground">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <span>
+              {userMessage(p.message, "This needs attention before publishing.")} {p.fix}
+            </span>
+          </p>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DomainCard({
+  domain,
+}: {
+  domain: { ready: boolean; hostname: string | null; step?: string };
+}) {
+  if (domain.ready) {
+    return (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Publishes to {domain.hostname}
+      </p>
+    );
+  }
+  return (
+    <Card className="border-amber-500/40">
+      <CardContent className="space-y-1 p-4 text-sm">
+        <p className="font-medium">Your domain isn't serving pages yet</p>
+        <p className="text-muted-foreground">{domain.step}</p>
+        <Button asChild size="sm" variant="outline" className="mt-1">
+          <Link to="/app/settings/domains">Open Domains</Link>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function NoticeBox({ notice }: { notice: Notice }) {
+  if (notice.tone === "ok") {
+    return (
+      <div
+        className="space-y-1 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm"
+        aria-live="polite"
+      >
+        <p className="flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-emerald-600" /> {notice.text}
+        </p>
+        {notice.href && (
+          <a
+            href={notice.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 underline"
+          >
+            {notice.href} <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        )}
+        {notice.detail && <p className="text-muted-foreground">{notice.detail}</p>}
       </div>
-      <div className="xl:hidden h-full overflow-y-auto">{editorForm}</div>
+    );
+  }
+  return (
+    <div
+      className="space-y-1 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm"
+      role="alert"
+    >
+      <p className="font-medium">{notice.text}</p>
+      {notice.problems?.map((p) => (
+        <p key={p.code} className="flex items-start gap-2">
+          <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          <span>
+            {userMessage(p.message, "This needs attention before publishing.")}{" "}
+            {p.fix && <span className="text-muted-foreground">{p.fix}</span>}
+          </span>
+        </p>
+      ))}
+      {notice.step && <p className="text-muted-foreground">Next step: {notice.step}</p>}
     </div>
   );
 }

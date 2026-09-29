@@ -6,8 +6,8 @@
  *
  * Because ops can move the knob, prose that quotes this constant (/beta, the
  * billing page, the homepage FAQ) says "currently N", never a flat N. The
- * generate page (app.content.generate.tsx) does not quote it at all: it shows
- * the live value from the overview read (`overview.dailyCap`), which is the
- * number actually enforced against that workspace today.
+ * page builder (app.pages.new.tsx) does not quote it at all: the live value
+ * is enforced by reserve_generation_slot on every draft, and a refusal names
+ * the number actually in force for that workspace (dailyCapMessage).
  */
 export const GENERATION_DAILY_CAP = 50;

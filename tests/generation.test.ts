@@ -105,7 +105,8 @@ function t(name: string, cond: boolean, extra = "") {
 const ROOT = join(import.meta.dir, "..");
 const read = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
 
-const MIGRATION_600 = "supabase/migrations/20260924000600_generation_settlement_and_reservations.sql";
+const MIGRATION_600 =
+  "supabase/migrations/20260924000600_generation_settlement_and_reservations.sql";
 const ROLLBACK_600 =
   "supabase/rollback/20260924000600_generation_settlement_and_reservations_rollback.sql";
 
@@ -246,7 +247,9 @@ console.log("\n=== daily cap ===");
   t(
     "countConsumedLast24h is a thin wrapper over the RPC (no second definition in TypeScript)",
     countFn.includes('rpc("generation_consumed_last_24h"') &&
-      /rpc\("generation_consumed_last_24h", \{\s*_workspace_id: workspaceId,\s*\}\)/.test(countFn) &&
+      /rpc\("generation_consumed_last_24h", \{\s*_workspace_id: workspaceId,\s*\}\)/.test(
+        countFn,
+      ) &&
       !countFn.includes("_exclude_item_id") &&
       !countFn.includes('.from("generation_items")') &&
       !countFn.includes('.from("tenant_pages")'),
@@ -273,7 +276,10 @@ console.log("\n=== reservation answers (reserve_generation_slot) ===");
     } catch {
       threw = true;
     }
-    t(`an unexpected answer (${JSON.stringify(bad) ?? "undefined"}) throws, never "reserved"`, threw);
+    t(
+      `an unexpected answer (${JSON.stringify(bad) ?? "undefined"}) throws, never "reserved"`,
+      threw,
+    );
   }
   t(
     "the in-progress and already-used refusals are the customer-facing sentences",
@@ -296,7 +302,8 @@ console.log("\n=== deterministic validation before anything is reserved or spent
   const dashes = refusal({ title: "Boats in Austin", slug: "---" });
   t(
     'an underivable slug ("---") is refused as a customer-facing error, even with a good title',
-    dashes instanceof CustomerFacingError && (dashes as Error).message === PAGE_SLUG_UNDERIVABLE_MESSAGE,
+    dashes instanceof CustomerFacingError &&
+      (dashes as Error).message === PAGE_SLUG_UNDERIVABLE_MESSAGE,
     String(dashes),
   );
   t(
@@ -318,7 +325,8 @@ console.log("\n=== deterministic validation before anything is reserved or spent
   t(
     "a good request passes and reports the base slug persist will use",
     validatePageRequest({ title: "Boats in Austin" }).baseSlug === "boats-in-austin" &&
-      validatePageRequest({ title: "Boats in Austin", slug: "austin-boats" }).baseSlug === "austin-boats",
+      validatePageRequest({ title: "Boats in Austin", slug: "austin-boats" }).baseSlug ===
+        "austin-boats",
   );
   const server = read("src/lib/generation.server.ts");
   const persistFn = server.slice(
@@ -333,12 +341,22 @@ console.log("\n=== deterministic validation before anything is reserved or spent
 
 console.log("\n=== batch attempt ids (one reservation per attempt) ===");
 {
-  const item = { id: "11111111-1111-4111-8111-111111111111", job_id: "22222222-2222-4222-8222-222222222222", attempts: 0 };
+  const item = {
+    id: "11111111-1111-4111-8111-111111111111",
+    job_id: "22222222-2222-4222-8222-222222222222",
+    attempts: 0,
+  };
   const a = await batchAttemptRequestId(item);
   const again = await batchAttemptRequestId({ ...item });
   const next = await batchAttemptRequestId({ ...item, attempts: 1 });
-  const otherJob = await batchAttemptRequestId({ ...item, job_id: "33333333-3333-4333-8333-333333333333" });
-  const otherItem = await batchAttemptRequestId({ ...item, id: "44444444-4444-4444-8444-444444444444" });
+  const otherJob = await batchAttemptRequestId({
+    ...item,
+    job_id: "33333333-3333-4333-8333-333333333333",
+  });
+  const otherItem = await batchAttemptRequestId({
+    ...item,
+    id: "44444444-4444-4444-8444-444444444444",
+  });
   t("two drivers reading the same row compute the same attempt id", a === again);
   t("the next attempt gets a new id (a new slot)", a !== next);
   t(
@@ -583,7 +601,11 @@ console.log("\n=== platform funds: a whole page is HELD before the call, not bal
   // concurrency on PostgreSQL 16.
   const premium = estimatedCreditsPerPage("premium");
   const standard = estimatedCreditsPerPage("standard");
-  t("a premium page is estimated at more than a standard one", premium > standard, `${premium} vs ${standard}`);
+  t(
+    "a premium page is estimated at more than a standard one",
+    premium > standard,
+    `${premium} vs ${standard}`,
+  );
   t("a standard page is estimated at one credit or more", standard >= 1, String(standard));
   const limits = AI_ROUTE_LIMITS.page_generation;
   for (const tier of GENERATION_TIERS) {
@@ -591,15 +613,20 @@ console.log("\n=== platform funds: a whole page is HELD before the call, not bal
     const hold = maxCostMicros(model, TYPICAL_PAGE_TOKENS.prompt, limits.maxOutputTokens);
     t(
       `the ${tier} hold covers a typical page with room to spare`,
-      creditsForCostMicros(hold) >= creditsForUsage(model, TYPICAL_PAGE_TOKENS.prompt, TYPICAL_PAGE_TOKENS.completion),
+      creditsForCostMicros(hold) >=
+        creditsForUsage(model, TYPICAL_PAGE_TOKENS.prompt, TYPICAL_PAGE_TOKENS.completion),
       `${creditsForCostMicros(hold)} credits held`,
     );
   }
   const spend = read("src/lib/ai/spend.server.ts");
   t(
     "a tenant hold is at least one credit and covers the maximum cost",
-    /maxCredits: call\.billingClass === "tenant" \? Math\.max\(1, creditsForCostMicros\(holdMicros\)\) : 0,/.test(spend) &&
-      /const holdMicros = maxCostMicros\(model, maxInputTokens, limits\.maxOutputTokens\);/.test(spend),
+    /maxCredits: call\.billingClass === "tenant" \? Math\.max\(1, creditsForCostMicros\(holdMicros\)\) : 0,/.test(
+      spend,
+    ) &&
+      /const holdMicros = maxCostMicros\(model, maxInputTokens, limits\.maxOutputTokens\);/.test(
+        spend,
+      ),
   );
   t(
     "the hold is taken before the provider call, and a refusal throws before it",
@@ -618,7 +645,11 @@ console.log("\n=== platform funds: a whole page is HELD before the call, not bal
 
 console.log("\n=== settlement → billing_status ===");
 {
-  const s = (settled: boolean, billing: any, creditsCharged: number) => ({ settled, billing, creditsCharged });
+  const s = (settled: boolean, billing: any, creditsCharged: number) => ({
+    settled,
+    billing,
+    creditsCharged,
+  });
   t("byok → free", billingStatusFor(s(true, "byok", 0)) === "free");
   t("beta grant → free", billingStatusFor(s(true, "granted", 0)) === "free");
   t("free platform quota → free", billingStatusFor(s(true, "free_quota", 0)) === "free");
@@ -626,7 +657,8 @@ console.log("\n=== settlement → billing_status ===");
   t("credits path with nothing owed → free", billingStatusFor(s(true, "credits", 0)) === "free");
   t(
     "a settle that could not be recorded → pending (the hold covers it; the reaper settles it), never charged or free",
-    billingStatusFor(s(false, "credits", 0)) === "pending" && billingStatusFor(s(false, "free_quota", 0)) === "pending",
+    billingStatusFor(s(false, "credits", 0)) === "pending" &&
+      billingStatusFor(s(false, "free_quota", 0)) === "pending",
   );
   t(
     "the page's billing mode follows the hold's billing",
@@ -655,9 +687,14 @@ console.log("\n=== settlement → billing_status ===");
     // L7), an exception out of callOpenAI (round-4 L6) — both rethrow at once,
     // never reaching the final settle — and the normal settle.
     (spend.match(/await settleSafely\(/g) ?? []).length === 3 &&
-      (spend.match(/await settleSafely\(db, call, model, billing, settleInputFor\(model, (?:notSent|result), null\)\);\s*throw e;/g) ?? [])
-        .length === 2 &&
-      /const settlement = await settleSafely\(db, call, model, billing, settleInputFor\(model, result, failCode\)\);/.test(spend) &&
+      (
+        spend.match(
+          /await settleSafely\(db, call, model, billing, settleInputFor\(model, (?:notSent|result), null\)\);\s*throw e;/g,
+        ) ?? []
+      ).length === 2 &&
+      /const settlement = await settleSafely\(db, call, model, billing, settleInputFor\(model, result, failCode\)\);/.test(
+        spend,
+      ) &&
       /if \(s\.status !== "settled" && s\.status !== "already_settled"\) \{/.test(spend),
   );
   t(
@@ -667,7 +704,9 @@ console.log("\n=== settlement → billing_status ===");
   const fns = read("src/lib/generation.functions.ts");
   t(
     "the batch item records what the settlement charged",
-    /credits_charged: gen\.settlement\.creditsCharged,\s*billing_status: billingStatusFor\(gen\.settlement\),/.test(fns),
+    /credits_charged: gen\.settlement\.creditsCharged,\s*billing_status: billingStatusFor\(gen\.settlement\),/.test(
+      fns,
+    ),
   );
   t(
     "an item can no longer be failed as 'unbilled' after a settled generation",
@@ -681,15 +720,21 @@ console.log("\n=== settlement → billing_status ===");
   // budget keeps what OpenAI may have been paid.
   t(
     "a delivered page without usage settles at the full hold (cost null) with the reason usage_missing",
-    /if \(!r\.usage\) return \{ usage: null, costMicros: null, credits: null, outcome: "ok", error: "usage_missing" \};/.test(spend),
+    /if \(!r\.usage\) return \{ usage: null, costMicros: null, credits: null, outcome: "ok", error: "usage_missing" \};/.test(
+      spend,
+    ),
   );
   t(
     "a failure with reported usage refunds the customer (credits 0) and records the cost on the platform budget",
-    /if \(usage\) return \{ usage, costMicros: cost\(usage\), credits: 0, outcome: "failed", error \};/.test(spend),
+    /if \(usage\) return \{ usage, costMicros: cost\(usage\), credits: 0, outcome: "failed", error \};/.test(
+      spend,
+    ),
   );
   t(
     "a failure after the request left, without usage, keeps the full hold on the platform budget only",
-    /return \{ usage: null, costMicros: null, credits: null, outcome: "failed", error \};/.test(spend),
+    /return \{ usage: null, costMicros: null, credits: null, outcome: "failed", error \};/.test(
+      spend,
+    ),
   );
   t(
     "the charge is priced on the reported usage (input, cached input, output)",
@@ -699,13 +744,19 @@ console.log("\n=== settlement → billing_status ===");
 
 console.log("\n=== model policy (a quality tier, never a model) ===");
 {
-  t("the allowlist is exactly gpt-5-nano and gpt-5-mini", AI_MODELS.join() === "gpt-5-nano,gpt-5-mini");
+  t(
+    "the allowlist is exactly gpt-5-nano and gpt-5-mini",
+    AI_MODELS.join() === "gpt-5-nano,gpt-5-mini",
+  );
   t("the default tier is standard", GENERATION_DEFAULT_TIER === "standard");
   t(
     "standard → gpt-5-nano, premium → gpt-5-mini (server-side mapping)",
     modelForTier("standard") === "gpt-5-nano" && modelForTier("premium") === "gpt-5-mini",
   );
-  t("every tier maps to an allowlisted model", GENERATION_TIERS.every((q) => isAllowedModel(modelForTier(q))));
+  t(
+    "every tier maps to an allowlisted model",
+    GENERATION_TIERS.every((q) => isAllowedModel(modelForTier(q))),
+  );
   t(
     "an unknown tier throws instead of mapping to some model",
     (() => {
@@ -724,7 +775,10 @@ console.log("\n=== model policy (a quality tier, never a model) ===");
       tierForModel("gpt-5-nano") === "standard" &&
       tierForModel("gpt-5-mini") === "premium",
   );
-  t("the old OpenRouter ids are not allowed models", !isAllowedModel("google/gemini-3-flash-preview"));
+  t(
+    "the old OpenRouter ids are not allowed models",
+    !isAllowedModel("google/gemini-3-flash-preview"),
+  );
   t(
     "the picker offers exactly the tiers, standard first",
     GENERATION_TIER_OPTIONS.map((o) => o.tier).join() === GENERATION_TIERS.join() &&
@@ -732,10 +786,15 @@ console.log("\n=== model policy (a quality tier, never a model) ===");
   );
   t(
     "the picker shows no model names",
-    GENERATION_TIER_OPTIONS.every((o) => !/gpt|nano|mini|gemini|openai/i.test(`${o.label} ${o.hint}`)),
+    GENERATION_TIER_OPTIONS.every(
+      (o) => !/gpt|nano|mini|gemini|openai/i.test(`${o.label} ${o.hint}`),
+    ),
     JSON.stringify(GENERATION_TIER_OPTIONS),
   );
-  t("the picker has a cost hint per tier", GENERATION_TIER_OPTIONS.every((o) => /credit/.test(o.hint)));
+  t(
+    "the picker has a cost hint per tier",
+    GENERATION_TIER_OPTIONS.every((o) => /credit/.test(o.hint)),
+  );
 
   const base = {
     workspaceId: "11111111-1111-4111-8111-111111111111",
@@ -755,10 +814,18 @@ console.log("\n=== model policy (a quality tier, never a model) ===");
     "quick page rejects an unknown tier instead of mapping it",
     !QuickPageInputSchema.safeParse({ ...base, quality: "ultra" }).success,
   );
-  for (const key of ["model", "max_output_tokens", "maxOutputTokens", "temperature", "provider", "reasoning"]) {
+  for (const key of [
+    "model",
+    "max_output_tokens",
+    "maxOutputTokens",
+    "temperature",
+    "provider",
+    "reasoning",
+  ]) {
     t(
       `quick page rejects a body carrying \`${key}\` (strict schema)`,
-      !QuickPageInputSchema.safeParse({ ...base, [key]: key === "model" ? "gpt-5-mini" : 1 }).success,
+      !QuickPageInputSchema.safeParse({ ...base, [key]: key === "model" ? "gpt-5-mini" : 1 })
+        .success,
     );
   }
   t(
@@ -840,7 +907,11 @@ console.log("\n=== customerMessage: no database text reaches a tenant ===");
       /temporarily unavailable/i.test(GENERATION_UNAVAILABLE_MESSAGE) &&
         /try again/i.test(GENERATION_UNAVAILABLE_MESSAGE),
     );
-    t("CustomerFacingError is an Error with its own name", new CustomerFacingError("x") instanceof Error && new CustomerFacingError("x").name === "CustomerFacingError");
+    t(
+      "CustomerFacingError is an Error with its own name",
+      new CustomerFacingError("x") instanceof Error &&
+        new CustomerFacingError("x").name === "CustomerFacingError",
+    );
   } finally {
     console.error = origError;
   }
@@ -852,9 +923,15 @@ console.log("\n=== customerMessage: no database text reaches a tenant ===");
     server.includes("throw new CustomerFacingError(PAGE_TITLE_INVALID_MESSAGE)") &&
       server.includes("throw new CustomerFacingError(PAGE_SLUG_UNDERIVABLE_MESSAGE)") &&
       /throw new CustomerFacingError\(AI_MESSAGES\.notConfigured, "no_key"\)/.test(spend) &&
-      /throw new CustomerFacingError\(refusalMessage\(reserved\.status, call\.refusalMessages\), reserved\.status\);/.test(spend) &&
-      /throw new CustomerFacingError\(failureMessage\(result\.kind\), result\.kind\);/.test(spend) &&
-      /if \(checked\) throw new CustomerFacingError\(checked\.message, checked\.code\);/.test(spend) &&
+      /throw new CustomerFacingError\(refusalMessage\(reserved\.status, call\.refusalMessages\), reserved\.status\);/.test(
+        spend,
+      ) &&
+      /throw new CustomerFacingError\(failureMessage\(result\.kind\), result\.kind\);/.test(
+        spend,
+      ) &&
+      /if \(checked\) throw new CustomerFacingError\(checked\.message, checked\.code\);/.test(
+        spend,
+      ) &&
       /message: `Generated body too short \(\$\{n\} chars\)`/.test(server) &&
       /insufficient: outOfCreditsMessage\(\),/.test(server),
   );
@@ -876,13 +953,17 @@ console.log("\n=== customerMessage: no database text reaches a tenant ===");
     // spend refusal before the provider call; fenced on the claim's token.
     /const \{ error: failErr \} = await sb\(\)\s*\.from\("generation_items"\)\s*\.update\(\{\s*status: "failed",\s*error: msg\.slice\(0, 300\),\s*\.\.\.\(refusedBeforeCall \? \{ attempts: token - 1 \} : \{\}\),\s*\}\)\s*\.eq\("id", row\.id\)\s*\.eq\("status", "running"\)\s*\.eq\("attempts", token\);/.test(
       runItem,
-    ) && /if \(failErr\) \{[\s\S]*?console\.error\("\[generation\] could not record item failure"/.test(runItem),
+    ) &&
+      /if \(failErr\) \{[\s\S]*?console\.error\("\[generation\] could not record item failure"/.test(
+        runItem,
+      ),
   );
   const quick = read("src/lib/admin-quick-page.functions.ts");
   const serverFn = quick.slice(quick.indexOf("export const createQuickPage"));
   t(
-    "the quick page server fn rethrows only a customer message",
-    /return await runQuickPage\(data, context\.userId\);/.test(serverFn) &&
+    "the quick page server fn is consolidated: it refuses (a customer sentence) and never generates",
+    /throw new CustomerFacingError\(QUICK_PAGE_MOVED_MESSAGE\);/.test(serverFn) &&
+      !/runQuickPage\(/.test(serverFn) &&
       /throw new Error\(customerMessage\(e, GENERATION_UNAVAILABLE_MESSAGE\)\);/.test(serverFn),
   );
 }
@@ -894,13 +975,22 @@ console.log("\n=== out-of-funds copy points at support, not a withdrawn purchase
     ["AI_MESSAGES.outOfFunds", AI_MESSAGES.outOfFunds],
   ];
   for (const [label, s] of strings) {
-    t(`${label} names the included allowance and support`, /included AI generation/.test(s) && /contact support/i.test(s), s);
-    t(`${label} has no purchase path`, !/top up/i.test(s) && !/Billing/.test(s) && !/buy|purchase/i.test(s), s);
+    t(
+      `${label} names the included allowance and support`,
+      /included AI generation/.test(s) && /contact support/i.test(s),
+      s,
+    );
+    t(
+      `${label} has no purchase path`,
+      !/top up/i.test(s) && !/Billing/.test(s) && !/buy|purchase/i.test(s),
+      s,
+    );
   }
   t(
     "an out-of-funds hold is refused with the customer sentence (generation: outOfCreditsMessage)",
-    /case "insufficient":\s*return AI_MESSAGES\.outOfFunds;/.test(read("src/lib/ai/spend.server.ts")) &&
-      /insufficient: outOfCreditsMessage\(\),/.test(read("src/lib/generation.server.ts")),
+    /case "insufficient":\s*return AI_MESSAGES\.outOfFunds;/.test(
+      read("src/lib/ai/spend.server.ts"),
+    ) && /insufficient: outOfCreditsMessage\(\),/.test(read("src/lib/generation.server.ts")),
   );
   t(
     "no generation or AI module still says Top up in Billing",
@@ -974,7 +1064,11 @@ console.log("\n=== OpenAI page writer (stubbed fetch, through the spend flow) ==
     output_tokens_details: { reasoning_tokens: 0 },
     total_tokens: 2016,
   };
-  const responseObject = (content: unknown[], usage: unknown = USAGE, extra: Record<string, unknown> = {}) => ({
+  const responseObject = (
+    content: unknown[],
+    usage: unknown = USAGE,
+    extra: Record<string, unknown> = {},
+  ) => ({
     id: "resp_test",
     object: "response",
     created_at: 1,
@@ -995,12 +1089,22 @@ console.log("\n=== OpenAI page writer (stubbed fetch, through the spend flow) ==
   const makeDb = (events: Event[]) => ({
     rpc: async (name: string, args: any) => {
       events.push({ kind: "rpc", name, args });
-      if (name === "ai_reserve") return { data: { status: "reserved", billing: "byok", hold_seq: 1, credits_charged: 0 }, error: null };
+      if (name === "ai_reserve")
+        return {
+          data: { status: "reserved", billing: "byok", hold_seq: 1, credits_charged: 0 },
+          error: null,
+        };
       if (name === "ai_mark_called") return { data: true, error: null };
       if (name === "ai_release") return { data: true, error: null };
       if (name === "ai_settle") {
         return {
-          data: { status: "settled", billing: "byok", credits_charged: 0, cost_micros: args._cost_micros, full_hold: args._cost_micros === null },
+          data: {
+            status: "settled",
+            billing: "byok",
+            credits_charged: 0,
+            cost_micros: args._cost_micros,
+            full_hold: args._cost_micros === null,
+          },
           error: null,
         };
       }
@@ -1056,17 +1160,33 @@ console.log("\n=== OpenAI page writer (stubbed fetch, through the spend flow) ==
       console.warn = origWarn;
     }
     const settle = events.find((e) => e.name === "ai_settle")?.args ?? null;
-    return { out, caught, err: caught instanceof Error ? caught.message : "", events, requests, logs, settle };
+    return {
+      out,
+      caught,
+      err: caught instanceof Error ? caught.message : "",
+      events,
+      requests,
+      logs,
+      settle,
+    };
   }
 
   const ok = await write(() => jsonResponse(responseObject([textPart(JSON.stringify(page))])));
-  t("parses the structured page", ok.out?.title === "Boats in Austin" && ok.out?.body_markdown === body, ok.err);
+  t(
+    "parses the structured page",
+    ok.out?.title === "Boats in Austin" && ok.out?.body_markdown === body,
+    ok.err,
+  );
   t(
     "reports token usage",
     ok.out?.usage?.inputTokens === 812 && ok.out?.usage?.outputTokens === 1204,
     JSON.stringify(ok.out?.usage),
   );
-  t("exactly one request, to the Responses API", ok.requests.length === 1 && ok.requests[0]!.url === "https://api.openai.com/v1/responses", ok.requests[0]?.url);
+  t(
+    "exactly one request, to the Responses API",
+    ok.requests.length === 1 && ok.requests[0]!.url === "https://api.openai.com/v1/responses",
+    ok.requests[0]?.url,
+  );
   const sent = JSON.parse(String(ok.requests[0]?.init?.body ?? "{}"));
   t(
     "Structured Outputs with the write_page schema, strict",
@@ -1090,70 +1210,152 @@ console.log("\n=== OpenAI page writer (stubbed fetch, through the spend flow) ==
     "bearer auth with the resolved key",
     new Headers(ok.requests[0]?.init?.headers).get("authorization") === `Bearer ${KEY}`,
   );
-  t("every call carries an abort signal (timeout)", ok.requests[0]?.init?.signal instanceof AbortSignal);
+  t(
+    "every call carries an abort signal (timeout)",
+    ok.requests[0]?.init?.signal instanceof AbortSignal,
+  );
   const order = ok.events.map((e) => (e.kind === "fetch" ? "provider" : e.name)).join(" → ");
-  t("order: ai_reserve → ai_mark_called → provider → ai_settle", order === "ai_reserve → ai_mark_called → provider → ai_settle", order);
+  t(
+    "order: ai_reserve → ai_mark_called → provider → ai_settle",
+    order === "ai_reserve → ai_mark_called → provider → ai_settle",
+    order,
+  );
   t(
     "the hold is for the page route and the standard model",
-    ok.events[0]?.args?._feature === "page_generation" && ok.events[0]?.args?._model === "gpt-5-nano",
+    ok.events[0]?.args?._feature === "page_generation" &&
+      ok.events[0]?.args?._model === "gpt-5-nano",
   );
   t(
     "settled with the reported usage, outcome ok",
-    ok.settle?._input_tokens === 812 && ok.settle?._output_tokens === 1204 && ok.settle?._outcome === "ok" && ok.settle?._error === null,
+    ok.settle?._input_tokens === 812 &&
+      ok.settle?._output_tokens === 1204 &&
+      ok.settle?._outcome === "ok" &&
+      ok.settle?._error === null,
     JSON.stringify(ok.settle),
   );
 
-  const premium = await write(() => jsonResponse(responseObject([textPart(JSON.stringify(page))])), { tier: "premium" });
+  const premium = await write(
+    () => jsonResponse(responseObject([textPart(JSON.stringify(page))])),
+    { tier: "premium" },
+  );
   const premiumSent = JSON.parse(String(premium.requests[0]?.init?.body ?? "{}"));
-  t("premium sends gpt-5-mini, and holds for it", premiumSent.model === "gpt-5-mini" && premium.events[0]?.args?._model === "gpt-5-mini");
+  t(
+    "premium sends gpt-5-mini, and holds for it",
+    premiumSent.model === "gpt-5-mini" && premium.events[0]?.args?._model === "gpt-5-mini",
+  );
 
-  const thin = await write(() => jsonResponse(responseObject([textPart(JSON.stringify({ ...page, body_markdown: "too short" }))])));
-  t(`rejects a body under ${MIN_BODY_CHARS} chars`, thin.err === "Generated body too short (9 chars)", thin.err);
+  const thin = await write(() =>
+    jsonResponse(
+      responseObject([textPart(JSON.stringify({ ...page, body_markdown: "too short" }))]),
+    ),
+  );
+  t(
+    `rejects a body under ${MIN_BODY_CHARS} chars`,
+    thin.err === "Generated body too short (9 chars)",
+    thin.err,
+  );
   t("…as a customer-facing error", thin.caught instanceof CustomerFacingError);
   t(
     "…settled as 'failed' with the usage the provider reported (the call was paid for)",
-    thin.settle?._outcome === "failed" && thin.settle?._error === "thin_output" && thin.settle?._input_tokens === 812 && thin.settle?._output_tokens === 1204,
+    thin.settle?._outcome === "failed" &&
+      thin.settle?._error === "thin_output" &&
+      thin.settle?._input_tokens === 812 &&
+      thin.settle?._output_tokens === 1204,
     JSON.stringify(thin.settle),
   );
 
-  const refused = await write(() => jsonResponse(responseObject([{ type: "refusal", refusal: "I can't help with that." }])));
-  t("a model refusal is a customer sentence, not the model's text", refused.err === AI_MESSAGES.refusal && !/can't help/.test(refused.err), refused.err);
+  const refused = await write(() =>
+    jsonResponse(responseObject([{ type: "refusal", refusal: "I can't help with that." }])),
+  );
+  t(
+    "a model refusal is a customer sentence, not the model's text",
+    refused.err === AI_MESSAGES.refusal && !/can't help/.test(refused.err),
+    refused.err,
+  );
   t("…as a customer-facing error", refused.caught instanceof CustomerFacingError);
 
-  const notJson = await write(() => jsonResponse(responseObject([textPart("plain text, not the object")])));
-  t("output that is not the JSON object is rejected", notJson.err === AI_MESSAGES.malformed, notJson.err);
+  const notJson = await write(() =>
+    jsonResponse(responseObject([textPart("plain text, not the object")])),
+  );
+  t(
+    "output that is not the JSON object is rejected",
+    notJson.err === AI_MESSAGES.malformed,
+    notJson.err,
+  );
   t("…as a customer-facing error", notJson.caught instanceof CustomerFacingError);
 
-  const wrongShape = await write(() => jsonResponse(responseObject([textPart(JSON.stringify({ title: "x" }))])));
-  t("an object that misses the schema is rejected", wrongShape.err === AI_MESSAGES.malformed, wrongShape.err);
-  t("…and settled with the usage reported", wrongShape.settle?._error === "schema_mismatch" && wrongShape.settle?._input_tokens === 812);
+  const wrongShape = await write(() =>
+    jsonResponse(responseObject([textPart(JSON.stringify({ title: "x" }))])),
+  );
+  t(
+    "an object that misses the schema is rejected",
+    wrongShape.err === AI_MESSAGES.malformed,
+    wrongShape.err,
+  );
+  t(
+    "…and settled with the usage reported",
+    wrongShape.settle?._error === "schema_mismatch" && wrongShape.settle?._input_tokens === 812,
+  );
 
-  const busy = await write(() => new Response("rate limited, slow down: req_abc123", { status: 429 }));
+  const busy = await write(
+    () => new Response("rate limited, slow down: req_abc123", { status: 429 }),
+  );
   t("a 429 is the generic 'busy' sentence", busy.err === AI_MESSAGES.providerBusy, busy.err);
   t("…as a customer-facing error", busy.caught instanceof CustomerFacingError);
-  t("the provider body never reaches the customer", !busy.err.includes("rate limited") && !busy.err.includes("429"));
+  t(
+    "the provider body never reaches the customer",
+    !busy.err.includes("rate limited") && !busy.err.includes("429"),
+  );
   t(
     "the status and the body go to the server log",
-    busy.logs.some((l) => l.includes("429") && l.includes("rate limited") && l.includes("req_abc123")),
+    busy.logs.some(
+      (l) => l.includes("429") && l.includes("rate limited") && l.includes("req_abc123"),
+    ),
     busy.logs.join(" | "),
   );
   t("exactly one request (no SDK retry)", busy.requests.length === 1);
-  t("…settled at zero: OpenAI rejected it before doing any work", busy.settle?._cost_micros === 0 && busy.settle?._error === "rate_limited", JSON.stringify(busy.settle));
+  t(
+    "…settled at zero: OpenAI rejected it before doing any work",
+    busy.settle?._cost_micros === 0 && busy.settle?._error === "rate_limited",
+    JSON.stringify(busy.settle),
+  );
 
   const boom = await write(() => new Response("x".repeat(1000), { status: 500 }));
   t("a 500 yields the generic provider message", boom.err === PROVIDER_ERROR_MESSAGE, boom.err);
   const boomLog = boom.logs.find((l) => l.includes("status=500")) ?? "";
-  t("the logged body is truncated", boomLog.length > 0 && boomLog.length < 600, String(boomLog.length));
-  t("…settled at the full hold (OpenAI may have done the work)", boom.settle?._cost_micros === null && boom.settle?._error === "server_error", JSON.stringify(boom.settle));
+  t(
+    "the logged body is truncated",
+    boomLog.length > 0 && boomLog.length < 600,
+    String(boomLog.length),
+  );
+  t(
+    "…settled at the full hold (OpenAI may have done the work)",
+    boom.settle?._cost_micros === null && boom.settle?._error === "server_error",
+    JSON.stringify(boom.settle),
+  );
 
   // A provider that never answers: fetch rejects the way the runtime does
   // when the signal fires (a TimeoutError DOMException). The real abort
   // timing is exercised in tests/ai-provider.test.ts with a short timeout.
-  const hung = await write(() => Promise.reject(new DOMException("The operation was aborted due to timeout", "TimeoutError")));
-  t("a hung provider is abandoned with the timeout message", hung.err === PROVIDER_TIMEOUT_MESSAGE, hung.err);
+  const hung = await write(() =>
+    Promise.reject(new DOMException("The operation was aborted due to timeout", "TimeoutError")),
+  );
+  t(
+    "a hung provider is abandoned with the timeout message",
+    hung.err === PROVIDER_TIMEOUT_MESSAGE,
+    hung.err,
+  );
   t("…as a customer-facing error", hung.caught instanceof CustomerFacingError);
-  t("the timeout is logged server-side", hung.logs.some((l) => /timeout/.test(l)), hung.logs.join(" | "));
-  t("…and settled at the full hold", hung.settle?._cost_micros === null && hung.settle?._error === "timeout", JSON.stringify(hung.settle));
+  t(
+    "the timeout is logged server-side",
+    hung.logs.some((l) => /timeout/.test(l)),
+    hung.logs.join(" | "),
+  );
+  t(
+    "…and settled at the full hold",
+    hung.settle?._cost_micros === null && hung.settle?._error === "timeout",
+    JSON.stringify(hung.settle),
+  );
 
   // 200 headers, then the body stalls until the abort fires mid-read.
   const midBody = await write(
@@ -1162,15 +1364,25 @@ console.log("\n=== OpenAI page writer (stubbed fetch, through the spend flow) ==
         new ReadableStream({
           start(controller) {
             controller.enqueue(new TextEncoder().encode('{"id":"resp_test","object":"resp'));
-            controller.error(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+            controller.error(
+              new DOMException("The operation was aborted due to timeout", "TimeoutError"),
+            );
           },
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       ),
   );
-  t("a timeout during the body read yields the timeout message", midBody.err === PROVIDER_TIMEOUT_MESSAGE, midBody.err);
+  t(
+    "a timeout during the body read yields the timeout message",
+    midBody.err === PROVIDER_TIMEOUT_MESSAGE,
+    midBody.err,
+  );
   t("the raw abort message never reaches the customer", !/aborted/i.test(midBody.err));
-  t("…settled at the full hold", midBody.settle?._cost_micros === null, JSON.stringify(midBody.settle));
+  t(
+    "…settled at the full hold",
+    midBody.settle?._cost_micros === null,
+    JSON.stringify(midBody.settle),
+  );
 
   const html = await write(
     () =>
@@ -1181,21 +1393,59 @@ console.log("\n=== OpenAI page writer (stubbed fetch, through the spend flow) ==
   );
   t(
     "an unreadable 200 body is a fixed customer sentence, never the body",
-    html.caught instanceof CustomerFacingError && !/html|trace-id|gateway/i.test(html.err) && [AI_MESSAGES.malformed, PROVIDER_ERROR_MESSAGE].includes(html.err as any),
+    html.caught instanceof CustomerFacingError &&
+      !/html|trace-id|gateway/i.test(html.err) &&
+      [AI_MESSAGES.malformed, PROVIDER_ERROR_MESSAGE].includes(html.err as any),
     html.err,
   );
-  t("…logged as a malformed body", html.logs.some((l) => /malformed/.test(l)), html.logs.join(" | "));
+  t(
+    "…logged as a malformed body",
+    html.logs.some((l) => /malformed/.test(l)),
+    html.logs.join(" | "),
+  );
 
   const reset = await write(() => {
     throw new TypeError("fetch failed: ECONNRESET 10.0.0.1");
   });
-  t("a network failure yields the generic message", reset.err === PROVIDER_ERROR_MESSAGE, reset.err);
-  t("the network failure detail stays in the log", reset.logs.some((l) => l.includes("ECONNRESET")), reset.logs.join(" | "));
+  t(
+    "a network failure yields the generic message",
+    reset.err === PROVIDER_ERROR_MESSAGE,
+    reset.err,
+  );
+  t(
+    "the network failure detail stays in the log",
+    reset.logs.some((l) => l.includes("ECONNRESET")),
+    reset.logs.join(" | "),
+  );
 
-  const leaky = await write(() => new Response(JSON.stringify({ error: { message: `Incorrect API key provided: ${KEY}`, type: "invalid_request_error", code: "invalid_api_key" } }), { status: 401, headers: { "content-type": "application/json" } }));
-  t("a rejected key is the 'not available' sentence", leaky.err === AI_MESSAGES.notConfigured, leaky.err);
-  t("the key never reaches a log line", !leaky.logs.some((l) => l.includes(KEY)), leaky.logs.join(" | "));
-  t("…settled at zero (rejected before any work)", leaky.settle?._cost_micros === 0 && leaky.settle?._error === "auth", JSON.stringify(leaky.settle));
+  const leaky = await write(
+    () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            message: `Incorrect API key provided: ${KEY}`,
+            type: "invalid_request_error",
+            code: "invalid_api_key",
+          },
+        }),
+        { status: 401, headers: { "content-type": "application/json" } },
+      ),
+  );
+  t(
+    "a rejected key is the 'not available' sentence",
+    leaky.err === AI_MESSAGES.notConfigured,
+    leaky.err,
+  );
+  t(
+    "the key never reaches a log line",
+    !leaky.logs.some((l) => l.includes(KEY)),
+    leaky.logs.join(" | "),
+  );
+  t(
+    "…settled at zero (rejected before any work)",
+    leaky.settle?._cost_micros === 0 && leaky.settle?._error === "auth",
+    JSON.stringify(leaky.settle),
+  );
 }
 
 console.log("\n=== batch pipeline ordering (source guards) ===");
@@ -1213,8 +1463,9 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
   // is refused, never mapped to another model.
   t(
     "the job's model must map back to a tier, before the claim",
-    /const tier = job\?\.model \? tierForModel\(job\.model\) : GENERATION_DEFAULT_TIER;\s*if \(!tier\) \{[\s\S]*?return refuse\(GENERATION_UNAVAILABLE_MESSAGE\);/.test(runItem) &&
-      runItem.indexOf("tierForModel(job.model)") < claim,
+    /const tier = job\?\.model \? tierForModel\(job\.model\) : GENERATION_DEFAULT_TIER;\s*if \(!tier\) \{[\s\S]*?return refuse\(GENERATION_UNAVAILABLE_MESSAGE\);/.test(
+      runItem,
+    ) && runItem.indexOf("tierForModel(job.model)") < claim,
   );
   // The daily cap is a reservation PER ATTEMPT (one row per provider call),
   // not the pending item row: an item row can be re-armed, a reservation
@@ -1225,7 +1476,9 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
   const capAt = runItem.indexOf(
     "const cap = effectiveDailyCap(settings.dailyCap, await isInternalWorkspace(workspaceId));",
   );
-  const reserveAt = runItem.indexOf("slot = await reserveGenerationSlot(workspaceId, attemptId, cap);");
+  const reserveAt = runItem.indexOf(
+    "slot = await reserveGenerationSlot(workspaceId, attemptId, cap);",
+  );
   t(
     "each attempt reserves its own daily-cap slot, under its attempt id, BEFORE the claim",
     attemptIdAt > 0 && capAt > attemptIdAt && reserveAt > capAt && reserveAt < claim,
@@ -1243,12 +1496,15 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
   );
   t(
     "a full cap refuses the item without consuming an attempt (before the claim, through refuse)",
-    /if \(slot === "cap_reached"\) return refuse\(dailyCapMessage\(settings\.dailyCap, 0\)\);/.test(runItem) &&
-      runItem.indexOf('if (slot === "cap_reached")') < claim,
+    /if \(slot === "cap_reached"\) return refuse\(dailyCapMessage\(settings\.dailyCap, 0\)\);/.test(
+      runItem,
+    ) && runItem.indexOf('if (slot === "cap_reached")') < claim,
   );
   t(
     "an attempt another driver holds or spent is left alone (no claim, no write)",
-    /if \(slot !== "reserved"\) \{[\s\S]*?return \{ item: await freshItem\(row\.id\), changed: false \};\s*\}/.test(runItem),
+    /if \(slot !== "reserved"\) \{[\s\S]*?return \{ item: await freshItem\(row\.id\), changed: false \};\s*\}/.test(
+      runItem,
+    ),
   );
   t(
     "a failed reservation read refuses the item (never generates uncapped)",
@@ -1274,12 +1530,18 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
   // The slot goes back ONLY on a way out that never reached the provider.
   t(
     "a claim error or a lost claim releases the slot",
-    /if \(claimErr\) \{\s*await releaseSlot\(\);\s*throw new Error\(claimErr\.message\);/.test(runItem) &&
-      /if \(!claimed\) \{[\s\S]*?await releaseSlot\(\);\s*return \{ item: await freshItem\(row\.id\), changed: false \};/.test(runItem),
+    /if \(claimErr\) \{\s*await releaseSlot\(\);\s*throw new Error\(claimErr\.message\);/.test(
+      runItem,
+    ) &&
+      /if \(!claimed\) \{[\s\S]*?await releaseSlot\(\);\s*return \{ item: await freshItem\(row\.id\), changed: false \};/.test(
+        runItem,
+      ),
   );
   t(
     "linking an existing page instead of generating releases the slot",
-    /billing_status: "free",\s*error: null,\s*\}\);[\s\S]{0,120}?await releaseSlot\(\);/.test(runItem),
+    /billing_status: "free",\s*error: null,\s*\}\);[\s\S]{0,120}?await releaseSlot\(\);/.test(
+      runItem,
+    ),
   );
   t(
     "the attempt's slot is marked spent in beforeProviderCall, under the attempt id, then slotMarked is set",
@@ -1289,7 +1551,9 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
   );
   t(
     "the spend hold is taken under the SAME attempt id as the slot",
-    /gen = await generatePageContent\(\{\s*workspaceId,\s*userId,\s*requestId: attemptSlot,\s*source: "batch_generation",\s*tier,/.test(runItem),
+    /gen = await generatePageContent\(\{\s*workspaceId,\s*userId,\s*requestId: attemptSlot,\s*source: "batch_generation",\s*tier,/.test(
+      runItem,
+    ),
   );
   t(
     "after the provider call the slot is never released (the spend flow settled the call)",
@@ -1298,7 +1562,9 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
   );
   t(
     "releaseSlot touches only this run's own reservation",
-    /const releaseSlot = async \(\) => \{\s*if \(slotId\) await releaseGenerationSlot\(workspaceId, slotId\);\s*\};/.test(runItem),
+    /const releaseSlot = async \(\) => \{\s*if \(slotId\) await releaseGenerationSlot\(workspaceId, slotId\);\s*\};/.test(
+      runItem,
+    ),
   );
   t(
     "an item that already has a page never generates again",
@@ -1316,7 +1582,9 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
     "the draft is written inside the spend flow's deliver step (before the settlement), and linked to the item after",
     genAt > 0 &&
       persist > genAt &&
-      /deliver: async \(draft\) => \{\s*saved = await persistGeneratedPage\(\{\s*workspaceId,\s*generated: draft,/.test(runItem) &&
+      /deliver: async \(draft\) => \{\s*saved = await persistGeneratedPage\(\{\s*workspaceId,\s*generated: draft,/.test(
+        runItem,
+      ) &&
       /const page = saved as PersistedPage \| null;\s*if \(!page\) throw new Error/.test(runItem) &&
       link > persist,
   );
@@ -1371,12 +1639,15 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
   );
   t(
     "the job stores the model the SERVER resolved from the tier",
-    /const model = modelForTier\(data\.quality\);/.test(start) && /status: "queued",\s*model,/.test(start),
+    /const model = modelForTier\(data\.quality\);/.test(start) &&
+      /status: "queued",\s*model,/.test(start),
   );
   t(
     "the job input takes a tier, is strict, and never a model",
     /quality: z\.enum\(GENERATION_TIERS\)\.default\(GENERATION_DEFAULT_TIER\),/.test(fns) &&
-      /export const StartGenerationJobInputSchema = z\s*\.object\(\{[\s\S]*?\}\)\s*\.strict\(\);/.test(fns),
+      /export const StartGenerationJobInputSchema = z\s*\.object\(\{[\s\S]*?\}\)\s*\.strict\(\);/.test(
+        fns,
+      ),
   );
   t(
     "idle re-attach is guarded by status",
@@ -1441,7 +1712,9 @@ console.log("\n=== batch pipeline ordering (source guards) ===");
   );
   t(
     "listGenerationTargets offers tiers, never model names",
-    list.includes("tiers: GENERATION_TIER_OPTIONS") && list.includes("defaultTier: GENERATION_DEFAULT_TIER") && !/models:/.test(list),
+    list.includes("tiers: GENERATION_TIER_OPTIONS") &&
+      list.includes("defaultTier: GENERATION_DEFAULT_TIER") &&
+      !/models:/.test(list),
   );
 }
 
@@ -1457,8 +1730,14 @@ console.log("\n=== quick page pipeline (source guards) ===");
   t("replays by request id before generating", handler.indexOf("findPageByRequestId(") < gen);
   t("checks the pause switch before generating", handler.indexOf("readPlatformSettings()") < gen);
   const reserve = handler.indexOf("reserveGenerationSlot(");
-  t("reserves a daily-cap slot before generating (not a count-and-compare)", reserve > 0 && reserve < gen);
-  t("the quick page no longer counts the cap in TypeScript", !quick.includes("countConsumedLast24h("));
+  t(
+    "reserves a daily-cap slot before generating (not a count-and-compare)",
+    reserve > 0 && reserve < gen,
+  );
+  t(
+    "the quick page no longer counts the cap in TypeScript",
+    !quick.includes("countConsumedLast24h("),
+  );
   t(
     "the reservation is keyed by the request id and the platform cap (lifted only for the internal entitlement)",
     /const cap = effectiveDailyCap\(settings\.dailyCap, await isInternalWorkspace\(data\.workspaceId, deps\.db\)\);\s*const slot = await reserveGenerationSlot\(data\.workspaceId, generationRequestId, cap\);/.test(
@@ -1473,7 +1752,9 @@ console.log("\n=== quick page pipeline (source guards) ===");
   );
   t(
     "an id another request holds right now is refused as still being generated (no second provider call)",
-    /if \(slot === "in_progress"\) throw new CustomerFacingError\(GENERATION_IN_PROGRESS_MESSAGE\);/.test(handler),
+    /if \(slot === "in_progress"\) throw new CustomerFacingError\(GENERATION_IN_PROGRESS_MESSAGE\);/.test(
+      handler,
+    ),
   );
   t(
     "a spent id returns its page if it still exists, and is refused otherwise (a deleted draft is not regenerated for free)",
@@ -1481,7 +1762,9 @@ console.log("\n=== quick page pipeline (source guards) ===");
       handler,
     ),
   );
-  const validateAt = handler.indexOf("validatePageRequest({ title: data.title, slug: data.slug });");
+  const validateAt = handler.indexOf(
+    "validatePageRequest({ title: data.title, slug: data.slug });",
+  );
   t(
     "the title and slug are validated BEFORE the pause read, the reservation and the provider call",
     validateAt > 0 &&
@@ -1491,7 +1774,9 @@ console.log("\n=== quick page pipeline (source guards) ===");
   );
   t(
     "the pause refusal is customer-facing",
-    /if \(settings\.paused\) \{\s*throw new CustomerFacingError\(GENERATION_PAUSED_MESSAGE\);/.test(handler),
+    /if \(settings\.paused\) \{\s*throw new CustomerFacingError\(GENERATION_PAUSED_MESSAGE\);/.test(
+      handler,
+    ),
   );
   const payer = handler.indexOf("resolveBillingMode(");
   t("resolves who pays before generating", payer > 0 && payer < gen);
@@ -1513,7 +1798,9 @@ console.log("\n=== quick page pipeline (source guards) ===");
   );
   t(
     "the spend hold is taken under the SAME request id, at the requested tier",
-    /generatePageContent\(\{\s*workspaceId: data\.workspaceId,\s*userId,\s*requestId: generationRequestId,[\s\S]*?tier: data\.quality,/.test(handler),
+    /generatePageContent\(\{\s*workspaceId: data\.workspaceId,\s*userId,\s*requestId: generationRequestId,[\s\S]*?tier: data\.quality,/.test(
+      handler,
+    ),
   );
   t(
     "failed spend is recorded by the spend flow, not here",
@@ -1523,11 +1810,15 @@ console.log("\n=== quick page pipeline (source guards) ===");
     "persists with the request id, inside the spend flow's deliver step (the customer pays only for a saved page)",
     handler.includes("generationRequestId,") &&
       quick.includes("generation_request_id") === false &&
-      /deliver: async \(draft\) => \{\s*saved = await persistGeneratedPage\(\{\s*workspaceId: data\.workspaceId,\s*generated: draft,/.test(handler),
+      /deliver: async \(draft\) => \{\s*saved = await persistGeneratedPage\(\{\s*workspaceId: data\.workspaceId,\s*generated: draft,/.test(
+        handler,
+      ),
   );
   t(
     "a replayed persist returns the stored page (the charge the database recorded)",
-    /if \(page\.replayed\) \{\s*const existing = await findPageByRequestId\(data\.workspaceId, generationRequestId\);\s*if \(existing\) \{\s*return replayResult\(/.test(handler),
+    /if \(page\.replayed\) \{\s*const existing = await findPageByRequestId\(data\.workspaceId, generationRequestId\);\s*if \(existing\) \{\s*return replayResult\(/.test(
+      handler,
+    ),
   );
   t(
     "funds are held before the call, so there is no 'unbilled draft' path left",
@@ -1557,7 +1848,9 @@ console.log("\n=== quick page pipeline (source guards) ===");
   );
   t(
     "a replay whose call is still held or unsettled is 'pending', never 'free'",
-    /else if \(spend\.status === "held" \|\| spend\.status === "called"\) \{\s*billing = "pending";/.test(replay),
+    /else if \(spend\.status === "held" \|\| spend\.status === "called"\) \{\s*billing = "pending";/.test(
+      replay,
+    ),
   );
   t(
     "a page without a spend record owes nothing",
@@ -1569,8 +1862,11 @@ console.log("\n=== quick page pipeline (source guards) ===");
   );
   t(
     "all three replay paths (step 0, a spent id with its page, post-persist) go through replayResult",
-    (handler.match(/return replayResult\(existing, \{ workspaceId: data\.workspaceId, requestId: (data\.)?generationRequestId \}\);/g) ?? [])
-      .length === 3,
+    (
+      handler.match(
+        /return replayResult\(existing, \{ workspaceId: data\.workspaceId, requestId: (data\.)?generationRequestId \}\);/g,
+      ) ?? []
+    ).length === 3,
   );
   const server = read("src/lib/generation.server.ts");
   t(
@@ -1579,7 +1875,9 @@ console.log("\n=== quick page pipeline (source guards) ===");
   );
   t(
     "readSpendSettlement reads the one spend row for (workspace, request id)",
-    /\.from\("ai_spend_reservations"\)\s*\.select\("status, billing, credits_charged"\)\s*\.eq\("workspace_id", workspaceId\)\s*\.eq\("request_id", requestId\)/.test(server),
+    /\.from\("ai_spend_reservations"\)\s*\.select\("status, billing, credits_charged"\)\s*\.eq\("workspace_id", workspaceId\)\s*\.eq\("request_id", requestId\)/.test(
+      server,
+    ),
   );
   const persistFn = server.slice(
     server.indexOf("export async function persistGeneratedPage"),
@@ -1593,7 +1891,7 @@ console.log("\n=== quick page pipeline (source guards) ===");
     "on ANY unique violation the request id is checked before the slug is retried",
     persistFn.indexOf('if (insErr.code === "23505")') > 0 &&
       persistFn.indexOf("findPageByRequestId(input.workspaceId, input.generationRequestId)") <
-        persistFn.indexOf("/slug/.test(String(insErr.message ?? \"\"))") &&
+        persistFn.indexOf('/slug/.test(String(insErr.message ?? ""))') &&
       !/\/generation_request\/\.test/.test(persistFn),
   );
   t(
@@ -1612,7 +1910,10 @@ console.log("\n=== coach create_city_page runs through the core ===");
     coach.indexOf("async function addInternalLinks("),
   );
   t("createCityPage was found", create.length > 0);
-  t("it calls the quick-page pipeline directly (not the server fn)", create.includes("await runQuickPage(") && !coach.includes("createQuickPage"));
+  t(
+    "it calls the quick-page pipeline directly (not the server fn)",
+    create.includes("await runQuickPage(") && !coach.includes("createQuickPage"),
+  );
   t(
     "it never calls a provider or the spend flow itself",
     !/callAI\(|AI_URL|fetch\(|runMeteredAiCall|callOpenAI/.test(create),
@@ -1624,10 +1925,7 @@ console.log("\n=== coach create_city_page runs through the core ===");
       /const categoryPlural = dominantCategory \|\| "listings";/.test(create) &&
       create.includes('.from("tenant_listings")'),
   );
-  t(
-    "it drafts, never publishes",
-    /autoPublish: false,/.test(create),
-  );
+  t("it drafts, never publishes", /autoPublish: false,/.test(create));
   t(
     "it passes a deterministic request id through the schema",
     /QuickPageInputSchema\.parse\(\{[\s\S]*?generationRequestId,\s*\}\)/.test(create),
@@ -1647,7 +1945,10 @@ console.log("\n=== coach create_city_page runs through the core ===");
     coach.indexOf("export const runCoachAction"),
   );
   const branch = pipeline.indexOf('if (data.actionType === "create_city_page")');
-  t("the core branch comes before any key resolution", branch > 0 && branch < pipeline.indexOf("resolveAiKey("));
+  t(
+    "the core branch comes before any key resolution",
+    branch > 0 && branch < pipeline.indexOf("resolveAiKey("),
+  );
   t(
     "the core branch neither resolves a key nor meters by itself",
     !pipeline.slice(branch, pipeline.indexOf("resolveAiKey(")).includes("runMeteredAiCall"),
@@ -1661,7 +1962,9 @@ console.log("\n=== coach create_city_page runs through the core ===");
   t(
     "the server fn logs and throws only a customer message",
     /errorMessage = customerMessage\(e, AI_MESSAGES\.unavailable\);/.test(run) &&
-      /if \(errorMessage \|\| !result\) throw new Error\(errorMessage \?\? AI_MESSAGES\.unavailable\);/.test(run),
+      /if \(errorMessage \|\| !result\) throw new Error\(errorMessage \?\? AI_MESSAGES\.unavailable\);/.test(
+        run,
+      ),
   );
   t(
     "internal-link counting matches the /a/ links the prompt asks for",
@@ -1674,9 +1977,21 @@ console.log("\n=== coach create_city_page runs through the core ===");
 console.log("\n=== approveOpportunity: idempotent and guarded ===");
 {
   const opp = read("src/lib/opportunities.functions.ts");
-  const approve = opp.slice(opp.indexOf("export async function runApproveOpportunity("), opp.indexOf("export const skipOpportunity"));
-  t("approveOpportunity (its pipeline, runApproveOpportunity) was found", approve.length > 0 && /\.handler\(async \(\{ data, context \}\) => runApproveOpportunity\(data, context\.userId\)\)/.test(approve));
-  t("the opportunity id is the generation request id", approve.includes("generationRequestId: opp.id,"));
+  const approve = opp.slice(
+    opp.indexOf("export async function runApproveOpportunity("),
+    opp.indexOf("export const skipOpportunity"),
+  );
+  t(
+    "approveOpportunity (its pipeline, runApproveOpportunity) was found",
+    approve.length > 0 &&
+      /\.handler\(async \(\{ data, context \}\) => runApproveOpportunity\(data, context\.userId\)\)/.test(
+        approve,
+      ),
+  );
+  t(
+    "the opportunity id is the generation request id",
+    approve.includes("generationRequestId: opp.id,"),
+  );
   t(
     "the 'generating' transition is guarded against in-flight and finished states and reports its rows",
     /status: "generating",[\s\S]*?\.eq\("id", data\.id\)\s*\.eq\("workspace_id", data\.workspaceId\)\s*\.not\("status", "in", "\(generating,draft_ready,published\)"\)\s*\.select\("id"\)/.test(
@@ -1689,52 +2004,83 @@ console.log("\n=== approveOpportunity: idempotent and guarded ===");
       approve,
     ),
   );
-  t("the guard precedes generation", approve.indexOf(".not(\"status\", \"in\"") < approve.indexOf("runQuickPage("));
-  t("it calls the pipeline directly, through the schema", approve.includes("QuickPageInputSchema.parse({") && !approve.includes("createQuickPage"));
+  t(
+    "the guard precedes generation",
+    approve.indexOf('.not("status", "in"') < approve.indexOf("runQuickPage("),
+  );
+  t(
+    "it calls the pipeline directly, through the schema",
+    approve.includes("QuickPageInputSchema.parse({") && !approve.includes("createQuickPage"),
+  );
   t("it never passes a model or a tier of its own", !/\bmodel:|quality:/.test(approve));
-  t("a generation failure reports only a customer message", /customerMessage\(e, GENERATION_UNAVAILABLE_MESSAGE\)/.test(approve));
+  t(
+    "a generation failure reports only a customer message",
+    /customerMessage\(e, GENERATION_UNAVAILABLE_MESSAGE\)/.test(approve),
+  );
 }
 
-console.log("\n=== UI copy and wiring ===");
+console.log("\n=== UI copy and wiring (the page builder) ===");
 {
-  const qpb = read("src/routes/_authenticated/app.content.quick-page-builder.tsx");
-  t("Quick Page Builder never shows /p/", !qpb.includes("/p/"));
-  t("Quick Page Builder shows the /a/ live prefix", qpb.includes("/a/"));
-  // The default now comes from the model picker (AiModelSelect reads
-  // getAvailableAiModels and selects the server's isDefault option — see
-  // tests/founder-ui.test.ts); the page sends that option's tier only.
+  // The Quick Page Builder and Generate Content are consolidated into the
+  // builder (Pages → New page); their addresses redirect.
+  const qpbRoute = read("src/routes/_authenticated/app.content.quick-page-builder.tsx");
+  const genRoute = read("src/routes/_authenticated/app.content.generate.tsx");
   t(
-    "Quick Page Builder takes its default tier from the server and sends a tier, never a model id",
-    /<AiModelSelect\b/.test(qpb) && /quality: qualityForRequest\(quality\)/.test(qpb) && !/useState\("google\/gemini/.test(qpb) && !/\bmodel:\s/.test(qpb) && !/gpt-5/.test(qpb),
+    "the old Quick Page Builder address redirects to the builder",
+    /throw redirect\(\{ to: "\/app\/pages\/new" \}\)/.test(qpbRoute),
   );
   t(
-    "Quick Page Builder sends an idempotency key",
-    qpb.includes("generationRequestId: requestIdRef.current"),
+    "the old Generate Content address redirects to Opportunities",
+    /throw redirect\(\{ to: "\/app\/opportunities" \}\)/.test(genRoute),
   );
+  const batch = read("src/lib/generation.functions.ts");
+  for (const name of [
+    "listGenerationTargets",
+    "startGenerationJob",
+    "processGenerationItem",
+    "retryGenerationItem",
+    "publishGeneratedPages",
+  ]) {
+    const at = batch.indexOf(`export const ${name} = createServerFn(`);
+    const body = batch.slice(at, batch.indexOf("\nexport ", at + 1));
+    t(
+      `batch ${name} refuses right after the membership check`,
+      at > 0 &&
+        /await assertWorkspaceMember\(data\.workspaceId, context\.userId\);\s*batchGenerationMoved\(\);/.test(
+          body,
+        ),
+    );
+  }
+  const builder = read("src/routes/_authenticated/app.pages.new.tsx");
+  const editorUi = read("src/routes/_authenticated/app.pages.$id.edit.tsx");
+  t("the builder and editor never show /p/", !builder.includes("/p/") && !editorUi.includes("/p/"));
+  t("the builder shows the /a/ address prefix", builder.includes("/a/"));
+  t(
+    "the builder takes its default tier from the server and sends a tier, never a model id",
+    /<AiModelSelect\b/.test(builder) &&
+      /quality: qualityForRequest\(quality\)/.test(builder) &&
+      !/\bmodel:\s/.test(builder) &&
+      !/gpt-5|gemini/.test(builder),
+  );
+  t(
+    "rewriting a draft sends a tier, never a model id",
+    /<AiModelSelect\b/.test(editorUi) &&
+      /quality: qualityForRequest\(quality\)/.test(editorUi) &&
+      !/\bmodel:\s/.test(editorUi),
+  );
+  t("the builder sends an idempotency key", builder.includes("requestId: requestIdRef.current"));
   t(
     "the idempotency key rotates only after a response",
-    qpb.indexOf("requestIdRef.current = newRequestId()") > qpb.indexOf("await create("),
+    builder.indexOf("requestIdRef.current = newRequestId()") > builder.indexOf("await createFn("),
   );
   // A key buys at most one provider call, so a request the server answered
   // (even with an error) is finished: the next click needs a fresh key.
   // A lost response (fetch TypeError) and "still being generated" keep it.
   t(
     "a server-answered failure rotates the key; a lost response or 'still being generated' keeps it",
-    /\} catch \(err: any\) \{[\s\S]*?if \(!\(err instanceof TypeError\) && !\/still being generated\/i\.test\(message\)\) \{\s*requestIdRef\.current = newRequestId\(\);\s*\}/.test(
-      qpb,
+    /\} catch \(e\) \{[\s\S]*?if \(!\(e instanceof TypeError\) && !\/still being generated\/i\.test\(message\)\) \{\s*requestIdRef\.current = newRequestId\(\);\s*\}/.test(
+      builder,
     ) && /still being generated/i.test(GENERATION_IN_PROGRESS_MESSAGE),
-  );
-  t("the preview link is /s/{workspace}/{slug}", qpb.includes("`/s/${ws.slug}/${result.slug}`"));
-  const genUi = read("src/routes/_authenticated/app.content.generate.tsx");
-  t(
-    "Stop after this one cancels the job server-side",
-    genUi.includes("cancelGenerationJob") && /onClick=\{stop\}/.test(genUi),
-  );
-  t("Generate Content copy has no /p/", !genUi.includes("/p/"));
-  t("given-up cities cannot be selected", genUi.includes("!t.attemptsExhausted"));
-  t(
-    "Generate Content sends a tier, never a model id",
-    /quality[,:]/.test(genUi) && !/\bmodel:\s/.test(genUi) && !/gpt-5|gemini/.test(genUi),
   );
 }
 
@@ -1979,8 +2325,12 @@ console.log("\n=== migration text (000600: settlement + reservations) ===");
   );
   const pageAt = reserveFn.indexOf("AND p.generation_request_id = _request_id");
   const rowAt = reserveFn.indexOf("FROM public.generation_reservations r");
-  const countAt = reserveFn.indexOf("v_consumed := public.generation_consumed_last_24h(_workspace_id);");
-  const insertAt = reserveFn.indexOf("INSERT INTO public.generation_reservations (workspace_id, request_id)");
+  const countAt = reserveFn.indexOf(
+    "v_consumed := public.generation_consumed_last_24h(_workspace_id);",
+  );
+  const insertAt = reserveFn.indexOf(
+    "INSERT INTO public.generation_reservations (workspace_id, request_id)",
+  );
   t(
     "it takes the per-workspace advisory lock first, then looks for a page, then for its own row, then counts, then inserts",
     lockAt > 0 && lockAt < pageAt && pageAt < rowAt && rowAt < countAt && countAt < insertAt,
@@ -1999,11 +2349,17 @@ console.log("\n=== migration text (000600: settlement + reservations) ===");
   t(
     "only a stale row whose provider was never called is retaken, against the cap, with a fresh created_at",
     /SET created_at = now\(\)/.test(reserveFn) &&
-      /- CASE WHEN v_created_at >= now\(\) - interval '24 hours' THEN 1 ELSE 0 END;/.test(reserveFn),
+      /- CASE WHEN v_created_at >= now\(\) - interval '24 hours' THEN 1 ELSE 0 END;/.test(
+        reserveFn,
+      ),
   );
   t(
     "the cap comparison never goes negative and refuses at the cap",
-    (reserveFn.match(/IF v_consumed >= GREATEST\(COALESCE\(_cap, 0\), 0\) THEN\s+RETURN 'cap_reached';/g) ?? []).length === 2,
+    (
+      reserveFn.match(
+        /IF v_consumed >= GREATEST\(COALESCE\(_cap, 0\), 0\) THEN\s+RETURN 'cap_reached';/g,
+      ) ?? []
+    ).length === 2,
   );
   const markFn = sql.slice(
     sql.indexOf("CREATE OR REPLACE FUNCTION public.mark_generation_provider_called"),
@@ -2013,7 +2369,10 @@ console.log("\n=== migration text (000600: settlement + reservations) ===");
     "mark_generation_provider_called(uuid, uuid) returns boolean, SECURITY DEFINER, membership-guarded",
     /\(\s*_workspace_id uuid,\s*_request_id uuid\s*\)\s*RETURNS boolean\s+LANGUAGE plpgsql\s+SECURITY DEFINER\s+SET search_path = public/.test(
       markFn,
-    ) && markFn.includes("IF auth.uid() IS NOT NULL AND NOT public.is_workspace_member(_workspace_id, auth.uid()) THEN"),
+    ) &&
+      markFn.includes(
+        "IF auth.uid() IS NOT NULL AND NOT public.is_workspace_member(_workspace_id, auth.uid()) THEN",
+      ),
   );
   t(
     "marking flips provider_called_at from NULL only, once (true only for the call that flipped it)",
@@ -2051,7 +2410,9 @@ console.log("\n=== migration text (000600: settlement + reservations) ===");
   );
   t(
     "the pin trigger function keeps OLD created_at, generation_request_id and generation_billing_mode unless the caller is the service role",
-    /RETURNS trigger\s+LANGUAGE plpgsql\s+SECURITY DEFINER\s+SET search_path = public/.test(pinFn) &&
+    /RETURNS trigger\s+LANGUAGE plpgsql\s+SECURITY DEFINER\s+SET search_path = public/.test(
+      pinFn,
+    ) &&
       /IF auth\.role\(\) IS DISTINCT FROM 'service_role' THEN\s+NEW\.created_at := OLD\.created_at;\s+NEW\.generation_request_id := OLD\.generation_request_id;\s+NEW\.generation_billing_mode := OLD\.generation_billing_mode;\s+END IF;\s+RETURN NEW;/.test(
         pinFn,
       ),
@@ -2079,12 +2440,15 @@ console.log("\n=== migration text (000600: settlement + reservations) ===");
 
   t(
     "tenant_pages gains a nullable generation_billing_mode",
-    /ALTER TABLE public\.tenant_pages ADD COLUMN IF NOT EXISTS generation_billing_mode text;/.test(sql),
+    /ALTER TABLE public\.tenant_pages ADD COLUMN IF NOT EXISTS generation_billing_mode text;/.test(
+      sql,
+    ),
   );
   t(
     "generation_billing_mode is constrained to byok / granted / platform (guarded, idempotent)",
-    /IF NOT EXISTS \(SELECT 1 FROM pg_constraint\s+WHERE conname = 'tenant_pages_generation_billing_mode_check'\)/.test(sql) &&
-      /CHECK \(generation_billing_mode IN \('byok','granted','platform'\)\)/.test(sql),
+    /IF NOT EXISTS \(SELECT 1 FROM pg_constraint\s+WHERE conname = 'tenant_pages_generation_billing_mode_check'\)/.test(
+      sql,
+    ) && /CHECK \(generation_billing_mode IN \('byok','granted','platform'\)\)/.test(sql),
   );
   t(
     "verification covers the index, the ordering inside the settle function, the lock, the source, the state machine, the grants, the column and the pin trigger",
@@ -2142,7 +2506,9 @@ console.log("\n=== rollback text ===");
     "000600 rollback drops the two RPCs and the count function by full signature",
     rb.includes("DROP FUNCTION IF EXISTS public.reserve_generation_slot(uuid, uuid, int);") &&
       rb.includes("DROP FUNCTION IF EXISTS public.generation_consumed_last_24h(uuid, uuid);") &&
-      rb.includes("DROP FUNCTION IF EXISTS public.settle_generation_free_quota(uuid, text, text, text);"),
+      rb.includes(
+        "DROP FUNCTION IF EXISTS public.settle_generation_free_quota(uuid, text, text, text);",
+      ),
   );
   t(
     "000600 rollback drops the reservations table, the settlement index and the column",
@@ -2155,7 +2521,9 @@ console.log("\n=== rollback text ===");
     rb.includes("DROP FUNCTION IF EXISTS public.mark_generation_provider_called(uuid, uuid);") &&
       rb.includes("DROP FUNCTION IF EXISTS public.release_generation_slot(uuid, uuid);") &&
       rb.includes("DROP FUNCTION IF EXISTS public.generation_consumed_last_24h(uuid);") &&
-      rb.includes("DROP TRIGGER IF EXISTS tenant_pages_pin_generation_columns ON public.tenant_pages;") &&
+      rb.includes(
+        "DROP TRIGGER IF EXISTS tenant_pages_pin_generation_columns ON public.tenant_pages;",
+      ) &&
       rb.includes("DROP FUNCTION IF EXISTS public.tenant_pages_pin_generation_columns();"),
   );
   t(
@@ -2163,12 +2531,19 @@ console.log("\n=== rollback text ===");
     rb.indexOf("DROP TRIGGER IF EXISTS tenant_pages_pin_generation_columns") <
       rb.indexOf("ALTER TABLE public.tenant_pages DROP COLUMN IF EXISTS generation_billing_mode;"),
   );
-  t("000600 rollback says it must be paired with a code rollback", /PAIR THIS WITH A CODE ROLLBACK/.test(rb));
+  t(
+    "000600 rollback says it must be paired with a code rollback",
+    /PAIR THIS WITH A CODE ROLLBACK/.test(rb),
+  );
   t(
     "000600 rollback says it forgets free-quota settlement records (a retry could re-settle)",
-    /forgets: free-quota settlement records/.test(rb) && /settle a free-quota page a second time/.test(rb),
+    /forgets: free-quota settlement records/.test(rb) &&
+      /settle a free-quota page a second time/.test(rb),
   );
-  t("000600 rollback never drops tenant_pages or credit_ledger", !/DROP TABLE[^;]*(tenant_pages|credit_ledger)/.test(rb));
+  t(
+    "000600 rollback never drops tenant_pages or credit_ledger",
+    !/DROP TABLE[^;]*(tenant_pages|credit_ledger)/.test(rb),
+  );
   t(
     "000600 rollback ends with a VERIFY query over functions, table, index and column",
     /-- VERIFY \(rolled back\): expect 0 rows/.test(rb) &&
@@ -2176,7 +2551,9 @@ console.log("\n=== rollback text ===");
       /table_name='generation_reservations'/.test(rb) &&
       /indexname='credit_ledger_generation_settlement_uidx'/.test(rb) &&
       /column_name='generation_billing_mode'/.test(rb) &&
-      /'settle_generation_free_quota','reserve_generation_slot','generation_consumed_last_24h'/.test(rb) &&
+      /'settle_generation_free_quota','reserve_generation_slot','generation_consumed_last_24h'/.test(
+        rb,
+      ) &&
       /'mark_generation_provider_called','release_generation_slot'/.test(rb) &&
       /tgname = 'tenant_pages_pin_generation_columns'/.test(rb),
   );
@@ -2189,11 +2566,19 @@ console.log("\n=== rollback text ===");
     "rollback README verifies 000600 (grants, table, columns, trigger) and 000800 the superseded pair gone",
     readme.includes("-- 000600:") &&
       (() => {
-        const b600 = readme.slice(readme.indexOf("-- 000600:"), readme.indexOf("-- 20260924000700"));
-        return !/indexname='credit_ledger_generation_settlement_uidx'/.test(b600) && !b600.includes("'public.settle_generation_free_quota(uuid,text,text,text)',");
+        const b600 = readme.slice(
+          readme.indexOf("-- 000600:"),
+          readme.indexOf("-- 20260924000700"),
+        );
+        return (
+          !/indexname='credit_ledger_generation_settlement_uidx'/.test(b600) &&
+          !b600.includes("'public.settle_generation_free_quota(uuid,text,text,text)',")
+        );
       })() &&
       /indexname='credit_ledger_generation_settlement_uidx';\s*-- expect 0/.test(readme) &&
-      /to_regprocedure\('public\.settle_generation_free_quota\(uuid,text,text,text\)'\) AS superseded;\s*-- expect NULL/.test(readme) &&
+      /to_regprocedure\('public\.settle_generation_free_quota\(uuid,text,text,text\)'\) AS superseded;\s*-- expect NULL/.test(
+        readme,
+      ) &&
       readme.includes("'public.reserve_generation_slot(uuid,uuid,int)'") &&
       readme.includes("'public.mark_generation_provider_called(uuid,uuid)'") &&
       readme.includes("'public.release_generation_slot(uuid,uuid)'") &&
