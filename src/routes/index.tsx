@@ -1,17 +1,16 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { safeJsonLd } from "@/lib/json-ld";
 import {
   ArrowRight,
   Check,
-  Download,
-  Factory,
   Globe,
+  LayoutTemplate,
+  Lightbulb,
+  Map as MapIcon,
   PenLine,
-  Play,
   Plus,
   RefreshCw,
-  Share2,
   X,
 } from "lucide-react";
 import { canonicalUrl } from "@/lib/canonical";
@@ -26,31 +25,29 @@ import { GENERATION_DAILY_CAP } from "@/lib/generation-limits";
 const PRICE_LOW = Math.min(...PAGE_PLANS.map((p) => p.monthlyPrice));
 const PRICE_HIGH = Math.max(...PAGE_PLANS.map((p) => p.monthlyPrice));
 
+// What the page claims is the MVP and nothing more (owner, 2026-09-28):
+// Sharetribe sync → coverage opportunities from real inventory → one of three
+// templates → a draft you edit and preview → publishing on your verified
+// domain → an automatic sitemap. No speed promise, no deferred feature.
+const TITLE = "founders.click — SEO pages built from your Sharetribe listings";
+const DESCRIPTION =
+  "Connect your Sharetribe marketplace, see which city and category pages your real listings can support, and publish them on your own verified domain — drafts you edit and preview first, and a sitemap that updates itself.";
+
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "founders.click — The growth engine for Sharetribe marketplaces" },
-      {
-        name: "description",
-        content:
-          "Publish hundreds of SEO pages for one monthly price. AI generation, hosting, sitemaps and schema included — built for Sharetribe marketplace founders.",
-      },
-      {
-        property: "og:title",
-        content: "founders.click — The growth engine for Sharetribe marketplaces",
-      },
-      {
-        property: "og:description",
-        content:
-          "Publish hundreds or thousands of SEO pages for one monthly price — AI generation, hosting, sitemaps and schema included.",
-      },
+      { title: TITLE },
+      { name: "description", content: DESCRIPTION },
+      { property: "og:title", content: TITLE },
+      { property: "og:description", content: DESCRIPTION },
       { property: "og:type", content: "website" },
       { property: "og:url", content: canonicalUrl("/") },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "founders.click — Growth engine for Sharetribe" },
+      { name: "twitter:title", content: TITLE },
       {
         name: "twitter:description",
-        content: "AI-generated SEO pages from your Sharetribe listings, hosted on your own domain.",
+        content:
+          "SEO landing pages built from your real Sharetribe listings, published on your own domain.",
       },
     ],
     links: [{ rel: "canonical", href: canonicalUrl("/") }],
@@ -64,7 +61,7 @@ export const Route = createFileRoute("/")({
           applicationCategory: "BusinessApplication",
           operatingSystem: "Web",
           description:
-            "AI-generated SEO pages, hosting, sitemaps and Sharetribe listing sync for marketplace founders.",
+            "SEO landing pages built from a Sharetribe marketplace's real listings: listing sync, coverage opportunities, three page templates, drafts to edit and preview, publishing on the marketplace's verified domain and an automatic sitemap.",
           offers: {
             "@type": "AggregateOffer",
             priceCurrency: "USD",
@@ -99,7 +96,6 @@ function Landing() {
       <SiteHeader />
       <main>
         <Hero />
-        <ProductDemo />
         <ProblemFix />
         <Features />
         <HowItWorks />
@@ -128,11 +124,12 @@ function Hero() {
           For Sharetribe marketplace founders
         </p>
         <h1 className="mt-6 text-[2.75rem] font-semibold leading-[1.02] tracking-[-0.04em] text-white sm:text-6xl lg:text-7xl">
-          The all-in-one growth engine.
+          SEO pages built from your real listings.
         </h1>
         <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-zinc-400 sm:text-lg">
-          Publish hundreds or thousands of SEO pages for one monthly price — AI generation, hosting,
-          sitemaps and schema included. No agency retainer.
+          Connect your Sharetribe marketplace, see which city and category pages your inventory can
+          support, and publish them on your own domain. Every page starts as a draft you edit and
+          preview, and your sitemap updates itself.
         </p>
         <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
@@ -143,11 +140,10 @@ function Hero() {
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
           </Link>
           <a
-            href="#demo"
+            href="#how-it-works"
             className={`inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.12] px-6 py-3.5 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.06] hover:text-white sm:w-auto ${FOCUS_RING}`}
           >
-            <Play className="h-4 w-4" />
-            Watch the demo
+            How it works
           </a>
         </div>
         <p className="mt-6 text-xs text-zinc-500">
@@ -172,57 +168,6 @@ function Hero() {
   );
 }
 
-function ProductDemo() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [playing, setPlaying] = useState(false);
-
-  return (
-    <section id="demo" aria-label="Product demo" className="relative scroll-mt-24">
-      <div className="mx-auto w-full max-w-6xl px-5 sm:px-8">
-        <figure>
-          <div className="group relative overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02] p-1.5 shadow-[0_40px_120px_-30px_rgba(0,0,0,0.9)]">
-            <div className="relative aspect-video overflow-hidden rounded-xl bg-[#0d0d0d]">
-              <video
-                ref={videoRef}
-                controls={playing}
-                playsInline
-                muted
-                preload="metadata"
-                poster="/product-demo-poster.jpg"
-                className="h-full w-full object-cover"
-                onPlay={() => setPlaying(true)}
-                onPause={() => setPlaying(false)}
-              >
-                <source src="/product-demo.mp4" type="video/mp4" />
-                Your browser does not support the video tag.{" "}
-                <a href="/product-demo.mp4" className="underline">
-                  Download the demo
-                </a>
-                .
-              </video>
-              {!playing && (
-                <button
-                  type="button"
-                  aria-label="Play product demo video"
-                  onClick={() => videoRef.current?.play()}
-                  className={`absolute inset-0 flex items-center justify-center bg-black/30 transition-colors hover:bg-black/20 ${FOCUS_RING}`}
-                >
-                  <span className="flex h-16 w-16 items-center justify-center rounded-full bg-orange-500 text-black shadow-[0_0_50px_-6px_rgba(249,115,22,0.9)] transition-transform group-hover:scale-105">
-                    <Play className="ml-0.5 h-6 w-6 fill-black" />
-                  </span>
-                </button>
-              )}
-            </div>
-          </div>
-          <figcaption className="mt-4 text-center text-sm text-zinc-500">
-            See the Content Factory in action
-          </figcaption>
-        </figure>
-      </div>
-    </section>
-  );
-}
-
 const PAINS = [
   "Agencies charge thousands a month and report on vanity metrics.",
   "Freelancers ghost you halfway through the content calendar.",
@@ -231,8 +176,8 @@ const PAINS = [
 
 const FIXES = [
   "One subscription, no retainer, no scope calls.",
-  "Pages generated from your real listings — in minutes, not sprints.",
-  "A daily briefing telling you the single highest-ROI thing to ship.",
+  "Pages written from your real listings, not from a keyword list.",
+  "A clear list of the city and category pages your inventory can support.",
 ];
 
 function ProblemFix() {
@@ -261,7 +206,7 @@ function ProblemFix() {
             The fix
           </p>
           <h2 className="mt-5 text-3xl font-semibold leading-[1.1] tracking-[-0.03em] text-white sm:text-4xl">
-            Ship the output of a growth team. Solo.
+            The pages your marketplace should have. Built from what you list.
           </h2>
           <ul className="mt-8 space-y-4">
             {FIXES.map((fix) => (
@@ -277,45 +222,45 @@ function ProblemFix() {
   );
 }
 
-// Only what ships at launch. Every card here maps to a `launch: true` item in
-// src/lib/app-nav.ts; tests/launch-copy.test.ts fails the build if a stubbed
-// surface is advertised again.
+// The MVP and nothing else (owner, 2026-09-28). Every card is a step of the
+// one journey the product ships; tests/launch-copy.test.ts and
+// tests/mvp-surface.test.ts fail the build if a deferred feature (affiliates,
+// add-ons, the coach or daily briefing, SEO audits, rank or competitor
+// tracking, data import/export) or a speed promise comes back.
 const FEATURES = [
   {
-    icon: Factory,
-    title: "Content Factory",
-    description: "Generate SEO landing pages in bulk from your live listings.",
+    icon: RefreshCw,
+    title: "Sharetribe sync",
+    description:
+      "Connect with a read-only Marketplace API Client ID. Your published listings are imported and refreshed automatically about every 30 minutes.",
+  },
+  {
+    icon: Lightbulb,
+    title: "Coverage opportunities",
+    description:
+      "See which city and category pages your real inventory can support — worked out from the listings you actually have.",
+  },
+  {
+    icon: LayoutTemplate,
+    title: "Three page templates",
+    description: "Start from a city hub, a category page or a resource article.",
   },
   {
     icon: PenLine,
-    title: "Quick Page Builder",
+    title: "Drafts you edit and preview",
     description:
-      "Write a single city or category page in minutes and publish it in one step. It is kept as a draft only if it can't go live yet.",
+      "Every page starts as a draft written from your listings. Edit it and preview it before anything goes live.",
   },
   {
     icon: Globe,
-    title: "Hosting on your domain",
+    title: "Publishing on your domain",
+    description: "Connect and verify your own domain; published pages are served on it, under /a/.",
+  },
+  {
+    icon: MapIcon,
+    title: "Automatic sitemap",
     description:
-      "Connect and verify your domain; we serve the pages and keep sitemaps and schema current.",
-  },
-  {
-    icon: RefreshCw,
-    title: "Sharetribe Sync",
-    description: "Your public listings, synced automatically in the background.",
-  },
-  {
-    icon: Download,
-    title: "Data Export",
-    description: "Export your pages and listing data any time. It's yours, not ours.",
-  },
-  {
-    icon: Share2,
-    title: "Affiliate Programs",
-    description:
-      "Run referral programs that pay out on real transactions. Available as an add-on, priced separately; it needs your marketplace connected through Sharetribe's Integration API.",
-    // The one card here that is NOT included with a plan. Say so on the card,
-    // and never under a heading that claims everything is.
-    badge: "Optional add-on",
+      "Every published page is listed in your sitemap as soon as it goes live, ready to submit to Google Search Console.",
   },
 ];
 
@@ -334,25 +279,18 @@ function Features() {
           id="features-heading"
           className="mt-5 text-4xl font-semibold leading-[1.05] tracking-[-0.035em] text-white sm:text-5xl"
         >
-          One engine. Every growth surface.
+          One journey, from listings to live pages.
         </h2>
       </div>
 
       <ul className="mt-14 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {FEATURES.map(({ icon: Icon, title, description, badge }) => (
+        {FEATURES.map(({ icon: Icon, title, description }) => (
           <li key={title}>
             <div className="group h-full rounded-2xl border border-white/[0.08] bg-white/[0.02] p-7 transition-all duration-300 hover:-translate-y-1 hover:border-orange-500/40 hover:shadow-[0_0_50px_-20px_rgba(249,115,22,0.8)]">
               <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-orange-500/20 bg-orange-500/10">
                 <Icon className="h-5 w-5 text-orange-500" aria-hidden="true" />
               </span>
-              <h3 className="mt-6 flex flex-wrap items-center gap-2 text-base font-semibold tracking-tight text-white">
-                {title}
-                {badge && (
-                  <span className="rounded-full border border-white/[0.12] px-2 py-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-400">
-                    {badge}
-                  </span>
-                )}
-              </h3>
+              <h3 className="mt-6 text-base font-semibold tracking-tight text-white">{title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-zinc-400">{description}</p>
             </div>
           </li>
@@ -365,29 +303,36 @@ function Features() {
 const STEPS = [
   {
     number: "1",
-    title: "Connect your marketplace",
+    title: "Connect and sync",
     description:
-      "Connect with your Sharetribe Marketplace API client ID — read-only access to your public listings. We pull listings, categories and locations automatically.",
+      "Connect with your Sharetribe Marketplace API client ID — read-only access to your public listings. We import your listings, categories and locations.",
   },
   {
     number: "2",
-    title: "Generate your pages",
+    title: "Pick an opportunity",
     description:
-      "The Content Factory turns your live inventory into indexable landing pages, grounded in real listing data.",
+      "Choose a city or category page your inventory can support, and one of the three page templates.",
   },
   {
     number: "3",
+    title: "Edit and preview the draft",
+    description:
+      "The draft is written from your real listings. Change what you like and preview the page before it goes live.",
+  },
+  {
+    number: "4",
     title: "Publish on your domain",
     description:
-      "Connect and verify your own domain. We host the pages and keep sitemaps, schema and internal links current.",
+      "Connect and verify your own domain, then publish. We host the page and add it to your sitemap.",
   },
 ];
 
 function HowItWorks() {
   return (
     <section
+      id="how-it-works"
       aria-labelledby="how-heading"
-      className="border-y border-white/[0.08] bg-white/[0.015]"
+      className="scroll-mt-24 border-y border-white/[0.08] bg-white/[0.015]"
     >
       <div className="mx-auto w-full max-w-6xl px-5 py-24 sm:px-8 sm:py-28">
         <div className="max-w-2xl">
@@ -398,11 +343,11 @@ function HowItWorks() {
             id="how-heading"
             className="mt-5 text-4xl font-semibold leading-[1.05] tracking-[-0.035em] text-white sm:text-5xl"
           >
-            Live in an afternoon.
+            Four steps to a live page.
           </h2>
         </div>
 
-        <ol className="relative mt-16 grid grid-cols-1 gap-12 md:grid-cols-3 md:gap-8">
+        <ol className="relative mt-16 grid grid-cols-1 gap-12 md:grid-cols-4 md:gap-8">
           <div
             aria-hidden="true"
             className="absolute left-5 top-0 hidden h-full w-px bg-white/[0.08] md:left-0 md:top-5 md:block md:h-px md:w-full"
@@ -425,7 +370,7 @@ function HowItWorks() {
 }
 
 // Tiers differ by published-page capacity — every core feature is available on
-// every plan; add-ons are priced separately. Capacity is the product; AI
+// every plan; extra page capacity is priced separately. Capacity is the product; AI
 // generation is included within a fair-use cap and is not sold separately
 // (docs/SOURCE_OF_TRUTH.md). Page estimates are approximate and depend on page length.
 // Single source of truth (§37): the same catalog drives the homepage, the
@@ -450,7 +395,8 @@ function Pricing() {
         </h2>
         <p className="mt-5 text-sm text-zinc-400">
           One monthly price for a number of live, hosted SEO pages. Every plan unlocks every core
-          feature — pick one for how many pages you publish. Add-ons are priced separately.
+          feature — pick one for how many pages you publish. Extra page capacity is priced
+          separately.
         </p>
       </div>
 
@@ -526,12 +472,13 @@ function Pricing() {
       </div>
 
       <p className="mt-8 text-center text-sm text-zinc-500">
-        {/* Where it really is: the "Need more pages?" card on Billing & Plans,
-            shown once a paid plan is active (create-checkout refuses a
-            page_addon without a base subscription). */}
+        {/* Where it really is: the "Need more pages?" card on the Billing
+            page (Settings → Billing), shown once a paid plan is active
+            (create-checkout refuses a page_addon without a base
+            subscription). */}
         Need more pages without changing plans? On any paid plan, add capacity in blocks of{" "}
         {PAGE_ADDON.pagesPerUnit.toLocaleString("en-US")} pages (${PAGE_ADDON.monthlyPrice}/month
-        per block) under Billing &amp; Plans in the app.
+        per block) under Settings → Billing in the app.
       </p>
     </section>
   );
@@ -551,7 +498,7 @@ const FAQS = [
   {
     question: "What is the free beta?",
     answer:
-      "During the beta, selected Sharetribe marketplaces get a set number of published pages at no charge, with no card on file. If beta access ends without a plan, published pages pause, drafts are kept, and you can export your data at any time. The full terms are on the /beta page.",
+      "During the beta, selected Sharetribe marketplaces get a set number of published pages at no charge, with no card on file. If beta access ends without a plan, published pages pause, drafts are kept and nothing is deleted. The full terms are on the /beta page.",
   },
   {
     question: "Is AI generation extra?",
@@ -643,10 +590,11 @@ function FinalCta() {
           id="final-cta-heading"
           className="text-4xl font-semibold leading-[1.05] tracking-[-0.035em] text-white sm:text-5xl"
         >
-          Ready to ship like a funded startup?
+          See which pages your listings can support.
         </h2>
         <p className="mx-auto mt-5 max-w-xl text-base text-zinc-400">
-          Connect your marketplace and generate your first pages today.
+          Connect your marketplace, pick an opportunity, and publish your first page on your own
+          domain.
         </p>
         <Link
           to="/signup"

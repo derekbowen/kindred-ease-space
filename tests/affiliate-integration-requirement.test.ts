@@ -9,14 +9,14 @@
  * few minutes" forever. Now:
  *   - startAffiliateTrial refuses unless the connection is the Integration API;
  *   - the sync says what to do instead of secret_decrypt_failed;
- *   - the Add-ons card, /app/affiliates, the homepage card and /beta say so.
+ *   - the Add-ons card, /app/affiliates and the settings page say so.
  *
  * Since the MVP scope (owner, 2026-09-28) add-ons are DEFERRED: create-checkout
  * refuses every add-on — affiliate tiers and DM Champ alike — with 410
  * addon_unavailable before it reads anything (driven here offline, with
- * recording fakes), and every affiliate server function asks the feature gate
- * first. The requirement logic above is kept, dormant, for the day add-ons
- * return.
+ * recording fakes), the homepage and /beta no longer sell one, and every
+ * affiliate server function asks the feature gate first. The requirement
+ * logic above is kept, dormant, for the day add-ons return.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -456,16 +456,12 @@ t(
     isCustomerSentence(req.AFFILIATE_REQUIREMENT_NOTE),
 );
 t(
-  "the homepage card says it needs the Integration API",
-  /Available as an add-on, priced separately; it needs your marketplace connected through Sharetribe's Integration API\./.test(
-    read("src/routes/index.tsx"),
-  ),
+  "the homepage no longer sells the add-on (deferred)",
+  !/Affiliate|add-on, priced separately/.test(read("src/routes/index.tsx")),
 );
 t(
-  "/beta says it",
-  /Affiliate Programs tracks referrals through Sharetribe&apos;s Integration API/.test(
-    read("src/routes/beta.tsx"),
-  ),
+  "/beta no longer sells it either",
+  !/Affiliate Programs|DM Champ/.test(read("src/routes/beta.tsx")),
 );
 const fns = read("src/lib/affiliate-requirements.functions.ts");
 t(

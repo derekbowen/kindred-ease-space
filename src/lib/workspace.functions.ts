@@ -297,6 +297,9 @@ export const updateWorkspaceProfile = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
+/** A connected domain as the dashboard's setup checklist reads it. */
+type OverviewDomainRow = { hostname: string; status: string | null; verified: boolean | null };
+
 export const getWorkspaceOverview = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data) => z.object({ workspaceId: z.string().uuid() }).parse(data))
@@ -316,6 +319,8 @@ export const getWorkspaceOverview = createServerFn({ method: "GET" })
       { count: tenantPageCount },
       { count: listingCount },
       { data: sharetribe },
+      { count: draftPageCount },
+      { data: domainRows },
     ] = await Promise.all([
       supabase
         .from("workspaces")
@@ -344,10 +349,25 @@ export const getWorkspaceOverview = createServerFn({ method: "GET" })
         .eq("workspace_id", data.workspaceId),
       supabaseAdmin
         .from("tenant_integrations")
-        .select("status, listings_count, last_sync_at")
+        .select("status, listings_count, last_sync_at, last_sync_status")
         .eq("workspace_id", data.workspaceId)
         .eq("provider", "sharetribe")
         .maybeSingle(),
+      // The dashboard's "drafts" figure next to the published one.
+      supabaseAdmin
+        .from("tenant_pages")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", data.workspaceId)
+        .eq("status", "draft"),
+      // The setup checklist's "domain active" step: the same rows (and
+      // wording helpers) Settings → Domains shows, newest first. Untyped like
+      // listWorkspaceDomains: the generated types predate the status column.
+      (supabaseAdmin as any)
+        .from("workspace_domains")
+        .select("hostname, status, verified")
+        .eq("workspace_id", data.workspaceId)
+        .order("created_at", { ascending: false })
+        .limit(20),
     ]);
 
     const sharetribeConnected = sharetribe?.status === "connected";
@@ -357,11 +377,21 @@ export const getWorkspaceOverview = createServerFn({ method: "GET" })
       balance: balance ?? null,
       stats: {
         publishedPages: tenantPageCount ?? 0,
+        draftPages: draftPageCount ?? 0,
         syncedListings: listingCount ?? 0,
         sharetribeConnected,
+        /** tenant_integrations.status as stored ('connected', 'error', …), or null when never connected. */
+        sharetribeStatus: sharetribe?.status ?? null,
         sharetribeListingsCount: sharetribe?.listings_count ?? listingCount ?? 0,
         lastSharetribeSync: sharetribe?.last_sync_at ?? null,
+        /** 'success' | 'warning' | 'failed' as the sync wrote it, or null. */
+        lastSharetribeSyncStatus: sharetribe?.last_sync_status ?? null,
       },
+      domains: ((domainRows ?? []) as OverviewDomainRow[]).map((d) => ({
+        hostname: d.hostname,
+        status: d.status ?? (d.verified ? "verified" : "verification_required"),
+        verified: d.verified === true,
+      })),
     };
   });
 

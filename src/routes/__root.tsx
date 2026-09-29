@@ -84,21 +84,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "founders.click" },
-      { name: "description", content: "Growth tools for Sharetribe marketplace founders." },
+      { name: "description", content: "SEO pages built from your Sharetribe listings." },
       { name: "author", content: "founders.click" },
       {
         property: "og:title",
-        content: "founders.click — The growth engine for Sharetribe marketplaces",
+        content: "founders.click — SEO pages built from your Sharetribe listings",
       },
       {
         property: "og:description",
         content:
-          "SEO landing pages for Sharetribe marketplaces: AI-written pages built from your live listings, hosted with sitemaps and schema.",
+          "SEO landing pages for Sharetribe marketplaces, written from your live listings and published on your own domain, with an automatic sitemap.",
       },
       { property: "og:type", content: "website" },
       { property: "og:site_name", content: "founders.click" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "founders.click — Growth engine for Sharetribe" },
+      { name: "twitter:title", content: "founders.click — SEO pages from your Sharetribe listings" },
       {
         name: "twitter:description",
         content: "SEO landing pages for Sharetribe marketplaces, built from your live listings.",

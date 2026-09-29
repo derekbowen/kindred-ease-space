@@ -153,12 +153,12 @@ function world(o: {
   t(
     "exactly the documented fields — no quota units, no credit balance, no ceiling, no workspace-cap figure",
     Object.keys(a).sort().join() ===
-      "dailyCap,generationPaused,generationSummary,generationsUsedToday,internalUnlimited,planLabel,revealLaunchHiddenFeatures,state,summary",
+      "dailyCap,generationPaused,generationSummary,generationsUsedToday,internalUnlimited,planLabel,state,summary",
     Object.keys(a).join(),
   );
   t(
-    "an ordinary workspace: internalUnlimited false, planLabel null, revealLaunchHiddenFeatures false",
-    a.internalUnlimited === false && a.planLabel === null && a.revealLaunchHiddenFeatures === false,
+    "an ordinary workspace: internalUnlimited false, planLabel null (and no reveal flag: the MVP is the same for everyone)",
+    a.internalUnlimited === false && a.planLabel === null && !("revealLaunchHiddenFeatures" in a),
   );
   t(
     "…decided by THE predicate for this workspace, and the workspace cap by the same sum ai_reserve checks (today, this workspace)",
@@ -205,8 +205,8 @@ function world(o: {
       JSON.stringify(a),
     );
     t(
-      "internal: internalUnlimited true, planLabel 'Founder / Internal Unlimited', revealLaunchHiddenFeatures true",
-      a.internalUnlimited === true && a.planLabel === "Founder / Internal Unlimited" && a.revealLaunchHiddenFeatures === true,
+      "internal: internalUnlimited true, planLabel 'Founder / Internal Unlimited', and no reveal flag",
+      a.internalUnlimited === true && a.planLabel === "Founder / Internal Unlimited" && !("revealLaunchHiddenFeatures" in a),
     );
   }
   world({ enabled: false, quota: 20, internal: true });

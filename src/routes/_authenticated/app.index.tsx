@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Sparkles, FileText, Store } from "lucide-react";
+import { Sparkles, FileText, Store, Lightbulb } from "lucide-react";
 import {
   allowanceSentence,
   formatAllowanceCount,
@@ -13,9 +13,14 @@ import {
 import { getMe } from "@/lib/auth.functions";
 import { getWorkspaceOverview } from "@/lib/workspace.functions";
 import { getBetaStatus } from "@/lib/entitlements.functions";
-import { DailyBriefing } from "@/components/coach/DailyBriefing";
-import { useCoachEnabled } from "@/components/coach/coach-availability";
 import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
+import {
+  describeSyncHealth,
+  MY_PAGES_PATH,
+  OPPORTUNITIES_PATH,
+  pagesLine,
+  type SyncTone,
+} from "@/components/dashboard/overview-status";
 import {
   describePlanStatus,
   formatPlanDate,
@@ -23,15 +28,21 @@ import {
   INTERNAL_STATUS_LINE,
 } from "@/components/billing/plan-status";
 
+const SYNC_TONE_CLASS: Record<SyncTone, string> = {
+  ok: "text-emerald-500",
+  warn: "text-amber-500",
+  bad: "text-destructive",
+  muted: "text-foreground",
+};
+
 export const Route = createFileRoute("/_authenticated/app/")({
-  head: () => ({ meta: [{ title: "Dashboard — founders.click" }] }),
+  head: () => ({ meta: [{ title: "Overview — founders.click" }] }),
   component: DashboardPage,
 });
 
 function DashboardPage() {
   const navigate = useNavigate();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
-  const coachEnabled = useCoachEnabled();
   const { allowance, error: allowanceError } = useAiAllowance(workspaceId);
 
   useEffect(() => {
@@ -81,7 +92,8 @@ function DashboardPage() {
       <div className="space-y-4">
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-40 w-full" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <Skeleton className="h-32" />
           <Skeleton className="h-32" />
           <Skeleton className="h-32" />
           <Skeleton className="h-32" />
@@ -111,12 +123,26 @@ function DashboardPage() {
     (planStatus.kind === "trial" || planStatus.kind === "trial_ends_today") &&
     planStatus.daysLeft !== null;
 
-  const setupStatus = {
+  // The MVP journey's setup steps and the sync's health, both read from the
+  // one overview (getWorkspaceOverview) — the same for every workspace, the
+  // founder / internal unlimited one included.
+  const setupFacts = {
     sharetribeConnected: stats?.sharetribeConnected ?? false,
-    hasListings: (stats?.syncedListings ?? 0) > 0,
-    hasDomain: Boolean(ws?.marketplace_domain),
-    hasPublishedPage: (stats?.publishedPages ?? 0) > 0,
+    syncedListings: stats?.syncedListings ?? 0,
+    domains: data?.domains ?? [],
+    marketplaceDomain: ws?.marketplace_domain ?? null,
+    publishedPages: stats?.publishedPages ?? 0,
   };
+  const sync = describeSyncHealth(
+    {
+      connected: stats?.sharetribeConnected ?? false,
+      integrationStatus: stats?.sharetribeStatus ?? null,
+      lastSyncAt: stats?.lastSharetribeSync ?? null,
+      lastSyncStatus: stats?.lastSharetribeSyncStatus ?? null,
+      listings: stats?.syncedListings ?? 0,
+    },
+    Date.now(),
+  );
 
   return (
     <div className="space-y-6">
@@ -188,11 +214,63 @@ function DashboardPage() {
         )
       )}
 
-      <SetupChecklist status={setupStatus} />
+      <SetupChecklist facts={setupFacts} />
 
-      {workspaceId && <DailyBriefing workspaceId={workspaceId} />}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {/* Sync health: the last sync's outcome and time, and how many
+            listings are imported (the "Synced Listings" card the help
+            center's sync article points at). */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <Store className="h-4 w-4" /> Synced Listings
+            </CardDescription>
+            <CardTitle className="text-3xl tabular-nums">
+              {(stats?.syncedListings ?? 0).toLocaleString("en-US")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1 text-xs text-muted-foreground">
+            <div className={`font-medium ${SYNC_TONE_CLASS[sync.tone]}`}>{sync.headline}</div>
+            <div>{sync.detail}</div>
+            <Link to={sync.cta.to} className="inline-block hover:text-foreground">
+              {sync.cta.label}
+            </Link>
+          </CardContent>
+        </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <FileText className="h-4 w-4" /> My Pages
+            </CardDescription>
+            <CardTitle className="text-3xl tabular-nums">
+              {(stats?.publishedPages ?? 0).toLocaleString("en-US")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1 text-xs text-muted-foreground">
+            <div>{pagesLine(stats?.publishedPages ?? 0, stats?.draftPages ?? 0)}</div>
+            <Link to={MY_PAGES_PATH} className="inline-block hover:text-foreground">
+              View my pages →
+            </Link>
+          </CardContent>
+        </Card>
+
+        {/* No counts yet: the coverage service wires them in. */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <Lightbulb className="h-4 w-4" /> Opportunities
+            </CardDescription>
+            <CardTitle className="text-base">Pages your listings can support</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1 text-xs text-muted-foreground">
+            <div>City and category pages your synced inventory can back up.</div>
+            <Link to={OPPORTUNITIES_PATH} className="inline-block hover:text-foreground">
+              View opportunities →
+            </Link>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
@@ -212,79 +290,7 @@ function DashboardPage() {
             </Link>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-2">
-              <FileText className="h-4 w-4" /> Published Pages
-            </CardDescription>
-            <CardTitle className="text-3xl">{stats?.publishedPages ?? 0}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            {(stats?.publishedPages ?? 0) === 0 ? (
-              <Link to="/app/pages/new" className="hover:text-foreground">
-                Create your first page →
-              </Link>
-            ) : (
-              <Link to="/app/pages" className="hover:text-foreground">
-                Manage pages →
-              </Link>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-2">
-              <Store className="h-4 w-4" /> Synced Listings
-            </CardDescription>
-            <CardTitle className="text-3xl">{stats?.syncedListings ?? 0}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            {stats?.sharetribeConnected ? (
-              <>
-                From Sharetribe
-                {stats?.lastSharetribeSync
-                  ? ` · last sync ${formatPlanDate(stats.lastSharetribeSync)}`
-                  : ""}
-                {" · "}
-                <Link to="/app/settings/integrations/sharetribe" className="hover:text-foreground">
-                  Integration →
-                </Link>
-              </>
-            ) : (
-              <Link to="/app/settings/integrations/sharetribe" className="hover:text-foreground">
-                Connect Sharetribe →
-              </Link>
-            )}
-          </CardContent>
-        </Card>
       </div>
-
-      {/* The GSC import is not a launch feature (launch: false in app-nav),
-          so the dashboard no longer promises "track clicks and impressions
-          here" and links a customer to it (round-4 release review L7). The
-          Coach, off for launch, keeps its own card behind its switch. */}
-      {coachEnabled && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Sparkles className="h-4 w-4" /> Coach
-            </CardTitle>
-            <CardDescription>Ask what to fix next on your site.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-wrap items-center gap-2">
-            {coachEnabled && (
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/app/coach">
-                  <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-                  Ask Coach
-                </Link>
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

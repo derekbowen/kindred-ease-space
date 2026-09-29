@@ -1,16 +1,18 @@
 /**
  * LAUNCH FOLLOW-UPS from the 2026-09-25 browser check. Run: bun tests/launch-followups.test.ts
  *
- *  1. Settings tabs follow the sidebar's launch rule: AI Providers and API Keys
- *     were `launch: false` in the sidebar yet listed in the Settings tab strip
- *     for every customer. Domains (no sidebar entry) always shows.
+ *  1. Settings tabs: AI Providers and API Keys were `launch: false` in the
+ *     sidebar yet listed in the Settings tab strip for every customer. Since
+ *     the MVP scope (2026-09-28) they are deferred outright: the strip is
+ *     Workspace, Domains, Sharetribe and Billing for everyone, with no flag
+ *     that adds a tab.
  *  2. Site-wide and /login meta descriptions promised a "lead inbox", a
  *     feature that is not in this launch.
  * Offline.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { SETTINGS_TABS, isSettingsTabVisible } from "../src/components/settings/settings-tabs";
+import { SETTINGS_TABS, isSettingsTabActive } from "../src/components/settings/settings-tabs";
 
 let pass = 0,
   fail = 0;
@@ -26,25 +28,29 @@ function t(name: string, cond: boolean, extra = "") {
 const ROOT = join(import.meta.dir, "..");
 const read = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
 
-console.log("\nsettings tabs in a launch build");
-const launch = SETTINGS_TABS.filter((tab) => isSettingsTabVisible(tab.to, { showStubs: false })).map(
-  (tab) => tab.to as string,
+console.log("\nsettings tabs: the same four for everyone");
+const tabs = SETTINGS_TABS.map((tab) => tab.to as string);
+t("Workspace tab shows", tabs.includes("/app/settings"));
+t("Domains tab shows", tabs.includes("/app/settings/domains"));
+t("Sharetribe tab shows", tabs.includes("/app/settings/integrations/sharetribe"));
+t("Billing tab shows (it opens /app/billing)", tabs.includes("/app/billing"));
+t("AI Providers tab is gone", !tabs.includes("/app/settings/ai"), tabs.join(","));
+t("API Keys tab is gone", !tabs.includes("/app/settings/api-keys"), tabs.join(","));
+t("exactly four tabs", tabs.length === 4, tabs.join(","));
+const workspaceTab = SETTINGS_TABS[0];
+t(
+  "Workspace is active only on /app/settings itself; Domains on its own path and below",
+  isSettingsTabActive(workspaceTab, "/app/settings") &&
+    !isSettingsTabActive(workspaceTab, "/app/settings/domains") &&
+    isSettingsTabActive(SETTINGS_TABS[1], "/app/settings/domains/") &&
+    !isSettingsTabActive(SETTINGS_TABS[1], "/app/settings/domainsx"),
 );
-t("Workspace tab shows", launch.includes("/app/settings"));
-t("Domains tab shows (no sidebar entry of its own)", launch.includes("/app/settings/domains"));
-t("Sharetribe tab shows", launch.includes("/app/settings/integrations/sharetribe"));
-t("AI Providers tab is hidden", !launch.includes("/app/settings/ai"), launch.join(","));
-t("API Keys tab is hidden", !launch.includes("/app/settings/api-keys"), launch.join(","));
-const stubs = SETTINGS_TABS.filter((tab) => isSettingsTabVisible(tab.to, { showStubs: true }));
-t("?showStubs=1 reveals every tab for internal testing", stubs.length === SETTINGS_TABS.length);
 
 const nav = read("src/components/settings/SettingsNav.tsx");
 t(
-  "SettingsNav filters through isSettingsTabVisible (showStubs, and the server's founder reveal)",
-  /SETTINGS_TABS\.filter\(\(tab\) =>\s*isSettingsTabVisible\(tab\.to, \{ showStubs, revealLaunchHidden \}\),?\s*\)/.test(nav) &&
-    /const \{ revealLaunchHiddenFeatures: revealLaunchHidden \} = useInternalAccess\(\);/.test(nav),
+  "SettingsNav renders every tab: no showStubs, no founder flag, no filter",
+  /SETTINGS_TABS\.map\(/.test(nav) && !/showStubs|revealLaunchHidden|useInternalAccess|\.filter\(/.test(nav),
 );
-t("SettingsNav decides showStubs after mount (no hydration mismatch)", /useState\(false\)/.test(nav) && /useEffect\(\(\) => \{\s*setShowStubs\(showStubsInUrl\(\)\);/.test(nav));
 t("SettingsNav keeps no private copy of the tab list", !/const LINKS = \[/.test(nav));
 
 console.log("\nno unlaunched feature in the site's own descriptions");
@@ -55,6 +61,8 @@ for (const file of ["src/routes/__root.tsx", "src/routes/login.tsx", "src/routes
 console.log("\none AI allowance figure on every screen");
 const dash = read("src/routes/_authenticated/app.index.tsx");
 const billing = read("src/routes/_authenticated/app.billing.tsx");
+// The AI Providers page is deferred (its route redirects to /app); its code is
+// kept, still on the one allowance endpoint.
 const aiPage = read("src/routes/_authenticated/app.settings.ai.tsx");
 for (const [name, src, count] of [
   ["Dashboard", dash, /formatAllowanceCount\(allowance\)/],

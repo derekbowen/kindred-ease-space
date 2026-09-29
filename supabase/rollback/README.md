@@ -314,3 +314,34 @@ Rollback: `supabase/rollback/20260929000300_mvp_deferred_jobs_rollback.sql` sets
 only (same schedule and command) and checks that no other job changed. Run it only together with turning the
 briefing back on (`platform_settings.enabled_deferred_features` must list `"briefing"`), otherwise the nightly
 run spends AI money on briefings no screen shows. A missing job is not recreated (20260825122000 defines it).
+
+## 20260929000310 — MVP help copy (data only)
+
+`supabase/migrations/20260929000310_mvp_help_copy.sql` changes rows, not schema, and only rows with
+`workspace_id IS NULL` (the public founders.click help center). Apply it after 000900 and 000910 (it rewrites
+text they wrote). No Pool Rental Near Me row is written; no article is deleted or unpublished.
+
+| help_articles row | change |
+| --- | --- |
+| `welcome-to-founders-click` | `content` → the MVP journey (no "in days, not months", "under 5 minutes", "Track everything in Google Search Console"); `excerpt` (no "first hour"); `reading_time_minutes` 3 → 1 |
+| `connecting-your-sharetribe-marketplace` | the sentence "This takes about five minutes." removed; the sidebar's names ("Sharetribe & inventory", "Settings → Sharetribe") |
+| `running-your-first-listing-sync` | "syncs in seconds" → how long depends on the catalogue; the sidebar's names |
+| `troubleshooting-failed-syncs` | the sidebar's names |
+| `submitting-your-sitemap` | "Workspace Settings → Domains" → "Settings → Domains" |
+| `understanding-page-limits` | "Billing & Plans" → "Settings → Billing" |
+| `creating-your-first-seo-page` | `content` → Opportunities → template → draft → edit and preview → publish (was the Quick Page Builder); `reading_time_minutes` 3 → 1 |
+| `connecting-google-search-console` | `title` → "Adding your domain to Google Search Console", `excerpt`, `content`: it is the customer's own Search Console — founders.click imports no Search Console data; `reading_time_minutes` 3 → 1. Slug kept, URL unchanged |
+| `publishing-pages-and-getting-indexed` | `excerpt`: no "ping Google" |
+
+Every change applies only while the row holds the exact text it replaces — a whole article (`content = …`) or
+one exact sentence (`strpos(content, …) > 0`, then `replace()`) — so an article edited in the admin UI since is
+left alone, and a second run changes nothing. Reading times move only from their seeded value. The file ends
+with a check; expect nine rows of `true`. A `false` row names an article whose production text differed from
+the seed chain: read it and fix it by hand in the admin editor.
+
+Rollback: `supabase/rollback/20260929000310_mvp_help_copy_rollback.sql` restores the replaced text verbatim
+(the seed / 000900 / 000910 values), each only while the row still holds the migration's text, in one
+transaction, and ends with a SELECT of the nine rows. It does not restore `updated_at`, and it brings the
+removed claims back, so use it only to unblock something else. Verified offline against the seed chain on
+PGlite (`tests/mvp-surface.test.ts`): first run changes exactly the rows above, a second run nothing, the
+rollback returns every row to its prior text.

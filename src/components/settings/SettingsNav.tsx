@@ -1,38 +1,27 @@
-import { useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
-import { Settings, Sparkles, Plug, Globe, KeyRound } from "lucide-react";
-import { showStubsInUrl } from "@/components/coach/coach-availability";
-import { useInternalAccess } from "@/components/billing/use-internal-access";
-import { SETTINGS_TABS, isSettingsTabVisible, type SettingsTabPath } from "./settings-tabs";
+import { Settings, Plug, Globe, CreditCard } from "lucide-react";
+import { SETTINGS_TABS, isSettingsTabActive, type SettingsTabPath } from "./settings-tabs";
 
 const ICONS: Record<SettingsTabPath, typeof Settings> = {
   "/app/settings": Settings,
   "/app/settings/domains": Globe,
   "/app/settings/integrations/sharetribe": Plug,
-  "/app/settings/ai": Sparkles,
-  "/app/settings/api-keys": KeyRound,
+  "/app/billing": CreditCard,
 };
 
+/**
+ * The Settings tab strip. Every workspace sees the same four tabs
+ * (settings-tabs.ts): there is no flag that shows or hides one.
+ */
 export function SettingsNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // Decided after mount, like the sidebar and the Coach switch: the server
-  // render and the first client render agree, and ?showStubs=1 only widens
-  // the strip once the page is interactive.
-  const [showStubs, setShowStubs] = useState(false);
-  useEffect(() => {
-    setShowStubs(showStubsInUrl());
-  }, []);
-  const { revealLaunchHiddenFeatures: revealLaunchHidden } = useInternalAccess();
 
   return (
     <nav className="flex flex-wrap gap-1 rounded-lg border border-border/60 bg-muted/30 p-1">
-      {SETTINGS_TABS.filter((tab) =>
-        isSettingsTabVisible(tab.to, { showStubs, revealLaunchHidden }),
-      ).map((tab) => {
+      {SETTINGS_TABS.map((tab) => {
         const Icon = ICONS[tab.to];
-        const exact = "exact" in tab && tab.exact;
-        const active = exact ? pathname === tab.to : pathname.startsWith(tab.to);
+        const active = isSettingsTabActive(tab, pathname);
         return (
           <Link
             key={tab.to}

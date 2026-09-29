@@ -3,15 +3,19 @@
  *
  * The homepage promised "Add capacity in blocks of 1,000 from your dashboard".
  * The add-on exists, but not on the dashboard: it is the "Need more pages
- * without changing plans?" card on Billing & Plans, shown once a paid plan is
- * active. This suite pins both halves: the copy names the real place and the
- * paid-plan condition, and the purchase path it points at really exists
- * (billing card → create-checkout page_addon → Stripe catalog → webhook).
+ * without changing plans?" card on the Billing page, shown once a paid plan is
+ * active. Since the MVP sidebar (2026-09-28) Billing is reached through
+ * Settings → Billing. This suite pins both halves: the copy names the real
+ * place and the paid-plan condition, and the purchase path it points at
+ * really exists (billing card → create-checkout page_addon → Stripe catalog →
+ * webhook).
  * Offline: reads source files, including the edge functions (read only).
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PAGE_ADDON } from "../src/lib/plan-catalog";
+import { NAV_SECTIONS, activeNavItem } from "../src/lib/app-nav";
+import { SETTINGS_TABS } from "../src/components/settings/settings-tabs";
 
 let pass = 0,
   fail = 0;
@@ -38,17 +42,23 @@ const home = collapse(read("src/routes/index.tsx"));
 const beta = collapse(read("src/routes/beta.tsx"));
 t('homepage no longer says "from your dashboard"', !/from your dashboard/i.test(home));
 t(
-  "homepage names Billing & Plans and the paid-plan condition",
+  "homepage names Settings → Billing and the paid-plan condition",
   // Pinned locale: "1.000" under de-DE broke hydration (round-4 release review L1).
   /On any paid plan, add capacity in blocks of\{" "\} \{PAGE_ADDON\.pagesPerUnit\.toLocaleString\("en-US"\)\} pages/.test(home) &&
-    /under Billing &amp; Plans in the app/.test(home),
+    /under Settings → Billing in the app/.test(home),
 );
 t("homepage quotes the catalog price", /\(\$\{PAGE_ADDON\.monthlyPrice\}\/month per block\)/.test(home));
 t(
   "/beta says any PAID plan and where to add it",
-  /on top of any paid plan\. Add it under Billing &amp; Plans in the app once your plan is active\./.test(beta),
+  /on top of any paid plan\. Add it under Settings → Billing in the app once your plan is active\./.test(beta),
 );
-t("the sidebar label the copy names exists", /label: "Billing & Plans"/.test(read("src/lib/app-nav.ts")));
+const navItems = NAV_SECTIONS.flatMap((s) => s.items);
+t(
+  "the place the copy names exists: a Settings sidebar item, and a Billing tab on it that opens /app/billing",
+  navItems.some((i) => i.label === "Settings") &&
+    SETTINGS_TABS.some((tab) => tab.label === "Billing" && tab.to === "/app/billing"),
+);
+t("…and the Billing page reads as part of Settings in the sidebar", activeNavItem("/app/billing", navItems)?.label === "Settings");
 
 // ---------------------------------------------------------------------------
 console.log("\nthe purchase path exists");

@@ -6,7 +6,7 @@ import { canonicalUrl } from "@/lib/canonical";
 import { ARTICLE_BODY_CLASS } from "@/components/help-article-content";
 import { PAGE_PLANS, PAGE_ADDON, TRIAL_PAGE_LIMIT } from "@/lib/plan-catalog";
 
-const LAST_UPDATED = "September 22, 2026";
+const LAST_UPDATED = "September 28, 2026";
 const TITLE = "Free beta — what's included — founders.click";
 const DESCRIPTION =
   "What the founders.click beta includes for Sharetribe marketplaces: what is free, what costs money, what happens when access ends, and how your data is handled.";
@@ -16,6 +16,11 @@ const DESCRIPTION =
  * plan catalog so the page cannot say one thing while checkout charges
  * another; a tenant's own grant size is shown in the app, not here, because
  * grants differ per marketplace.
+ *
+ * It describes the MVP and nothing more (owner, 2026-09-28): Sharetribe sync,
+ * coverage opportunities, three templates, drafts you edit and preview,
+ * publishing on your verified domain, an automatic sitemap. Deferred features
+ * (add-ons, affiliates, the coach, SEO tools, data export) are not offered.
  */
 export const Route = createFileRoute("/beta")({
   head: () => ({
@@ -55,6 +60,26 @@ function BetaPage() {
             ends, and what we do with your data. If anything here is unclear,{" "}
             <Link to="/help/contact">ask us</Link>.
           </p>
+
+          <h2 id="what-you-can-do">What you can do</h2>
+          <ul>
+            <li>
+              <strong>Connect Sharetribe</strong> with a read-only Marketplace API Client ID and
+              sync your published listings.
+            </li>
+            <li>
+              <strong>See coverage opportunities</strong>: the city and category pages your real
+              inventory can support.
+            </li>
+            <li>
+              <strong>Create drafts</strong> from one of three page templates — a city hub, a
+              category page or a resource article — then edit and preview them.
+            </li>
+            <li>
+              <strong>Publish on your own domain</strong> once it is connected and verified. Every
+              published page is added to your sitemap automatically.
+            </li>
+          </ul>
 
           <h2 id="whats-free">What's free</h2>
           <ul>
@@ -97,15 +122,8 @@ function BetaPage() {
             ))}
             <li>
               <strong>Extra capacity</strong> — ${PAGE_ADDON.monthlyPrice}/month per{" "}
-              {PAGE_ADDON.pagesPerUnit.toLocaleString("en-US")} pages, on top of any paid plan. Add it
-              under Billing &amp; Plans in the app once your plan is active.
-            </li>
-            <li>
-              <strong>Add-ons</strong> — Affiliate Programs and DM Champ are optional monthly add-ons,
-              priced separately on the Add-ons page in the app. They only start after a checkout you
-              complete. Affiliate Programs tracks referrals through Sharetribe&apos;s Integration API,
-              so it needs your marketplace connected that way, not through the default read-only
-              Marketplace API.
+              {PAGE_ADDON.pagesPerUnit.toLocaleString("en-US")} pages, on top of any paid plan. Add
+              it under Settings → Billing in the app once your plan is active.
             </li>
           </ul>
           <p>
@@ -122,7 +140,9 @@ function BetaPage() {
           <ul>
             <li>Drafts, settings, templates and your connected domain are kept.</li>
             <li>
-              You can export your pages and listing data at any time from Data Export in the app.
+              Ask for an export of your pages and listing data at any time: email{" "}
+              <a href="mailto:support@founders.click">support@founders.click</a> from the address on
+              the account.
             </li>
             <li>
               Pick a plan at any later date and every paused page returns at its original URL.
@@ -146,8 +166,8 @@ function BetaPage() {
             </li>
             <li>
               <strong>Integration API secret.</strong> Optional, and only if you choose to add it.
-              It is stored encrypted, used only for the integration features you turn on, and
-              deleted when you disconnect.
+              It is stored encrypted, used only to sync your listings, and deleted when you
+              disconnect.
             </li>
             <li>
               <strong>Disconnecting.</strong> Disconnecting your marketplace deletes the listing

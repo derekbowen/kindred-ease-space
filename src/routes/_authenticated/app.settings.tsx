@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { userMessage } from "@/lib/user-message";
-import { CheckCircle2, Plug, Sparkles, KeyRound } from "lucide-react";
+import { CheckCircle2, Plug } from "lucide-react";
 import { getMe } from "@/lib/auth.functions";
 import { updateWorkspaceProfile } from "@/lib/workspace.functions";
 import { getSettingsContext } from "@/lib/settings.functions";
@@ -27,7 +27,8 @@ export const Route = createFileRoute("/_authenticated/app/settings")({
   component: SettingsRoute,
 });
 
-// This route has child routes (/domains, /api-keys, /ai, /integrations/*).
+// This route has child routes (/domains, /integrations/*, and the deferred
+// /ai and /api-keys, which redirect to /app before they load).
 // TanStack Router only renders a child through the parent's <Outlet/>; without
 // this wrapper every settings sub-page was unreachable (the parent's own UI
 // rendered instead). Render the child when one matches, the page otherwise.
@@ -37,12 +38,10 @@ function SettingsRoute() {
   return <SettingsPage />;
 }
 
+// Bring-your-own AI keys and workspace API keys are deferred (MVP scope,
+// 2026-09-28): no card, no tab, and their routes redirect to /app for every
+// workspace — there is no URL parameter that shows them.
 function SettingsPage() {
-  // Bring-your-own AI keys and API keys are outside launch scope; the cards
-  // only show with ?showStubs=1 so the sidebar rule and this page agree.
-  const showAdvanced =
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).get("showStubs") === "1";
   const [me, setMe] = useState<Awaited<ReturnType<typeof getMe>> | null>(null);
   const [ctx, setCtx] = useState<Awaited<ReturnType<typeof getSettingsContext>> | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -228,32 +227,6 @@ function SettingsPage() {
           to="/app/settings/integrations/sharetribe"
           icon={Plug}
         />
-        {showAdvanced && (
-          <>
-        <StatusCard
-          title="AI providers"
-          ok={(ctx?.configuredAiProviders.length ?? 0) > 0}
-          detail={
-            ctx?.configuredAiProviders.length
-              ? `${ctx.configuredAiProviders.length} configured`
-              : "Platform quota only"
-          }
-          to="/app/settings/ai"
-          icon={Sparkles}
-        />
-        <StatusCard
-          title="API keys"
-          ok={(ctx?.configuredSecretKeys.length ?? 0) > 0}
-          detail={
-            ctx?.configuredSecretKeys.length
-              ? `${ctx.configuredSecretKeys.length} keys`
-              : "None configured"
-          }
-          to="/app/settings/api-keys"
-          icon={KeyRound}
-        />
-          </>
-        )}
       </div>
 
       <Card>

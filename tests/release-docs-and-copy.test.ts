@@ -341,9 +341,12 @@ t(
 
 console.log("\nL6: copy that promised more than the product does");
 const home = read("src/routes/index.tsx");
+// The Quick Page Builder card ("in minutes … in one step") is gone with the
+// MVP copy (2026-09-28): the homepage describes the journey, with no speed
+// promise (tests/mvp-surface.test.ts pins the full list).
 t(
-  "the Quick Page Builder card says it publishes in one step",
-  /publish it in one step/.test(home) && !/then publish when it's ready/.test(home),
+  "the homepage makes no speed promise and names no Quick Page Builder",
+  !/in minutes|in one step|60 seconds|in an afternoon/i.test(home) && !/Quick Page Builder/.test(home),
 );
 t(
   "the article page's reply time is 'usually', not a promise",
@@ -363,8 +366,8 @@ t(
   !/\/app\/seo\/gsc-import/.test(code(dash)) && !/track clicks and impressions/.test(code(dash)),
 );
 t(
-  "the Coach link stays behind its switch",
-  /\{coachEnabled && \(\s*<Button[\s\S]*?to="\/app\/coach"/.test(dash),
+  "the dashboard has no Coach link at all (the Coach is deferred)",
+  !/\/app\/coach/.test(code(dash)) && !/coachEnabled/.test(dash),
 );
 
 console.log("\nL8: SEO hygiene");

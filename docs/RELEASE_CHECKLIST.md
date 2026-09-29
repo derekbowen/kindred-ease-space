@@ -124,6 +124,7 @@ verification block at the end of that file and read every row; **stop on any
 - [ ] `20260929000100_mvp_targets_sync_templates.sql` (MVP spine: listing keys, sync lease, page targets, the three templates)
 - [ ] `20260929000200_domain_write_lock_and_exact_host.sql` (MVP spine: domain rows server-write-only; exact-host resolver)
 - [ ] `20260929000300_mvp_deferred_jobs.sql` (deactivates `coach-briefing-nightly` only — never PRNM's `competitor-radar-daily` / `daily-seo-digest`; three rows of `true`)
+- [ ] `20260929000310_mvp_help_copy.sql` (help rows: the MVP journey, no speed or Search Console claims, the MVP sidebar's names; nine rows of `true`)
 
 Then run the combined post-migration verification in `supabase/rollback/README.md`.
 

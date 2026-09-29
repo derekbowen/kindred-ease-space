@@ -713,14 +713,16 @@ console.log("\n=== 11. the founder / internal unlimited entitlement decides firs
   );
   const on = internalAccessFields(true);
   const off = internalAccessFields(false);
+  // MVP (2026-09-28): the fields word the plan and nothing more — the old
+  // revealLaunchHiddenFeatures flag is gone, so the founder sees the same MVP.
   t(
-    "the UI fields: internal → { internalUnlimited: true, planLabel: 'Founder / Internal Unlimited', revealLaunchHiddenFeatures: true }",
-    JSON.stringify(on) === JSON.stringify({ internalUnlimited: true, planLabel: "Founder / Internal Unlimited", revealLaunchHiddenFeatures: true }),
+    "the UI fields: internal → { internalUnlimited: true, planLabel: 'Founder / Internal Unlimited' } (no reveal flag)",
+    JSON.stringify(on) === JSON.stringify({ internalUnlimited: true, planLabel: "Founder / Internal Unlimited" }),
     JSON.stringify(on),
   );
   t(
-    "the UI fields: everyone else → { internalUnlimited: false, planLabel: null, revealLaunchHiddenFeatures: false }",
-    JSON.stringify(off) === JSON.stringify({ internalUnlimited: false, planLabel: null, revealLaunchHiddenFeatures: false }),
+    "the UI fields: everyone else → { internalUnlimited: false, planLabel: null }",
+    JSON.stringify(off) === JSON.stringify({ internalUnlimited: false, planLabel: null }),
     JSON.stringify(off),
   );
 }
