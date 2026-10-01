@@ -1,0 +1,147 @@
+import React from 'react'
+
+// --- merged from src/Separator.tsx ---
+export interface SeparatorProps {
+  /** Orientation of the separator */
+  orientation?: 'horizontal' | 'vertical'
+  /** Visual style of the separator line */
+  variant?: 'solid' | 'dashed' | 'dotted'
+  /** Thickness in pixels */
+  thickness?: number
+  /** Custom color (limited to grayscale) */
+  color?: string
+  /** Optional label content */
+  label?: React.ReactNode
+  /** Label position */
+  labelPosition?: 'start' | 'center' | 'end'
+  /** Additional spacing (in pixels) */
+  spacing?: number
+  /** Enable shadow effect */
+  withShadow?: boolean
+  /** Enable gradient effect */
+  withGradient?: boolean
+  /** Custom className */
+  className?: string
+}
+export const Separator: React.FC<SeparatorProps> = ({
+  orientation = 'horizontal',
+  variant = 'solid',
+  thickness = 1,
+  color = '#9CA3AF',
+  label,
+  labelPosition = 'center',
+  spacing = 16,
+  withShadow = false,
+  withGradient = false,
+  className = '',
+}) => {
+  const isHorizontal = orientation === 'horizontal'
+  const separatorStyles = {
+    borderStyle: variant,
+    borderColor: color,
+    margin: `${spacing}px 0`,
+    ...(isHorizontal
+      ? {
+          borderWidth: `${thickness}px 0 0 0`,
+          width: '100%',
+          height: 0,
+        }
+      : {
+          borderWidth: `0 0 0 ${thickness}px`,
+          height: '100%',
+          width: 0,
+        }),
+    ...(withShadow && {
+      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
+    }),
+    ...(withGradient && {
+      background: `linear-gradient(${isHorizontal ? '90deg' : '0deg'}, transparent, ${color}, transparent)`,
+      border: 'none',
+      height: isHorizontal ? `${thickness}px` : '100%',
+      width: isHorizontal ? '100%' : `${thickness}px`,
+    }),
+  }
+  const containerStyles: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    ...(isHorizontal
+      ? {
+          flexDirection: 'row',
+          justifyContent:
+            labelPosition === 'start'
+              ? 'flex-start'
+              : labelPosition === 'end'
+                ? 'flex-end'
+                : 'center',
+        }
+      : {
+          flexDirection: 'column',
+          height: '100%',
+          alignItems:
+            labelPosition === 'start'
+              ? 'flex-start'
+              : labelPosition === 'end'
+                ? 'flex-end'
+                : 'center',
+        }),
+  }
+  if (!label) {
+    return isHorizontal ? (
+      <hr
+        role="separator"
+        aria-orientation="horizontal"
+        style={separatorStyles}
+        className={className}
+      />
+    ) : (
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        style={separatorStyles}
+        className={className}
+      />
+    )
+  }
+  return (
+    <div style={containerStyles} className={className}>
+      {isHorizontal ? (
+        <>
+          {labelPosition !== 'end' && (
+            <hr
+              role="separator"
+              aria-orientation="horizontal"
+              style={separatorStyles}
+            />
+          )}
+          <span className="text-gray-600 whitespace-nowrap">{label}</span>
+          {labelPosition !== 'start' && (
+            <hr
+              role="separator"
+              aria-orientation="horizontal"
+              style={separatorStyles}
+            />
+          )}
+        </>
+      ) : (
+        <>
+          {labelPosition !== 'end' && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              style={separatorStyles}
+            />
+          )}
+          <span className="text-gray-600 whitespace-nowrap">{label}</span>
+          {labelPosition !== 'start' && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              style={separatorStyles}
+            />
+          )}
+        </>
+      )}
+    </div>
+  )
+}

@@ -13,6 +13,7 @@ const ROUTES = [
   "/terms",
   "/beta",
   "/sharetribe-templates",
+  "/magic-designs",
   ...STORE_TEMPLATES.map((t) => `/sharetribe-templates/${t.slug}`),
 ];
 

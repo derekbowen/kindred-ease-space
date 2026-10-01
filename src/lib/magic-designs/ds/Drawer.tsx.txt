@@ -1,0 +1,180 @@
+import React, { useEffect, useRef, createContext, useContext } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { X } from 'lucide-react'
+import { useGesture } from '@use-gesture/react'
+
+// --- merged from src/Drawer.tsx ---
+type Position = 'left' | 'right' | 'top' | 'bottom'
+type Size = 'sm' | 'md' | 'lg' | 'full'
+type BackdropType = 'blur' | 'opaque' | 'none'
+interface DrawerProps {
+  children: React.ReactNode
+  isOpen: boolean
+  onClose: () => void
+  position?: Position
+  size?: Size
+  backdrop?: BackdropType
+  nested?: boolean
+  preventScroll?: boolean
+}
+const DrawerContext = createContext<{
+  position: Position
+  size: Size
+  onClose: () => void
+}>({
+  position: 'right',
+  size: 'md',
+  onClose: () => {},
+})
+const sizes = {
+  sm: '320px',
+  md: '400px',
+  lg: '600px',
+  full: '100%',
+}
+export const Drawer = ({
+  children,
+  isOpen,
+  onClose,
+  position = 'right',
+  size = 'md',
+  backdrop = 'blur',
+  nested = false,
+  preventScroll = true,
+}: DrawerProps) => {
+  const drawerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isOpen) {
+        onClose()
+      }
+    }
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown)
+      if (preventScroll) document.body.style.overflow = 'hidden'
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      if (preventScroll) document.body.style.overflow = 'unset'
+    }
+  }, [isOpen, onClose, preventScroll])
+  const getInitialPosition = () => {
+    switch (position) {
+      case 'left':
+        return {
+          x: '-100%',
+          y: 0,
+        }
+      case 'right':
+        return {
+          x: '100%',
+          y: 0,
+        }
+      case 'top':
+        return {
+          x: 0,
+          y: '-100%',
+        }
+      case 'bottom':
+        return {
+          x: 0,
+          y: '100%',
+        }
+      default:
+        return {
+          x: '100%',
+          y: 0,
+        }
+    }
+  }
+  const getDimensions = () => {
+    const dimension = sizes[size]
+    return position === 'left' || position === 'right'
+      ? {
+          width: dimension,
+          height: '100%',
+        }
+      : {
+          width: '100%',
+          height: dimension,
+        }
+  }
+  const bind = useGesture({
+    onDrag: ({ movement: [mx, my], direction: [dx, dy], cancel }) => {
+      const threshold = 100
+      const isHorizontal = position === 'left' || position === 'right'
+      const movement = isHorizontal ? mx : my
+      const dir = isHorizontal ? dx : dy
+      if (
+        (position === 'right' && movement > threshold) ||
+        (position === 'left' && movement < -threshold) ||
+        (position === 'top' && movement < -threshold) ||
+        (position === 'bottom' && movement > threshold)
+      ) {
+        cancel()
+        onClose()
+      }
+    },
+  }) as unknown as () => Record<string, unknown>
+  return (
+    <DrawerContext.Provider
+      value={{
+        position,
+        size,
+        onClose,
+      }}
+    >
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            {backdrop !== 'none' && (
+              <motion.div
+                initial={{
+                  opacity: 0,
+                }}
+                animate={{
+                  opacity: 1,
+                }}
+                exit={{
+                  opacity: 0,
+                }}
+                className={`fixed inset-0 z-40 ${backdrop === 'blur' ? 'backdrop-blur-sm bg-black/30' : 'bg-black/50'}`}
+                onClick={onClose}
+                aria-hidden="true"
+              />
+            )}
+            <motion.div
+              ref={drawerRef}
+              {...bind()}
+              initial={getInitialPosition()}
+              animate={{
+                x: 0,
+                y: 0,
+              }}
+              exit={getInitialPosition()}
+              transition={{
+                type: 'spring',
+                damping: 20,
+              }}
+              style={getDimensions()}
+              className={`fixed z-50 bg-white border border-gray-200 shadow-lg ${position === 'left' ? 'left-0 top-0' : position === 'right' ? 'right-0 top-0' : position === 'top' ? 'top-0 left-0' : 'bottom-0 left-0'}`}
+              role="dialog"
+              aria-modal="true"
+              tabIndex={-1}
+            >
+              <button
+                onClick={onClose}
+                className="absolute top-4 right-4 p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400"
+                aria-label="Close drawer"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+              {children}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </DrawerContext.Provider>
+  )
+}
+export const useDrawer = () => useContext(DrawerContext)

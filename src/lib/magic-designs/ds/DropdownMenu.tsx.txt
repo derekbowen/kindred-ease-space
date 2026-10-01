@@ -1,0 +1,143 @@
+import React, { useState, createContext, useContext } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { ChevronRight, Check } from 'lucide-react'
+
+// --- merged from src/DropdownMenu.tsx ---
+interface MenuItemProps {
+  label: string
+  icon?: React.ReactNode
+  shortcut?: string
+  disabled?: boolean
+  checked?: boolean
+  onClick?: () => void
+  children?: React.ReactNode
+}
+interface MenuGroupProps {
+  label: string
+  children: React.ReactNode
+}
+interface DropdownMenuProps {
+  trigger: React.ReactNode
+  children: React.ReactNode
+  position?: 'top' | 'bottom' | 'left' | 'right'
+  triggerType?: 'click' | 'hover'
+}
+const MenuContext = createContext<{
+  isOpen: boolean
+  setIsOpen: (value: boolean) => void
+}>({
+  isOpen: false,
+  setIsOpen: () => {},
+})
+const MenuItem: React.FC<MenuItemProps> = ({
+  label,
+  icon,
+  shortcut,
+  disabled,
+  checked,
+  onClick,
+  children,
+}) => {
+  const [isSubMenuOpen, setIsSubMenuOpen] = useState(false)
+  return (
+    <div
+      className={`
+        relative flex items-center px-4 py-2 text-sm
+        ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-100 focus:bg-gray-200'}
+      `}
+      onClick={disabled ? undefined : onClick}
+      role="menuitem"
+      tabIndex={disabled ? -1 : 0}
+      aria-disabled={disabled}
+    >
+      {icon && <span className="mr-2">{icon}</span>}
+      <span className="flex-grow">{label}</span>
+      {checked && <Check className="w-4 h-4 ml-2" />}
+      {shortcut && <span className="ml-4 text-gray-400">{shortcut}</span>}
+      {children && <ChevronRight className="w-4 h-4 ml-2" />}
+      {children && isSubMenuOpen && (
+        <div className="absolute left-full top-0 ml-1">{children}</div>
+      )}
+    </div>
+  )
+}
+const MenuGroup: React.FC<MenuGroupProps> = ({ label, children }) => (
+  <div role="group" aria-label={label}>
+    <div className="px-4 py-2 text-xs font-semibold text-gray-500">{label}</div>
+    {children}
+  </div>
+)
+const MenuDivider: React.FC = () => (
+  <div className="h-px my-1 bg-gray-200" role="separator" />
+)
+export const DropdownMenu: React.FC<DropdownMenuProps> = ({
+  trigger,
+  children,
+  position = 'bottom',
+  triggerType = 'click',
+}) => {
+  const [isOpen, setIsOpen] = useState(false)
+  const getPositionStyles = () => {
+    switch (position) {
+      case 'top':
+        return 'bottom-full mb-2'
+      case 'left':
+        return 'right-full mr-2'
+      case 'right':
+        return 'left-full ml-2'
+      default:
+        return 'top-full mt-2'
+    }
+  }
+  return (
+    <MenuContext.Provider
+      value={{
+        isOpen,
+        setIsOpen,
+      }}
+    >
+      <div className="relative inline-block">
+        <div
+          onClick={() => triggerType === 'click' && setIsOpen(!isOpen)}
+          onMouseEnter={() => triggerType === 'hover' && setIsOpen(true)}
+          onMouseLeave={() => triggerType === 'hover' && setIsOpen(false)}
+        >
+          {trigger}
+        </div>
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div
+              initial={{
+                opacity: 0,
+                scale: 0.95,
+              }}
+              animate={{
+                opacity: 1,
+                scale: 1,
+              }}
+              exit={{
+                opacity: 0,
+                scale: 0.95,
+              }}
+              transition={{
+                duration: 0.1,
+              }}
+              className={`
+                absolute z-50 min-w-[200px]
+                bg-white border border-gray-200 rounded-md shadow-lg
+                ${getPositionStyles()}
+              `}
+              role="menu"
+              aria-orientation="vertical"
+            >
+              {children}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </MenuContext.Provider>
+  )
+}
+DropdownMenu.Item = MenuItem
+DropdownMenu.Group = MenuGroup
+DropdownMenu.Divider = MenuDivider

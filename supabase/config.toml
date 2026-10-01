@@ -19,3 +19,11 @@ verify_jwt = false
 
 [functions.template-download]
 verify_jwt = false
+
+# Magic Designs token packs. Signed-in users only: each function verifies the
+# caller's JWT itself as well (tokens belong to an account).
+[functions.design-token-checkout]
+verify_jwt = true
+
+[functions.design-token-claim]
+verify_jwt = true
