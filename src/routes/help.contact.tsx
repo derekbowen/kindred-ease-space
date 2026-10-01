@@ -21,7 +21,17 @@ import { CheckCircle2 } from "lucide-react";
 const CONTACT_FAILED =
   "Your message didn't send. Try again, or email support@founders.click if it keeps happening.";
 
+const CATEGORIES = ["billing", "technical", "sales", "other"] as const;
+type Category = (typeof CATEGORIES)[number];
+
 export const Route = createFileRoute("/help/contact")({
+  // Optional prefill, e.g. the store's "Get the iOS & Android apps" button.
+  validateSearch: (search: Record<string, unknown>): { category?: Category; subject?: string } => ({
+    category: CATEGORIES.includes(search.category as Category)
+      ? (search.category as Category)
+      : undefined,
+    subject: typeof search.subject === "string" ? search.subject.slice(0, 200) : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Contact Support — founders.click Help" },
@@ -38,6 +48,7 @@ export const Route = createFileRoute("/help/contact")({
 });
 
 function ContactPage() {
+  const prefill = Route.useSearch();
   const [submitting, setSubmitting] = useState(false);
   const [ticketId, setTicketId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +67,10 @@ function ContactPage() {
           subject: String(fd.get("subject") ?? ""),
           message: String(fd.get("message") ?? ""),
           category: String(fd.get("category") ?? "other") as
-            "billing" | "technical" | "sales" | "other",
+            | "billing"
+            | "technical"
+            | "sales"
+            | "other",
         },
       });
       if (res.ok) setTicketId(res.ticketId);
@@ -106,7 +120,7 @@ function ContactPage() {
           </div>
           <div>
             <Label htmlFor="category">Category</Label>
-            <Select name="category" defaultValue="other">
+            <Select name="category" defaultValue={prefill.category ?? "other"}>
               <SelectTrigger className="mt-1.5">
                 <SelectValue />
               </SelectTrigger>
@@ -125,6 +139,7 @@ function ContactPage() {
             <Input
               id="subject"
               name="subject"
+              defaultValue={prefill.subject}
               required
               minLength={3}
               maxLength={200}
