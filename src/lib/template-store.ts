@@ -223,6 +223,11 @@ export function getStoreTemplate(slug: string): StoreTemplate | undefined {
   return STORE_TEMPLATES.find((t) => t.slug === slug);
 }
 
+/** A 960×720 screenshot of the template's landing page (catalog cards, og:image). */
+export function templateThumbnailPath(slug: string): string {
+  return `/template-thumbnails/${slug}.jpg`;
+}
+
 export function templatePreviewPath(slug: string): string {
   return `/template-previews/${slug}/index.html`;
 }

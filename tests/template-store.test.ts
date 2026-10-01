@@ -154,6 +154,10 @@ for (const tpl of STORE_TEMPLATES) {
   const dir = join(ROOT, "public/template-previews", tpl.slug);
   const index = join(dir, "index.html");
   t(`${tpl.slug}: preview build is present`, existsSync(index));
+  t(
+    `${tpl.slug}: catalog thumbnail is present`,
+    existsSync(join(ROOT, "public/template-thumbnails", `${tpl.slug}.jpg`)),
+  );
   if (!existsSync(index)) continue;
   const files = [...walk(dir)];
   const text = files

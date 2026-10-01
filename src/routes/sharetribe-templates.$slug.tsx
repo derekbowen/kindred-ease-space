@@ -11,6 +11,7 @@ import {
   formatTemplatePrice,
   getStoreTemplate,
   templatePreviewPath,
+  templateThumbnailPath,
 } from "@/lib/template-store";
 
 export const Route = createFileRoute("/sharetribe-templates/$slug")({
@@ -31,6 +32,8 @@ export const Route = createFileRoute("/sharetribe-templates/$slug")({
         { property: "og:title", content: title },
         { property: "og:description", content: t.description },
         { property: "og:type", content: "product" },
+        { property: "og:image", content: canonicalUrl(templateThumbnailPath(t.slug)) },
+        { name: "twitter:card", content: "summary_large_image" },
         { property: "og:url", content: url },
         { name: "robots", content: "index, follow" },
       ],

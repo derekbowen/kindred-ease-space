@@ -7,7 +7,7 @@ import {
   TEMPLATE_FLOW_LABEL,
   TEMPLATE_PAGES,
   formatTemplatePrice,
-  templatePreviewPath,
+  templateThumbnailPath,
   type StoreTemplate,
 } from "@/lib/template-store";
 
@@ -100,14 +100,15 @@ function TemplateCard({ template: t }: { template: StoreTemplate }) {
         className="relative aspect-[4/3] overflow-hidden border-b border-border"
         style={{ backgroundColor: t.accent }}
       >
-        {/* A quarter-scale, non-interactive render of the live preview. */}
-        <iframe
-          src={templatePreviewPath(t.slug)}
-          title={`${t.name} preview`}
+        {/* A screenshot, not a live iframe: an iframe per card is heavy and
+            renders blank wherever framing or third-party loading is blocked. */}
+        <img
+          src={templateThumbnailPath(t.slug)}
+          alt={`${t.name} template landing page`}
           loading="lazy"
-          tabIndex={-1}
-          aria-hidden="true"
-          className="pointer-events-none absolute left-0 top-0 h-[400%] w-[400%] origin-top-left scale-25 border-0 bg-white"
+          width={960}
+          height={720}
+          className="absolute inset-0 h-full w-full object-cover object-top transition-transform duration-300 group-hover:scale-[1.02]"
         />
       </div>
       <div className="flex flex-1 flex-col p-5">
