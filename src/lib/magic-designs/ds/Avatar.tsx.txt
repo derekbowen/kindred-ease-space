@@ -1,0 +1,210 @@
+import React, { useState } from 'react'
+import { Circle, X } from 'lucide-react'
+
+// --- merged from src/Avatar.tsx ---
+export type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
+export type AvatarShape = 'circle' | 'rounded' | 'square'
+export type AvatarStatus = 'online' | 'away' | 'busy' | 'offline'
+export interface AvatarProps {
+  src?: string
+  alt: string
+  size?: AvatarSize
+  shape?: AvatarShape
+  status?: AvatarStatus
+  name: string
+  tooltip?: string
+  className?: string
+  hasBorder?: boolean
+  hasShadow?: boolean
+}
+const sizeMap: Record<AvatarSize, string> = {
+  xs: 'w-6 h-6 text-xs',
+  sm: 'w-8 h-8 text-sm',
+  md: 'w-10 h-10 text-base',
+  lg: 'w-12 h-12 text-lg',
+  xl: 'w-16 h-16 text-xl',
+}
+const shapeMap: Record<AvatarShape, string> = {
+  circle: 'rounded-full',
+  rounded: 'rounded-lg',
+  square: 'rounded-none',
+}
+const statusColorMap: Record<AvatarStatus, string> = {
+  online: 'bg-white',
+  away: 'bg-gray-400',
+  busy: 'bg-gray-600',
+  offline: 'bg-gray-300',
+}
+export const Avatar = ({
+  src,
+  alt,
+  size = 'md',
+  shape = 'circle',
+  status,
+  name,
+  tooltip,
+  className = '',
+  hasBorder = false,
+  hasShadow = false,
+}: AvatarProps) => {
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState(false)
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2)
+  }
+  const content = (
+    <div
+      className={`
+        relative inline-flex items-center justify-center
+        ${sizeMap[size]}
+        ${shapeMap[shape]}
+        ${hasBorder ? 'border-2 border-gray-200' : ''}
+        ${hasShadow ? 'shadow-md' : ''}
+        ${className}
+        bg-gray-100
+        overflow-hidden
+        transition-all
+        hover:bg-gray-200
+        focus:outline-none focus:ring-2 focus:ring-gray-400
+      `}
+    >
+      {src && !error ? (
+        <img
+          src={src}
+          alt={alt}
+          className={`
+            w-full h-full object-cover
+            ${isLoading ? 'opacity-0' : 'opacity-100'}
+          `}
+          onLoad={() => setIsLoading(false)}
+          onError={() => setError(true)}
+        />
+      ) : (
+        <span className="font-medium text-gray-600">{getInitials(name)}</span>
+      )}
+      {status && (
+        <span
+          className={`
+            absolute bottom-0 right-0
+            w-1/3 h-1/3
+            ${statusColorMap[status]}
+            ${shapeMap.circle}
+            border-2 border-gray-100
+          `}
+          role="status"
+          aria-label={`Status: ${status}`}
+        />
+      )}
+      {isLoading && !error && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+          <Circle className="w-1/2 h-1/2 text-gray-400 animate-spin" />
+        </div>
+      )}
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+          <X className="w-1/2 h-1/2 text-gray-400" />
+        </div>
+      )}
+    </div>
+  )
+  return tooltip ? <Tooltip content={tooltip}>{content}</Tooltip> : content
+}
+
+// --- merged from src/AvatarGroup.tsx ---
+interface AvatarGroupProps {
+  avatars: Omit<AvatarProps, 'size'>[]
+  max?: number
+  size?: AvatarSize
+  className?: string
+}
+export const AvatarGroup = ({
+  avatars,
+  max,
+  size = 'md',
+  className = '',
+}: AvatarGroupProps) => {
+  const displayAvatars = max ? avatars.slice(0, max) : avatars
+  const remainingCount = max ? Math.max(0, avatars.length - max) : 0
+  return (
+    <div className={`flex items-center ${className}`}>
+      {displayAvatars.map((avatar, index) => (
+        <div
+          key={index}
+          className={`
+            ${index !== 0 ? '-ml-2' : ''}
+            relative
+            hover:z-10
+          `}
+        >
+          <Avatar {...avatar} size={size} />
+        </div>
+      ))}
+      {remainingCount > 0 && (
+        <div
+          className={`
+            -ml-2
+            relative
+            hover:z-10
+            inline-flex
+            items-center
+            justify-center
+            bg-gray-200
+            ${size ? `${sizeMap__AvatarGroup[size]}` : ''}
+            rounded-full
+            font-medium
+            text-gray-600
+          `}
+        >
+          +{remainingCount}
+        </div>
+      )}
+    </div>
+  )
+}
+const sizeMap__AvatarGroup: Record<AvatarSize, string> = {
+  xs: 'w-6 h-6 text-xs',
+  sm: 'w-8 h-8 text-sm',
+  md: 'w-10 h-10 text-base',
+  lg: 'w-12 h-12 text-lg',
+  xl: 'w-16 h-16 text-xl',
+}
+
+// --- merged from src/Tooltip.tsx ---
+interface TooltipProps {
+  content: string
+  children: React.ReactNode
+}
+export const Tooltip = ({ content, children }: TooltipProps) => {
+  return (
+    <div className="relative group">
+      {children}
+      <div
+        className="
+          absolute
+          left-1/2
+          -translate-x-1/2
+          bottom-full
+          mb-2
+          px-2
+          py-1
+          bg-gray-800
+          text-white
+          text-sm
+          rounded
+          opacity-0
+          group-hover:opacity-100
+          transition-opacity
+          whitespace-nowrap
+        "
+        role="tooltip"
+      >
+        {content}
+      </div>
+    </div>
+  )
+}

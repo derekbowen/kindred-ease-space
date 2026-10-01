@@ -1,0 +1,128 @@
+import React, { useState, useRef } from 'react'
+import { ChevronDown, Calendar, Check } from 'lucide-react'
+import { useFloating, useInteractions, useClick, useRole, useDismiss, offset, flip, shift, useListNavigation, useTypeahead, FloatingFocusManager, autoUpdate } from '@floating-ui/react'
+
+// --- merged from src/Dropdown.tsx ---
+export interface DropdownOption {
+  label: string
+  value: string
+}
+export interface DropdownProps {
+  label?: string
+  value?: string
+  onChange?: (value: string) => void
+  error?: string
+  options?: DropdownOption[]
+  type?: 'date' | 'week' | 'default'
+  className?: string
+  sectionTitle?: string
+  showCheckboxes?: boolean
+}
+export function Dropdown({
+  label,
+  value,
+  onChange,
+  error,
+  options = [],
+  type = 'default',
+  className = '',
+  sectionTitle,
+  showCheckboxes = false,
+}: DropdownProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [activeIndex, setActiveIndex] = useState<number | null>(null)
+  const listRef = useRef<Array<HTMLElement | null>>([])
+  const { refs, floatingStyles, context } = useFloating({
+    open: isOpen,
+    onOpenChange: setIsOpen,
+    middleware: [offset(4), flip(), shift()],
+    whileElementsMounted: autoUpdate,
+  })
+  const click = useClick(context)
+  const dismiss = useDismiss(context)
+  const role = useRole(context)
+  const listNav = useListNavigation(context, {
+    listRef,
+    activeIndex,
+    onNavigate: setActiveIndex,
+    loop: true,
+  })
+  const typeahead = useTypeahead(context, {
+    listRef,
+    activeIndex,
+    onMatch: setActiveIndex,
+  })
+  const { getReferenceProps, getFloatingProps, getItemProps } = useInteractions(
+    [click, dismiss, role, listNav, typeahead],
+  )
+  const selectedOption = options.find((opt) => opt.value === value)
+  return (
+    <div className={`relative ${className}`}>
+      {label && (
+        <label className="block text-sm font-medium text-grey-700 mb-1">
+          {label}
+        </label>
+      )}
+      <button
+        ref={refs.setReference}
+        {...getReferenceProps()}
+        className={`w-full flex items-center justify-between px-3 py-2 text-sm border rounded-md bg-white
+          ${error ? 'border-red-400 text-red-500' : 'border-grey-200 text-grey-700'}
+          hover:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20`}
+      >
+        <div className="flex items-center gap-2">
+          {type === 'date' && <Calendar size={16} className="text-grey-500" />}
+          <span>{selectedOption?.label || 'Select option'}</span>
+        </div>
+        <ChevronDown
+          size={16}
+          className={`text-grey-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
+      {isOpen && (
+        <FloatingFocusManager context={context} modal={false}>
+          <div
+            ref={refs.setFloating}
+            style={floatingStyles}
+            {...getFloatingProps()}
+            className="z-10 w-[--reference-width] bg-white rounded-xl shadow-popup border border-grey-100"
+          >
+            {sectionTitle && (
+              <div className="px-4 py-2 text-sm text-grey-500 bg-grey-50 border-b border-grey-100">
+                {sectionTitle}
+              </div>
+            )}
+            <div className="py-1">
+              {options.map((option, index) => (
+                <button
+                  key={option.value}
+                  ref={(node) => {
+                    listRef.current[index] = node
+                  }}
+                  {...getItemProps({
+                    onClick: () => {
+                      onChange?.(option.value)
+                      setIsOpen(false)
+                    },
+                  })}
+                  className={`w-full flex items-center px-4 py-2 text-sm text-grey-700
+                    hover:bg-grey-50 focus:outline-none focus:bg-grey-50`}
+                >
+                  {showCheckboxes && (
+                    <div className="w-5 h-5 mr-3 flex items-center justify-center border border-grey-200 rounded">
+                      {value === option.value && (
+                        <Check size={14} className="text-primary" />
+                      )}
+                    </div>
+                  )}
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </FloatingFocusManager>
+      )}
+    </div>
+  )
+}

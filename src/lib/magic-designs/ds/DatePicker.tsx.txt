@@ -1,0 +1,165 @@
+import React, { useEffect, useState, useRef } from 'react'
+import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react'
+import { format, parse, addMonths, subMonths, isValid, startOfDay } from 'date-fns'
+import * as locales from 'date-fns/locale'
+import { useFloating, useInteractions, useClick, useDismiss, useRole, shift, flip } from '@floating-ui/react'
+
+// --- merged from src/DatePicker.tsx ---
+interface DatePickerProps {
+  mode?: 'single' | 'multiple' | 'range'
+  value?:
+    | Date
+    | Date[]
+    | {
+        start: Date
+        end: Date
+      }
+    | null
+  onChange?: (
+    date:
+      | Date
+      | Date[]
+      | {
+          start: Date
+          end: Date
+        }
+      | null,
+  ) => void
+  minDate?: Date
+  maxDate?: Date
+  disabledDates?: Date[]
+  locale?: keyof typeof locales
+  format?: string
+  showTime?: boolean
+  inline?: boolean
+  placeholder?: string
+}
+export const DatePicker: React.FC<DatePickerProps> = ({
+  mode = 'single',
+  value,
+  onChange,
+  minDate,
+  maxDate,
+  disabledDates = [],
+  locale = 'enUS',
+  format: dateFormat = 'MM/dd/yyyy',
+  showTime = false,
+  inline = false,
+  placeholder = 'Select date...',
+}) => {
+  const [isOpen, setIsOpen] = useState(false)
+  const [currentDate, setCurrentDate] = useState(new Date())
+  const [inputValue, setInputValue] = useState('')
+  const [view, setView] = useState<'month' | 'year' | 'decade'>('month')
+  const { refs, floatingStyles, context } = useFloating({
+    open: isOpen,
+    onOpenChange: setIsOpen,
+    middleware: [shift(), flip()],
+  })
+  const click = useClick(context)
+  const dismiss = useDismiss(context)
+  const role = useRole(context)
+  const { getReferenceProps, getFloatingProps } = useInteractions([
+    click,
+    dismiss,
+    role,
+  ])
+  // Calendar grid generation
+  const generateCalendarGrid = () => {
+    // ... Calendar grid generation logic
+    return []
+  }
+  const handleDateSelect = (date: Date) => {
+    if (!isValid(date)) return
+    if (mode === 'single') {
+      onChange?.(date)
+      setIsOpen(false)
+    } else if (mode === 'multiple') {
+      const dates = Array.isArray(value) ? value : []
+      const newDates = dates.find((d) => d.getTime() === date.getTime())
+        ? dates.filter((d) => d.getTime() !== date.getTime())
+        : [...dates, date]
+      onChange?.(newDates)
+    } else if (mode === 'range') {
+      // ... Range selection logic
+    }
+  }
+  return (
+    <div className="relative inline-block">
+      {!inline && (
+        <div
+          ref={refs.setReference}
+          {...getReferenceProps()}
+          className="flex items-center border border-gray-300 rounded px-3 py-2 focus-within:ring-2 focus-within:ring-gray-400"
+        >
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            placeholder={placeholder}
+            className="outline-none bg-transparent w-full"
+          />
+          <Calendar className="w-5 h-5 text-gray-500" />
+        </div>
+      )}
+      {(isOpen || inline) && (
+        <div
+          ref={refs.setFloating}
+          style={floatingStyles}
+          {...getFloatingProps()}
+          className={`bg-white border border-gray-200 rounded-lg shadow-lg p-4 ${inline ? '' : 'absolute z-10'}`}
+        >
+          <div className="flex justify-between items-center mb-4">
+            <button
+              onClick={() => setCurrentDate(subMonths(currentDate, 1))}
+              className="p-1 hover:bg-gray-100 rounded"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setView('year')}
+              className="font-medium hover:bg-gray-100 px-2 py-1 rounded"
+            >
+              {format(currentDate, 'MMMM yyyy')}
+            </button>
+            <button
+              onClick={() => setCurrentDate(addMonths(currentDate, 1))}
+              className="p-1 hover:bg-gray-100 rounded"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {/* Weekday headers */}
+            {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day) => (
+              <div key={day} className="text-center text-sm py-1 text-gray-500">
+                {day}
+              </div>
+            ))}
+            {/* Calendar days */}
+            {generateCalendarGrid().map((date, i) => (
+              <button
+                key={i}
+                onClick={() => handleDateSelect(date)}
+                className="aspect-square flex items-center justify-center text-sm hover:bg-gray-100 rounded"
+              >
+                {format(date, 'd')}
+              </button>
+            ))}
+          </div>
+          {showTime && (
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <input
+                type="time"
+                className="w-full border border-gray-300 rounded px-2 py-1"
+                onChange={(e) => {
+                  // Handle time change
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

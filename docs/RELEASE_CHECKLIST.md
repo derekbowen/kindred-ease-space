@@ -136,6 +136,7 @@ The Sharetribe template store (independent of the MVP journey; harmless to the
 live build, which never reads the bucket):
 
 - [ ] `20261001000100_template_downloads_bucket.sql` (PRIVATE `template-downloads` bucket, 50 MB zip limit; platform admins may list and upload, nobody else has any access — buyers get a signed URL from `template-download`. Verify: `select public from storage.buckets where id = 'template-downloads'` → `false`)
+- [ ] `20261001000200_magic_designs.sql` (Magic Designs: design-token ledger, designs and change history; RLS on, clients read their own rows only and hold no write grant; `spend_design_tokens` / `design_token_balance` executable by service_role only. Verify with the three queries at the end of the file — each `true`)
 
 Then run the combined post-migration verification in `supabase/rollback/README.md`.
 
@@ -188,6 +189,19 @@ supabase functions deploy template-download   --no-verify-jwt --project-ref xbxh
 Through MCP: each takes `index.ts` plus `../_shared/template-catalog.ts`. Then
 upload every template's zip at `/app/admin/template-store` (platform admin);
 `template-checkout` answers 409 `not_available_yet` for a template with no zip.
+
+Magic Designs' token functions keep JWT verification **on** (signed-in users
+only) and each also checks the user itself:
+
+```bash
+supabase functions deploy design-token-checkout --project-ref xbxhzinnfhosoztqaaao
+supabase functions deploy design-token-claim    --project-ref xbxhzinnfhosoztqaaao
+```
+
+Through MCP: each takes `index.ts` plus `../_shared/design-tokens.ts`. Then set
+the design engine key on the Worker (`wrangler secret put
+MAGIC_PATTERNS_API_KEY`); until it is set Magic Designs refuses new designs
+before spending any tokens.
 
 `coach-briefing-cron` is **retired for the MVP** (the briefing is deferred; the
 security review found it still callable with the shared `CRON_SECRET`, one AI

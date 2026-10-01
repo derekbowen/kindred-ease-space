@@ -10,10 +10,12 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as TemplatesRouteImport } from './routes/templates'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as MagicDesignsRouteImport } from './routes/magic-designs'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as HelpRouteImport } from './routes/help'
 import { Route as BetaRouteImport } from './routes/beta'
@@ -51,6 +53,7 @@ import { Route as AuthenticatedAppCoachRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAppBillingRouteImport } from './routes/_authenticated/app.billing'
 import { Route as AuthenticatedAppAffiliatesRouteImport } from './routes/_authenticated/app.affiliates'
 import { Route as AuthenticatedAppAddonsRouteImport } from './routes/_authenticated/app.addons'
+import { Route as AuthenticatedAppMagicDesignsIndexRouteImport } from './routes/_authenticated/app.magic-designs.index'
 import { Route as ApiPublicOpsSyncHealthRouteImport } from './routes/api/public/ops/sync-health'
 import { Route as ApiPublicOpsEmailProbeRouteImport } from './routes/api/public/ops/email-probe'
 import { Route as ApiPublicHooksSyncSharetribeRouteImport } from './routes/api/public/hooks/sync-sharetribe'
@@ -88,6 +91,7 @@ import { Route as AuthenticatedAppOpsEmailVerifyRouteImport } from './routes/_au
 import { Route as AuthenticatedAppOpsEmailBrandingRouteImport } from './routes/_authenticated/app.ops.email-branding'
 import { Route as AuthenticatedAppOpsDirectoryModerationRouteImport } from './routes/_authenticated/app.ops.directory-moderation'
 import { Route as AuthenticatedAppOpsAdminTeamRouteImport } from './routes/_authenticated/app.ops.admin-team'
+import { Route as AuthenticatedAppMagicDesignsIdRouteImport } from './routes/_authenticated/app.magic-designs.$id'
 import { Route as AuthenticatedAppContentQuickPageBuilderRouteImport } from './routes/_authenticated/app.content.quick-page-builder'
 import { Route as AuthenticatedAppContentMigrationRouteImport } from './routes/_authenticated/app.content.migration'
 import { Route as AuthenticatedAppContentLearningRouteImport } from './routes/_authenticated/app.content.learning'
@@ -118,6 +122,11 @@ const TermsRoute = TermsRouteImport.update({
   path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TemplatesRoute = TemplatesRouteImport.update({
+  id: '/templates',
+  path: '/templates',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
@@ -136,6 +145,11 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MagicDesignsRoute = MagicDesignsRouteImport.update({
+  id: '/magic-designs',
+  path: '/magic-designs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -329,6 +343,12 @@ const AuthenticatedAppAddonsRoute = AuthenticatedAppAddonsRouteImport.update({
   path: '/addons',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
+const AuthenticatedAppMagicDesignsIndexRoute =
+  AuthenticatedAppMagicDesignsIndexRouteImport.update({
+    id: '/magic-designs/',
+    path: '/magic-designs/',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
 const ApiPublicOpsSyncHealthRoute = ApiPublicOpsSyncHealthRouteImport.update({
   id: '/api/public/ops/sync-health',
   path: '/api/public/ops/sync-health',
@@ -549,6 +569,12 @@ const AuthenticatedAppOpsAdminTeamRoute =
     path: '/ops/admin-team',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
+const AuthenticatedAppMagicDesignsIdRoute =
+  AuthenticatedAppMagicDesignsIdRouteImport.update({
+    id: '/magic-designs/$id',
+    path: '/magic-designs/$id',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
 const AuthenticatedAppContentQuickPageBuilderRoute =
   AuthenticatedAppContentQuickPageBuilderRouteImport.update({
     id: '/content/quick-page-builder',
@@ -699,10 +725,12 @@ export interface FileRoutesByFullPath {
   '/beta': typeof BetaRoute
   '/help': typeof HelpRouteWithChildren
   '/login': typeof LoginRoute
+  '/magic-designs': typeof MagicDesignsRoute
   '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/templates': typeof TemplatesRoute
   '/terms': typeof TermsRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/a/$slug': typeof ASlugRoute
@@ -752,6 +780,7 @@ export interface FileRoutesByFullPath {
   '/app/content/learning': typeof AuthenticatedAppContentLearningRoute
   '/app/content/migration': typeof AuthenticatedAppContentMigrationRoute
   '/app/content/quick-page-builder': typeof AuthenticatedAppContentQuickPageBuilderRoute
+  '/app/magic-designs/$id': typeof AuthenticatedAppMagicDesignsIdRoute
   '/app/ops/admin-team': typeof AuthenticatedAppOpsAdminTeamRoute
   '/app/ops/directory-moderation': typeof AuthenticatedAppOpsDirectoryModerationRoute
   '/app/ops/email-branding': typeof AuthenticatedAppOpsEmailBrandingRoute
@@ -789,6 +818,7 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
   '/api/public/ops/email-probe': typeof ApiPublicOpsEmailProbeRoute
   '/api/public/ops/sync-health': typeof ApiPublicOpsSyncHealthRoute
+  '/app/magic-designs/': typeof AuthenticatedAppMagicDesignsIndexRoute
   '/app/admin/help/articles': typeof AuthenticatedAppAdminHelpArticlesRouteWithChildren
   '/app/admin/help/categories': typeof AuthenticatedAppAdminHelpCategoriesRoute
   '/app/admin/help/feedback': typeof AuthenticatedAppAdminHelpFeedbackRoute
@@ -802,10 +832,12 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/beta': typeof BetaRoute
   '/login': typeof LoginRoute
+  '/magic-designs': typeof MagicDesignsRoute
   '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/templates': typeof TemplatesRoute
   '/terms': typeof TermsRoute
   '/a/$slug': typeof ASlugRoute
   '/a/founders-domain-test': typeof AFoundersDomainTestRoute
@@ -854,6 +886,7 @@ export interface FileRoutesByTo {
   '/app/content/learning': typeof AuthenticatedAppContentLearningRoute
   '/app/content/migration': typeof AuthenticatedAppContentMigrationRoute
   '/app/content/quick-page-builder': typeof AuthenticatedAppContentQuickPageBuilderRoute
+  '/app/magic-designs/$id': typeof AuthenticatedAppMagicDesignsIdRoute
   '/app/ops/admin-team': typeof AuthenticatedAppOpsAdminTeamRoute
   '/app/ops/directory-moderation': typeof AuthenticatedAppOpsDirectoryModerationRoute
   '/app/ops/email-branding': typeof AuthenticatedAppOpsEmailBrandingRoute
@@ -891,6 +924,7 @@ export interface FileRoutesByTo {
   '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
   '/api/public/ops/email-probe': typeof ApiPublicOpsEmailProbeRoute
   '/api/public/ops/sync-health': typeof ApiPublicOpsSyncHealthRoute
+  '/app/magic-designs': typeof AuthenticatedAppMagicDesignsIndexRoute
   '/app/admin/help/articles': typeof AuthenticatedAppAdminHelpArticlesRouteWithChildren
   '/app/admin/help/categories': typeof AuthenticatedAppAdminHelpCategoriesRoute
   '/app/admin/help/feedback': typeof AuthenticatedAppAdminHelpFeedbackRoute
@@ -907,10 +941,12 @@ export interface FileRoutesById {
   '/beta': typeof BetaRoute
   '/help': typeof HelpRouteWithChildren
   '/login': typeof LoginRoute
+  '/magic-designs': typeof MagicDesignsRoute
   '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/templates': typeof TemplatesRoute
   '/terms': typeof TermsRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
   '/a/$slug': typeof ASlugRoute
@@ -960,6 +996,7 @@ export interface FileRoutesById {
   '/_authenticated/app/content/learning': typeof AuthenticatedAppContentLearningRoute
   '/_authenticated/app/content/migration': typeof AuthenticatedAppContentMigrationRoute
   '/_authenticated/app/content/quick-page-builder': typeof AuthenticatedAppContentQuickPageBuilderRoute
+  '/_authenticated/app/magic-designs/$id': typeof AuthenticatedAppMagicDesignsIdRoute
   '/_authenticated/app/ops/admin-team': typeof AuthenticatedAppOpsAdminTeamRoute
   '/_authenticated/app/ops/directory-moderation': typeof AuthenticatedAppOpsDirectoryModerationRoute
   '/_authenticated/app/ops/email-branding': typeof AuthenticatedAppOpsEmailBrandingRoute
@@ -997,6 +1034,7 @@ export interface FileRoutesById {
   '/api/public/hooks/sync-sharetribe': typeof ApiPublicHooksSyncSharetribeRoute
   '/api/public/ops/email-probe': typeof ApiPublicOpsEmailProbeRoute
   '/api/public/ops/sync-health': typeof ApiPublicOpsSyncHealthRoute
+  '/_authenticated/app/magic-designs/': typeof AuthenticatedAppMagicDesignsIndexRoute
   '/_authenticated/app/admin/help/articles': typeof AuthenticatedAppAdminHelpArticlesRouteWithChildren
   '/_authenticated/app/admin/help/categories': typeof AuthenticatedAppAdminHelpCategoriesRoute
   '/_authenticated/app/admin/help/feedback': typeof AuthenticatedAppAdminHelpFeedbackRoute
@@ -1013,10 +1051,12 @@ export interface FileRouteTypes {
     | '/beta'
     | '/help'
     | '/login'
+    | '/magic-designs'
     | '/privacy'
     | '/reset-password'
     | '/signup'
     | '/sitemap.xml'
+    | '/templates'
     | '/terms'
     | '/app'
     | '/a/$slug'
@@ -1066,6 +1106,7 @@ export interface FileRouteTypes {
     | '/app/content/learning'
     | '/app/content/migration'
     | '/app/content/quick-page-builder'
+    | '/app/magic-designs/$id'
     | '/app/ops/admin-team'
     | '/app/ops/directory-moderation'
     | '/app/ops/email-branding'
@@ -1103,6 +1144,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/sync-sharetribe'
     | '/api/public/ops/email-probe'
     | '/api/public/ops/sync-health'
+    | '/app/magic-designs/'
     | '/app/admin/help/articles'
     | '/app/admin/help/categories'
     | '/app/admin/help/feedback'
@@ -1116,10 +1158,12 @@ export interface FileRouteTypes {
     | '/'
     | '/beta'
     | '/login'
+    | '/magic-designs'
     | '/privacy'
     | '/reset-password'
     | '/signup'
     | '/sitemap.xml'
+    | '/templates'
     | '/terms'
     | '/a/$slug'
     | '/a/founders-domain-test'
@@ -1168,6 +1212,7 @@ export interface FileRouteTypes {
     | '/app/content/learning'
     | '/app/content/migration'
     | '/app/content/quick-page-builder'
+    | '/app/magic-designs/$id'
     | '/app/ops/admin-team'
     | '/app/ops/directory-moderation'
     | '/app/ops/email-branding'
@@ -1205,6 +1250,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/sync-sharetribe'
     | '/api/public/ops/email-probe'
     | '/api/public/ops/sync-health'
+    | '/app/magic-designs'
     | '/app/admin/help/articles'
     | '/app/admin/help/categories'
     | '/app/admin/help/feedback'
@@ -1220,10 +1266,12 @@ export interface FileRouteTypes {
     | '/beta'
     | '/help'
     | '/login'
+    | '/magic-designs'
     | '/privacy'
     | '/reset-password'
     | '/signup'
     | '/sitemap.xml'
+    | '/templates'
     | '/terms'
     | '/_authenticated/app'
     | '/a/$slug'
@@ -1273,6 +1321,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/content/learning'
     | '/_authenticated/app/content/migration'
     | '/_authenticated/app/content/quick-page-builder'
+    | '/_authenticated/app/magic-designs/$id'
     | '/_authenticated/app/ops/admin-team'
     | '/_authenticated/app/ops/directory-moderation'
     | '/_authenticated/app/ops/email-branding'
@@ -1310,6 +1359,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/sync-sharetribe'
     | '/api/public/ops/email-probe'
     | '/api/public/ops/sync-health'
+    | '/_authenticated/app/magic-designs/'
     | '/_authenticated/app/admin/help/articles'
     | '/_authenticated/app/admin/help/categories'
     | '/_authenticated/app/admin/help/feedback'
@@ -1326,10 +1376,12 @@ export interface RootRouteChildren {
   BetaRoute: typeof BetaRoute
   HelpRoute: typeof HelpRouteWithChildren
   LoginRoute: typeof LoginRoute
+  MagicDesignsRoute: typeof MagicDesignsRoute
   PrivacyRoute: typeof PrivacyRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  TemplatesRoute: typeof TemplatesRoute
   TermsRoute: typeof TermsRoute
   ASlugRoute: typeof ASlugRoute
   AFoundersDomainTestRoute: typeof AFoundersDomainTestRoute
@@ -1362,6 +1414,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/templates': {
+      id: '/templates'
+      path: '/templates'
+      fullPath: '/templates'
+      preLoaderRoute: typeof TemplatesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sitemap.xml': {
       id: '/sitemap.xml'
       path: '/sitemap.xml'
@@ -1388,6 +1447,13 @@ declare module '@tanstack/react-router' {
       path: '/privacy'
       fullPath: '/privacy'
       preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/magic-designs': {
+      id: '/magic-designs'
+      path: '/magic-designs'
+      fullPath: '/magic-designs'
+      preLoaderRoute: typeof MagicDesignsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -1649,6 +1715,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppAddonsRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/magic-designs/': {
+      id: '/_authenticated/app/magic-designs/'
+      path: '/magic-designs'
+      fullPath: '/app/magic-designs/'
+      preLoaderRoute: typeof AuthenticatedAppMagicDesignsIndexRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
     '/api/public/ops/sync-health': {
       id: '/api/public/ops/sync-health'
       path: '/api/public/ops/sync-health'
@@ -1906,6 +1979,13 @@ declare module '@tanstack/react-router' {
       path: '/ops/admin-team'
       fullPath: '/app/ops/admin-team'
       preLoaderRoute: typeof AuthenticatedAppOpsAdminTeamRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/magic-designs/$id': {
+      id: '/_authenticated/app/magic-designs/$id'
+      path: '/magic-designs/$id'
+      fullPath: '/app/magic-designs/$id'
+      preLoaderRoute: typeof AuthenticatedAppMagicDesignsIdRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
     '/_authenticated/app/content/quick-page-builder': {
@@ -2196,6 +2276,7 @@ interface AuthenticatedAppRouteChildren {
   AuthenticatedAppContentLearningRoute: typeof AuthenticatedAppContentLearningRoute
   AuthenticatedAppContentMigrationRoute: typeof AuthenticatedAppContentMigrationRoute
   AuthenticatedAppContentQuickPageBuilderRoute: typeof AuthenticatedAppContentQuickPageBuilderRoute
+  AuthenticatedAppMagicDesignsIdRoute: typeof AuthenticatedAppMagicDesignsIdRoute
   AuthenticatedAppOpsAdminTeamRoute: typeof AuthenticatedAppOpsAdminTeamRoute
   AuthenticatedAppOpsDirectoryModerationRoute: typeof AuthenticatedAppOpsDirectoryModerationRoute
   AuthenticatedAppOpsEmailBrandingRoute: typeof AuthenticatedAppOpsEmailBrandingRoute
@@ -2223,6 +2304,7 @@ interface AuthenticatedAppRouteChildren {
   AuthenticatedAppSeoRankTrackerRoute: typeof AuthenticatedAppSeoRankTrackerRoute
   AuthenticatedAppSeoScrapeImportRoute: typeof AuthenticatedAppSeoScrapeImportRoute
   AuthenticatedAppSeoSitemapRoute: typeof AuthenticatedAppSeoSitemapRoute
+  AuthenticatedAppMagicDesignsIndexRoute: typeof AuthenticatedAppMagicDesignsIndexRoute
   AuthenticatedAppAdminHelpArticlesRoute: typeof AuthenticatedAppAdminHelpArticlesRouteWithChildren
   AuthenticatedAppAdminHelpCategoriesRoute: typeof AuthenticatedAppAdminHelpCategoriesRoute
   AuthenticatedAppAdminHelpFeedbackRoute: typeof AuthenticatedAppAdminHelpFeedbackRoute
@@ -2258,6 +2340,7 @@ const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppContentMigrationRoute: AuthenticatedAppContentMigrationRoute,
   AuthenticatedAppContentQuickPageBuilderRoute:
     AuthenticatedAppContentQuickPageBuilderRoute,
+  AuthenticatedAppMagicDesignsIdRoute: AuthenticatedAppMagicDesignsIdRoute,
   AuthenticatedAppOpsAdminTeamRoute: AuthenticatedAppOpsAdminTeamRoute,
   AuthenticatedAppOpsDirectoryModerationRoute:
     AuthenticatedAppOpsDirectoryModerationRoute,
@@ -2292,6 +2375,8 @@ const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppSeoRankTrackerRoute: AuthenticatedAppSeoRankTrackerRoute,
   AuthenticatedAppSeoScrapeImportRoute: AuthenticatedAppSeoScrapeImportRoute,
   AuthenticatedAppSeoSitemapRoute: AuthenticatedAppSeoSitemapRoute,
+  AuthenticatedAppMagicDesignsIndexRoute:
+    AuthenticatedAppMagicDesignsIndexRoute,
   AuthenticatedAppAdminHelpArticlesRoute:
     AuthenticatedAppAdminHelpArticlesRouteWithChildren,
   AuthenticatedAppAdminHelpCategoriesRoute:
@@ -2342,10 +2427,12 @@ const rootRouteChildren: RootRouteChildren = {
   BetaRoute: BetaRoute,
   HelpRoute: HelpRouteWithChildren,
   LoginRoute: LoginRoute,
+  MagicDesignsRoute: MagicDesignsRoute,
   PrivacyRoute: PrivacyRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  TemplatesRoute: TemplatesRoute,
   TermsRoute: TermsRoute,
   ASlugRoute: ASlugRoute,
   AFoundersDomainTestRoute: AFoundersDomainTestRoute,

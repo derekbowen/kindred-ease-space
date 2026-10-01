@@ -1,0 +1,134 @@
+import React, { useState } from 'react'
+import { ChevronRight, MoreHorizontal, ChevronDown } from 'lucide-react'
+
+// --- merged from src/Breadcrumb.tsx ---
+export type BreadcrumbItem = {
+  label: string
+  href: string
+  icon?: React.ReactNode
+  items?: BreadcrumbItem[]
+}
+type SeparatorType = 'slash' | 'chevron' | React.ReactNode
+export interface BreadcrumbProps {
+  items: BreadcrumbItem[]
+  separator?: SeparatorType
+  maxItems?: number
+}
+const Dropdown = ({ items }: { items: BreadcrumbItem[] }) => {
+  const [isOpen, setIsOpen] = useState(false)
+  return (
+    <div className="relative inline-block">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-1 px-2 py-1 hover:bg-gray-100 rounded"
+        aria-haspopup="true"
+        aria-expanded={isOpen}
+      >
+        <MoreHorizontal size={16} />
+        <ChevronDown size={14} />
+      </button>
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded shadow-sm z-10">
+          {items.map((item, index) => (
+            <a
+              key={index}
+              href={item.href}
+              className="block px-4 py-2 hover:bg-gray-100 text-sm"
+            >
+              <div className="flex items-center gap-2">
+                {item.icon}
+                {item.label}
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+const BreadcrumbItem = ({
+  item,
+  isLast,
+  separator,
+}: {
+  item: BreadcrumbItem
+  isLast: boolean
+  separator: SeparatorType
+}) => {
+  const maxLength = 20
+  const truncatedLabel =
+    item.label.length > maxLength
+      ? `${item.label.slice(0, maxLength)}...`
+      : item.label
+  return (
+    <li className="flex items-center">
+      <a
+        href={item.href}
+        className={`flex items-center gap-1 px-2 py-1 rounded hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300 ${isLast ? 'font-semibold pointer-events-none' : ''}`}
+        aria-current={isLast ? 'page' : undefined}
+      >
+        {item.icon}
+        <span>{truncatedLabel}</span>
+        {item.items && !isLast && <ChevronDown size={14} />}
+      </a>
+      {!isLast && (
+        <span className="mx-1 text-gray-400">
+          {separator === 'slash' ? (
+            '/'
+          ) : separator === 'chevron' ? (
+            <ChevronRight size={16} />
+          ) : (
+            separator
+          )}
+        </span>
+      )}
+      {item.items && <Dropdown items={item.items} />}
+    </li>
+  )
+}
+export const Breadcrumb: React.FC<BreadcrumbProps> = ({
+  items,
+  separator = 'slash',
+  maxItems = 3,
+}) => {
+  const [start, end] = [0, items.length]
+  const shouldCollapse = items.length > maxItems
+  const visibleItems = shouldCollapse
+    ? [...items.slice(0, 1), ...items.slice(end - (maxItems - 1), end)]
+    : items
+  const collapsedItems = shouldCollapse
+    ? items.slice(1, end - (maxItems - 1))
+    : []
+  return (
+    <nav aria-label="breadcrumb" className="w-full">
+      <ol className="flex items-center flex-wrap gap-y-2">
+        {visibleItems.map((item, index) => {
+          if (index === 1 && shouldCollapse) {
+            return (
+              <li key="collapsed" className="flex items-center">
+                <Dropdown items={collapsedItems} />
+                <span className="mx-1 text-gray-400">
+                  {separator === 'slash' ? (
+                    '/'
+                  ) : separator === 'chevron' ? (
+                    <ChevronRight size={16} />
+                  ) : (
+                    separator
+                  )}
+                </span>
+              </li>
+            )
+          }
+          return (
+            <BreadcrumbItem
+              key={index}
+              item={item}
+              isLast={index === visibleItems.length - 1}
+              separator={separator}
+            />
+          )
+        })}
+      </ol>
+    </nav>
+  )
+}
