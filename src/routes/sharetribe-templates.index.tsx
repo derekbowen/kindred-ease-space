@@ -49,6 +49,18 @@ function TemplateStorePage() {
               start from the Sharetribe Web Template's own pages and transaction flows, so every
               screen you buy maps to a page your marketplace already has.
             </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-2 text-sm">
+              {["Buy a template", "Open it in Claude Code", "Add matching iOS & Android apps"].map(
+                (step, i) => (
+                  <span
+                    key={step}
+                    className="rounded-full border border-border px-3 py-1 text-muted-foreground"
+                  >
+                    {i + 1}. {step}
+                  </span>
+                ),
+              )}
+            </div>
           </div>
         </section>
 

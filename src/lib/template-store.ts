@@ -10,7 +10,14 @@
 // static file). The paid download is the full source project.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type TemplateFlow = "booking-hourly" | "booking-daily" | "booking-timeslot" | "purchase";
+export type TemplateFlow =
+  | "booking-hourly"
+  | "booking-daily"
+  | "booking-timeslot"
+  | "purchase"
+  | "negotiation"
+  | "inquiry"
+  | "download";
 
 export type StoreTemplate = {
   slug: string;
@@ -30,6 +37,9 @@ export const TEMPLATE_FLOW_LABEL: Record<TemplateFlow, string> = {
   "booking-daily": "Daily booking",
   "booking-timeslot": "Time-slot booking",
   purchase: "Product purchase",
+  negotiation: "Quote & negotiation",
+  inquiry: "Inquiry",
+  download: "Digital download",
 };
 
 /** Pages every template ships with, mapped to their Sharetribe Web Template equivalents. */
@@ -215,6 +225,351 @@ export const STORE_TEMPLATES: StoreTemplate[] = [
       "Session picker with spots left and 5- or 10-class packs",
       "Recurring schedule builder for teachers",
       "Health-waiver step at checkout and pack credits in the inbox",
+    ],
+  },
+  {
+    slug: "parkspot",
+    name: "ParkSpot",
+    tagline: "Rent parking spaces by the hour or day",
+    niche: "Parking",
+    description:
+      "A navy-and-yellow parking marketplace where drivers book driveways, garages and lots by the hour or the day near stadiums, airports and downtown.",
+    flow: "booking-hourly",
+    priceCents: 24900,
+    accent: "#0F2547",
+    bestFor: ["Driveway owners", "Garages & lots", "Event parking", "Monthly commuters"],
+    highlights: [
+      "Hourly or daily toggle with a live price breakdown",
+      "Spot specs: vehicle size, covered, EV charging, access hours",
+      "Access-code card in the inbox once a booking is accepted",
+    ],
+  },
+  {
+    slug: "deskhop",
+    name: "DeskHop",
+    tagline: "Book desks and offices by the hour",
+    niche: "Coworking",
+    description:
+      "An emerald coworking marketplace for hot desks, dedicated desks, private offices, meeting rooms and phone booths, booked by the hour or the day.",
+    flow: "booking-hourly",
+    priceCents: 24900,
+    accent: "#059669",
+    bestFor: ["Coworking spaces", "Offices with spare desks", "Meeting rooms", "Remote teams"],
+    highlights: [
+      "Seats per booking, using Sharetribe's seats feature",
+      "Opening hours, amenities grid and map on every listing",
+      "Door-access card in the inbox after acceptance",
+    ],
+  },
+  {
+    slug: "kitchenhub",
+    name: "KitchenHub",
+    tagline: "Rent commercial kitchens by the hour",
+    niche: "Commercial kitchens",
+    description:
+      "A bold red marketplace where caterers, food trucks, bakers and meal-prep brands book licensed commercial kitchens by the hour, with storage add-ons.",
+    flow: "booking-hourly",
+    priceCents: 29900,
+    accent: "#D23A22",
+    bestFor: ["Commissary kitchens", "Caterers", "Food trucks", "Bakers & meal prep"],
+    highlights: [
+      "Equipment list and dry, cold and frozen storage pricing",
+      "Certifications step in the listing wizard",
+      "Cleaning checklist on every booking in the inbox",
+    ],
+  },
+  {
+    slug: "harborly",
+    name: "Harborly",
+    tagline: "Boat rentals and charters",
+    niche: "Boat rentals",
+    description:
+      "A navy-and-coral boating marketplace for yachts, sailboats, pontoons, fishing boats and jet skis, rented bareboat or with a licensed captain.",
+    flow: "booking-daily",
+    priceCents: 29900,
+    accent: "#0B2545",
+    bestFor: ["Boat owners", "Charter captains", "Marinas", "Fishing guides"],
+    highlights: [
+      "Half-day or full-day trips with optional captain",
+      "Captain card and boat specs on every listing",
+      "Wizard steps for specs, captain and availability",
+    ],
+  },
+  {
+    slug: "campout",
+    name: "CampOut",
+    tagline: "Book campsites and glamping",
+    niche: "Camping & glamping",
+    description:
+      "A forest-green outdoor marketplace for tent sites, RV pads, cabins, treehouses, farm stays and glamping, booked by the night.",
+    flow: "booking-daily",
+    priceCents: 24900,
+    accent: "#2A5A3B",
+    bestFor: ["Landowners", "Glamping hosts", "Farms", "RV parks"],
+    highlights: [
+      "Nightly booking with guests, vehicles and pets",
+      "Site types and amenity filters on search",
+      "Capacity, site type and calendar steps for hosts",
+    ],
+  },
+  {
+    slug: "gigsy",
+    name: "Gigsy",
+    tagline: "Get quotes from top freelancers",
+    niche: "Freelance services",
+    description:
+      "A violet freelance marketplace where clients send a brief, freelancers reply with an offer, and work is delivered and reviewed in the inbox.",
+    flow: "negotiation",
+    priceCents: 29900,
+    accent: "#5B35F5",
+    bestFor: ["Freelance designers", "Developers", "Writers", "Video & marketing"],
+    highlights: [
+      "Request a quote, then offer and counter-offer (default-negotiation)",
+      "Delivery and revision steps in the transaction view",
+      "Portfolio and FAQ steps in the listing wizard",
+    ],
+  },
+  {
+    slug: "craftly",
+    name: "Craftly",
+    tagline: "Buy handmade goods from makers",
+    niche: "Handmade goods",
+    description:
+      "A warm terracotta marketplace for handmade ceramics, jewelry, candles, textiles, woodwork and prints, with maker shops and gift guides.",
+    flow: "purchase",
+    priceCents: 24900,
+    accent: "#B5532F",
+    bestFor: ["Makers & artisans", "Craft collectives", "Gift shops", "Small brands"],
+    highlights: [
+      "Product variations (size, color) with their own stock",
+      "Cart, shipping address and order tracking",
+      "Maker shop pages and favorites",
+    ],
+  },
+  {
+    slug: "vowly",
+    name: "Vowly",
+    tagline: "Find your wedding vendors",
+    niche: "Wedding vendors",
+    description:
+      "An elegant rose-and-ivory directory of wedding photographers, venues, florists, caterers, music and planners, where couples send an inquiry.",
+    flow: "inquiry",
+    priceCents: 24900,
+    accent: "#8C4352",
+    bestFor: ["Wedding photographers", "Venues", "Florists & caterers", "Planners"],
+    highlights: [
+      "Inquiry form with wedding date, guests and budget (default-inquiry)",
+      "Packages list and portfolio lightbox",
+      "Service-area and packages steps in the listing wizard",
+    ],
+  },
+  {
+    slug: "courttime",
+    name: "CourtTime",
+    tagline: "Book sports courts by the hour",
+    niche: "Sports courts",
+    description:
+      "A sporty green marketplace for tennis, pickleball, padel, basketball, soccer and volleyball courts, with hourly slots and open-play sessions.",
+    flow: "booking-timeslot",
+    priceCents: 24900,
+    accent: "#0E7C3A",
+    bestFor: ["Clubs", "Schools & parks", "Private courts", "Coaches"],
+    highlights: [
+      "Hourly availability grid with open-play seats",
+      "Invite players to a booking from the inbox",
+      "Sport, surface and hours steps in the listing wizard",
+    ],
+  },
+  {
+    slug: "tutorly",
+    name: "Tutorly",
+    tagline: "Book 1-on-1 online tutors",
+    niche: "Online tutoring",
+    description:
+      "A bright blue tutoring marketplace where students book 1-on-1 online lessons by subject and level, with intro videos and lesson notes.",
+    flow: "booking-timeslot",
+    priceCents: 24900,
+    accent: "#0279BD",
+    bestFor: ["Tutors", "Tutoring agencies", "Test prep", "Language teachers"],
+    highlights: [
+      "Weekly availability grid with lesson lengths",
+      "Video-room dialog and lesson notes in the inbox",
+      "Credentials and subjects steps for tutors",
+    ],
+  },
+  {
+    slug: "taskpost",
+    name: "TaskPost",
+    tagline: "Post a job, get offers from local pros",
+    niche: "Local jobs",
+    description:
+      "An orange reverse marketplace: customers post a job, local pros send offers, and the customer accepts one and pays when it's done.",
+    flow: "negotiation",
+    priceCents: 29900,
+    accent: "#C94A0C",
+    bestFor: ["Handyman networks", "Cleaning & moving", "Local services", "Odd-job apps"],
+    highlights: [
+      "Customer-posted jobs with budget and timing (request-quote flow)",
+      "Offer, counter-offer and accept in the inbox",
+      "Job map and neighborhood filters",
+    ],
+  },
+  {
+    slug: "harvestly",
+    name: "Harvestly",
+    tagline: "Fresh produce from local farms",
+    niche: "Farm-to-table",
+    description:
+      "A fresh green marketplace where local farms sell produce, eggs, meat and dairy for pickup or local delivery.",
+    flow: "purchase",
+    priceCents: 24900,
+    accent: "#2F6B3A",
+    bestFor: ["Farms", "Farmers' markets", "Food co-ops", "CSA programs"],
+    highlights: [
+      "Per-unit stock (lb, dozen, bunch) with a cart across farms",
+      "Pickup-day slots and local-delivery options",
+      "Farm profiles with growing-practice badges",
+    ],
+  },
+  {
+    slug: "stashly",
+    name: "Stashly",
+    tagline: "Rent storage space from neighbors",
+    niche: "Peer-to-peer storage",
+    description:
+      "A teal storage marketplace where neighbors rent out garages, basements, attics and closets, with a size guide and earnings calculator.",
+    flow: "booking-daily",
+    priceCents: 24900,
+    accent: "#1F766F",
+    bestFor: ["Storage startups", "Property owners", "Garage sharing", "Local communities"],
+    highlights: [
+      "Size comparison from closet to full garage",
+      "Move-in date booking with an inventory list at checkout",
+      "Earnings calculator for hosts on the landing page",
+    ],
+  },
+  {
+    slug: "bulkly",
+    name: "Bulkly",
+    tagline: "Wholesale from independent brands",
+    niche: "Wholesale B2B",
+    description:
+      "A navy-and-lime wholesale marketplace where retailers buy from independent brands with tiered case pricing and order minimums.",
+    flow: "purchase",
+    priceCents: 29900,
+    accent: "#1A468F",
+    bestFor: [
+      "Wholesale platforms",
+      "Independent brands",
+      "Boutique retailers",
+      "B2B distributors",
+    ],
+    highlights: [
+      "Tiered pricing table by case quantity",
+      "Brand minimums and per-brand order summaries",
+      "Stock, shipping and pricing steps for brands",
+    ],
+  },
+  {
+    slug: "dressly",
+    name: "Dressly",
+    tagline: "Rent designer dresses",
+    niche: "Fashion rental",
+    description:
+      "A chic black-and-dusty-rose fashion rental marketplace where lenders rent designer dresses for 4- or 8-day windows.",
+    flow: "booking-daily",
+    priceCents: 24900,
+    accent: "#94585C",
+    bestFor: ["Fashion rental", "Designer closets", "Bridal & occasion wear", "Boutiques"],
+    highlights: [
+      "Size check with measurements on every listing",
+      "Rental calendar with shipping buffers",
+      "Return label card in the inbox",
+    ],
+  },
+  {
+    slug: "sitterly",
+    name: "Sitterly",
+    tagline: "Book trusted babysitters by the hour",
+    niche: "Childcare",
+    description:
+      "A friendly violet babysitting marketplace where parents book vetted sitters by the hour, with care types and service-area maps.",
+    flow: "booking-hourly",
+    priceCents: 24900,
+    accent: "#7856DE",
+    bestFor: ["Babysitting agencies", "Nanny networks", "Childcare startups", "Au pair services"],
+    highlights: [
+      "Hourly booking with number of children",
+      "Emergency-contact card shared after acceptance",
+      "Certifications and service-area steps for sitters",
+    ],
+  },
+  {
+    slug: "roomly",
+    name: "Roomly",
+    tagline: "Find rooms and flatshares",
+    niche: "Flatshares",
+    description:
+      "A green-and-navy flatshare marketplace where renters browse rooms, meet the flatmates and send an inquiry to the landlord.",
+    flow: "inquiry",
+    priceCents: 24900,
+    accent: "#149C6E",
+    bestFor: ["Flatshare sites", "Student housing", "Co-living operators", "Landlords"],
+    highlights: [
+      "Inquiry with move-in date and a short intro (default-inquiry)",
+      "Rent terms, bills and flatmate summary on every room",
+      "Room, flat, rent and availability wizard steps",
+    ],
+  },
+  {
+    slug: "stackd",
+    name: "Stackd",
+    tagline: "Buy instant digital downloads",
+    niche: "Digital products",
+    description:
+      "A bold orange marketplace for planners, e-books, photo packs, music loops and templates with instant download after checkout.",
+    flow: "download",
+    priceCents: 24900,
+    accent: "#FF5A1F",
+    bestFor: ["Digital creators", "Template shops", "Music producers", "Course creators"],
+    highlights: [
+      "Instant download library after checkout (default-download)",
+      "Preview carousel and file-type badges",
+      "Sales stats for creators",
+    ],
+  },
+  {
+    slug: "petpal",
+    name: "PetPal",
+    tagline: "Book trusted pet sitters and boarding",
+    niche: "Pet care",
+    description:
+      "A warm amber pet-care marketplace for boarding, house sitting, drop-in visits and dog walks, with photo updates during each stay.",
+    flow: "booking-daily",
+    priceCents: 24900,
+    accent: "#D66D08",
+    bestFor: ["Pet sitters", "Dog walkers", "Boarding hosts", "Pet-care startups"],
+    highlights: [
+      "Per-night, per-visit or per-walk pricing by service",
+      "Pet selector at checkout",
+      "Photo feed of updates in the booking's inbox",
+    ],
+  },
+  {
+    slug: "wanderly",
+    name: "Wanderly",
+    tagline: "Book local tours and experiences",
+    niche: "Tours & experiences",
+    description:
+      "A sunset-coral travel marketplace where locals host food walks, kayak tours, cooking classes and photo walks with seats per departure.",
+    flow: "booking-timeslot",
+    priceCents: 29900,
+    accent: "#D23F1F",
+    bestFor: ["Tour guides", "Experience hosts", "Travel startups", "Activity operators"],
+    highlights: [
+      "Departure times with seats left and guest count",
+      "Itinerary builder and meeting-point step for hosts",
+      "What's included and what to bring on every booking",
     ],
   },
 ];

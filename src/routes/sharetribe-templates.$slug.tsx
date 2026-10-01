@@ -142,6 +142,27 @@ function TemplateDetailPage() {
               ))}
             </ul>
 
+            <h2 className="mt-10 text-xl font-bold">Make it yours with Claude Code</h2>
+            <ol className="mt-3 list-decimal space-y-2 pl-5 text-muted-foreground">
+              <li>Buy and download the project.</li>
+              <li>
+                Open the folder in{" "}
+                <a
+                  href="https://claude.com/claude-code"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-foreground underline underline-offset-4"
+                >
+                  Claude Code
+                </a>
+                .
+              </li>
+              <li>
+                Ask for your changes in plain words: your brand, your listing fields, your copy. The
+                README and the single brand file tell Claude where everything lives.
+              </li>
+            </ol>
+
             <h2 className="mt-10 text-xl font-bold">Pages included</h2>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               {TEMPLATE_PAGES.map((p) => (
@@ -183,6 +204,24 @@ function TemplateDetailPage() {
               >
                 Open full preview ↗
               </a>
+
+              <div className="mt-6 rounded-xl border border-border bg-muted/40 p-4">
+                <p className="text-sm font-semibold">Want it on iOS & Android too?</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  We build matching native apps for this design and publish them to the App Store
+                  and Google Play under your name.
+                </p>
+                <Link
+                  to="/help/contact"
+                  search={{
+                    category: "sales",
+                    subject: `iOS & Android apps for ${t.name}`,
+                  }}
+                  className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-md bg-foreground text-sm font-medium text-background hover:opacity-90"
+                >
+                  Get the iOS & Android apps
+                </Link>
+              </div>
 
               <dl className="mt-6 space-y-3 border-t border-border pt-6 text-sm">
                 <Row label="Niche" value={t.niche} />
