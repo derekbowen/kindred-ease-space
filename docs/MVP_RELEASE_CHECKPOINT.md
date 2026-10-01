@@ -67,6 +67,7 @@ server-side), not finished.
 | 2026-09-29 | BLOCKER FOUND for public delivery: both Workers run on the founders.click zone and the app is on a route, so the edge's global fetch() to www.founders.click never reaches the app — Cloudflare sends same-zone Worker subrequests to the zone origin (the pre-cutover Lovable host, which still serves an old build against the production DB). Evidence: Cloudflare docs; the in-app canonical audit recorded identical link counts every day 09-25…09-29 across several releases, while the live Worker serves more links. Fixed on the branch: FOUNDERS_APP service binding (edge), global_fetch_strictly_public (app probes), fail-closed without the binding, post-deploy binding check, HSTS by forwarded host | 99d27af, 6cd7ede; gate review of 99d27af CLEAN (its MEDIUMs fixed in 6cd7ede) |
 | 2026-09-29 | Stripe test-mode checkout prepared: the same source deploys as `create-checkout-test` (test key, STRIPE_TEST_WORKSPACE_IDS allowlist, refuses non-test keys); runbook gains the full lifecycle with public serving/sitemap checks on a test clock | 7ad7a5a, 4306712; gate review CLEAN |
 | 2026-10-01 | Founder state re-read (read-only): internal grant active (page_limit 1,000,000), workspace_is_internal_unlimited true, 63 published listings, Sharetribe sync success 2026-10-01 08:00:05Z, 0 pages, 1 domain row (test.* ssl_pending). Qualifying real targets: City Hub "New York" (country/region empty as recorded, 3 listings: 2 experiences + 1 pool); Category Page "pool" (17), "experiences" (20) | SQL |
+| 2026-10-01 | Gate review of 6cd7ede: CLEAN (no HIGH/CRITICAL). Its cheap MEDIUMs fixed: the edge workflow runs the edge tests (which pin the binding) BEFORE uploading; a failed config lookup is logged; README states the fail-closed scope (without the binding a host serves its own site only from cached config, ≤24 h, then 404s) | 5a47fad |
 
 ## Design decisions (the spine — every workstream builds on these)
 
@@ -159,7 +160,8 @@ Zone poolrentalnearme.com is on Cloudflare DNS. test.poolrentalnearme.com is NOT
 
 ## One consolidated approval request
 
-1. **Edge deploy:** dispatch `Deploy Edge Worker` (confirm `deploy`) from the launch branch. Brings the
+1. **Edge deploy:** dispatch `Deploy Edge Worker` (confirm `deploy`) from the launch branch at `5a47fad`
+   (it runs the edge tests first). Brings the
    binding, fail-closed, kill switch and stale-config fallback; verifies routes and the binding.
    No customer domain is active, so no live traffic changes.
 2. **App deploy, after 1:** merge the launch branch up to `6cd7ede` into `main` (auto-deploys the Worker):
