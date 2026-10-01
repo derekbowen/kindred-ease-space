@@ -1,11 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { canonicalUrl } from "@/lib/canonical";
 import { BUILD_TIME } from "@/lib/build-info";
+import { STORE_TEMPLATES } from "@/lib/template-store";
 import { SITEMAP_VARY, servesPlatformSitemap } from "@/lib/sitemap.server";
 
 // Only public, indexable routes. Auth pages (/login, /signup, /reset-password)
 // are intentionally excluded — they're Disallow'd in robots.txt.
-const ROUTES = ["/", "/help", "/privacy", "/terms", "/beta"];
+const ROUTES = [
+  "/",
+  "/help",
+  "/privacy",
+  "/terms",
+  "/beta",
+  "/sharetribe-templates",
+  ...STORE_TEMPLATES.map((t) => `/sharetribe-templates/${t.slug}`),
+];
 
 export const Route = createFileRoute("/sitemap.xml")({
   server: {

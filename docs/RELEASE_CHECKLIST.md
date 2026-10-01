@@ -132,6 +132,11 @@ check `list_migrations` and skip what is applied), in this order:
 - [ ] `20260929000400_mvp_publish_checked.sql` (publish exactly the validated draft; one row `ok`)
 - [ ] `20260929000500_mvp_tenant_pages_server_writes.sql` (page rows written by the server only: the member write policies and client write grants go, members still read; three rows `ok`. Its rollback is security-regressive — see the file)
 
+The Sharetribe template store (independent of the MVP journey; harmless to the
+live build, which never reads the bucket):
+
+- [ ] `20261001000100_template_downloads_bucket.sql` (PRIVATE `template-downloads` bucket, 50 MB zip limit; platform admins may list and upload, nobody else has any access — buyers get a signed URL from `template-download`. Verify: `select public from storage.buckets where id = 'template-downloads'` → `false`)
+
 Then run the combined post-migration verification in `supabase/rollback/README.md`.
 
 Why all of them first:
@@ -170,6 +175,19 @@ on the gateway answers every call 401.
 supabase functions deploy stripe-webhook      --no-verify-jwt --project-ref xbxhzinnfhosoztqaaao
 supabase functions deploy create-checkout                     --project-ref xbxhzinnfhosoztqaaao
 ```
+
+The Sharetribe template store's two public functions (no account needed to buy),
+both with `verify_jwt = false` — each validates its own input, and neither
+touches workspaces or subscriptions:
+
+```bash
+supabase functions deploy template-checkout   --no-verify-jwt --project-ref xbxhzinnfhosoztqaaao
+supabase functions deploy template-download   --no-verify-jwt --project-ref xbxhzinnfhosoztqaaao
+```
+
+Through MCP: each takes `index.ts` plus `../_shared/template-catalog.ts`. Then
+upload every template's zip at `/app/admin/template-store` (platform admin);
+`template-checkout` answers 409 `not_available_yet` for a template with no zip.
 
 `coach-briefing-cron` is **retired for the MVP** (the briefing is deferred; the
 security review found it still callable with the shared `CRON_SECRET`, one AI
