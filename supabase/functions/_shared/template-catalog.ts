@@ -21,6 +21,11 @@ export const TEMPLATE_PRODUCTS: readonly TemplateProduct[] = [
   { slug: "probook", name: "ProBook", priceCents: 29900 },
   { slug: "thrifted", name: "Thrifted", priceCents: 29900 },
   { slug: "venuely", name: "Venuely", priceCents: 29900 },
+  { slug: "driveshare", name: "DriveShare", priceCents: 29900 },
+  { slug: "staybnb", name: "Staybnb", priceCents: 29900 },
+  { slug: "loanable", name: "Loanable", priceCents: 24900 },
+  { slug: "trackroom", name: "Trackroom", priceCents: 24900 },
+  { slug: "flowspace", name: "Flowspace", priceCents: 24900 },
 ];
 
 export const TEMPLATE_BUCKET = "template-downloads";

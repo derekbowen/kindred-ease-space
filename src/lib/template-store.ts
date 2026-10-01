@@ -132,6 +132,91 @@ export const STORE_TEMPLATES: StoreTemplate[] = [
       "Capacity, size and event-type filters",
     ],
   },
+  {
+    slug: "driveshare",
+    name: "DriveShare",
+    tagline: "Peer-to-peer car rental",
+    niche: "Car rental",
+    description:
+      "A confident, electric-blue car-sharing marketplace in the Turo model: trips by the day, airport delivery, protection plans and check-in photos.",
+    flow: "booking-daily",
+    priceCents: 29900,
+    accent: "#2563EB",
+    bestFor: ["Car sharing", "EV rentals", "Vans & trucks", "Airport delivery"],
+    highlights: [
+      "Trip start/end with pickup or delivery and a protection-plan picker",
+      "Driver's license verification step at checkout",
+      "Check-in and check-out photos with odometer in the trip view",
+    ],
+  },
+  {
+    slug: "staybnb",
+    name: "Staybnb",
+    tagline: "Vacation rentals by the night",
+    niche: "Vacation rentals",
+    description:
+      "A warm, rounded short-term rental marketplace in the Airbnb model: category bar, photo mosaic, nightly pricing with cleaning fees, and Superhost profiles.",
+    flow: "booking-daily",
+    priceCents: 29900,
+    accent: "#E11D48",
+    bestFor: ["Vacation homes", "Cabins", "City apartments", "Unique stays"],
+    highlights: [
+      "Where/when/who search pill and a category icon bar",
+      "Five-photo mosaic, category ratings and a nightly price breakdown",
+      "Eight-step host listing wizard with calendar and house rules",
+    ],
+  },
+  {
+    slug: "loanable",
+    name: "Loanable",
+    tagline: "Rent premium digital assets",
+    niche: "Digital rentals",
+    description:
+      "A dark, gradient-lit marketplace for renting creative assets — presets, templates, sample packs, 3D models, fonts and courses — by the week or for life.",
+    flow: "purchase",
+    priceCents: 24900,
+    accent: "#7C3AED",
+    bestFor: ["Presets & LUTs", "Templates", "Sample packs", "Fonts & 3D"],
+    highlights: [
+      "7/30/90-day or lifetime license selector with seats",
+      "Library with license keys, expiry countdowns and downloads",
+      "Previews by asset type: audio, before/after, type tester, 3D",
+    ],
+  },
+  {
+    slug: "trackroom",
+    name: "Trackroom",
+    tagline: "Book recording studios by the hour",
+    niche: "Studio booking",
+    description:
+      "A moody, magenta-lit marketplace for recording, rehearsal and podcast studios, booked by the hour with an optional engineer and paid add-ons.",
+    flow: "booking-hourly",
+    priceCents: 24900,
+    accent: "#DB2777",
+    bestFor: ["Recording studios", "Rehearsal rooms", "Podcast studios", "Engineers"],
+    highlights: [
+      "Hourly booking with engineer toggle and mixing/mastering add-ons",
+      "Grouped gear lists, engineer credits and a waveform player",
+      "File delivery for stems in the session view",
+    ],
+  },
+  {
+    slug: "flowspace",
+    name: "Flowspace",
+    tagline: "Book yoga classes and teachers",
+    niche: "Yoga & wellness",
+    description:
+      "A calm, sage-green yoga marketplace where independent teachers list drop-in, private, online and retreat classes, with class packs and waitlists.",
+    flow: "booking-timeslot",
+    priceCents: 24900,
+    accent: "#4D7C5A",
+    bestFor: ["Yoga teachers", "Studios", "Online classes", "Retreats"],
+    highlights: [
+      "Session picker with spots left and 5- or 10-class packs",
+      "Recurring schedule builder for teachers",
+      "Health-waiver step at checkout and pack credits in the inbox",
+    ],
+  },
 ];
 
 export function getStoreTemplate(slug: string): StoreTemplate | undefined {
