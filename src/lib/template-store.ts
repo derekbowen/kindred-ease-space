@@ -10,7 +10,13 @@
 // static file). The paid download is the full source project.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type TemplateFlow = "booking-hourly" | "booking-daily" | "booking-timeslot" | "purchase";
+export type TemplateFlow =
+  | "booking-hourly"
+  | "booking-daily"
+  | "booking-timeslot"
+  | "purchase"
+  | "negotiation"
+  | "inquiry";
 
 export type StoreTemplate = {
   slug: string;
@@ -30,6 +36,8 @@ export const TEMPLATE_FLOW_LABEL: Record<TemplateFlow, string> = {
   "booking-daily": "Daily booking",
   "booking-timeslot": "Time-slot booking",
   purchase: "Product purchase",
+  negotiation: "Quote & negotiation",
+  inquiry: "Inquiry",
 };
 
 /** Pages every template ships with, mapped to their Sharetribe Web Template equivalents. */
@@ -215,6 +223,159 @@ export const STORE_TEMPLATES: StoreTemplate[] = [
       "Session picker with spots left and 5- or 10-class packs",
       "Recurring schedule builder for teachers",
       "Health-waiver step at checkout and pack credits in the inbox",
+    ],
+  },
+  {
+    slug: "parkspot",
+    name: "ParkSpot",
+    tagline: "Rent parking spaces by the hour or day",
+    niche: "Parking",
+    description:
+      "A navy-and-yellow parking marketplace where drivers book driveways, garages and lots by the hour or the day near stadiums, airports and downtown.",
+    flow: "booking-hourly",
+    priceCents: 24900,
+    accent: "#0F2547",
+    bestFor: ["Driveway owners", "Garages & lots", "Event parking", "Monthly commuters"],
+    highlights: [
+      "Hourly or daily toggle with a live price breakdown",
+      "Spot specs: vehicle size, covered, EV charging, access hours",
+      "Access-code card in the inbox once a booking is accepted",
+    ],
+  },
+  {
+    slug: "deskhop",
+    name: "DeskHop",
+    tagline: "Book desks and offices by the hour",
+    niche: "Coworking",
+    description:
+      "An emerald coworking marketplace for hot desks, dedicated desks, private offices, meeting rooms and phone booths, booked by the hour or the day.",
+    flow: "booking-hourly",
+    priceCents: 24900,
+    accent: "#059669",
+    bestFor: ["Coworking spaces", "Offices with spare desks", "Meeting rooms", "Remote teams"],
+    highlights: [
+      "Seats per booking, using Sharetribe's seats feature",
+      "Opening hours, amenities grid and map on every listing",
+      "Door-access card in the inbox after acceptance",
+    ],
+  },
+  {
+    slug: "kitchenhub",
+    name: "KitchenHub",
+    tagline: "Rent commercial kitchens by the hour",
+    niche: "Commercial kitchens",
+    description:
+      "A bold red marketplace where caterers, food trucks, bakers and meal-prep brands book licensed commercial kitchens by the hour, with storage add-ons.",
+    flow: "booking-hourly",
+    priceCents: 29900,
+    accent: "#D23A22",
+    bestFor: ["Commissary kitchens", "Caterers", "Food trucks", "Bakers & meal prep"],
+    highlights: [
+      "Equipment list and dry, cold and frozen storage pricing",
+      "Certifications step in the listing wizard",
+      "Cleaning checklist on every booking in the inbox",
+    ],
+  },
+  {
+    slug: "harborly",
+    name: "Harborly",
+    tagline: "Boat rentals and charters",
+    niche: "Boat rentals",
+    description:
+      "A navy-and-coral boating marketplace for yachts, sailboats, pontoons, fishing boats and jet skis, rented bareboat or with a licensed captain.",
+    flow: "booking-daily",
+    priceCents: 29900,
+    accent: "#0B2545",
+    bestFor: ["Boat owners", "Charter captains", "Marinas", "Fishing guides"],
+    highlights: [
+      "Half-day or full-day trips with optional captain",
+      "Captain card and boat specs on every listing",
+      "Wizard steps for specs, captain and availability",
+    ],
+  },
+  {
+    slug: "campout",
+    name: "CampOut",
+    tagline: "Book campsites and glamping",
+    niche: "Camping & glamping",
+    description:
+      "A forest-green outdoor marketplace for tent sites, RV pads, cabins, treehouses, farm stays and glamping, booked by the night.",
+    flow: "booking-daily",
+    priceCents: 24900,
+    accent: "#2A5A3B",
+    bestFor: ["Landowners", "Glamping hosts", "Farms", "RV parks"],
+    highlights: [
+      "Nightly booking with guests, vehicles and pets",
+      "Site types and amenity filters on search",
+      "Capacity, site type and calendar steps for hosts",
+    ],
+  },
+  {
+    slug: "gigsy",
+    name: "Gigsy",
+    tagline: "Get quotes from top freelancers",
+    niche: "Freelance services",
+    description:
+      "A violet freelance marketplace where clients send a brief, freelancers reply with an offer, and work is delivered and reviewed in the inbox.",
+    flow: "negotiation",
+    priceCents: 29900,
+    accent: "#5B35F5",
+    bestFor: ["Freelance designers", "Developers", "Writers", "Video & marketing"],
+    highlights: [
+      "Request a quote, then offer and counter-offer (default-negotiation)",
+      "Delivery and revision steps in the transaction view",
+      "Portfolio and FAQ steps in the listing wizard",
+    ],
+  },
+  {
+    slug: "craftly",
+    name: "Craftly",
+    tagline: "Buy handmade goods from makers",
+    niche: "Handmade goods",
+    description:
+      "A warm terracotta marketplace for handmade ceramics, jewelry, candles, textiles, woodwork and prints, with maker shops and gift guides.",
+    flow: "purchase",
+    priceCents: 24900,
+    accent: "#B5532F",
+    bestFor: ["Makers & artisans", "Craft collectives", "Gift shops", "Small brands"],
+    highlights: [
+      "Product variations (size, color) with their own stock",
+      "Cart, shipping address and order tracking",
+      "Maker shop pages and favorites",
+    ],
+  },
+  {
+    slug: "vowly",
+    name: "Vowly",
+    tagline: "Find your wedding vendors",
+    niche: "Wedding vendors",
+    description:
+      "An elegant rose-and-ivory directory of wedding photographers, venues, florists, caterers, music and planners, where couples send an inquiry.",
+    flow: "inquiry",
+    priceCents: 24900,
+    accent: "#8C4352",
+    bestFor: ["Wedding photographers", "Venues", "Florists & caterers", "Planners"],
+    highlights: [
+      "Inquiry form with wedding date, guests and budget (default-inquiry)",
+      "Packages list and portfolio lightbox",
+      "Service-area and packages steps in the listing wizard",
+    ],
+  },
+  {
+    slug: "courttime",
+    name: "CourtTime",
+    tagline: "Book sports courts by the hour",
+    niche: "Sports courts",
+    description:
+      "A sporty green marketplace for tennis, pickleball, padel, basketball, soccer and volleyball courts, with hourly slots and open-play sessions.",
+    flow: "booking-timeslot",
+    priceCents: 24900,
+    accent: "#0E7C3A",
+    bestFor: ["Clubs", "Schools & parks", "Private courts", "Coaches"],
+    highlights: [
+      "Hourly availability grid with open-play seats",
+      "Invite players to a booking from the inbox",
+      "Sport, surface and hours steps in the listing wizard",
     ],
   },
 ];

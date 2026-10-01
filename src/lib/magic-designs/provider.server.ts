@@ -30,6 +30,15 @@ export const BASE_DESIGN_IDS: Record<string, string> = {
   loanable: "7e8r3bqle2zcyecjmifn3u",
   trackroom: "1ga357bv8hroau29xauuth",
   flowspace: "7inx4nghxtadh21xwpefyz",
+  parkspot: "1aaxepvc4g9v177u3vjnvh",
+  deskhop: "mvwsj8pngxes8nrpwsykh8",
+  kitchenhub: "nudsbkhzqqa4q6zeddhofd",
+  harborly: "fft3we8f98ytu6pnnfe23d",
+  campout: "s6egh5cnm5e1yoczobqwly",
+  gigsy: "cocgnt5pszfbkayacbn87y",
+  craftly: "3r65tkebxsbqjcd15xw9x1",
+  vowly: "2ngxcdfpn5goivdgxcwqcu",
+  courttime: "offq6nbmqpm4jkjo51sgrz",
 };
 
 export class DesignEngineUnavailable extends Error {
