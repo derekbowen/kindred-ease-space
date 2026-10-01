@@ -98,10 +98,13 @@ telemetry — goes through the `FOUNDERS_APP` service binding declared in
 `wrangler.jsonc`. Customer origins and the platform passthrough keep global
 `fetch()`. `tests/edge-outage.test.ts` fails if anything meant for the app
 leaves through global `fetch()` while the binding exists, or if the binding
-disappears from `wrangler.jsonc`. A missing binding fails closed (`/a/*`
-answers 502, the config lookup counts as a control-plane outage) rather than
-falling back to that stale build, and the deploy workflow verifies the binding
-on the deployed script after every deploy.
+disappears from `wrangler.jsonc`. A missing binding fails closed rather than
+falling back to that stale build: `/a/*` answers 502, and the config lookup
+counts as a control-plane outage, so a host keeps routing its own site only
+from a last-known-good config cached in that data center, for at most 24 h —
+after that, or where none is cached, the whole host answers 404. That is why
+the workflow runs these tests before deploying and verifies the binding on the
+deployed script afterwards (a dashboard edit is not covered by either).
 
 The other direction has the same trap. The app's domain activation test and
 publish reachability probe fetch the customer's hostname — a custom hostname

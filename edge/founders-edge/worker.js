@@ -233,7 +233,10 @@ async function getDomainConfig(hostname, env, ctx) {
       { headers: { "x-founders-edge": "1" } },
     );
     body = await res.json();
-  } catch {
+  } catch (e) {
+    // A missing FOUNDERS_APP binding lands here too: say so in the logs, since
+    // the staleness report travels through the same binding.
+    console.error("[founders-edge] config lookup failed", hostname, String(e));
     body = null;
   }
 

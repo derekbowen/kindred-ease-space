@@ -95,6 +95,15 @@ jobs:
       - name: Parse-check worker.js
         run: npx --yes esbuild@0.25.0 --bundle --format=esm --platform=neutral edge/founders-edge/worker.js --outfile=/dev/null
 
+      # The edge tests pin the routing contract AND the FOUNDERS_APP binding in
+      # wrangler.jsonc. Run them before anything is uploaded: the post-deploy
+      # binding check below can only report after production has changed.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Pre-deploy — edge tests (routing contract + binding)
+        run: bun tests/edge-outage.test.ts
+
       # Customer routes are created and deleted by the control plane during
       # domain provisioning, NOT by wrangler — see the note in wrangler.jsonc.
       # wrangler should therefore leave them completely alone. "Should" is not
