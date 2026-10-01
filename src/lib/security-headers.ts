@@ -18,13 +18,22 @@ export function isTenantPath(pathname: string): boolean {
   return TENANT_PATH_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
+/** Static template-store previews, served from public/template-previews/. */
+export function isTemplatePreviewPath(pathname: string): boolean {
+  return pathname.startsWith("/template-previews/");
+}
+
 export function securityHeadersFor(url: URL): Record<string, string> {
   const headers: Record<string, string> = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
   };
-  if (!isTenantPath(url.pathname)) {
+  if (isTemplatePreviewPath(url.pathname)) {
+    // The template store frames these static previews on its own pages
+    // (/sharetribe-templates); DENY would blank them. Same origin only.
+    headers["X-Frame-Options"] = "SAMEORIGIN";
+  } else if (!isTenantPath(url.pathname)) {
     headers["X-Frame-Options"] = "DENY";
   }
   // No includeSubDomains: notify.www.founders.click and other subdomains are
