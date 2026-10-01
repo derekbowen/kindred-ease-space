@@ -7,7 +7,11 @@
 // session again — a refresh, a second tab — grants nothing more.
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { DESIGN_TOKENS_KIND, findDesignTokenPack } from "../_shared/design-tokens.ts";
+import {
+  DESIGN_TOKENS_KIND,
+  designTokenGrantAllowed,
+  findDesignTokenPack,
+} from "../_shared/design-tokens.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -61,6 +65,15 @@ Deno.serve(async (req) => {
     }
     // A receipt is only claimable by the account that bought it.
     if (session.metadata?.user_id !== user.id) return json({ error: "not_paid" }, 402);
+    if (
+      !designTokenGrantAllowed(
+        session.livemode,
+        user.id,
+        Deno.env.get("STRIPE_TEST_DESIGN_TOKEN_USER_IDS"),
+      )
+    ) {
+      return json({ error: "not_paid" }, 402);
+    }
 
     const admin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const { error: insertErr } = await admin.from("design_token_ledger").insert({

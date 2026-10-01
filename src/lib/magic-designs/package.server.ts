@@ -119,9 +119,21 @@ export async function buildDesignPackage(input: {
       }
     }),
   );
+  const bundled = new Set<string>();
   for (const hit of fetched) {
-    if (hit) out[`${root}public/images/${hit[0]}.jpg`] = [hit[1], { level: 0 }];
+    if (!hit) continue;
+    out[`${root}public/images/${hit[0]}.jpg`] = [hit[1], { level: 0 }];
+    bundled.add(hit[0]);
   }
+  // Every image downloaded: rewrite the CDN prefix wholesale (this also covers
+  // URLs built in code, e.g. `${CDN}${id}.jpg`). Otherwise rewrite only the
+  // literal URLs of images we have, and leave the rest pointing at the CDN so
+  // nothing in the download is a broken local path.
+  const allBundled = imageIds.size === bundled.size;
+  const localizeImages = (content: string) =>
+    allBundled
+      ? content.split(CDN).join("/images/")
+      : [...bundled].reduce((acc, id) => acc.split(`${CDN}${id}`).join(`/images/${id}`), content);
 
   const devDeps = { ...DEV_DEPENDENCIES };
   if (deps["@types/leaflet"]) {
@@ -130,10 +142,10 @@ export async function buildDesignPackage(input: {
   }
 
   for (const [name, raw] of Object.entries(sources)) {
-    const content = raw
-      .split(CDN)
-      .join("/images/")
-      .replace(/(\b\w+\??):\s*BoxIcon\s*;/g, "$1: typeof BoxIcon;");
+    const content = localizeImages(raw).replace(
+      /(\b\w+\??):\s*BoxIcon\s*;/g,
+      "$1: typeof BoxIcon;",
+    );
     out[`${root}src/${name}`] = strToU8(content);
   }
 

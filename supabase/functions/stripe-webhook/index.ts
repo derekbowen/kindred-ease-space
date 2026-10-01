@@ -8,6 +8,11 @@ import {
   ADDON_CATALOG,
   isAddonKey,
 } from "../_shared/stripe-catalog.ts";
+import {
+  DESIGN_TOKENS_KIND,
+  designTokenGrantAllowed,
+  findDesignTokenPack,
+} from "../_shared/design-tokens.ts";
 
 // Stripe is payment truth; this webhook projects it into the entitlement state
 // the app runs on (workspaces.page_limit_* + subscriptions + credit grants).
@@ -86,6 +91,37 @@ function assertTestModeWorkspace(
   if (!allowed.has(String(workspace_id).trim().toLowerCase())) {
     throw new TestModeWorkspaceRefused(workspace_id);
   }
+}
+
+/**
+ * Grants a paid Magic Designs token pack (kind=design_tokens).
+ *
+ * This is the primary fulfilment path: it does not depend on the buyer's
+ * browser coming back. design-token-claim, run when it does come back, writes
+ * the very same ledger row — (reason='purchase', ref=<session id>) is unique —
+ * so whichever runs second grants nothing more.
+ */
+async function grantDesignTokens(admin: Admin, s: Stripe.Checkout.Session): Promise<void> {
+  const pack = findDesignTokenPack(s.metadata?.pack);
+  const userId = s.metadata?.user_id;
+  if (!pack || !userId) {
+    console.error(`[stripe-webhook] design-token session ${s.id} without a valid pack/user`);
+    return;
+  }
+  if (s.payment_status !== "paid") return;
+  if (!designTokenGrantAllowed(s.livemode, userId, Deno.env.get("STRIPE_TEST_DESIGN_TOKEN_USER_IDS"))) {
+    console.warn(`[stripe-webhook] test-mode design tokens refused for user ${userId} (${s.id})`);
+    return;
+  }
+  const { error } = await admin.from("design_token_ledger").insert({
+    user_id: userId,
+    delta: pack.tokens,
+    reason: "purchase",
+    ref: s.id,
+  });
+  // 23505: already granted (claim got there first, or a redelivery). Anything
+  // else throws, so Stripe retries rather than the purchase going unfulfilled.
+  if (error && error.code !== "23505") throw error;
 }
 
 /**
@@ -336,6 +372,11 @@ Deno.serve(async (req) => {
     switch (event.type) {
       case "checkout.session.completed": {
         const s = event.data.object as Stripe.Checkout.Session;
+        // Magic Designs token packs: no workspace, granted to the buying user.
+        if (s.metadata?.kind === DESIGN_TOKENS_KIND) {
+          await grantDesignTokens(admin, s);
+          break;
+        }
         const workspace_id = s.metadata?.workspace_id;
         const mode = s.metadata?.mode;
         if (!workspace_id) break;

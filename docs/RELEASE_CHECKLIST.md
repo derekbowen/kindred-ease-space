@@ -198,6 +198,11 @@ supabase functions deploy design-token-checkout --project-ref xbxhzinnfhosoztqaa
 supabase functions deploy design-token-claim    --project-ref xbxhzinnfhosoztqaaao
 ```
 
+`stripe-webhook` must be redeployed with this release too: it now grants
+Magic Designs token packs itself (`grantDesignTokens`), so a buyer who closes
+the tab before Stripe's redirect still gets their tokens. Test-mode grants go
+only to user ids in the `STRIPE_TEST_DESIGN_TOKEN_USER_IDS` function secret.
+
 Through MCP: each takes `index.ts` plus `../_shared/design-tokens.ts`. Then set
 the design engine key on the Worker (`wrangler secret put
 MAGIC_PATTERNS_API_KEY`); until it is set Magic Designs refuses new designs
@@ -220,7 +225,7 @@ behind that refusal.
 Deploying through the Supabase MCP `deploy_edge_function` instead? Pass
 `verify_jwt: false` for the first two, and every file each one imports, at the same
 relative paths:
-- `stripe-webhook`: `index.ts`, `../_shared/stripe-catalog.ts`
+- `stripe-webhook`: `index.ts`, `../_shared/stripe-catalog.ts`, `../_shared/design-tokens.ts`
 - `coach-briefing-cron` (only when un-retiring it): `index.ts`, `../_shared/openai.ts`, `../_shared/ai-pricing.ts`
 - `create-checkout`: `index.ts`, `../_shared/stripe-catalog.ts`, `../_shared/affiliate-requirement.ts`
 

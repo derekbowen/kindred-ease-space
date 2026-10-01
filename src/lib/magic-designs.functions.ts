@@ -95,14 +95,27 @@ async function spend(
   }
 }
 
-async function refund(userId: string, amount: number, ref: string) {
-  const { error } = await sb()
-    .from("design_token_ledger")
-    .insert({ user_id: userId, delta: amount, reason: "refund", ref });
-  // 23505: already refunded. Anything else must be loud — the customer paid.
-  if (error && error.code !== "23505") {
-    console.error("[magic-designs] REFUND FAILED", userId, ref, amount, error.message);
+async function refund(userId: string, amount: number, ref: string): Promise<void> {
+  // Two attempts: a transient failure must not leave a charged customer.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const { error } = await sb()
+      .from("design_token_ledger")
+      .insert({ user_id: userId, delta: amount, reason: "refund", ref });
+    // 23505: already refunded — the refund exists, which is what we want.
+    if (!error || error.code === "23505") return;
+    console.error("[magic-designs] REFUND FAILED", {
+      userId,
+      ref,
+      amount,
+      attempt,
+      error: error.message,
+    });
   }
+  // Never report a refund that did not happen. The ref lets support find the
+  // spend in design_token_ledger and refund it by hand.
+  throw new CustomerFacingError(
+    `Something went wrong and we couldn't return your ${amount} tokens automatically. Contact support and quote reference ${ref} — we'll add them back.`,
+  );
 }
 
 function engineFailure(e: unknown, charged = true): never {
@@ -197,7 +210,31 @@ export const createMagicDesign = createServerFn({ method: "POST" })
     const id = crypto.randomUUID();
     const cost = DESIGN_TOKEN_COSTS.create;
 
-    await spend(context.userId, cost, "design_create", id);
+    // The row exists BEFORE anything is charged or started, so a later failure
+    // can never strand a payment or an engine job without a record of it.
+    const { error: rowErr } = await sb().from("magic_designs").insert({
+      id,
+      user_id: context.userId,
+      name: data.brief.marketplaceName,
+      base_template: data.baseTemplate,
+      brief: data.brief,
+      status: "generating",
+      checked_at: new Date().toISOString(),
+    });
+    if (rowErr) throw new Error(`design save failed: ${rowErr.message}`);
+    const markFailed = () =>
+      sb()
+        .from("magic_designs")
+        .update({ status: "failed", updated_at: new Date().toISOString() })
+        .eq("id", id);
+
+    try {
+      await spend(context.userId, cost, "design_create", id);
+    } catch (e) {
+      await sb().from("magic_designs").delete().eq("id", id);
+      throw e;
+    }
+
     let engine;
     try {
       engine = await createEngineDesign({
@@ -206,25 +243,32 @@ export const createMagicDesign = createServerFn({ method: "POST" })
         prompt: buildCreatePrompt(data.brief, base.name),
       });
     } catch (e) {
+      await markFailed();
       await refund(context.userId, cost, id);
       engineFailure(e);
     }
 
-    const { error } = await sb().from("magic_designs").insert({
-      id,
-      user_id: context.userId,
-      name: data.brief.marketplaceName,
-      base_template: data.baseTemplate,
-      brief: data.brief,
-      provider_design_id: engine.editorId,
-      preview_url: engine.previewUrl,
-      status: "generating",
-      checked_at: new Date().toISOString(),
-    });
-    if (error) {
-      // The engine is working and the customer paid; keep the evidence loud.
-      console.error("[magic-designs] DESIGN ROW INSERT FAILED", id, engine.editorId, error.message);
-      throw new Error(`design save failed: ${error.message}`);
+    // Link the engine job to the paid row. Retried: losing this mapping would
+    // orphan a design the customer paid for.
+    let linked = false;
+    for (let attempt = 1; attempt <= 3 && !linked; attempt++) {
+      const { error } = await sb()
+        .from("magic_designs")
+        .update({ provider_design_id: engine.editorId, preview_url: engine.previewUrl })
+        .eq("id", id);
+      if (!error) linked = true;
+      else
+        console.error("[magic-designs] DESIGN LINK FAILED", {
+          id,
+          editorId: engine.editorId,
+          attempt,
+          error: error.message,
+        });
+    }
+    if (!linked) {
+      throw new CustomerFacingError(
+        `Your design started but we couldn't save its link. Contact support and quote reference ${id} — nothing is lost.`,
+      );
     }
     await sb()
       .from("magic_design_requests")

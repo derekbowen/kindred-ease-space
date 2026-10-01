@@ -80,6 +80,10 @@ const rewrites: Array<[RegExp, string]> = [
     /from "\.\.\/_shared\/stripe-catalog\.ts"/,
     `from "${join(ROOT, "supabase/functions/_shared/stripe-catalog.ts")}"`,
   ],
+  [
+    /from "\.\.\/_shared\/design-tokens\.ts"/,
+    `from "${join(ROOT, "supabase/functions/_shared/design-tokens.ts")}"`,
+  ],
 ];
 let src = original;
 for (const [re, to] of rewrites) {
@@ -598,6 +602,68 @@ g.__stripeStubs["checkout.sessions.listLineItems"] = async () => ({ data: [{ qua
       /ledger down/.test(String(mark?.payload?.error)),
     JSON.stringify(mark?.payload),
   );
+}
+
+// ---------------------------------------------------------------------------
+console.log("\n=== Magic Designs token packs: granted by the webhook itself ===");
+const BUYER = "22222222-2222-4222-8222-222222222222";
+function tokenEvent(id: string, session: Record<string, unknown>) {
+  return {
+    id,
+    object: "event",
+    type: "checkout.session.completed",
+    livemode: true,
+    created: Math.floor(Date.now() / 1000),
+    data: {
+      object: {
+        id: "cs_live_tokens1",
+        object: "checkout.session",
+        livemode: true,
+        payment_status: "paid",
+        status: "complete",
+        metadata: { kind: "design_tokens", user_id: BUYER, pack: "starter" },
+        ...session,
+      },
+    },
+  };
+}
+reset();
+{
+  const r = await deliver(tokenEvent("evt_tokens_paid", {}));
+  const ins = calls("design_token_ledger", "insert");
+  t("paid token pack -> 200", r.status === 200, String(r.status));
+  t(
+    "… one ledger grant of the catalog amount, keyed by the session id",
+    ins.length === 1 &&
+      ins[0]?.payload?.user_id === BUYER &&
+      ins[0]?.payload?.delta === 100 &&
+      ins[0]?.payload?.reason === "purchase" &&
+      ins[0]?.payload?.ref === "cs_live_tokens1",
+    JSON.stringify(ins.map((c) => c.payload)),
+  );
+  t("… and no SaaS billing write", calls("workspaces").length === 0 && calls("subscriptions").length === 0);
+}
+reset();
+{
+  const r = await deliver(tokenEvent("evt_tokens_unpaid", { payment_status: "unpaid" }));
+  t("unpaid token session -> 200, nothing granted", r.status === 200 && calls("design_token_ledger", "insert").length === 0);
+}
+reset();
+g.__sbResponses["design_token_ledger.insert"] = [{ data: null, error: { code: "23505", message: "duplicate" } }];
+{
+  const r = await deliver(tokenEvent("evt_tokens_dup", {}));
+  t("already granted (claim got there first) -> 200", r.status === 200, String(r.status));
+}
+reset();
+g.__sbResponses["design_token_ledger.insert"] = [{ data: null, error: { code: "08006", message: "db down" } }];
+{
+  const r = await deliver(tokenEvent("evt_tokens_dbdown", {}));
+  t("a failed grant -> 500 so Stripe retries", r.status === 500, String(r.status));
+}
+reset();
+{
+  const r = await deliver(tokenEvent("evt_tokens_badpack", { metadata: { kind: "design_tokens", user_id: BUYER, pack: "free-lunch" } }));
+  t("unknown pack -> 200, nothing granted", r.status === 200 && calls("design_token_ledger", "insert").length === 0);
 }
 
 // ---------------------------------------------------------------------------

@@ -90,7 +90,9 @@ const createBlock = fns.slice(
 t(
   "create: spend → engine → refund on engine failure",
   createBlock.indexOf("await spend(") < createBlock.indexOf("createEngineDesign(") &&
-    /catch \(e\) \{\s*await refund\(context\.userId, cost, id\);/.test(createBlock),
+    /catch \(e\) \{\s*(await markFailed\(\);\s*)?await refund\(context\.userId, cost, id\);/.test(
+      createBlock,
+    ),
 );
 t(
   "create: refuses before spending when the engine is not configured",
@@ -310,6 +312,72 @@ t(
     "Toggle",
     "Separator",
   ].every((n) => existsSync(join(ROOT, "src/lib/magic-designs/ds", `${n}.tsx.txt`))),
+);
+
+console.log("\n=== 6. review fixes: fulfilment, refunds, persistence, images ===");
+const webhook = read("supabase/functions/stripe-webhook/index.ts");
+const completed = webhook.slice(webhook.indexOf('case "checkout.session.completed"'));
+t(
+  "the Stripe webhook grants design tokens itself (no dependence on the redirect)",
+  completed.indexOf("DESIGN_TOKENS_KIND") > -1 &&
+    completed.indexOf("grantDesignTokens(admin, s)") <
+      completed.indexOf("if (!workspace_id) break;"),
+);
+const grantFn = webhook.slice(
+  webhook.indexOf("async function grantDesignTokens"),
+  webhook.indexOf("Which workspace a charge belongs to"),
+);
+t(
+  "the webhook grant is the same idempotent ledger row as the claim",
+  /delta: pack\.tokens,\s*reason: "purchase",\s*ref: s\.id/.test(grantFn) &&
+    /23505/.test(grantFn) &&
+    /throw error/.test(grantFn),
+);
+t("the webhook grants only paid sessions", /payment_status !== "paid"\) return;/.test(grantFn));
+const { designTokenGrantAllowed } = await import("../supabase/functions/_shared/design-tokens");
+const U = "11111111-2222-3333-4444-555555555555";
+t("live sessions always grant", designTokenGrantAllowed(true, U, undefined));
+t(
+  "test sessions grant nobody by default",
+  !designTokenGrantAllowed(false, U, undefined) && !designTokenGrantAllowed(false, U, ""),
+);
+t(
+  "test sessions grant only allow-listed test users",
+  designTokenGrantAllowed(false, U, ` other , ${U.toUpperCase()} `),
+);
+t(
+  "webhook and claim both apply the test-mode rule",
+  /designTokenGrantAllowed\(s\.livemode/.test(grantFn) &&
+    /designTokenGrantAllowed\(\s*session\.livemode/.test(claim),
+);
+const refundFn = fns.slice(
+  fns.indexOf("async function refund("),
+  fns.indexOf("function engineFailure("),
+);
+t(
+  "a refund that cannot be written is never reported as done",
+  /attempt <= 2/.test(refundFn) &&
+    /throw new CustomerFacingError/.test(refundFn) &&
+    /quote reference \$\{ref\}/.test(refundFn),
+);
+t(
+  "create: the design row exists before tokens are spent or the engine starts",
+  createBlock.indexOf('from("magic_designs").insert(') < createBlock.indexOf("await spend(") &&
+    createBlock.indexOf("await spend(") < createBlock.indexOf("createEngineDesign("),
+);
+t(
+  "create: a failed engine start marks the row failed and refunds",
+  /await markFailed\(\);\s*await refund\(context\.userId, cost, id\);/.test(createBlock),
+);
+t(
+  "create: the engine link is retried and never silently lost",
+  /attempt <= 3 && !linked/.test(createBlock) && /if \(!linked\)/.test(createBlock),
+);
+t(
+  "download: only images that were bundled are rewritten to local paths",
+  /const allBundled = imageIds\.size === bundled\.size;/.test(pkg) &&
+    /localizeImages\(raw\)/.test(pkg) &&
+    !/\.split\(CDN\)\s*\.join\("\/images\/"\)\s*\.replace/.test(pkg),
 );
 
 console.log(`\n${pass} passed, ${fail} failed`);
