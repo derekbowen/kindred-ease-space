@@ -89,6 +89,18 @@ Deno.serve(async (req) => {
       });
     }
     // Before any database read or Stripe call (see testModeWorkspaceAllowed).
+    // A live key stored under the _TEST name would make "test mode" create
+    // live objects, so the test deployment also refuses any key that is not a
+    // Stripe test-mode key.
+    if (checkoutMode.test && !/^(sk|rk)_test_/.test(Deno.env.get(checkoutMode.keyName) ?? "")) {
+      return new Response(
+        JSON.stringify({
+          error: "test_mode_misconfigured",
+          message: "Test-mode checkout needs a Stripe test-mode key.",
+        }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
     if (
       checkoutMode.test &&
       !testModeWorkspaceAllowed(Deno.env.get("STRIPE_TEST_WORKSPACE_IDS"), workspace_id)

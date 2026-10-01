@@ -211,6 +211,27 @@ g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS = WS;
   );
 }
 
+{
+  g.__edgeEnv.STRIPE_SECRET_KEY_TEST = "sk_live_misfiled";
+  const r = await buy("create-checkout-test", WS);
+  t(
+    "a LIVE key stored under STRIPE_SECRET_KEY_TEST → 503 misconfigured, nothing read, no Stripe call",
+    r.status === 503 &&
+      r.body?.error === "test_mode_misconfigured" &&
+      r.tables.length === 0 &&
+      r.stripe.length === 0,
+    `${r.status} ${JSON.stringify(r.body)} ${r.tables.map((c) => c.table)} ${r.stripe}`,
+  );
+  g.__edgeEnv.STRIPE_SECRET_KEY_TEST = "rk_test_restricted";
+  const rk = await buy("create-checkout-test", WS);
+  t(
+    "a restricted test key (rk_test_) is accepted",
+    rk.status === 200 && rk.keys[0] === "rk_test_restricted",
+    `${rk.status} keys=${rk.keys}`,
+  );
+  g.__edgeEnv.STRIPE_SECRET_KEY_TEST = "sk_test_placeholder";
+}
+
 console.log("\n=== create-checkout (live) ===");
 delete g.__edgeEnv.STRIPE_TEST_WORKSPACE_IDS;
 {

@@ -16,7 +16,12 @@ endpoint, is recorded exactly once, updates entitlement, and an identical replay
 2. Deploy the test function: same source as `stripe-webhook`, name `stripe-webhook-test`,
    `verify_jwt=false` (Stripe signs, it does not carry a JWT).
    For checkout, deploy `create-checkout` again under the name `create-checkout-test`
-   (`verify_jwt=true`); see **Checkout in test mode** below.
+   (`verify_jwt=true`): the files of `supabase/functions/create-checkout/` plus the
+   `_shared/` files it imports, uploaded under the new name (Supabase dashboard, the
+   management API, or the Supabase MCP `deploy_edge_function`). Always deploy the `-test`
+   functions from the SAME commit as the live ones, and delete them when the proof is done.
+   `create-checkout-test` refuses (503 `test_mode_misconfigured`) unless
+   `STRIPE_SECRET_KEY_TEST` is a test-mode key (`sk_test_…` or `rk_test_…`).
 3. Stripe Dashboard (test mode) → Developers → Webhooks → Add endpoint:
    `https://xbxhzinnfhosoztqaaao.supabase.co/functions/v1/stripe-webhook-test`
    Events: `checkout.session.completed`, `customer.subscription.created`,
@@ -100,9 +105,22 @@ one published page in the allowlisted workspace, on an active domain of its own
 (a dedicated test hostname, e.g. `billing-proof.<your domain>`, added in Settings → Domains
 and removed afterwards). Run it with a Stripe **test clock** so the paid period can end:
 
-1. Fixture: in Stripe test mode create a test clock and a customer on it; store that customer
-   as the workspace's `stripe_customers.stripe_customer_id` (throwaway workspace only), so
-   `create-checkout-test` reuses it.
+1. Fixture: in Stripe test mode create a test clock and a customer on it (`cus_…`, created with
+   `test_clock`). Point the throwaway workspace — and only it — at that customer, so
+   `create-checkout-test` reuses it. The allowlist cannot fence a manual write, so the SQL
+   guards itself:
+   ```sql
+   -- <WS> must be the throwaway workspace and the ONLY id in STRIPE_TEST_WORKSPACE_IDS.
+   select id, name from public.workspaces where id = '<WS>';            -- exactly 1 row
+   insert into public.stripe_customers (workspace_id, stripe_customer_id, email)
+   select id, '<cus_test_clock_customer>', '<test account email>'
+     from public.workspaces where id = '<WS>'
+   on conflict (workspace_id) do update set stripe_customer_id = excluded.stripe_customer_id
+   returning workspace_id;                                             -- exactly 1 row: <WS>
+   ```
+   During the proof, never open the app's Billing page for `<WS>`: the live `create-checkout`
+   would find the test customer missing in live mode, create a LIVE customer and overwrite
+   this row (and open a live checkout page).
 2. Checkout: call `create-checkout-test`; open the returned URL and pay with Stripe's test card
    `4242 4242 4242 4242` (any future expiry, any CVC). No real card is ever used.
 3. Delivery: `checkout.session.completed`, `customer.subscription.created`, `invoice.paid`
@@ -119,8 +137,13 @@ and removed afterwards). Run it with a Stripe **test clock** so the paid period 
    `subscription_status = active`, the page restored within plan capacity, `/a/<slug>` 200 and
    back in `/a/sitemap.xml`.
 8. Clean up: cancel the subscription, delete the test clock (removes its customers),
-   unpublish the page, remove the test hostname in Settings → Domains and its DNS records, and
-   empty `STRIPE_TEST_WORKSPACE_IDS`.
+   unpublish the page, remove the test hostname in Settings → Domains and its DNS records,
+   remove the fixture row (`delete from public.stripe_customers where workspace_id = '<WS>'
+   returning workspace_id;` → exactly 1 row), empty `STRIPE_TEST_WORKSPACE_IDS`, and delete the
+   `create-checkout-test` and `stripe-webhook-test` deployments.
+
+Before entering card details, confirm the page is a test-mode session (URL contains
+`cs_test_`, and Stripe shows the TEST MODE badge).
 
 ## What the test deployment refuses
 The test deployment shares the database and the service role with the live one, and every
