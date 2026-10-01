@@ -1,7 +1,12 @@
 /**
  * Response security-header policy. Run: bun tests/security-headers.test.ts
  */
-import { securityHeadersFor, withSecurityHeaders, isTenantPath } from "../src/lib/security-headers";
+import {
+  forwardedHostOf,
+  securityHeadersFor,
+  withSecurityHeaders,
+  isTenantPath,
+} from "../src/lib/security-headers";
 
 let pass = 0, fail = 0;
 const failed: string[] = [];
@@ -35,6 +40,31 @@ console.log("\n=== tenant pages ===");
   t("affiliate apply page counts as tenant", isTenantPath("/apply/prog"));
   t("/app is not a tenant path", !isTenantPath("/app/pages"));
   t("/a alone (no trailing slash) is not a tenant path", !isTenantPath("/about"));
+}
+
+console.log("\n=== edge-forwarded customer pages (the shape the edge really sends) ===");
+// founders-edge forwards https://pages.customer.com/a/x to the app as
+// https://www.founders.click/a/x with x-forwarded-host: pages.customer.com.
+// The browser applies the response headers to the CUSTOMER hostname.
+{
+  const edgeUrl = new URL("https://www.founders.click/a/best-rentals-in-austin");
+  const h = securityHeadersFor(edgeUrl, "pages.customer-marketplace.com");
+  t("no HSTS when the edge forwards a customer host", !("Strict-Transport-Security" in h));
+  t("customer page still may be framed", !("X-Frame-Options" in h));
+  t("still nosniff", h["X-Content-Type-Options"] === "nosniff");
+  t("a forwarded platform host keeps HSTS",
+    !!securityHeadersFor(edgeUrl, "www.founders.click")["Strict-Transport-Security"]);
+  t("no forwarded host: the platform keeps HSTS",
+    !!securityHeadersFor(new URL("https://www.founders.click/app"), null)["Strict-Transport-Security"]);
+  const wrapped = withSecurityHeaders(new Response("x"), edgeUrl, "pages.customer-marketplace.com");
+  t("wrapped edge response carries no HSTS", wrapped.headers.get("Strict-Transport-Security") === null);
+
+  const hdr = (v: string | null) => ({ get: (k: string) => (k === "x-forwarded-host" ? v : null) });
+  t("forwarded host = the LAST entry", forwardedHostOf(hdr("evil.example, pages.customer.com")) === "pages.customer.com");
+  t("forwarded host lower-cased, port and trailing dot dropped",
+    forwardedHostOf(hdr("PAGES.Customer.com:443")) === "pages.customer.com" &&
+      forwardedHostOf(hdr("pages.customer.com.")) === "pages.customer.com");
+  t("no header / empty header → null", forwardedHostOf(hdr(null)) === null && forwardedHostOf(hdr(" ")) === null);
 }
 
 console.log("\n=== wrapping a response ===");

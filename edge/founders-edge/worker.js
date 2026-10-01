@@ -40,18 +40,23 @@ const CONFIG_TTL_MISS = 10;
  * ... is via service bindings" (developers.cloudflare.com/workers/configuration/
  * routing/custom-domains/#worker-to-worker-communication). The subrequest goes
  * to the zone's origin for www.founders.click instead — the pre-cutover Lovable
- * host, which answers everything with a redirect back to www.founders.click.
- * Without the binding, every /a/* page, the domain test and the config lookup
- * would be answered by that host, not by the app.
+ * host, which still serves an OLD build of the app against the production
+ * database. Without the binding, every /a/* page, the domain test and the
+ * config lookup would be answered by that stale build.
  *
- * global fetch() remains the fallback only where no binding exists (the
- * in-process tests in tests/edge-outage.test.ts). Customer origins and the
- * platform passthrough are other zones or the origin itself, so they keep it.
+ * So a missing binding fails closed: the call rejects, /a/* answers 502 and
+ * the config lookup is treated as a control-plane outage (last-known-good
+ * config, else no routing). Never a silent detour to stale code. The deploy
+ * workflow checks the binding exists after every deploy. Customer origins and
+ * the platform passthrough are other zones or the origin itself, so they keep
+ * global fetch().
  */
 function foundersFetch(env) {
   const app = env && env.FOUNDERS_APP;
   if (app && typeof app.fetch === "function") return (input, init) => app.fetch(input, init);
-  return (input, init) => fetch(input, init);
+  return async () => {
+    throw new Error("FOUNDERS_APP service binding missing");
+  };
 }
 
 // Last-known-good config survives this long and is used only when the control

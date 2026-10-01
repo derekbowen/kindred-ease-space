@@ -2,7 +2,7 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
-import { platformRedirectFor, withSecurityHeaders } from "./lib/security-headers";
+import { forwardedHostOf, platformRedirectFor, withSecurityHeaders } from "./lib/security-headers";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -70,6 +70,9 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     const url = new URL(request.url);
+    // Edge-forwarded customer pages arrive as https://www.founders.click/a/...;
+    // the header policy follows the customer host the edge names.
+    const forwardedHost = forwardedHostOf(request.headers);
     // Platform hosts only: http → https and apex → www, one permanent hop.
     // Customer domains, hooks and non-GET requests are never redirected.
     const redirectTo = platformRedirectFor(url, request.method, request.headers);
@@ -77,15 +80,20 @@ export default {
       return withSecurityHeaders(
         new Response(null, { status: 301, headers: { Location: redirectTo } }),
         url,
+        forwardedHost,
       );
     }
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return withSecurityHeaders(await normalizeCatastrophicSsrResponse(response), url);
+      return withSecurityHeaders(
+        await normalizeCatastrophicSsrResponse(response),
+        url,
+        forwardedHost,
+      );
     } catch (error) {
       console.error(error);
-      return withSecurityHeaders(brandedErrorResponse(), url);
+      return withSecurityHeaders(brandedErrorResponse(), url, forwardedHost);
     }
   },
 };

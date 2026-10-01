@@ -137,8 +137,14 @@ function section() {
 
 const ctx = { waitUntil: (p: Promise<unknown>) => { void Promise.resolve(p).catch(() => {}); } };
 
+// Production always has the FOUNDERS_APP binding (wrangler.jsonc); here it
+// delegates to the fake network, so every section below goes through it.
+const ENV = {
+  FOUNDERS_APP: { fetch: (input: any, init?: any) => (globalThis as any).fetch(input, init) },
+};
+
 async function get(path: string, host = HOST): Promise<Response> {
-  return worker.fetch(new Request(`https://${host}${path}`), {}, ctx);
+  return worker.fetch(new Request(`https://${host}${path}`), ENV, ctx);
 }
 
 /** Force the fresh copy to expire without waiting, leaving the stale copy. */
@@ -347,7 +353,7 @@ console.log("\n=== LOOP CONTAINMENT ===");
 {
   section();
   const looped = await worker.fetch(
-    new Request(`https://${HOST}/`, { headers: { "x-founders-edge": "1" } }), {}, ctx);
+    new Request(`https://${HOST}/`, { headers: { "x-founders-edge": "1" } }), ENV, ctx);
   t("a request already through the edge is stopped with 508", looped.status === 508);
 
   section();
@@ -364,9 +370,9 @@ console.log("\n=== SAME-ZONE: THE APP IS REACHED THROUGH THE SERVICE BINDING ===
 // founders-edge and the app (founders-click, on the route www.founders.click/*)
 // share the founders.click zone. Cloudflare does not run a route's Worker for a
 // global fetch() from another Worker on the same zone: the request goes to the
-// zone's origin for www (the pre-cutover Lovable host, which redirects every
-// path back to www.founders.click). So with the binding present, NOTHING bound
-// for the app may leave through global fetch().
+// zone's origin for www (the pre-cutover Lovable host, which still serves an
+// old build of the app). So NOTHING bound for the app may leave through
+// global fetch(), and without the binding the edge fails closed.
 {
   section();
   const appCalls: Array<{ url: string; xfh: string | null; edge: string | null }> = [];
@@ -418,12 +424,45 @@ console.log("\n=== SAME-ZONE: THE APP IS REACHED THROUGH THE SERVICE BINDING ===
     leakedToGlobal().length === 0, leakedToGlobal().join(", "));
 
   const { readFileSync } = await import("node:fs");
-  const edgeCfg = readFileSync(new URL("../edge/founders-edge/wrangler.jsonc", import.meta.url), "utf8");
+  // JSONC: a commented-out line must not satisfy the check. "https://" inside
+  // strings is preceded by ":", so it survives.
+  const noComments = (txt: string) =>
+    txt.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"])\/\/.*$/gm, "$1");
+  const edgeCfg = noComments(
+    readFileSync(new URL("../edge/founders-edge/wrangler.jsonc", import.meta.url), "utf8"),
+  );
   t("config: founders-edge declares the FOUNDERS_APP binding to founders-click",
     /"services"\s*:\s*\[\s*\{\s*"binding"\s*:\s*"FOUNDERS_APP"\s*,\s*"service"\s*:\s*"founders-click"\s*\}/.test(edgeCfg));
-  const appCfg = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+  const appCfg = noComments(readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
+  t("config check ignores a commented-out flag",
+    !/"global_fetch_strictly_public"/.test(noComments('// "compatibility_flags": ["global_fetch_strictly_public"]')));
   t("config: the app fetches its own zone's hostnames through the front door (global_fetch_strictly_public)",
     /"compatibility_flags"\s*:\s*\[[^\]]*"global_fetch_strictly_public"/.test(appCfg));
+}
+
+// ===========================================================================
+console.log("\n=== NO BINDING: FAILS CLOSED, NEVER A DETOUR TO THE STALE BUILD ===");
+// ===========================================================================
+{
+  section();
+  const bare = (path: string) => worker.fetch(new Request(`https://${HOST}${path}`), {}, ctx);
+  const fresh = await bare("/a/pool-rentals-austin");
+  t("no binding, nothing cached: the host is refused (404), not routed",
+    fresh.status === 404, `got ${fresh.status}`);
+
+  section();
+  await get("/"); // config cached through the binding
+  expireFresh();
+  ageStale(60);
+  hits.length = 0; // only what happens WITHOUT the binding counts below
+  const page = await bare("/a/pool-rentals-austin");
+  t("no binding: /a/* fails closed with 502", page.status === 502, `got ${page.status}`);
+  const home = await bare("/");
+  t("no binding: the customer's own site still answers from last-known-good config",
+    home.status === 200 && (await home.text()) === "customer:/");
+  t("no binding: nothing meant for the app left through global fetch()",
+    !hits.some((h) => h.startsWith("https://www.founders.click")),
+    hits.filter((h) => h.startsWith("https://www.founders.click")).join(", "));
 }
 
 // ===========================================================================

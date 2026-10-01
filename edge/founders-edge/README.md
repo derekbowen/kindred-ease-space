@@ -89,14 +89,19 @@ run on the same zone. Cloudflare does not run a route's Worker for a global
 communicate with another Worker running on a route ... is via service
 bindings" ([Cloudflare](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/#worker-to-worker-communication)).
 Such a fetch lands on the zone's origin for `www` instead: the pre-cutover
-Lovable host, which redirects every path back to `www.founders.click`.
+Lovable host, which still serves an OLD build of the app against the
+production database (the daily canonical audit, which runs inside the app,
+read that build for days).
 
 So every request meant for the app — `/a/*`, the config lookup, staleness
 telemetry — goes through the `FOUNDERS_APP` service binding declared in
 `wrangler.jsonc`. Customer origins and the platform passthrough keep global
 `fetch()`. `tests/edge-outage.test.ts` fails if anything meant for the app
 leaves through global `fetch()` while the binding exists, or if the binding
-disappears from `wrangler.jsonc`.
+disappears from `wrangler.jsonc`. A missing binding fails closed (`/a/*`
+answers 502, the config lookup counts as a control-plane outage) rather than
+falling back to that stale build, and the deploy workflow verifies the binding
+on the deployed script after every deploy.
 
 The other direction has the same trap. The app's domain activation test and
 publish reachability probe fetch the customer's hostname — a custom hostname

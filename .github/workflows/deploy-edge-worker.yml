@@ -148,6 +148,30 @@ jobs:
             exit 1
           fi
 
+      # The edge reaches the app ONLY through the FOUNDERS_APP service binding
+      # (foundersFetch in worker.js); without it every /a/* page fails closed.
+      # A dashboard paste or a stale config would drop it silently, so prove
+      # the deployed script carries it. Unreadable settings fail the step: a
+      # check that could not run must not read as a pass.
+      - name: Verify the FOUNDERS_APP service binding is deployed
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_WORKER_DEPLOY_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          resp=$(curl -s --max-time 20 \
+            "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/workers/scripts/founders-edge/settings" \
+            -H "Authorization: Bearer $TOKEN")
+          if [ "$(echo "$resp" | jq -r '.success')" != "true" ]; then
+            echo "::error::Could not read founders-edge settings: $(echo "$resp" | jq -c '.errors')"
+            exit 1
+          fi
+          n=$(echo "$resp" | jq '[.result.bindings[]? | select(.type=="service" and .name=="FOUNDERS_APP" and .service=="founders-click")] | length')
+          if [ "$n" != "1" ]; then
+            echo "::error::founders-edge is deployed WITHOUT the FOUNDERS_APP binding to founders-click."
+            exit 1
+          fi
+          echo "FOUNDERS_APP -> founders-click: present"
+
       # workers_dev is false in wrangler.jsonc so this Worker has no second,
       # permanent public endpoint outside the customer routes. Assert the
       # account actually reflects that rather than trusting the config file.

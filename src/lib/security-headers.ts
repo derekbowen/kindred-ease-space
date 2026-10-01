@@ -18,7 +18,23 @@ export function isTenantPath(pathname: string): boolean {
   return TENANT_PATH_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
-export function securityHeadersFor(url: URL): Record<string, string> {
+/**
+ * The host the edge forwarded a request for: the LAST x-forwarded-host entry
+ * (the rule the page and sitemap code use), lower-cased, without a port or a
+ * trailing dot. Null when the header is absent or empty.
+ */
+export function forwardedHostOf(headers?: Pick<Headers, "get"> | null): string | null {
+  const raw = headers?.get("x-forwarded-host");
+  if (!raw) return null;
+  const last = (raw.split(",").pop() ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/:\d+$/, "")
+    .replace(/\.$/, "");
+  return last || null;
+}
+
+export function securityHeadersFor(url: URL, forwardedHost?: string | null): Record<string, string> {
   const headers: Record<string, string> = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "strict-origin-when-cross-origin",
@@ -29,7 +45,13 @@ export function securityHeadersFor(url: URL): Record<string, string> {
   }
   // No includeSubDomains: notify.www.founders.click and other subdomains are
   // delegated to third parties whose TLS posture we do not control.
-  if (PLATFORM_HOSTS.has(url.hostname)) {
+  //
+  // The edge forwards a customer domain's request to the app as
+  // https://www.founders.click/a/... with x-forwarded-host naming the
+  // customer's hostname, and the browser applies the response's headers to
+  // THAT hostname. So the forwarded host decides: without it, every page on a
+  // customer domain would carry our year-long HSTS pin.
+  if (PLATFORM_HOSTS.has(url.hostname) && PLATFORM_HOSTS.has(forwardedHost ?? url.hostname)) {
     headers["Strict-Transport-Security"] = "max-age=31536000";
   }
   return headers;
@@ -82,10 +104,14 @@ export function platformRedirectFor(
 }
 
 /** Adds the policy headers without overriding any the app already set. */
-export function withSecurityHeaders(response: Response, url: URL): Response {
+export function withSecurityHeaders(
+  response: Response,
+  url: URL,
+  forwardedHost?: string | null,
+): Response {
   if (response.status === 101) return response;
   const headers = new Headers(response.headers);
-  for (const [name, value] of Object.entries(securityHeadersFor(url))) {
+  for (const [name, value] of Object.entries(securityHeadersFor(url, forwardedHost))) {
     if (!headers.has(name)) headers.set(name, value);
   }
   return new Response(response.body, {
