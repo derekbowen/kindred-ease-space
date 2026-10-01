@@ -25,7 +25,8 @@ server-side), not finished.
 |---|---|
 | Production app | **`55b5728`** (`/api/public/version`, built 2026-09-29T14:04:47Z), Worker version `c55a8631-b8b7-4dad-bc17-f63eaab2a08b`, deploy-app.yml run 36579746343 (typecheck, 78 test suites, build, deploy, smoke 10 pass / 0 fail / 1 SKIPPED = the public /a/ page, not run). Same SHA passed locally: full chain 78/78, tsc, build, test:pg 47 + 46 |
 | Previous app (rollback) | `8ff1c41`, Worker version `42e50f5a-43bc-4ae2-ac87-f3f41111179d` — compatible with every MVP migration (they are additive; it writes pages on the service role only) |
-| Launch branch | `claude/repost-assembly-j3l3qg` = the release SHA + later doc-only commits |
+| Launch branch | `claude/repost-assembly-j3l3qg` @ `4306712` = the release SHA + docs + the acceptance-round fixes, NOT deployed: `99d27af` + `6cd7ede` (edge reaches the app through a service binding, fails closed without it; app probes use the front door; HSTS follows the forwarded host) and `7ad7a5a` + `4306712` (create-checkout can run as allowlisted `create-checkout-test`; runbook). Full chain 79 suites / 5,916 passed, tsc + build clean |
+| Edge Worker (live) | `founders-edge` hand-deployed 2026-08-30 (Cloudflare `modified_on`), OLDER than the repo: no FOUNDERS_APP binding, no kill switch, no stale-config fallback. `deploy-edge-worker.yml` has never run |
 | Migrations in prod | 000100–000930 (2026-09-28) + the MVP set applied 2026-09-29 in order, every verification row true: 20260929000100 (mvp_targets_sync_templates), 000200 (domain_write_lock_and_exact_host), 000300 (mvp_deferred_jobs: coach-briefing-nightly inactive, all other jobs unchanged), 000310 (mvp_help_copy), 000400 (mvp_publish_checked), 000500 (mvp_tenant_pages_server_writes) |
 | Edge functions | stripe-webhook v40 (price-first plan, capacity-gated reactivation, stale-subscription guard), create-checkout v42 (add-ons 410), coach-briefing-cron v25 = the 410 retired stub (the briefing is deferred); ai-proxy v23, coach-chat v26, help-assistant-chat v27, help-assistant-embed v27 = 410 stubs. PRNM's functions untouched. |
 | AI settings | platform_ai_enabled true, daily ceiling $10, $1/workspace/day, 30 reservations/min (unchanged; no raise without approval) |
@@ -62,6 +63,10 @@ server-side), not finished.
 | 2026-09-29 | DEPLOYED: migrations 000100, 000200, 000300, 000310, 000400, 000500 (every verification row true); stripe-webhook v40, create-checkout v42, coach-briefing-cron v25 (410 stub); main → 9bffaf8 then 55b5728 (editor copy found in the live journey) | runs 36573906960, 36579746343 |
 | 2026-09-29 | LIVE EVIDENCE on 55b5728 / 9bffaf8: normal account journey 22/22 (MVP nav, deferred screens redirect, three templates survive reload, phone width, a real draft in 11.2 s, publish refused with the exact domain step); edit + double click + refresh-mid-run 6/6 (one draft and one settled charge each); security probes 19/19 + checkout refusals; founder inventory synced by the new code (63/63, 0 removed, 0 unkeyed) | scratchpad launch/runs/mvp-9bffaf8, mvp-55b5728 |
 | 2026-09-29 | Generation: gpt-5-nano (Standard), 7.8–10.0 s provider time, 332–397 µ$ each, 3 live generations = 1,061 µ$ (~$0.001), trial free quota 17 → 14 | ai_spend_reservations |
+| 2026-09-29 | ACCEPTANCE ROUND (scope frozen). pages.poolrentalnearme.com checked unused: NXDOMAIN (A/AAAA/CNAME/TXT), no certificate in CT logs, no workspace_domains row, domain-config `domain_not_found`. poolrentalnearme.com and founders.click share the Cloudflare nameservers anna/max (likely one account) → the CNAME must be DNS-only | DoH (dns.google), crt.sh, SQL |
+| 2026-09-29 | BLOCKER FOUND for public delivery: both Workers run on the founders.click zone and the app is on a route, so the edge's global fetch() to www.founders.click never reaches the app — Cloudflare sends same-zone Worker subrequests to the zone origin (the pre-cutover Lovable host, which still serves an old build against the production DB). Evidence: Cloudflare docs; the in-app canonical audit recorded identical link counts every day 09-25…09-29 across several releases, while the live Worker serves more links. Fixed on the branch: FOUNDERS_APP service binding (edge), global_fetch_strictly_public (app probes), fail-closed without the binding, post-deploy binding check, HSTS by forwarded host | 99d27af, 6cd7ede; gate review of 99d27af CLEAN (its MEDIUMs fixed in 6cd7ede) |
+| 2026-09-29 | Stripe test-mode checkout prepared: the same source deploys as `create-checkout-test` (test key, STRIPE_TEST_WORKSPACE_IDS allowlist, refuses non-test keys); runbook gains the full lifecycle with public serving/sitemap checks on a test clock | 7ad7a5a, 4306712; gate review CLEAN |
+| 2026-10-01 | Founder state re-read (read-only): internal grant active (page_limit 1,000,000), workspace_is_internal_unlimited true, 63 published listings, Sharetribe sync success 2026-10-01 08:00:05Z, 0 pages, 1 domain row (test.* ssl_pending). Qualifying real targets: City Hub "New York" (country/region empty as recorded, 3 listings: 2 experiences + 1 pool); Category Page "pool" (17), "experiences" (20) | SQL |
 
 ## Design decisions (the spine — every workstream builds on these)
 
@@ -121,29 +126,87 @@ server-side), not finished.
 - **`/api/public/page-lookup`** (used by the smoke script) serves published
   page text without the billing check the /a/ route applies.
 
-## Remaining blockers / owner actions
+## Acceptance matrix (scope frozen 2026-09-29; as of 2026-10-01)
 
-- **Founder domain DNS (blocks live publishing, journey F):** `test.poolrentalnearme.com`
-  is an A record to 13.56.89.89 (the Sharetribe server), so it never reaches
-  the edge and TLS can't complete (`ssl_pending`). Recommended: a dedicated
-  pages hostname (e.g. `pages.poolrentalnearme.com`) added in Settings →
-  Domains, TXT-verified, CNAME → `proxy.founders.click`.
-- **Founder browser run (journey A):** needs the founder's own Google session —
-  the prompt is scratchpad `launch/founder-mvp-check.md` (Claude in Chrome).
-- **Stripe test mode:** owner-provided test keys + STRIPE_TEST_WORKSPACE_IDS.
-- **Ordinary connect → sync:** a second Sharetribe marketplace environment
-  (Client ID) for the approved normal account.
-- Optional cleanups (need approval): delete the five 410-stub functions; drop
-  the inactive `process-auth-emails` job (plaintext secret in its command);
-  delete the synthetic pages in the approved test workspace.
+A unit test never counts as browser, payment or public-delivery evidence.
+
+| # | Check | Result | Evidence |
+|---|---|---|---|
+| 1 | Founder browser: workspace, internal-unlimited, inventory, opportunities, draft creation | **BLOCKED** (needs your own signed-in Google session; I have none and will not reset or create logins) | Data side re-read live 2026-10-01: grant active, internal-unlimited true, 63 listings, sync success 08:00Z. Browser prompt ready: scratchpad `launch/founder-mvp-check.md` |
+| 2 | City Hub + Category Page previews on real listings; template/filter/inventory/saved page agree | **BLOCKED** (same session) | Targets qualify on live data: City Hub New York = 3 listings, Category Page pool = 17. After your run I check both saved rows' template, filter and target against SQL. Resource Article already proven live (journey 22/22, edit/double-click/refresh 6/6) |
+| 3 | pages.poolrentalnearme.com: unused check, exact DNS + ownership steps | **PASS** (prepared) — DNS change **awaiting approval** | NXDOMAIN on A/AAAA/CNAME/TXT; no certificate ever issued (crt.sh); no workspace_domains row; domain-config 404 `domain_not_found`. Records below |
+| 4 | Public delivery (HTML, styling, canonical, listing links, sitemap, edit propagation, unpublish) | **NOT RUN** — and a **FAIL in the live routing path was found and fixed on the branch** | The live edge cannot reach the app (same-zone Worker routing); fix 99d27af + 6cd7ede, needs the edge deploy + app deploy below, then DNS |
+| 5 | Ordinary account connect → sync on a separate Sharetribe environment | **BLOCKED** on one input: that environment's Marketplace API Client ID (public, not a secret) | Connect needs only the Client ID (Marketplace API mode); uniqueness is per marketplace id, so the founder's connection is untouched |
+| 6 | Stripe: checkout, webhook delivery/replay, paid access, cancellation, period expiry, reactivation, public serving + sitemap | **BLOCKED** (approval + test credentials) | Test-mode checkout made possible on the branch (7ad7a5a, 4306712; gate review CLEAN); runbook docs/STRIPE_TEST_MODE.md |
+
+## Exact DNS + ownership steps for pages.poolrentalnearme.com (do nothing until approved)
+
+Zone poolrentalnearme.com is on Cloudflare DNS. test.poolrentalnearme.com is NOT touched.
+
+1. Founders, signed in as the founder: Settings → Domains → mode **Subdomain** → hostname
+   `pages.poolrentalnearme.com` → Add. The page then shows the ownership token (owners only).
+2. Cloudflare DNS for poolrentalnearme.com — ownership record:
+   `Type TXT · Name _founders-click.pages · Content <the token from step 1> · TTL Auto`
+3. Founders → Settings → Domains → **Check now** (also auto-checks every ~25 s). On success the app
+   creates the Cloudflare custom hostname + Worker route and shows the routing record.
+4. Cloudflare DNS — routing record:
+   `Type CNAME · Name pages · Target proxy.founders.click · Proxy status DNS only (grey cloud) · TTL Auto`
+   DNS only matters: both zones look like one Cloudflare account, where a proxied (orange) record
+   would be served by the poolrentalnearme.com zone and never reach the Founders edge.
+5. The certificate is issued automatically over HTTP once the CNAME resolves (no CAA records exist
+   on poolrentalnearme.com, so nothing blocks the CA). Then Settings → Domains → **Test connection**
+   → status active. The TXT record can stay (harmless) or be removed after activation.
+
+## One consolidated approval request
+
+1. **Edge deploy:** dispatch `Deploy Edge Worker` (confirm `deploy`) from the launch branch. Brings the
+   binding, fail-closed, kill switch and stale-config fallback; verifies routes and the binding.
+   No customer domain is active, so no live traffic changes.
+2. **App deploy, after 1:** merge the launch branch up to `6cd7ede` into `main` (auto-deploys the Worker):
+   global_fetch_strictly_public + HSTS by forwarded host.
+3. **DNS:** the two records above for pages.poolrentalnearme.com (you add them; I can't edit your DNS).
+4. **Publish one page there:** the Category Page "pool" (17 listings) from the founder run; I verify
+   it end to end and then ask whether it stays published.
+5. **Stripe test mode:** deploy `stripe-webhook-test` and `create-checkout-test` (and `create-checkout`
+   from the same commit; live behaviour unchanged), a second hostname
+   `billing-proof.poolrentalnearme.com` for the throwaway workspace (same two records, created from
+   that workspace's Settings → Domains) and publishing one of its existing Resource Article drafts
+   there for the lifecycle proof, then full cleanup per the runbook.
+
+## Owner inputs (never through chat or files except the public Client ID)
+
+- Stripe **test-mode** key (`sk_test_…` or a restricted `rk_test_…`): Supabase Dashboard → Edge
+  Functions → Secrets → `STRIPE_SECRET_KEY_TEST`; and the same key in this cloud environment's
+  settings (session title bar → environment → Edit) as `STRIPE_TEST_SECRET_KEY`, so the test
+  clock, cancellation and replay can be driven (a new session picks it up).
+- Stripe test-mode webhook endpoint `https://xbxhzinnfhosoztqaaao.supabase.co/functions/v1/stripe-webhook-test`
+  (events in docs/STRIPE_TEST_MODE.md) → its signing secret into `STRIPE_WEBHOOK_SECRET_TEST`.
+- `STRIPE_TEST_WORKSPACE_IDS` = `f02d1aa9-4e72-40fc-859f-dfecbba34a87` (the approved test workspace).
+- The Marketplace API **Client ID** of a separate Sharetribe environment (e.g. your marketplace's
+  Test or Dev environment) with a few published listings — public, fine to paste.
+- Your founder browser run: `launch/founder-mvp-check.md` in Claude in Chrome.
+
+## Found, not fixed (owner decisions; not launch gates)
+
+- **Stale pre-cutover origin behind www:** the founders.click zone's DNS record for www still points
+  at the Lovable host, which serves an old build against the production database. Nothing external
+  reaches it today (the Worker route answers every public request), but anything that bypasses the
+  route would: same-zone subrequests (fixed above) and a Workers route set to fail open. Retiring it
+  is a DNS change on founders.click — owner decision.
+- Carried over (need approval, not launch gates): the five retired functions stay deployed as
+  410 stubs (permanent deletion optional); the inactive `process-auth-emails` cron job embeds a
+  plaintext Supabase secret key in its command — drop the job and rotate that key; the 3 synthetic
+  launch-check pages in the approved test workspace can be deleted.
+- LOW (parity with the webhook, deferred): mode helpers duplicated between create-checkout and the
+  webhook; dot-segment path steering applies to both `-test` deployments equally — deploy `-test`
+  from the same commit as live and delete it after each proof.
 
 ## Next exact action
 
-1. When DNS is done: verify the domain (Settings → Domains → check), publish
-   one approved page (a Category Page from the founder's inventory), prove
-   TLS/HTTP, SSR title/H1/description/canonical, listing links and
-   `/a/sitemap.xml` inclusion, then edit and unpublish and verify the sitemap
-   and cache update (private, max-age=60 / 300).
-2. Stripe test mode once keys exist: test-card checkout, webhook deliveries
-   (idempotent), capacity, cancellation → suspension, resubscribe.
-3. Founder browser run (founder-mvp-check.md) → record A.
+1. On approval: edge deploy → app deploy (main) → verify `/api/public/version`, the binding, and that
+   nothing customer-facing changed. Then the DNS steps; then Test connection → active.
+2. Publish the approved page; verify HTML/styling/canonical/listing links/sitemap/edit/unpublish on
+   the public host; ask whether it stays.
+3. Founder browser run (`founder-mvp-check.md`) → verify the two saved drafts against SQL.
+4. With the Client ID: connect + sync as the normal account (browser) → coverage on its data.
+5. With Stripe inputs: the lifecycle in docs/STRIPE_TEST_MODE.md, public serving and sitemap at each step.
