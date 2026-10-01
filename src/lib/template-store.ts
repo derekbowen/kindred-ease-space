@@ -16,7 +16,8 @@ export type TemplateFlow =
   | "booking-timeslot"
   | "purchase"
   | "negotiation"
-  | "inquiry";
+  | "inquiry"
+  | "download";
 
 export type StoreTemplate = {
   slug: string;
@@ -38,6 +39,7 @@ export const TEMPLATE_FLOW_LABEL: Record<TemplateFlow, string> = {
   purchase: "Product purchase",
   negotiation: "Quote & negotiation",
   inquiry: "Inquiry",
+  download: "Digital download",
 };
 
 /** Pages every template ships with, mapped to their Sharetribe Web Template equivalents. */
@@ -376,6 +378,164 @@ export const STORE_TEMPLATES: StoreTemplate[] = [
       "Hourly availability grid with open-play seats",
       "Invite players to a booking from the inbox",
       "Sport, surface and hours steps in the listing wizard",
+    ],
+  },
+  {
+    slug: "tutorly",
+    name: "Tutorly",
+    tagline: "Book 1-on-1 online tutors",
+    niche: "Online tutoring",
+    description:
+      "A bright blue tutoring marketplace where students book 1-on-1 online lessons by subject and level, with intro videos and lesson notes.",
+    flow: "booking-timeslot",
+    priceCents: 24900,
+    accent: "#0279BD",
+    bestFor: ["Tutors", "Tutoring agencies", "Test prep", "Language teachers"],
+    highlights: [
+      "Weekly availability grid with lesson lengths",
+      "Video-room dialog and lesson notes in the inbox",
+      "Credentials and subjects steps for tutors",
+    ],
+  },
+  {
+    slug: "taskpost",
+    name: "TaskPost",
+    tagline: "Post a job, get offers from local pros",
+    niche: "Local jobs",
+    description:
+      "An orange reverse marketplace: customers post a job, local pros send offers, and the customer accepts one and pays when it's done.",
+    flow: "negotiation",
+    priceCents: 29900,
+    accent: "#C94A0C",
+    bestFor: ["Handyman networks", "Cleaning & moving", "Local services", "Odd-job apps"],
+    highlights: [
+      "Customer-posted jobs with budget and timing (request-quote flow)",
+      "Offer, counter-offer and accept in the inbox",
+      "Job map and neighborhood filters",
+    ],
+  },
+  {
+    slug: "harvestly",
+    name: "Harvestly",
+    tagline: "Fresh produce from local farms",
+    niche: "Farm-to-table",
+    description:
+      "A fresh green marketplace where local farms sell produce, eggs, meat and dairy for pickup or local delivery.",
+    flow: "purchase",
+    priceCents: 24900,
+    accent: "#2F6B3A",
+    bestFor: ["Farms", "Farmers' markets", "Food co-ops", "CSA programs"],
+    highlights: [
+      "Per-unit stock (lb, dozen, bunch) with a cart across farms",
+      "Pickup-day slots and local-delivery options",
+      "Farm profiles with growing-practice badges",
+    ],
+  },
+  {
+    slug: "stashly",
+    name: "Stashly",
+    tagline: "Rent storage space from neighbors",
+    niche: "Peer-to-peer storage",
+    description:
+      "A teal storage marketplace where neighbors rent out garages, basements, attics and closets, with a size guide and earnings calculator.",
+    flow: "booking-daily",
+    priceCents: 24900,
+    accent: "#1F766F",
+    bestFor: ["Storage startups", "Property owners", "Garage sharing", "Local communities"],
+    highlights: [
+      "Size comparison from closet to full garage",
+      "Move-in date booking with an inventory list at checkout",
+      "Earnings calculator for hosts on the landing page",
+    ],
+  },
+  {
+    slug: "bulkly",
+    name: "Bulkly",
+    tagline: "Wholesale from independent brands",
+    niche: "Wholesale B2B",
+    description:
+      "A navy-and-lime wholesale marketplace where retailers buy from independent brands with tiered case pricing and order minimums.",
+    flow: "purchase",
+    priceCents: 29900,
+    accent: "#1A468F",
+    bestFor: [
+      "Wholesale platforms",
+      "Independent brands",
+      "Boutique retailers",
+      "B2B distributors",
+    ],
+    highlights: [
+      "Tiered pricing table by case quantity",
+      "Brand minimums and per-brand order summaries",
+      "Stock, shipping and pricing steps for brands",
+    ],
+  },
+  {
+    slug: "dressly",
+    name: "Dressly",
+    tagline: "Rent designer dresses",
+    niche: "Fashion rental",
+    description:
+      "A chic black-and-dusty-rose fashion rental marketplace where lenders rent designer dresses for 4- or 8-day windows.",
+    flow: "booking-daily",
+    priceCents: 24900,
+    accent: "#94585C",
+    bestFor: ["Fashion rental", "Designer closets", "Bridal & occasion wear", "Boutiques"],
+    highlights: [
+      "Size check with measurements on every listing",
+      "Rental calendar with shipping buffers",
+      "Return label card in the inbox",
+    ],
+  },
+  {
+    slug: "sitterly",
+    name: "Sitterly",
+    tagline: "Book trusted babysitters by the hour",
+    niche: "Childcare",
+    description:
+      "A friendly violet babysitting marketplace where parents book vetted sitters by the hour, with care types and service-area maps.",
+    flow: "booking-hourly",
+    priceCents: 24900,
+    accent: "#7856DE",
+    bestFor: ["Babysitting agencies", "Nanny networks", "Childcare startups", "Au pair services"],
+    highlights: [
+      "Hourly booking with number of children",
+      "Emergency-contact card shared after acceptance",
+      "Certifications and service-area steps for sitters",
+    ],
+  },
+  {
+    slug: "roomly",
+    name: "Roomly",
+    tagline: "Find rooms and flatshares",
+    niche: "Flatshares",
+    description:
+      "A green-and-navy flatshare marketplace where renters browse rooms, meet the flatmates and send an inquiry to the landlord.",
+    flow: "inquiry",
+    priceCents: 24900,
+    accent: "#149C6E",
+    bestFor: ["Flatshare sites", "Student housing", "Co-living operators", "Landlords"],
+    highlights: [
+      "Inquiry with move-in date and a short intro (default-inquiry)",
+      "Rent terms, bills and flatmate summary on every room",
+      "Room, flat, rent and availability wizard steps",
+    ],
+  },
+  {
+    slug: "stackd",
+    name: "Stackd",
+    tagline: "Buy instant digital downloads",
+    niche: "Digital products",
+    description:
+      "A bold orange marketplace for planners, e-books, photo packs, music loops and templates with instant download after checkout.",
+    flow: "download",
+    priceCents: 24900,
+    accent: "#FF5A1F",
+    bestFor: ["Digital creators", "Template shops", "Music producers", "Course creators"],
+    highlights: [
+      "Instant download library after checkout (default-download)",
+      "Preview carousel and file-type badges",
+      "Sales stats for creators",
     ],
   },
 ];

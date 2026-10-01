@@ -35,6 +35,15 @@ export const TEMPLATE_PRODUCTS: readonly TemplateProduct[] = [
   { slug: "craftly", name: "Craftly", priceCents: 24900 },
   { slug: "vowly", name: "Vowly", priceCents: 24900 },
   { slug: "courttime", name: "CourtTime", priceCents: 24900 },
+  { slug: "tutorly", name: "Tutorly", priceCents: 24900 },
+  { slug: "taskpost", name: "TaskPost", priceCents: 29900 },
+  { slug: "harvestly", name: "Harvestly", priceCents: 24900 },
+  { slug: "stashly", name: "Stashly", priceCents: 24900 },
+  { slug: "bulkly", name: "Bulkly", priceCents: 29900 },
+  { slug: "dressly", name: "Dressly", priceCents: 24900 },
+  { slug: "sitterly", name: "Sitterly", priceCents: 24900 },
+  { slug: "roomly", name: "Roomly", priceCents: 24900 },
+  { slug: "stackd", name: "Stackd", priceCents: 24900 },
 ];
 
 export const TEMPLATE_BUCKET = "template-downloads";
