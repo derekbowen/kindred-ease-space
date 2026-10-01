@@ -538,6 +538,40 @@ export const STORE_TEMPLATES: StoreTemplate[] = [
       "Sales stats for creators",
     ],
   },
+  {
+    slug: "petpal",
+    name: "PetPal",
+    tagline: "Book trusted pet sitters and boarding",
+    niche: "Pet care",
+    description:
+      "A warm amber pet-care marketplace for boarding, house sitting, drop-in visits and dog walks, with photo updates during each stay.",
+    flow: "booking-daily",
+    priceCents: 24900,
+    accent: "#D66D08",
+    bestFor: ["Pet sitters", "Dog walkers", "Boarding hosts", "Pet-care startups"],
+    highlights: [
+      "Per-night, per-visit or per-walk pricing by service",
+      "Pet selector at checkout",
+      "Photo feed of updates in the booking's inbox",
+    ],
+  },
+  {
+    slug: "wanderly",
+    name: "Wanderly",
+    tagline: "Book local tours and experiences",
+    niche: "Tours & experiences",
+    description:
+      "A sunset-coral travel marketplace where locals host food walks, kayak tours, cooking classes and photo walks with seats per departure.",
+    flow: "booking-timeslot",
+    priceCents: 29900,
+    accent: "#D23F1F",
+    bestFor: ["Tour guides", "Experience hosts", "Travel startups", "Activity operators"],
+    highlights: [
+      "Departure times with seats left and guest count",
+      "Itinerary builder and meeting-point step for hosts",
+      "What's included and what to bring on every booking",
+    ],
+  },
 ];
 
 export function getStoreTemplate(slug: string): StoreTemplate | undefined {

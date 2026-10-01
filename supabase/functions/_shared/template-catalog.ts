@@ -44,6 +44,8 @@ export const TEMPLATE_PRODUCTS: readonly TemplateProduct[] = [
   { slug: "sitterly", name: "Sitterly", priceCents: 24900 },
   { slug: "roomly", name: "Roomly", priceCents: 24900 },
   { slug: "stackd", name: "Stackd", priceCents: 24900 },
+  { slug: "petpal", name: "PetPal", priceCents: 24900 },
+  { slug: "wanderly", name: "Wanderly", priceCents: 29900 },
 ];
 
 export const TEMPLATE_BUCKET = "template-downloads";

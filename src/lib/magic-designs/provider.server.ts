@@ -48,6 +48,8 @@ export const BASE_DESIGN_IDS: Record<string, string> = {
   sitterly: "3vtxqwusknb4jjwqgrmhde",
   roomly: "ortzzcohv79ywa8kzwcvnj",
   stackd: "vsmlehtuuuoz7a1nte9s6z",
+  petpal: "etwpcqh8dtuqt7wfzke1hf",
+  wanderly: "eh1cegspt27pjbvfbdxayq",
 };
 
 export class DesignEngineUnavailable extends Error {
