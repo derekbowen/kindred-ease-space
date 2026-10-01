@@ -19,7 +19,9 @@ import { Route as HelpRouteImport } from './routes/help'
 import { Route as BetaRouteImport } from './routes/beta'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SharetribeTemplatesIndexRouteImport } from './routes/sharetribe-templates.index'
 import { Route as HelpIndexRouteImport } from './routes/help.index'
+import { Route as SharetribeTemplatesSlugRouteImport } from './routes/sharetribe-templates.$slug'
 import { Route as PSlugRouteImport } from './routes/p.$slug'
 import { Route as HelpSitemapDotxmlRouteImport } from './routes/help.sitemap[.]xml'
 import { Route as HelpSearchRouteImport } from './routes/help.search'
@@ -31,6 +33,7 @@ import { Route as AFoundersDomainTestRouteImport } from './routes/a.founders-dom
 import { Route as ASlugRouteImport } from './routes/a.$slug'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
+import { Route as SharetribeTemplatesSlugDownloadRouteImport } from './routes/sharetribe-templates.$slug_.download'
 import { Route as SWsSlugRouteImport } from './routes/s.$ws.$slug'
 import { Route as HelpCategoryArticleRouteImport } from './routes/help.$category_.$article'
 import { Route as ApiPublicVersionRouteImport } from './routes/api/public/version'
@@ -99,6 +102,7 @@ import { Route as AuthenticatedAppAffiliatesProgramsRouteImport } from './routes
 import { Route as AuthenticatedAppAffiliatesPayoutsRouteImport } from './routes/_authenticated/app.affiliates.payouts'
 import { Route as AuthenticatedAppAffiliatesDirectoryRouteImport } from './routes/_authenticated/app.affiliates.directory'
 import { Route as AuthenticatedAppAffiliatesCustomiseRouteImport } from './routes/_authenticated/app.affiliates.customise'
+import { Route as AuthenticatedAppAdminTemplateStoreRouteImport } from './routes/_authenticated/app.admin.template-store'
 import { Route as AuthenticatedAppAdminEmailTemplatesRouteImport } from './routes/_authenticated/app.admin.email-templates'
 import { Route as AuthenticatedAppSettingsIntegrationsSharetribeRouteImport } from './routes/_authenticated/app.settings.integrations.sharetribe'
 import { Route as AuthenticatedAppPagesIdEditRouteImport } from './routes/_authenticated/app.pages.$id.edit'
@@ -158,10 +162,21 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SharetribeTemplatesIndexRoute =
+  SharetribeTemplatesIndexRouteImport.update({
+    id: '/sharetribe-templates/',
+    path: '/sharetribe-templates/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const HelpIndexRoute = HelpIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => HelpRoute,
+} as any)
+const SharetribeTemplatesSlugRoute = SharetribeTemplatesSlugRouteImport.update({
+  id: '/sharetribe-templates/$slug',
+  path: '/sharetribe-templates/$slug',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const PSlugRoute = PSlugRouteImport.update({
   id: '/p/$slug',
@@ -218,6 +233,12 @@ const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
+const SharetribeTemplatesSlugDownloadRoute =
+  SharetribeTemplatesSlugDownloadRouteImport.update({
+    id: '/sharetribe-templates/$slug_/download',
+    path: '/sharetribe-templates/$slug/download',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const SWsSlugRoute = SWsSlugRouteImport.update({
   id: '/s/$ws/$slug',
   path: '/s/$ws/$slug',
@@ -612,6 +633,12 @@ const AuthenticatedAppAffiliatesCustomiseRoute =
     path: '/customise',
     getParentRoute: () => AuthenticatedAppAffiliatesRoute,
   } as any)
+const AuthenticatedAppAdminTemplateStoreRoute =
+  AuthenticatedAppAdminTemplateStoreRouteImport.update({
+    id: '/admin/template-store',
+    path: '/admin/template-store',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
 const AuthenticatedAppAdminEmailTemplatesRoute =
   AuthenticatedAppAdminEmailTemplatesRouteImport.update({
     id: '/admin/email-templates',
@@ -687,7 +714,9 @@ export interface FileRoutesByFullPath {
   '/help/search': typeof HelpSearchRoute
   '/help/sitemap.xml': typeof HelpSitemapDotxmlRoute
   '/p/$slug': typeof PSlugRoute
+  '/sharetribe-templates/$slug': typeof SharetribeTemplatesSlugRoute
   '/help/': typeof HelpIndexRoute
+  '/sharetribe-templates/': typeof SharetribeTemplatesIndexRoute
   '/app/addons': typeof AuthenticatedAppAddonsRoute
   '/app/affiliates': typeof AuthenticatedAppAffiliatesRouteWithChildren
   '/app/billing': typeof AuthenticatedAppBillingRoute
@@ -705,8 +734,10 @@ export interface FileRoutesByFullPath {
   '/api/public/version': typeof ApiPublicVersionRoute
   '/help/$category/$article': typeof HelpCategoryArticleRoute
   '/s/$ws/$slug': typeof SWsSlugRoute
+  '/sharetribe-templates/$slug/download': typeof SharetribeTemplatesSlugDownloadRoute
   '/app/': typeof AuthenticatedAppIndexRoute
   '/app/admin/email-templates': typeof AuthenticatedAppAdminEmailTemplatesRoute
+  '/app/admin/template-store': typeof AuthenticatedAppAdminTemplateStoreRoute
   '/app/affiliates/customise': typeof AuthenticatedAppAffiliatesCustomiseRoute
   '/app/affiliates/directory': typeof AuthenticatedAppAffiliatesDirectoryRoute
   '/app/affiliates/payouts': typeof AuthenticatedAppAffiliatesPayoutsRoute
@@ -785,7 +816,9 @@ export interface FileRoutesByTo {
   '/help/search': typeof HelpSearchRoute
   '/help/sitemap.xml': typeof HelpSitemapDotxmlRoute
   '/p/$slug': typeof PSlugRoute
+  '/sharetribe-templates/$slug': typeof SharetribeTemplatesSlugRoute
   '/help': typeof HelpIndexRoute
+  '/sharetribe-templates': typeof SharetribeTemplatesIndexRoute
   '/app/addons': typeof AuthenticatedAppAddonsRoute
   '/app/affiliates': typeof AuthenticatedAppAffiliatesRouteWithChildren
   '/app/billing': typeof AuthenticatedAppBillingRoute
@@ -803,8 +836,10 @@ export interface FileRoutesByTo {
   '/api/public/version': typeof ApiPublicVersionRoute
   '/help/$category/$article': typeof HelpCategoryArticleRoute
   '/s/$ws/$slug': typeof SWsSlugRoute
+  '/sharetribe-templates/$slug/download': typeof SharetribeTemplatesSlugDownloadRoute
   '/app': typeof AuthenticatedAppIndexRoute
   '/app/admin/email-templates': typeof AuthenticatedAppAdminEmailTemplatesRoute
+  '/app/admin/template-store': typeof AuthenticatedAppAdminTemplateStoreRoute
   '/app/affiliates/customise': typeof AuthenticatedAppAffiliatesCustomiseRoute
   '/app/affiliates/directory': typeof AuthenticatedAppAffiliatesDirectoryRoute
   '/app/affiliates/payouts': typeof AuthenticatedAppAffiliatesPayoutsRoute
@@ -887,7 +922,9 @@ export interface FileRoutesById {
   '/help/search': typeof HelpSearchRoute
   '/help/sitemap.xml': typeof HelpSitemapDotxmlRoute
   '/p/$slug': typeof PSlugRoute
+  '/sharetribe-templates/$slug': typeof SharetribeTemplatesSlugRoute
   '/help/': typeof HelpIndexRoute
+  '/sharetribe-templates/': typeof SharetribeTemplatesIndexRoute
   '/_authenticated/app/addons': typeof AuthenticatedAppAddonsRoute
   '/_authenticated/app/affiliates': typeof AuthenticatedAppAffiliatesRouteWithChildren
   '/_authenticated/app/billing': typeof AuthenticatedAppBillingRoute
@@ -905,8 +942,10 @@ export interface FileRoutesById {
   '/api/public/version': typeof ApiPublicVersionRoute
   '/help/$category_/$article': typeof HelpCategoryArticleRoute
   '/s/$ws/$slug': typeof SWsSlugRoute
+  '/sharetribe-templates/$slug_/download': typeof SharetribeTemplatesSlugDownloadRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
   '/_authenticated/app/admin/email-templates': typeof AuthenticatedAppAdminEmailTemplatesRoute
+  '/_authenticated/app/admin/template-store': typeof AuthenticatedAppAdminTemplateStoreRoute
   '/_authenticated/app/affiliates/customise': typeof AuthenticatedAppAffiliatesCustomiseRoute
   '/_authenticated/app/affiliates/directory': typeof AuthenticatedAppAffiliatesDirectoryRoute
   '/_authenticated/app/affiliates/payouts': typeof AuthenticatedAppAffiliatesPayoutsRoute
@@ -989,7 +1028,9 @@ export interface FileRouteTypes {
     | '/help/search'
     | '/help/sitemap.xml'
     | '/p/$slug'
+    | '/sharetribe-templates/$slug'
     | '/help/'
+    | '/sharetribe-templates/'
     | '/app/addons'
     | '/app/affiliates'
     | '/app/billing'
@@ -1007,8 +1048,10 @@ export interface FileRouteTypes {
     | '/api/public/version'
     | '/help/$category/$article'
     | '/s/$ws/$slug'
+    | '/sharetribe-templates/$slug/download'
     | '/app/'
     | '/app/admin/email-templates'
+    | '/app/admin/template-store'
     | '/app/affiliates/customise'
     | '/app/affiliates/directory'
     | '/app/affiliates/payouts'
@@ -1087,7 +1130,9 @@ export interface FileRouteTypes {
     | '/help/search'
     | '/help/sitemap.xml'
     | '/p/$slug'
+    | '/sharetribe-templates/$slug'
     | '/help'
+    | '/sharetribe-templates'
     | '/app/addons'
     | '/app/affiliates'
     | '/app/billing'
@@ -1105,8 +1150,10 @@ export interface FileRouteTypes {
     | '/api/public/version'
     | '/help/$category/$article'
     | '/s/$ws/$slug'
+    | '/sharetribe-templates/$slug/download'
     | '/app'
     | '/app/admin/email-templates'
+    | '/app/admin/template-store'
     | '/app/affiliates/customise'
     | '/app/affiliates/directory'
     | '/app/affiliates/payouts'
@@ -1188,7 +1235,9 @@ export interface FileRouteTypes {
     | '/help/search'
     | '/help/sitemap.xml'
     | '/p/$slug'
+    | '/sharetribe-templates/$slug'
     | '/help/'
+    | '/sharetribe-templates/'
     | '/_authenticated/app/addons'
     | '/_authenticated/app/affiliates'
     | '/_authenticated/app/billing'
@@ -1206,8 +1255,10 @@ export interface FileRouteTypes {
     | '/api/public/version'
     | '/help/$category_/$article'
     | '/s/$ws/$slug'
+    | '/sharetribe-templates/$slug_/download'
     | '/_authenticated/app/'
     | '/_authenticated/app/admin/email-templates'
+    | '/_authenticated/app/admin/template-store'
     | '/_authenticated/app/affiliates/customise'
     | '/_authenticated/app/affiliates/directory'
     | '/_authenticated/app/affiliates/payouts'
@@ -1285,6 +1336,8 @@ export interface RootRouteChildren {
   ASitemapDotxmlRoute: typeof ASitemapDotxmlRoute
   ApplySlugRoute: typeof ApplySlugRoute
   PSlugRoute: typeof PSlugRoute
+  SharetribeTemplatesSlugRoute: typeof SharetribeTemplatesSlugRoute
+  SharetribeTemplatesIndexRoute: typeof SharetribeTemplatesIndexRoute
   ApiPublicDomainConfigRoute: typeof ApiPublicDomainConfigRoute
   ApiPublicDomainTokenRoute: typeof ApiPublicDomainTokenRoute
   ApiPublicEdgeHealthRoute: typeof ApiPublicEdgeHealthRoute
@@ -1292,6 +1345,7 @@ export interface RootRouteChildren {
   ApiPublicSitemapByHostRoute: typeof ApiPublicSitemapByHostRoute
   ApiPublicVersionRoute: typeof ApiPublicVersionRoute
   SWsSlugRoute: typeof SWsSlugRoute
+  SharetribeTemplatesSlugDownloadRoute: typeof SharetribeTemplatesSlugDownloadRoute
   ApiPublicHooksAuthSendEmailRoute: typeof ApiPublicHooksAuthSendEmailRoute
   ApiPublicHooksCanonicalAuditRoute: typeof ApiPublicHooksCanonicalAuditRoute
   ApiPublicHooksSyncSharetribeRoute: typeof ApiPublicHooksSyncSharetribeRoute
@@ -1371,12 +1425,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sharetribe-templates/': {
+      id: '/sharetribe-templates/'
+      path: '/sharetribe-templates'
+      fullPath: '/sharetribe-templates/'
+      preLoaderRoute: typeof SharetribeTemplatesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/help/': {
       id: '/help/'
       path: '/'
       fullPath: '/help/'
       preLoaderRoute: typeof HelpIndexRouteImport
       parentRoute: typeof HelpRoute
+    }
+    '/sharetribe-templates/$slug': {
+      id: '/sharetribe-templates/$slug'
+      path: '/sharetribe-templates/$slug'
+      fullPath: '/sharetribe-templates/$slug'
+      preLoaderRoute: typeof SharetribeTemplatesSlugRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/p/$slug': {
       id: '/p/$slug'
@@ -1454,6 +1522,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app/'
       preLoaderRoute: typeof AuthenticatedAppIndexRouteImport
       parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/sharetribe-templates/$slug_/download': {
+      id: '/sharetribe-templates/$slug_/download'
+      path: '/sharetribe-templates/$slug/download'
+      fullPath: '/sharetribe-templates/$slug/download'
+      preLoaderRoute: typeof SharetribeTemplatesSlugDownloadRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/s/$ws/$slug': {
       id: '/s/$ws/$slug'
@@ -1931,6 +2006,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppAffiliatesCustomiseRouteImport
       parentRoute: typeof AuthenticatedAppAffiliatesRoute
     }
+    '/_authenticated/app/admin/template-store': {
+      id: '/_authenticated/app/admin/template-store'
+      path: '/admin/template-store'
+      fullPath: '/app/admin/template-store'
+      preLoaderRoute: typeof AuthenticatedAppAdminTemplateStoreRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
     '/_authenticated/app/admin/email-templates': {
       id: '/_authenticated/app/admin/email-templates'
       path: '/admin/email-templates'
@@ -2104,6 +2186,7 @@ interface AuthenticatedAppRouteChildren {
   AuthenticatedAppSettingsRoute: typeof AuthenticatedAppSettingsRouteWithChildren
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
   AuthenticatedAppAdminEmailTemplatesRoute: typeof AuthenticatedAppAdminEmailTemplatesRoute
+  AuthenticatedAppAdminTemplateStoreRoute: typeof AuthenticatedAppAdminTemplateStoreRoute
   AuthenticatedAppContentBlogRoute: typeof AuthenticatedAppContentBlogRoute
   AuthenticatedAppContentBulkEditorRoute: typeof AuthenticatedAppContentBulkEditorRoute
   AuthenticatedAppContentCityHeroesRoute: typeof AuthenticatedAppContentCityHeroesRoute
@@ -2159,6 +2242,8 @@ const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
   AuthenticatedAppAdminEmailTemplatesRoute:
     AuthenticatedAppAdminEmailTemplatesRoute,
+  AuthenticatedAppAdminTemplateStoreRoute:
+    AuthenticatedAppAdminTemplateStoreRoute,
   AuthenticatedAppContentBlogRoute: AuthenticatedAppContentBlogRoute,
   AuthenticatedAppContentBulkEditorRoute:
     AuthenticatedAppContentBulkEditorRoute,
@@ -2267,6 +2352,8 @@ const rootRouteChildren: RootRouteChildren = {
   ASitemapDotxmlRoute: ASitemapDotxmlRoute,
   ApplySlugRoute: ApplySlugRoute,
   PSlugRoute: PSlugRoute,
+  SharetribeTemplatesSlugRoute: SharetribeTemplatesSlugRoute,
+  SharetribeTemplatesIndexRoute: SharetribeTemplatesIndexRoute,
   ApiPublicDomainConfigRoute: ApiPublicDomainConfigRoute,
   ApiPublicDomainTokenRoute: ApiPublicDomainTokenRoute,
   ApiPublicEdgeHealthRoute: ApiPublicEdgeHealthRoute,
@@ -2274,6 +2361,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicSitemapByHostRoute: ApiPublicSitemapByHostRoute,
   ApiPublicVersionRoute: ApiPublicVersionRoute,
   SWsSlugRoute: SWsSlugRoute,
+  SharetribeTemplatesSlugDownloadRoute: SharetribeTemplatesSlugDownloadRoute,
   ApiPublicHooksAuthSendEmailRoute: ApiPublicHooksAuthSendEmailRoute,
   ApiPublicHooksCanonicalAuditRoute: ApiPublicHooksCanonicalAuditRoute,
   ApiPublicHooksSyncSharetribeRoute: ApiPublicHooksSyncSharetribeRoute,

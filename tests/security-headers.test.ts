@@ -35,6 +35,13 @@ console.log("\n=== tenant pages ===");
   t("affiliate apply page counts as tenant", isTenantPath("/apply/prog"));
   t("/app is not a tenant path", !isTenantPath("/app/pages"));
   t("/a alone (no trailing slash) is not a tenant path", !isTenantPath("/about"));
+  const preview = securityHeadersFor(new URL("https://www.founders.click/template-previews/poolshare/index.html"));
+  t("template-store previews may be framed by our own pages only", preview["X-Frame-Options"] === "SAMEORIGIN");
+  t(
+    "…and nothing else on the platform loosens",
+    securityHeadersFor(new URL("https://www.founders.click/sharetribe-templates/poolshare"))["X-Frame-Options"] === "DENY" &&
+      securityHeadersFor(new URL("https://www.founders.click/template-previewsX/a"))["X-Frame-Options"] === "DENY",
+  );
 }
 
 console.log("\n=== wrapping a response ===");

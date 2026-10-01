@@ -11,3 +11,11 @@ verify_jwt = true
 
 [functions.coach-briefing-cron]
 verify_jwt = false
+
+# Sharetribe template store. Public: buyers have no account. Each function
+# validates its own input (catalog slug / a paid Stripe session).
+[functions.template-checkout]
+verify_jwt = false
+
+[functions.template-download]
+verify_jwt = false

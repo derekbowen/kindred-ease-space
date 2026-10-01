@@ -58,6 +58,11 @@ export function SiteFooter() {
                 {t("footer.beta")}
               </Link>
             </li>
+            <li>
+              <Link to="/sharetribe-templates" className="hover:text-foreground">
+                {t("footer.templates")}
+              </Link>
+            </li>
           </ul>
         </div>
 
