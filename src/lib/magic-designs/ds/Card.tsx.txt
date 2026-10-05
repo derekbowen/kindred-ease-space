@@ -1,0 +1,142 @@
+import React, { forwardRef } from 'react'
+
+// --- merged from src/Card/Card.tsx ---
+type CardVariant = 'elevated' | 'outlined' | 'filled'
+export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  variant?: CardVariant
+  isClickable?: boolean
+  padding?: 'none' | 'small' | 'medium' | 'large'
+  rounded?: 'none' | 'small' | 'medium' | 'large'
+}
+export const Card = forwardRef<HTMLDivElement, CardProps>(
+  (
+    {
+      children,
+      className,
+      variant = 'outlined',
+      isClickable = false,
+      padding = 'medium',
+      rounded = 'medium',
+      ...props
+    },
+    ref,
+  ) => {
+    const baseStyles = 'w-full transition-all duration-200'
+    const variantStyles = {
+      elevated: 'bg-white border border-gray-200 shadow-md hover:shadow-lg',
+      outlined: 'border border-gray-300 hover:border-gray-400',
+      filled: 'bg-gray-100 hover:bg-gray-200',
+    }
+    const paddingStyles = {
+      none: 'p-0',
+      small: 'p-2',
+      medium: 'p-4',
+      large: 'p-6',
+    }
+    const roundedStyles = {
+      none: 'rounded-none',
+      small: 'rounded',
+      medium: 'rounded-lg',
+      large: 'rounded-xl',
+    }
+    const clickableStyles = isClickable
+      ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2'
+      : ''
+    return (
+      <div
+        ref={ref}
+        className={cn(
+          baseStyles,
+          variantStyles[variant],
+          paddingStyles[padding],
+          roundedStyles[rounded],
+          clickableStyles,
+          className,
+        )}
+        {...props}
+      >
+        {children}
+      </div>
+    )
+  },
+)
+Card.displayName = 'Card'
+
+// --- merged from src/Card/CardContent.tsx ---
+export interface CardContentProps extends React.HTMLAttributes<HTMLDivElement> {
+  mediaUrl?: string
+  mediaAspectRatio?: '16:9' | '4:3' | '1:1'
+}
+export const CardContent = ({
+  className,
+  children,
+  mediaUrl,
+  mediaAspectRatio = '16:9',
+  ...props
+}: CardContentProps) => {
+  const aspectRatioClasses = {
+    '16:9': 'aspect-video',
+    '4:3': 'aspect-4/3',
+    '1:1': 'aspect-square',
+  }
+  return (
+    <div className={cn('space-y-4', className)} {...props}>
+      {mediaUrl && (
+        <div
+          className={cn(
+            'overflow-hidden',
+            aspectRatioClasses[mediaAspectRatio],
+          )}
+        >
+          <img src={mediaUrl} alt="" className="w-full h-full object-cover" />
+        </div>
+      )}
+      {children}
+    </div>
+  )
+}
+
+// --- merged from src/Card/CardFooter.tsx ---
+export interface CardFooterProps extends React.HTMLAttributes<HTMLDivElement> {}
+export const CardFooter = ({
+  className,
+  children,
+  ...props
+}: CardFooterProps) => {
+  return (
+    <div className={cn('pt-4 flex items-center', className)} {...props}>
+      {children}
+    </div>
+  )
+}
+
+// --- merged from src/Card/CardHeader.tsx ---
+export interface CardHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
+  title?: string
+  subtitle?: string
+}
+export const CardHeader = ({
+  className,
+  title,
+  subtitle,
+  children,
+  ...props
+}: CardHeaderProps) => {
+  return (
+    <div className={cn('space-y-1.5 pb-4', className)} {...props}>
+      {children || (
+        <>
+          {title && (
+            <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          )}
+          {subtitle && <p className="text-sm text-gray-600">{subtitle}</p>}
+        </>
+      )}
+    </div>
+  )
+}
+
+// --- merged from src/utils.ts ---
+export function cn(...classes: (string | undefined)[]) {
+  return classes.filter(Boolean).join(' ')
+}

@@ -1,0 +1,148 @@
+import React, { useCallback, useEffect, useState, useRef } from 'react'
+import { useFloating, autoUpdate, offset, flip, shift, arrow, useHover, useFocus, useClick, useDismiss, useRole, useInteractions, FloatingArrow, type Placement } from '@floating-ui/react'
+import { AnimatePresence, motion } from 'framer-motion'
+
+// --- merged from src/Tooltip.tsx ---
+export type TooltipTrigger = 'hover' | 'click' | 'focus' | 'manual'
+export type TooltipSize = 'sm' | 'md' | 'lg'
+export interface TooltipProps {
+  children: React.ReactNode
+  content: React.ReactNode
+  placement?: Placement
+  trigger?: TooltipTrigger | TooltipTrigger[]
+  size?: TooltipSize
+  showDelay?: number
+  hideDelay?: number
+  maxWidth?: number
+  showArrow?: boolean
+  arrowSize?: number
+  isOpen?: boolean
+  onOpenChange?: (open: boolean) => void
+  className?: string
+}
+const sizeToWidth = {
+  sm: 'max-w-[200px]',
+  md: 'max-w-[300px]',
+  lg: 'max-w-[400px]',
+}
+export const Tooltip = ({
+  children,
+  content,
+  placement = 'top',
+  trigger = 'hover',
+  size = 'md',
+  showDelay = 200,
+  hideDelay = 150,
+  showArrow = true,
+  arrowSize = 8,
+  isOpen: controlledIsOpen,
+  onOpenChange,
+  className,
+}: TooltipProps) => {
+  const [uncontrolledIsOpen, setUncontrolledIsOpen] = useState(false)
+  const arrowRef = useRef(null)
+  const isOpen = controlledIsOpen ?? uncontrolledIsOpen
+  const setIsOpen = onOpenChange ?? setUncontrolledIsOpen
+  const triggers = Array.isArray(trigger) ? trigger : [trigger]
+  const {
+    x,
+    y,
+    refs,
+    strategy,
+    context,
+    placement: finalPlacement,
+    middlewareData: { arrow: { x: arrowX, y: arrowY } = {} },
+  } = useFloating({
+    placement,
+    open: isOpen,
+    onOpenChange: setIsOpen,
+    middleware: [
+      offset(8),
+      flip(),
+      shift({
+        padding: 8,
+      }),
+      arrow({
+        element: arrowRef,
+        padding: 4,
+      }),
+    ],
+    whileElementsMounted: autoUpdate,
+  })
+  const hover = useHover(context, {
+    move: false,
+    delay: {
+      open: showDelay,
+      close: hideDelay,
+    },
+  })
+  const focus = useFocus(context)
+  const click = useClick(context)
+  const dismiss = useDismiss(context)
+  const role = useRole(context, {
+    role: 'tooltip',
+  })
+  const interactions = useInteractions([
+    triggers.includes('hover') ? hover : {},
+    triggers.includes('focus') ? focus : {},
+    triggers.includes('click') ? click : {},
+    dismiss,
+    role,
+  ])
+  return (
+    <>
+      <div
+        ref={refs.setReference}
+        className="inline-block"
+        {...interactions.getReferenceProps()}
+      >
+        {children}
+      </div>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            ref={refs.setFloating}
+            className={`absolute z-50 ${sizeToWidth[size]} ${className ?? ''}`}
+            style={{
+              position: strategy,
+              top: y ?? 0,
+              left: x ?? 0,
+            }}
+            initial={{
+              opacity: 0,
+              scale: 0.95,
+            }}
+            animate={{
+              opacity: 1,
+              scale: 1,
+            }}
+            exit={{
+              opacity: 0,
+              scale: 0.95,
+            }}
+            transition={{
+              duration: 0.15,
+            }}
+            {...interactions.getFloatingProps()}
+          >
+            <div className="relative bg-white border border-gray-200 rounded-md shadow-sm p-2 text-sm text-gray-800">
+              {content}
+              {showArrow && (
+                <FloatingArrow
+                  ref={arrowRef}
+                  context={context}
+                  fill="white"
+                  stroke="rgb(229, 231, 235)"
+                  strokeWidth={1}
+                  width={arrowSize}
+                  height={arrowSize}
+                  tipRadius={1}
+                />
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  )
+}

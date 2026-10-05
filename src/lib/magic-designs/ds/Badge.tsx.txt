@@ -1,0 +1,120 @@
+import React, { useEffect, useState } from 'react'
+import { AlertCircle, CheckCircle, Info, AlertTriangle, X } from 'lucide-react'
+
+// --- merged from src/Badge.tsx ---
+type BadgeVariant = 'primary' | 'secondary' | 'success' | 'warning' | 'error'
+type BadgeSize = 'small' | 'medium' | 'large'
+type BadgeShape = 'circle' | 'rounded' | 'square'
+type BadgePosition =
+  | 'top-right'
+  | 'top-left'
+  | 'bottom-right'
+  | 'bottom-left'
+  | 'center'
+type BadgeStyle = 'bordered' | 'filled'
+interface BadgeProps {
+  children?: React.ReactNode
+  variant?: BadgeVariant
+  size?: BadgeSize
+  shape?: BadgeShape
+  position?: BadgePosition
+  style?: BadgeStyle
+  icon?: boolean
+  max?: number
+  visible?: boolean
+  dismissible?: boolean
+  className?: string
+  onDismiss?: () => void
+}
+const variantStyles: Record<BadgeVariant, string> = {
+  primary: 'bg-black text-white border-black',
+  secondary: 'bg-gray-200 text-gray-700 border-gray-300',
+  success: 'bg-gray-100 text-gray-800 border-gray-200',
+  warning: 'bg-gray-300 text-gray-900 border-gray-400',
+  error: 'bg-gray-800 text-white border-gray-900',
+}
+const sizeStyles: Record<BadgeSize, string> = {
+  small: 'text-xs px-1.5 py-0.5 min-w-[1.25rem]',
+  medium: 'text-sm px-2 py-1 min-w-[1.5rem]',
+  large: 'text-base px-2.5 py-1.5 min-w-[1.75rem]',
+}
+const shapeStyles: Record<BadgeShape, string> = {
+  circle: 'rounded-full',
+  rounded: 'rounded-md',
+  square: 'rounded-none',
+}
+const positionStyles: Record<BadgePosition, string> = {
+  'top-right': 'absolute top-0 right-0 -translate-y-1/2 translate-x-1/2',
+  'top-left': 'absolute top-0 left-0 -translate-y-1/2 -translate-x-1/2',
+  'bottom-right': 'absolute bottom-0 right-0 translate-y-1/2 translate-x-1/2',
+  'bottom-left': 'absolute bottom-0 left-0 translate-y-1/2 -translate-x-1/2',
+  center: 'relative',
+}
+const iconMap: Record<BadgeVariant, React.ReactNode> = {
+  primary: <Info size={12} />,
+  secondary: <Info size={12} />,
+  success: <CheckCircle size={12} />,
+  warning: <AlertTriangle size={12} />,
+  error: <AlertCircle size={12} />,
+}
+export const Badge = ({
+  children,
+  variant = 'primary',
+  size = 'medium',
+  shape = 'rounded',
+  position = 'center',
+  style = 'filled',
+  icon = false,
+  max = 99,
+  visible = true,
+  dismissible = false,
+  className = '',
+  onDismiss,
+}: BadgeProps) => {
+  const [isVisible, setIsVisible] = useState(visible)
+  const [content, setContent] = useState(children)
+  useEffect(() => {
+    setIsVisible(visible)
+  }, [visible])
+  useEffect(() => {
+    if (typeof children === 'number' && children > max) {
+      setContent(`${max}+`)
+    } else {
+      setContent(children)
+    }
+  }, [children, max])
+  if (!isVisible) return null
+  const baseStyles = `
+    inline-flex items-center justify-center
+    transition-all duration-200 ease-in-out
+    ${style === 'bordered' ? 'border-2' : 'border-0'}
+    ${variantStyles[variant]}
+    ${sizeStyles[size]}
+    ${shapeStyles[shape]}
+    ${positionStyles[position]}
+    ${className}
+  `
+  const handleDismiss = () => {
+    setIsVisible(false)
+    onDismiss?.()
+  }
+  return (
+    <span
+      className={baseStyles}
+      role={variant === 'primary' ? 'status' : 'badge'}
+      aria-label={`${variant} badge`}
+    >
+      {icon && <span className="mr-1">{iconMap[variant]}</span>}
+      {content}
+      {dismissible && (
+        <button
+          onClick={handleDismiss}
+          className="ml-1 hover:opacity-80 focus:outline-none"
+          aria-label="Dismiss badge"
+        >
+          <X size={12} />
+        </button>
+      )}
+    </span>
+  )
+}

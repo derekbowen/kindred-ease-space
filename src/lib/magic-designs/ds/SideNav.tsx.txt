@@ -1,0 +1,136 @@
+import React, { useState } from 'react'
+import { ChevronLeft, ChevronRight, FileText, Users, ClipboardList, Settings, LogOut, Menu } from 'lucide-react'
+
+// --- merged from src/SideNav.tsx ---
+interface NavItemProps {
+  icon: React.ReactNode
+  label: string
+  isActive?: boolean
+  isCollapsed?: boolean
+  onClick?: () => void
+}
+const NavItem = ({
+  icon,
+  label,
+  isActive,
+  isCollapsed,
+  onClick,
+}: NavItemProps) => (
+  <button
+    onClick={onClick}
+    className={`
+      w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200
+      ${isActive ? 'bg-blue-700 text-white' : 'text-gray-600 hover:bg-gray-100'}
+    `}
+  >
+    <div className="min-w-[24px]">{icon}</div>
+    {!isCollapsed && <span className="text-sm font-medium">{label}</span>}
+  </button>
+)
+interface NavGroupProps {
+  title: string
+  children: React.ReactNode
+  isCollapsed?: boolean
+}
+const NavGroup = ({ title, children, isCollapsed }: NavGroupProps) => (
+  <div className="py-4">
+    {!isCollapsed && (
+      <h3 className="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase">
+        {title}
+      </h3>
+    )}
+    <div className="space-y-1">{children}</div>
+  </div>
+)
+export const SideNav = () => {
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isMobileOpen, setIsMobileOpen] = useState(false)
+  const [activeItem, setActiveItem] = useState('exam-results')
+  return (
+    <>
+      {/* Mobile Menu Button */}
+      <button
+        onClick={() => setIsMobileOpen(true)}
+        className="lg:hidden fixed top-4 left-4 p-2 rounded-lg bg-white shadow-lg border border-gray-200"
+      >
+        <Menu className="w-5 h-5 text-gray-600" />
+      </button>
+      {/* Backdrop */}
+      {isMobileOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
+          onClick={() => setIsMobileOpen(false)}
+        />
+      )}
+      {/* Side Navigation */}
+      <aside
+        className={`
+          fixed top-0 left-0 z-50 h-full bg-white border-r border-gray-200
+          transition-all duration-300 ease-in-out
+          ${isCollapsed ? 'w-[72px]' : 'w-[240px]'}
+          ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        `}
+      >
+        {/* Header */}
+        <div className="h-16 flex items-center justify-between px-3 border-b border-gray-200">
+          {!isCollapsed && (
+            <div className="text-xl font-bold text-blue-700">SSEQ</div>
+          )}
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="p-2 rounded-lg hover:bg-gray-100 lg:block hidden"
+          >
+            {isCollapsed ? (
+              <ChevronRight className="w-5 h-5 text-gray-600" />
+            ) : (
+              <ChevronLeft className="w-5 h-5 text-gray-600" />
+            )}
+          </button>
+        </div>
+        {/* Navigation Groups */}
+        <div className="overflow-y-auto h-[calc(100vh-4rem)]">
+          <NavGroup title="Main Menu" isCollapsed={isCollapsed}>
+            <NavItem
+              icon={<FileText className="w-5 h-5" />}
+              label="SSEQ Exam Results"
+              isActive={activeItem === 'exam-results'}
+              isCollapsed={isCollapsed}
+              onClick={() => setActiveItem('exam-results')}
+            />
+            <NavItem
+              icon={<ClipboardList className="w-5 h-5" />}
+              label="Question Point Values"
+              isActive={activeItem === 'point-values'}
+              isCollapsed={isCollapsed}
+              onClick={() => setActiveItem('point-values')}
+            />
+          </NavGroup>
+          <NavGroup title="Management" isCollapsed={isCollapsed}>
+            <NavItem
+              icon={<Users className="w-5 h-5" />}
+              label="Student Points"
+              isActive={activeItem === 'student-points'}
+              isCollapsed={isCollapsed}
+              onClick={() => setActiveItem('student-points')}
+            />
+            <NavItem
+              icon={<Settings className="w-5 h-5" />}
+              label="Faculty Submission"
+              isActive={activeItem === 'faculty-submission'}
+              isCollapsed={isCollapsed}
+              onClick={() => setActiveItem('faculty-submission')}
+            />
+          </NavGroup>
+          {/* Bottom Section */}
+          <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200">
+            <NavItem
+              icon={<LogOut className="w-5 h-5" />}
+              label="Logout"
+              isCollapsed={isCollapsed}
+            />
+          </div>
+        </div>
+      </aside>
+    </>
+  )
+}

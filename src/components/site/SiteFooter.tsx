@@ -63,6 +63,11 @@ export function SiteFooter() {
                 {t("footer.templates")}
               </Link>
             </li>
+            <li>
+              <Link to="/magic-designs" className="hover:text-foreground">
+                {t("footer.magicDesigns")}
+              </Link>
+            </li>
           </ul>
         </div>
 

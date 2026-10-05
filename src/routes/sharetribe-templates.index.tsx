@@ -60,6 +60,27 @@ function TemplateStorePage() {
           </div>
         </section>
 
+        <section className="mx-auto max-w-6xl px-4 pb-14 sm:px-6">
+          <div className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-border bg-gradient-to-r from-brand/10 to-transparent p-8 sm:flex-row sm:items-center">
+            <div>
+              <p className="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-brand">
+                Magic Designs by founders.click
+              </p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight">Need something custom?</h2>
+              <p className="mt-1 max-w-xl text-muted-foreground">
+                Describe your marketplace and get a custom design built on the Sharetribe template,
+                refined with Sharetribe-aware changes and ready for your developer.
+              </p>
+            </div>
+            <Link
+              to="/magic-designs"
+              className="inline-flex h-11 shrink-0 items-center rounded-md bg-brand px-6 font-semibold text-white hover:opacity-90"
+            >
+              Design yours →
+            </Link>
+          </div>
+        </section>
+
         <section className="border-t border-border bg-muted/30">
           <div className="mx-auto max-w-4xl px-6 py-14">
             <h2 className="text-center text-2xl font-bold tracking-tight">
