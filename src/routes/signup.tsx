@@ -98,9 +98,9 @@ function SignupPage() {
         {confirmEmail ? (
           <div className="space-y-4 text-center">
             <p className="text-sm text-muted-foreground">
-              We sent a confirmation link to{" "}
-              <span className="font-medium text-foreground">{email}</span>. Click it to activate
-              your workspace, then sign in.
+              Check the inbox and spam folder for{" "}
+              <span className="font-medium text-foreground">{email}</span> for a confirmation link.
+              Once you have confirmed your email, sign in.
             </p>
             <Button asChild className="w-full">
               <Link to="/login">Go to sign in</Link>

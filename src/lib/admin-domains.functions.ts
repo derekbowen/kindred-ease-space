@@ -507,7 +507,7 @@ export const verifyWorkspaceDomain = createServerFn({ method: "POST" })
     const { data: row } = await sb()
       .from("workspace_domains")
       .select(
-        "id, hostname, verification_token, verified, verified_at, verification_method, cloudflare_hostname_id, cloudflare_route_id",
+        "id, hostname, verification_token, verified, verified_at, verification_method, connection_type, status, cloudflare_hostname_id, cloudflare_route_id",
       )
       .eq("workspace_id", data.workspaceId)
       .eq("id", data.id)
@@ -572,65 +572,81 @@ export const verifyWorkspaceDomain = createServerFn({ method: "POST" })
       }
     }
 
-    // Ownership is proven, so provision the edge now: custom hostname + Worker
-    // route as ONE unit (see domain-provisioning.server.ts for why atomicity
-    // matters — a hostname without its route falls through to the originless
-    // fallback origin and that customer is hard down, not degraded).
-    const { isEdgeProvisioningConfigured, provisionDomainAtEdge } = await import(
-      "@/lib/domain-provisioning.server"
-    );
-    // If we CANNOT provision, say so and stop. Skipping silently used to let
-    // the flow advance to "point your DNS at proxy.founders.click" without a
-    // custom hostname or Worker route existing. That fallback origin is
-    // deliberately originless (AAAA 100::), so a customer who followed those
-    // instructions would take their own domain hard down, and nothing in the
-    // product would have told them anything was wrong.
-    //
-    // Ownership really is verified, so that stays recorded. What is NOT true is
-    // that the domain is ready for DNS, and the UI must not imply it.
-    if (!isEdgeProvisioningConfigured()) {
-      const blocked =
-        "Domain verified, but founders.click can't route traffic yet: edge provisioning is not configured " +
-        "(CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_ID). DO NOT change your DNS yet — pointing it at the edge " +
-        "before routing exists would take your site offline. We've been notified.";
-      console.error(
-        "[domains] BLOCKED: edge provisioning unconfigured; refusing to advance",
-        row.hostname,
+    // Customer-managed routing supplies its own certificate and origin.
+    // Ownership is checked above; activation still checks HTTPS below.
+    if (row.connection_type !== "customer_proxy") {
+      // Ownership is proven, so provision the edge now: custom hostname + Worker
+      // route as ONE unit (see domain-provisioning.server.ts for why atomicity
+      // matters — a hostname without its route falls through to the originless
+      // fallback origin and that customer is hard down, not degraded).
+      const { isEdgeProvisioningConfigured, provisionDomainAtEdge } = await import(
+        "@/lib/domain-provisioning.server"
       );
-      await sb()
-        .from("workspace_domains")
-        .update({ status: "error", last_error: blocked })
-        .eq("id", row.id);
-      return { ok: false as const, error: blocked };
-    }
+      // If we CANNOT provision, say so and stop. Skipping silently used to let
+      // the flow advance to "point your DNS at proxy.founders.click" without a
+      // custom hostname or Worker route existing. That fallback origin is
+      // deliberately originless (AAAA 100::), so a customer who followed those
+      // instructions would take their own domain hard down, and nothing in the
+      // product would have told them anything was wrong.
+      //
+      // Ownership really is verified, so that stays recorded. What is NOT true is
+      // that the domain is ready for DNS, and the UI must not imply it.
+      if (!isEdgeProvisioningConfigured()) {
+        const blocked =
+          "Domain verified, but founders.click can't route traffic yet: edge provisioning is not configured " +
+          "(CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_ID). DO NOT change your DNS yet — pointing it at the edge " +
+          "before routing exists would take your site offline. We've been notified.";
+        console.error(
+          "[domains] BLOCKED: edge provisioning unconfigured; refusing to advance",
+          row.hostname,
+        );
+        await sb()
+          .from("workspace_domains")
+          .update({ status: "error", last_error: blocked })
+          .eq("id", row.id);
+        return { ok: false as const, error: blocked };
+      }
 
-    // The edge is built for a hostname, not a row id: make sure this row is
-    // still ours before a custom hostname and route are created for it.
-    const held = await domainRowStillHeld(sb(), row, data.workspaceId, { verified: false });
-    if (!held.ok) return { ok: false as const, error: held.error };
+      // The edge is built for a hostname, not a row id: make sure this row is
+      // still ours before a custom hostname and route are created for it.
+      const held = await domainRowStillHeld(sb(), row, data.workspaceId, { verified: false });
+      if (!held.ok) return { ok: false as const, error: held.error };
 
-    try {
-      const cf = await provisionDomainAtEdge(row.hostname);
-      await sb()
+      try {
+        const cf = await provisionDomainAtEdge(row.hostname);
+        await sb()
+          .from("workspace_domains")
+          .update({
+            cloudflare_hostname_id: cf.hostnameId,
+            cloudflare_route_id: cf.routeId,
+            status: "ssl_pending",
+            last_error: null,
+          })
+          .eq("id", row.id);
+      } catch (e) {
+        // Provisioning failed and rolled back — stay in
+        // dns_configuration_required and surface it. Never advance toward
+        // active on a half-built edge.
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error("[domains] edge provisioning failed", row.hostname, msg);
+        await sb()
+          .from("workspace_domains")
+          .update({ status: "error", last_error: `Edge provisioning failed: ${msg}` })
+          .eq("id", row.id);
+        return { ok: false as const, error: `Edge provisioning failed: ${msg}` };
+      }
+    } else {
+      // Recover from an earlier managed-edge error without claiming activation.
+      // The owner still needs to pass the real HTTPS routing check below.
+      const { data: ready, error: readyError } = await sb()
         .from("workspace_domains")
-        .update({
-          cloudflare_hostname_id: cf.hostnameId,
-          cloudflare_route_id: cf.routeId,
-          status: "ssl_pending",
-          last_error: null,
-        })
-        .eq("id", row.id);
-    } catch (e) {
-      // Provisioning failed and rolled back — stay in
-      // dns_configuration_required and surface it. Never advance toward
-      // active on a half-built edge.
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error("[domains] edge provisioning failed", row.hostname, msg);
-      await sb()
-        .from("workspace_domains")
-        .update({ status: "error", last_error: `Edge provisioning failed: ${msg}` })
-        .eq("id", row.id);
-      return { ok: false as const, error: `Edge provisioning failed: ${msg}` };
+        .update({ status: row.status === "active" ? "active" : "dns_configuration_required", last_error: null })
+        .eq("id", row.id)
+        .eq("workspace_id", data.workspaceId)
+        .eq("verified", true)
+        .select("id");
+      if (readyError) return { ok: false as const, error: readyError.message };
+      if (!Array.isArray(ready) || ready.length === 0) return { ok: false as const, error: DOMAIN_RECLAIMED_ERROR };
     }
 
     // Keep workspaces.marketplace_domain + domain_verified_at in sync so Settings
@@ -728,7 +744,9 @@ export const activateWorkspaceDomain = createServerFn({ method: "POST" })
     await assertWorkspaceOwner(data.workspaceId, context.userId);
     const { data: row } = await sb()
       .from("workspace_domains")
-      .select("id, hostname, verified, connection_type, route_prefix, status")
+      .select(
+        "id, hostname, verified, connection_type, route_prefix, status, cloudflare_hostname_id",
+      )
       .eq("workspace_id", data.workspaceId)
       .eq("id", data.id)
       .maybeSingle();
@@ -739,6 +757,38 @@ export const activateWorkspaceDomain = createServerFn({ method: "POST" })
 
     const prefix = (row.route_prefix || "/a/").replace(/\/$/, "");
     const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
+    let sslStatus: string | undefined;
+
+    // Ownership proof and certificate issuance are separate. Read Cloudflare's
+    // source of truth, rather than leaving ssl_pending as a guessed status or
+    // treating another matching certificate's TLS handshake as completion.
+    // A customer-managed proxy terminates TLS itself and has no such CF gate.
+    if (row.connection_type !== "customer_proxy") {
+      try {
+        if (!row.cloudflare_hostname_id) throw new Error("custom hostname not provisioned");
+        const { getCustomHostnameStatus } = await import("@/lib/domain-provisioning.server");
+        const state = await getCustomHostnameStatus(row.cloudflare_hostname_id, row.hostname);
+        sslStatus = state.sslStatus;
+        checks.push({
+          name: "domain_certificate",
+          ok: state.hostnameStatus === "active" && state.sslStatus === "active",
+          detail:
+            state.hostnameStatus !== "active"
+              ? "Domain routing is still waiting for validation. Check the DNS record above and test again."
+              : state.sslStatus !== "active"
+                ? "Your domain is verified, but its certificate is not ready yet. Check your DNS record and test again."
+                : "Domain routing and security certificate are ready.",
+        });
+      } catch (error) {
+        console.error("[domains] certificate status check failed", row.hostname, error);
+        checks.push({
+          name: "domain_certificate",
+          ok: false,
+          detail:
+            "We couldn't check your domain's certificate. Retry setup or contact support if it keeps happening.",
+        });
+      }
+    }
 
     // Check 1: the Founders route answers through the customer's domain.
     try {
@@ -821,7 +871,20 @@ export const activateWorkspaceDomain = createServerFn({ method: "POST" })
     if (!allOk) {
       console.error("[domains] activation check failed", row.hostname, failDetail);
     }
-    await sb().from("workspace_domains").update(patch).eq("id", row.id);
+    const { data: updated, error: updateError } = await sb()
+      .from("workspace_domains")
+      .update({ ...patch, ...(sslStatus === undefined ? {} : { ssl_status: sslStatus }) })
+      .eq("id", row.id)
+      .eq("workspace_id", data.workspaceId)
+      .select("id");
+    if (updateError || !updated?.length) {
+      console.error("[domains] could not save activation result", updateError?.message);
+      return {
+        ok: false,
+        checks,
+        error: "We couldn't save your connection check. Refresh and try again.",
+      };
+    }
 
     return { ok: allOk, checks, status: allOk ? "active" : (patch.status as string) };
   });

@@ -54,6 +54,9 @@ const DOMAIN_TEST_FAILED =
   "Your domain isn't serving founders.click pages yet. Check the DNS record above, give it a few minutes, and test again.";
 
 function checkFallback(name: string): string {
+  if (name === "domain_certificate") {
+    return "Your domain's certificate isn't ready yet. Check the DNS record above and test again.";
+  }
   return name === "customer_site"
     ? "Your existing site didn't answer through the edge. Check the origin setting, then test again."
     : DOMAIN_TEST_FAILED;
@@ -153,11 +156,12 @@ function DomainsPage() {
       try {
         for (const d of pending) {
           if (d.status === "verification_required" || d.status === "pending") {
-            const r = await verify({ data: { workspaceId, id: d.id } });
-            if (r.ok) await reload(workspaceId);
+            await verify({ data: { workspaceId, id: d.id } });
+            await reload(workspaceId);
           } else {
             const r = await activate({ data: { workspaceId, id: d.id } });
-            if (r.ok) await reload(workspaceId);
+            setChecks((c) => ({ ...c, [d.id]: r.checks ?? [] }));
+            await reload(workspaceId);
           }
         }
       } catch {
@@ -194,8 +198,8 @@ function DomainsPage() {
     setErrors((e) => ({ ...e, [id]: "" }));
     try {
       const r = await verify({ data: { workspaceId, id } });
-      if (r.ok) await reload(workspaceId);
-      else setErrors((e) => ({ ...e, [id]: userMessage(r.error, DOMAIN_VERIFY_FAILED) }));
+      if (!r.ok) setErrors((e) => ({ ...e, [id]: userMessage(r.error, DOMAIN_VERIFY_FAILED) }));
+      await reload(workspaceId);
     } finally {
       setWorkingId(null);
     }
@@ -208,7 +212,8 @@ function DomainsPage() {
     try {
       const r = await activate({ data: { workspaceId, id } });
       setChecks((c) => ({ ...c, [id]: r.checks ?? [] }));
-      if (r.ok) await reload(workspaceId);
+      if (r.error) setErrors((e) => ({ ...e, [id]: userMessage(r.error, DOMAIN_TEST_FAILED) }));
+      await reload(workspaceId);
     } catch (e) {
       setErrors((er) => ({ ...er, [id]: userMessage(e, DOMAIN_TEST_FAILED) }));
     } finally {
@@ -398,7 +403,9 @@ function DomainsPage() {
               {(d.status === "dns_configuration_required" || d.status === "ssl_pending") && (
                 <div className="space-y-3 rounded-md border bg-muted/30 p-3 text-sm">
                   <p className="font-medium">
-                    Ownership verified ✓ — now point your DNS at the Founders edge.
+                    {d.connection_type === "customer_proxy"
+                      ? "Ownership verified ✓ — test your domain's routing below."
+                      : "Ownership verified ✓ — now point your DNS at the Founders edge."}
                   </p>
                   {d.status === "ssl_pending" && (
                     <p className="text-muted-foreground">

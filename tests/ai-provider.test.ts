@@ -248,6 +248,14 @@ console.log("\n=== HTTP errors: typed, one request (no retries), no provider pro
   const limited = await callOpenAI({ ...base });
   t("429 → kind rate_limited, exactly ONE request (maxRetries 0)", !limited.ok && limited.kind === "rate_limited" && captured.length === 1, `${captured.length} requests`);
 
+  // Observed on the isolated Worker: billing exhaustion is also HTTP 429.
+  // Retrying it as temporary congestion cannot restore generation.
+  for (const [type, code] of [["insufficient_quota", "credit_balance_exhausted"], ["insufficient_quota", "insufficient_quota"], ["billing_error", "credit_balance_exhausted"]]) {
+    reset(() => jsonResponse(429, errBody("No credits remaining", type!, code!), { "x-request-id": "req_quota_test" }));
+    const quota = await callOpenAI({ ...base });
+    t(`429 ${type}/${code} → quota_exhausted, one request, no usage`, !quota.ok && quota.kind === "quota_exhausted" && quota.httpStatus === 429 && quota.requestId === "req_quota_test" && quota.usage === null && captured.length === 1);
+  }
+
   for (const status of [500, 503]) {
     reset(() => jsonResponse(status, errBody("The server had an error", "server_error", "server_error")));
     const r = await callOpenAI({ ...base });

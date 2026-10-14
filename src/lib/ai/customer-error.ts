@@ -38,6 +38,7 @@ export const AI_MESSAGES = Object.freeze({
   providerError: "The AI provider returned an error; try again or contact support.",
   timeout: "The AI provider took too long to respond. Try again in a minute.",
   providerBusy: "The AI provider is busy right now. Try again in a minute.",
+  providerQuotaExhausted: "AI generation is unavailable because its service balance or spending limit has been reached. Contact support to restore access.",
   rateLimited: "Too many AI requests for this workspace right now. Wait a minute and try again.",
   platformPaused: "AI features are paused platform-wide right now. Try again later.",
   generationPaused: "Paused: page generation is paused platform-wide right now. Try again later.",

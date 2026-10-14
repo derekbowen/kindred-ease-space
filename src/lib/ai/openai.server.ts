@@ -85,6 +85,7 @@ export type OpenAiFailureKind =
   | "auth"
   | "bad_request"
   | "rate_limited"
+  | "quota_exhausted"
   | "server_error"
   | "timeout"
   | "network"
@@ -323,7 +324,9 @@ function classifyError(
       status === 401 || status === 403
         ? "auth"
         : status === 429
-          ? "rate_limited"
+          ? e.type === "insufficient_quota" || e.code === "insufficient_quota" || e.code === "credit_balance_exhausted"
+            ? "quota_exhausted"
+            : "rate_limited"
           : status >= 500
             ? "server_error"
             : "bad_request";

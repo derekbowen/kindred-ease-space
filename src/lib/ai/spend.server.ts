@@ -332,6 +332,8 @@ export function failureMessage(kind: OpenAiFailureKind): string {
       return AI_MESSAGES.notConfigured;
     case "rate_limited":
       return AI_MESSAGES.providerBusy;
+    case "quota_exhausted":
+      return AI_MESSAGES.providerQuotaExhausted;
     case "timeout":
       return AI_MESSAGES.timeout;
     case "server_error":

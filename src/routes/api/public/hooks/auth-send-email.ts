@@ -18,12 +18,10 @@
  *   URI:    https://www.founders.click/api/public/hooks/auth-send-email
  *   Secret: copy into the Worker as SEND_EMAIL_HOOK_SECRET (type Secret)
  *
- * FAILURE POSTURE: a non-2xx from here fails the customer's signup — the
- * outage we are fixing. So the ONLY hard failures are a missing/invalid
- * signature (a forged call must never trigger mail) and a missing recipient.
- * An EmailIt delivery error still returns 200 with the failure logged loudly:
- * an account that exists but must use "resend confirmation" beats a signup
- * that appears completely broken.
+ * FAILURE POSTURE: reject invalid signatures and malformed requests. If the
+ * email provider rejects the send, return an error to Supabase so the signup
+ * page cannot report a successful confirmation request. Provider acceptance
+ * still does not prove inbox delivery; that requires a real delivery check.
  */
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -104,12 +102,23 @@ export const Route = createFileRoute("/api/public/hooks/auth-send-email")({
         const name: string = payload?.user?.user_metadata?.full_name ?? "";
         const mail = copyFor(action, url, payload?.email_data?.token, name);
 
-        const result = await sendEmail({ to, subject: mail.subject, html: mail.html, text: mail.text });
+        const result = await sendEmail({
+          to,
+          subject: mail.subject,
+          html: mail.html,
+          text: mail.text,
+        });
         if (!result.ok) {
-          // Deliberate 200: failing the hook fails the SIGNUP itself, which is
-          // a platform-wide outage. A missed email is recoverable ("resend
-          // confirmation"); a failed signup is not. Loud log, calm response.
           console.error("[auth-send-email] EmailIt send FAILED", action, result.error);
+          return new Response(
+            JSON.stringify({
+              error: {
+                http_code: 503,
+                message: "We couldn't send the email. Please try again later or contact support.",
+              },
+            }),
+            { status: 503, headers: { "Content-Type": "application/json" } },
+          );
         }
         return new Response(JSON.stringify({}), {
           status: 200,

@@ -35,6 +35,8 @@ export const NETWORK_ERROR_MESSAGE =
 export const SESSION_EXPIRED_MESSAGE = "Your session has expired. Sign in again to continue.";
 export const NO_PERMISSION_MESSAGE = "You don't have permission to do that.";
 export const OWNER_ONLY_MESSAGE = "Only the workspace owner can do that.";
+export const AUTH_EMAIL_LIMIT_MESSAGE =
+  "We can't send another account email yet because the hourly email limit has been reached. Please wait and try again later.";
 
 /** Longest server text that may reach a customer verbatim. */
 export const MAX_PASS_THROUGH_LENGTH = 200;
@@ -52,6 +54,10 @@ function isRecord(v: unknown): v is Rec {
 export function userMessage(e: unknown, fallback: string): string {
   const fb = typeof fallback === "string" && fallback.trim() ? fallback.trim() : GENERIC_FALLBACK;
   if (e === null || e === undefined) return fb;
+
+  // Supabase returns a machine-readable code for the shared signup/recovery
+  // email budget. Explain the retry action without displaying provider prose.
+  if (isRecord(e) && e.code === "over_email_send_rate_limit") return AUTH_EMAIL_LIMIT_MESSAGE;
 
   // 1. Written for the customer by the server.
   if (isRecord(e) && (e.name === "CustomerFacingError" || e.customerFacing === true)) {

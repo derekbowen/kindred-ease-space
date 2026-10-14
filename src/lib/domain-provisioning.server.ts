@@ -43,6 +43,27 @@ export function isEdgeProvisioningConfigured(): boolean {
   return Boolean(token && zoneId);
 }
 
+/** Read the certificate's real onboarding state; a successful HTTPS request
+ * may use another matching certificate before this one finishes deployment. */
+export async function getCustomHostnameStatus(
+  id: string,
+  hostname: string,
+): Promise<{
+  hostnameStatus: string;
+  sslStatus: string;
+}> {
+  const { zoneId } = cfEnv();
+  if (!isEdgeProvisioningConfigured()) throw new Error("edge provisioning not configured");
+  const result = await cf(`/zones/${zoneId}/custom_hostnames/${encodeURIComponent(id)}`);
+  if (String(result?.hostname ?? "").toLowerCase() !== hostname.toLowerCase()) {
+    throw new Error("Cloudflare hostname does not match this domain");
+  }
+  return {
+    hostnameStatus: typeof result.status === "string" ? result.status : "unknown",
+    sslStatus: typeof result.ssl?.status === "string" ? result.ssl.status : "unknown",
+  };
+}
+
 async function cf(path: string, init: RequestInit = {}): Promise<any> {
   const { token } = cfEnv();
   if (!token) throw new Error("CLOUDFLARE_API_TOKEN not configured");

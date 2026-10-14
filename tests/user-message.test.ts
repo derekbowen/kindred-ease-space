@@ -25,6 +25,7 @@ import {
   NO_PERMISSION_MESSAGE,
   OWNER_ONLY_MESSAGE,
   MAX_PASS_THROUGH_LENGTH,
+  AUTH_EMAIL_LIMIT_MESSAGE,
 } from "../src/lib/user-message";
 
 let pass = 0,
@@ -45,6 +46,10 @@ const eq = (name: string, got: string, want: string) =>
 
 const FB =
   "Couldn't save your marketplace connection. Try again, or contact support if it keeps happening.";
+
+eq("Auth email budget explains the failure without provider text", userMessage({ code: "over_email_send_rate_limit", status: 429, message: "email rate limit exceeded" }, FB), AUTH_EMAIL_LIMIT_MESSAGE);
+eq("Auth email budget never leaks unexpected provider details", userMessage({ code: "over_email_send_rate_limit", message: "sk-test-private provider detail" }, FB), AUTH_EMAIL_LIMIT_MESSAGE);
+eq("Other 429 errors do not become email-limit messages", userMessage({ code: "rate_limited", status: 429, message: "rate_limited" }, FB), FB);
 
 /** The error a server-fn input validator produces on the wire: zod's message (the issue JSON). */
 function wireError(schema: z.ZodTypeAny, input: unknown): Error {

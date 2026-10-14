@@ -88,7 +88,10 @@ export async function callOpenAIStructured(opts: {
     );
   } catch (e) {
     if (e instanceof APIError && typeof e.status === "number") {
-      const kind = e.status === 401 || e.status === 403 ? "auth" : e.status === 429 ? "rate_limited" : e.status >= 500 ? "server_error" : "bad_request";
+      const kind = e.status === 401 || e.status === 403 ? "auth" : e.status === 429
+        ? e.type === "insufficient_quota" || e.code === "insufficient_quota" || e.code === "credit_balance_exhausted"
+          ? "quota_exhausted" : "rate_limited"
+        : e.status >= 500 ? "server_error" : "bad_request";
       console.error(`[openai] ${kind} status=${e.status} request_id=${e.requestID ?? "-"}`);
       return { ok: false, kind, sent, usage: null, httpStatus: e.status };
     }

@@ -94,6 +94,7 @@ for (const k of [
   "auth",
   "bad_request",
   "rate_limited",
+  "quota_exhausted",
   "server_error",
   "timeout",
   "network",
@@ -201,8 +202,9 @@ t("the scan found the source literals it should", scanned >= 25, String(scanned)
 t(
   "the refusal and failure tables are covered in full",
   labels.filter((w) => /^refusalMessage/.test(w)).length === RESERVE_STATUSES.length &&
-    labels.filter((w) => /^failureMessage/.test(w)).length === 13,
+    labels.filter((w) => /^failureMessage/.test(w)).length === 14,
 );
+t("provider quota exhaustion does not suggest waiting or blame workspace allowance", failureMessage("quota_exhausted") === AI_MESSAGES.providerQuotaExhausted && failureMessage("quota_exhausted") !== AI_MESSAGES.providerBusy);
 for (const [text, where] of sentences) {
   const why = contract(text);
   t(`${where}: "${text}"`, isCustomerSentence(text) && why === null, why ?? "isCustomerSentence rejected it");
