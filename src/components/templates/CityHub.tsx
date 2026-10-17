@@ -22,13 +22,14 @@ export function CityHub({
   branding,
   marketplace,
   basePath = "/a",
-}: TemplatePageProps) {
+  demo = false,
+}: TemplatePageProps & { demo?: boolean }) {
   const place = placeText(page.place);
   const city = page.place.city?.trim() || null;
   const brand = brandLabel(branding);
   // The exact matching total, only when the server counted it — never the
   // length of the (capped) grid dressed up as a total.
-  const total = page.matchingListings ?? 0;
+  const total = demo ? 0 : (page.matchingListings ?? 0);
   const noun = page.listingNoun;
   const [nearby, more] = splitRelated(related, (r) => r.relation !== "other");
   const where = city ? ` in ${city}` : "";
@@ -71,7 +72,9 @@ export function CityHub({
 
       <ListingSection
         heading={noun ? `${capitalize(noun)}${where}` : `Listings${where}`}
-        subheading={`Live listings from ${brand}`}
+        subheading={
+          demo ? "Illustrative listings · not available to book" : `Live listings from ${brand}`
+        }
         listings={listings}
         emptyText={
           city

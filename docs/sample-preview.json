@@ -1,0 +1,21 @@
+{
+  "route": "/sample-seo",
+  "component": "src/components/templates/CityHub.tsx",
+  "data": "src/components/site/sample-seo-data.ts",
+  "asset": "public/samples/city-hub-preview.jpg",
+  "capture": {
+    "source": "Browser screenshot of actual local sample route, not generated artwork",
+    "clip": {
+      "x": 0,
+      "y": 0,
+      "width": 1265,
+      "height": 1030
+    },
+    "fullPage": true,
+    "format": "JPEG",
+    "viewport": "Default desktop browser (1280px outer viewport;1265px document)"
+  },
+  "regenerate": "After CityHub or sample fixture changes, open /sample-seo in a local browser at desktop width. Verify fictional-data banner and all illustrations loaded. Capture the top1265x1030 CSS pixels, save JPEG at the asset path, and verify image dimensions in homepage ProductExample match. Recheck390px mobile width and noindex before publication.",
+  "privacy": "Only fictional listings; no customer data, prices, availability or booking links.",
+  "release": "Use documented production workflow after verifying target; local preview is not publication."
+}

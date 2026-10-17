@@ -96,6 +96,7 @@ function Landing() {
       <SiteHeader />
       <main>
         <Hero />
+        <ProductExample />
         <ProblemFix />
         <Features />
         <HowItWorks />
@@ -140,10 +141,10 @@ function Hero() {
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
           </Link>
           <a
-            href="#how-it-works"
+            href="#product-example"
             className={`inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.12] px-6 py-3.5 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.06] hover:text-white sm:w-auto ${FOCUS_RING}`}
           >
-            How it works
+            See a sample page
           </a>
         </div>
         <p className="mt-6 text-xs text-zinc-500">
@@ -163,6 +164,65 @@ function Hero() {
           founders.click is an independent product and is not affiliated with or endorsed by
           Sharetribe.
         </p>
+      </div>
+    </section>
+  );
+}
+
+function ProductExample() {
+  return (
+    <section
+      id="product-example"
+      aria-labelledby="product-example-heading"
+      className="mx-auto max-w-6xl scroll-mt-24 px-5 pb-16 sm:px-8"
+    >
+      <div className="grid items-center gap-8 lg:grid-cols-[1fr_1.7fr]">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-widest text-orange-400">
+            See the output
+          </p>
+          <h2
+            id="product-example-heading"
+            className="mt-4 text-3xl font-semibold leading-tight tracking-tight text-white"
+          >
+            From listings to a page worth visiting.
+          </h2>
+          <p className="mt-5 text-sm leading-relaxed text-zinc-300">
+            Explore the real City Hub template: a clear city heading, a listing grid and an editable
+            guide. This example uses a fictional marketplace, illustrative artwork and sample copy.
+          </p>
+          <Link
+            to="/sample-seo"
+            className={`mt-6 inline-flex items-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-semibold text-black hover:bg-orange-400 ${FOCUS_RING}`}
+          >
+            Open the sample SEO page <ArrowRight aria-hidden="true" className="h-4 w-4" />
+          </Link>
+          <p className="mt-4 text-xs leading-relaxed text-zinc-400">
+            No signup needed to explore. Your pages start as editable drafts; publishing on your
+            verified domain requires domain setup.
+          </p>
+        </div>
+        <figure className="min-w-0 overflow-hidden rounded-2xl border border-white/15 bg-white shadow-2xl">
+          <Link
+            to="/sample-seo"
+            aria-label="Explore the full sample SEO page"
+            className="block focus-visible:outline focus-visible:outline-4 focus-visible:outline-orange-500"
+          >
+            <img
+              src="/samples/city-hub-preview.jpg"
+              width="1265"
+              height="1030"
+              alt="Screenshot of the Founders.click City Hub sample, showing a Portland workspace heading and three illustrative listing cards"
+              loading="lazy"
+              decoding="async"
+              className="h-auto w-full"
+            />
+          </Link>
+          <figcaption className="border-t border-slate-200 px-4 py-3 text-xs leading-relaxed text-slate-600">
+            Actual template screenshot · fictional listings · no live availability or prices. Open
+            the sample for readable text and the full guide.
+          </figcaption>
+        </figure>
       </div>
     </section>
   );
